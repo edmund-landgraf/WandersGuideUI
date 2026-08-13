@@ -1,0 +1,84 @@
+@import 'tailwindcss';
+
+@font-face {
+  font-family: 'ActionIcons';
+  src: url('../../assets/fonts/Pathfinder2eActions.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+}
+:root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #0d1114; }
+* { box-sizing: border-box; }
+html, body, #root { min-height: 100%; margin: 0; }
+button, input, select { font: inherit; }
+button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid #d6a85f; outline-offset: 2px; }
+* { scrollbar-color: #39434a #12181c; scrollbar-width: thin; }
+.icon-button {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  color: #89949a;
+  background: #11181b;
+}
+.icon-button:hover { border-color: rgb(214 168 95 / 0.5); color: #f0d29d; }
+.toolbar-button {
+  display: inline-flex;
+  height: 2.25rem;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  padding: 0 0.75rem;
+  color: #89949a;
+  background: #0d1215;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.toolbar-button:disabled { cursor: not-allowed; opacity: 0.45; }
+
+
+.ability-prose > :first-child { margin-top: 0; }
+.ability-prose > :last-child { margin-bottom: 0; }
+.ability-prose p,
+.ability-prose ul,
+.ability-prose ol,
+.ability-prose blockquote {
+  margin: 0.9rem 0;
+}
+.ability-prose p { max-width: 78ch; }
+.ability-prose ul,
+.ability-prose ol { padding-left: 1.35rem; }
+.ability-prose ul { list-style: disc; }
+.ability-prose ol { list-style: decimal; }
+.ability-prose li + li { margin-top: 0.35rem; }
+.ability-prose blockquote {
+  border-left: 2px solid rgb(214 168 95 / 0.55);
+  padding: 0.25rem 0 0.25rem 1rem;
+  color: #aeb7bc;
+}
+.ability-prose hr {
+  margin: 1.1rem 0;
+  border-color: rgb(255 255 255 / 0.1);
+}
+.ability-prose a {
+  color: #d6a85f;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ability-prose p:has(> strong:first-child) {
+  max-width: none;
+  margin: 1rem 0;
+  border-left: 2px solid rgb(214 168 95 / 0.65);
+  background: rgb(255 255 255 / 0.025);
+  padding: 0.7rem 0.9rem 0.75rem;
+}
+.ability-prose p:has(> strong:first-child) > strong:first-child {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: #f0d29d;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
