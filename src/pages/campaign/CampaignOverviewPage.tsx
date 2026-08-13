@@ -390,6 +390,19 @@ export function CampaignInner(props: { campaignId: number; onFinishLoading: () =
   );
 }
 
+const CAMPAIGN_TABS = ['notes', 'encounters', 'shops', 'inspiration', 'settings'] as const;
+
+function readCampaignDeepLink() {
+  const params = new URLSearchParams(window.location.search);
+  const tab = params.get('tab');
+  const encounterRaw = params.get('encounter');
+  const encounterId = encounterRaw && /^\d+$/.test(encounterRaw) ? Number(encounterRaw) : null;
+  return {
+    tab: CAMPAIGN_TABS.find((value) => value === tab) ?? null,
+    encounterId,
+  };
+}
+
 function SectionPanels(props: {
   players: Character[];
   campaign: Campaign | null;
@@ -405,8 +418,8 @@ function SectionPanels(props: {
   const isPhone = isPhoneSized(props.panelWidth);
 
   const [openedPhonePanel, setOpenedPhonePanel] = useState(false);
-
-  const [activeTab, setActiveTab] = useState<string | null>(null);
+  const [deepLink] = useState(readCampaignDeepLink);
+  const [activeTab, setActiveTab] = useState<string | null>(deepLink.tab);
 
   const iconStyle = { width: rem(12), height: rem(12) };
   const allCampaignTabs = ['notes', 'encounters', 'shops', 'inspiration', 'settings'];
@@ -459,6 +472,7 @@ function SectionPanels(props: {
                 }}
                 panelHeight={props.panelHeight}
                 panelWidth={props.panelWidth}
+                initialEncounterId={deepLink.encounterId}
               />
             )}
 
@@ -671,6 +685,7 @@ function SectionPanels(props: {
                   data: props.campaign,
                   players: props.players,
                 }}
+                initialEncounterId={deepLink.encounterId}
               />
             </Tabs.Panel>
 

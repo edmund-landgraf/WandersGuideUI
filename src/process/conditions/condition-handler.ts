@@ -346,6 +346,46 @@ const CONDITIONS: Condition[] = [
   },
 ];
 
+/** Conditions granted by a parent condition. Nested grants (Unconscious → Prone → Off-guard) are included. */
+const CONDITION_SPAWNS: Record<string, string[]> = {
+  Confused: ['Off-guard'],
+  Dying: ['Unconscious'],
+  Encumbered: ['Clumsy'],
+  Grabbed: ['Off-guard', 'Immobilized'],
+  Paralyzed: ['Off-guard'],
+  Prone: ['Off-guard'],
+  Restrained: ['Off-guard', 'Immobilized'],
+  Unconscious: ['Off-guard', 'Blinded', 'Prone'],
+  Unnoticed: ['Undetected'],
+};
+
+function spawnedByMap() {
+  const spawnedBy: Record<string, string[]> = {};
+  for (const [parent, children] of Object.entries(CONDITION_SPAWNS)) {
+    for (const child of children) {
+      (spawnedBy[child] ??= []).push(parent);
+    }
+  }
+  return spawnedBy;
+}
+
+const CONDITION_SPAWNED_BY = spawnedByMap();
+
+export function getSpawnedConditionNames(name: string): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  const visit = (parent: string) => {
+    for (const child of CONDITION_SPAWNS[parent] ?? []) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      names.push(child);
+      visit(child);
+    }
+  };
+  visit(name);
+  return names;
+}
+
 export function getConditionByName(name: string, addedSource?: string): Condition | undefined {
   const foundCondition = cloneDeep(
     CONDITIONS.find((condition) => condition.name.trim().toLowerCase() === name.trim().toLowerCase())
@@ -354,6 +394,69 @@ export function getConditionByName(name: string, addedSource?: string): Conditio
     foundCondition.source = addedSource;
   }
   return foundCondition;
+}
+
+export function addConditionWithSpawns(current: Condition[], condition: Condition): Condition[] {
+  if (current.some((item) => item.name === condition.name)) return current;
+  const next = [...current, condition];
+  const seen = new Set<string>([condition.name]);
+  const addSpawns = (parentName: string) => {
+    for (const childName of CONDITION_SPAWNS[parentName] ?? []) {
+      if (seen.has(childName)) continue;
+      seen.add(childName);
+      if (!next.some((item) => item.name === childName)) {
+        const child = getConditionByName(childName, parentName);
+        if (child) next.push(child);
+      }
+      addSpawns(childName);
+    }
+  };
+  addSpawns(condition.name);
+  return next;
+}
+
+function storedRemovalTarget(current: Condition[], condition: Condition): string {
+  const storedNames = new Set(current.map((item) => item.name));
+  let target = condition.name;
+  let source = condition.source ?? current.find((item) => item.name === target)?.source;
+  const seen = new Set<string>();
+
+  while (source && !seen.has(source)) {
+    seen.add(source);
+    if (storedNames.has(source)) {
+      target = source;
+      source = current.find((item) => item.name === target)?.source;
+      continue;
+    }
+    const storedSpawner = (CONDITION_SPAWNED_BY[source] ?? []).find((name) => storedNames.has(name));
+    if (storedSpawner) {
+      target = storedSpawner;
+      source = current.find((item) => item.name === target)?.source;
+      continue;
+    }
+    break;
+  }
+
+  if (!storedNames.has(target)) {
+    const storedSpawner = (CONDITION_SPAWNED_BY[target] ?? []).find((name) => storedNames.has(name));
+    if (storedSpawner) return storedSpawner;
+  }
+  return target;
+}
+
+export function removeConditionWithSpawns(current: Condition[], condition: Condition | string): Condition[] {
+  const target =
+    typeof condition === 'string' ? condition : storedRemovalTarget(current, condition);
+  const names = new Set([target, ...getSpawnedConditionNames(target)]);
+  const next = current.filter((item) => !names.has(item.name) && !names.has(item.source ?? ''));
+
+  if (target !== 'Dying') return next;
+  const woundedIndex = next.findIndex((item) => item.name === 'Wounded');
+  if (woundedIndex >= 0) {
+    return next.map((item, index) => (index === woundedIndex ? { ...item, value: 1 + (item.value ?? 0) } : item));
+  }
+  const wounded = getConditionByName('Wounded');
+  return wounded ? [...next, wounded] : next;
 }
 
 export function getAllConditions() {
@@ -384,40 +487,14 @@ export function compiledConditions(conditions: Condition[]): Condition[] {
       if (condition.name === 'Blinded') {
         newConditions = newConditions.filter((cond) => cond.name !== 'Dazzled');
       }
-      if (condition.name === 'Confused') {
-        newConditions.push(getConditionByName('Off-guard', 'Confused')!);
-      }
-      if (condition.name === 'Dying') {
-        newConditions.push(getConditionByName('Unconscious', 'Dying')!);
-      }
-      if (condition.name === 'Encumbered') {
-        newConditions.push(getConditionByName('Clumsy', 'Encumbered')!);
-      }
-      if (condition.name === 'Grabbed') {
-        newConditions.push(getConditionByName('Off-guard', 'Grabbed')!);
-        newConditions.push(getConditionByName('Immobilized', 'Grabbed')!);
-      }
-      if (condition.name === 'Paralyzed') {
-        newConditions.push(getConditionByName('Off-guard', 'Paralyzed')!);
-      }
-      if (condition.name === 'Prone') {
-        newConditions.push(getConditionByName('Off-guard', 'Prone')!);
-      }
       if (condition.name === 'Restrained') {
         newConditions = newConditions.filter((cond) => cond.name !== 'Grabbed');
-        newConditions.push(getConditionByName('Off-guard', 'Restrained')!);
-        newConditions.push(getConditionByName('Immobilized', 'Restrained')!);
       }
       if (condition.name === 'Stunned') {
         newConditions = newConditions.filter((cond) => cond.name !== 'Slowed');
       }
-      if (condition.name === 'Unconscious') {
-        newConditions.push(getConditionByName('Off-guard', 'Unconscious')!);
-        newConditions.push(getConditionByName('Blinded', 'Unconscious')!);
-        newConditions.push(getConditionByName('Prone', 'Unconscious')!);
-      }
-      if (condition.name === 'Unnoticed') {
-        newConditions.push(getConditionByName('Undetected', 'Unnoticed')!);
+      for (const childName of CONDITION_SPAWNS[condition.name] ?? []) {
+        newConditions.push(getConditionByName(childName, condition.name)!);
       }
       newConditions.push(condition);
     }

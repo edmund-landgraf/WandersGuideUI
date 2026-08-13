@@ -1,11 +1,11 @@
 import { collectEntityAbilityBlocks } from '@content/collect-content';
-import type { AbilityBlock, InventoryItem } from '@schemas/content';
+import type { AbilityBlock, Creature } from '@schemas/content';
 import type { VariableProf } from '@schemas/variables';
 import { getBonusText, getFinalProfValue, getProfValueParts } from '@variables/variable-helpers';
 import { getAllSkillVariables, getVariableBonuses, getVariableHistory } from '@variables/variable-manager';
 import { compileProficiencyType, isProficiencyValue, labelToVariable, proficiencyTypeToLabel, variableToLabel } from '@variables/variable-utils';
 import { flattenDeep, uniqBy } from 'lodash-es';
-import { collectSelectedCustomAbilities, type Phase1Ability } from './phase1-abilities';
+import { collectCreatureAbilities, collectSelectedCustomAbilities, weaponAbilities, type Phase1Ability } from './phase1-abilities';
 import { preparePhase1Entity, type Phase1EntityCombatant } from './phase1-entity';
 import { getPhase1SkillDescription } from './phase1-skill-descriptions';
 
@@ -43,7 +43,9 @@ export async function loadEntitySkillsActions(combatant: Phase1EntityCombatant):
       .filter((skill) => skill.name !== 'SKILL_LORE____')
       .map((skill) => buildSkill(skill, storeId, catalog)),
     groups: [
-      { id: 'weapon-attacks', label: 'Weapon Attacks', actions: weaponAbilities(entity.inventory?.items ?? []) },
+      { id: 'weapon-attacks', label: 'Weapon Attacks', actions: kind === 'CREATURE'
+        ? collectCreatureAbilities(entity as Creature, content.abilityBlocks, storeId, traitNames).filter((ability) => ability.source === 'Weapon')
+        : weaponAbilities(entity.inventory?.items ?? [], storeId, traitNames) },
       { id: 'feats', label: 'Feats (with Actions)', actions: entityAbilities.filter((ability) => ability.actions !== null) },
       { id: 'basic-actions', label: 'Basic Actions', actions: catalog.filter((ability) => !ability.meta_data?.skill && !ability.requirements?.trim() && !hasTrait(ability, 'Exploration') && !hasTrait(ability, 'Downtime')) },
       { id: 'skill-actions', label: 'Skill Actions', actions: catalog.filter((ability) => Boolean(ability.meta_data?.skill)) },
@@ -110,16 +112,6 @@ function signedText(value: number) { return value >= 0 ? `+${value}` : String(va
 function titleCase(value: string) { return value.replace(/\b\w/g, (letter) => letter.toUpperCase()); }
 function enrich(ability: AbilityBlock, source: Phase1Ability['source'], traits: Map<number, string>): Phase1Ability {
   return { ...ability, source, traitNames: (ability.traits ?? []).map((id) => traits.get(id)).filter((name): name is string => Boolean(name)) };
-}
-function weaponAbilities(items: InventoryItem[]): Phase1Ability[] {
-  return items.filter((entry) => entry.is_equipped && entry.item.group === 'WEAPON').map((entry, index) => ({
-    id: -(index + 1000), created_at: '', name: entry.item.name, actions: 'ONE-ACTION', level: entry.item.level,
-    rarity: entry.item.rarity, availability: null, prerequisites: null, frequency: null, cost: null, trigger: null,
-    requirements: null, access: null, description: entry.item.description || 'Equipped weapon attack.', special: null,
-    type: 'action', meta_data: entry.item.meta_data?.image_url ? { image_url: entry.item.meta_data.image_url } : {},
-    traits: entry.item.traits ?? [], operations: entry.item.operations, content_source_id: entry.item.content_source_id,
-    version: entry.item.version, traitNames: [], source: 'Weapon',
-  }));
 }
 function hasTrait(ability: Phase1Ability, name: string) { return ability.traitNames.some((trait) => trait.toLowerCase() === name.toLowerCase()); }
 function parseSigned(value: string) { const parsed = Number.parseInt(value, 10); return Number.isFinite(parsed) ? parsed : 0; }

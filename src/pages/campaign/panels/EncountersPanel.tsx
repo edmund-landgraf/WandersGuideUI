@@ -73,6 +73,7 @@ export default function EncountersPanel(props: {
     players: Character[];
   };
   zIndex?: number;
+  initialEncounterId?: number | null;
 }) {
   const session = useAtomValue(sessionState);
   const [_loading, setLoading] = useState(false);
@@ -154,10 +155,19 @@ export default function EncountersPanel(props: {
   const [contextMenu, setContextMenu] = useState<{ index: number; x: number; y: number } | null>(null);
   const isPhone = isPhoneSized(props.panelWidth);
   const [displayEncounters, refreshEncounters] = useRefresh();
+  const appliedInitialEncounter = useRef(false);
 
   useEffect(() => {
     refreshEncounters();
   }, [activeTab]);
+
+  useEffect(() => {
+    if (appliedInitialEncounter.current || props.initialEncounterId == null || !_encountersData) return;
+    const index = _encountersData.findIndex((encounter) => encounter.id === props.initialEncounterId);
+    if (index < 0) return;
+    setActiveTab(`${index}`);
+    appliedInitialEncounter.current = true;
+  }, [_encountersData, props.initialEncounterId]);
 
   const defaultEncounter: Encounter = {
     id: -1,

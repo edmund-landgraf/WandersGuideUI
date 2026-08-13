@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { gmNotesText, notePageToMarkdown, sourceImportPages } from '@pages/character_sheet/panels/gm-notes';
-import { useEffect, useState } from 'react';
+import { gmNotesText, insertGmNoteStamp, notePageToMarkdown, sourceImportPages } from '@pages/character_sheet/panels/gm-notes';
+import { useEffect, useRef, useState } from 'react';
 import { autoLinkConditions, isAonConditionHref, resolveAonHref, toStandard2eProse } from '@utils/foundry-text';
 import { useContentLinks } from './phase1-content-links';
 
@@ -71,9 +71,41 @@ export function EntityNotesPanel({
 }) {
   const saved = gmNotesText(notes);
   const [draft, setDraft] = useState(saved);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const draftRef = useRef(draft);
+  const savedRef = useRef(saved);
+  const onSaveRef = useRef(onSave);
+  draftRef.current = draft;
+  savedRef.current = saved;
+  onSaveRef.current = onSave;
   useEffect(() => {
     setDraft(saved);
   }, [saved]);
+
+  useEffect(() => {
+    if (!onSaveRef.current || draft === saved) return;
+    const text = draft;
+    const timer = window.setTimeout(() => onSaveRef.current?.(text), 1000);
+    return () => window.clearTimeout(timer);
+  }, [draft, saved]);
+
+  useEffect(() => {
+    return () => {
+      const text = draftRef.current;
+      const save = onSaveRef.current;
+      if (save && text !== savedRef.current) save(text);
+    };
+  }, []);
+
+  const insertStamp = () => {
+    const cursor = textareaRef.current?.selectionStart ?? draft.length;
+    const next = insertGmNoteStamp(draft, cursor);
+    setDraft(next.text);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(next.cursor, next.cursor);
+    });
+  };
 
   if (!onSave) {
     if (!saved) return <p className='border border-white/10 bg-[#11171a] p-4 text-xs text-[#7f8a90]'>No GM notes yet.</p>;
@@ -83,28 +115,38 @@ export function EntityNotesPanel({
   return (
     <div className='flex min-h-[280px] flex-col gap-3'>
       <textarea
+        ref={textareaRef}
         className='min-h-[220px] flex-1 resize-y border border-white/10 bg-[#11171a] p-3 text-sm leading-6 text-[#c4cbce] outline-none placeholder:text-[#5f6a70] focus:border-[#d6a85f]/60'
         placeholder='Creature is burning for 3 rounds...'
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
       />
-      <div className='flex justify-end gap-2'>
+      <div className='flex items-center justify-between gap-2'>
         <button
           type='button'
-          className='h-8 border border-white/10 px-3 text-xs text-[#89949a] hover:text-white disabled:opacity-40'
-          onClick={() => setDraft('')}
-          disabled={!draft}
+          className='h-8 border border-white/10 px-3 text-xs text-[#89949a] hover:text-white'
+          onClick={insertStamp}
         >
-          Clear
+          Date/Time
         </button>
-        <button
-          type='button'
-          className='h-8 bg-[#d6a85f] px-3 text-xs font-semibold text-[#17130d] hover:bg-[#e4ba76] disabled:opacity-40'
-          onClick={() => onSave(draft)}
-          disabled={draft === saved}
-        >
-          Save
-        </button>
+        <div className='flex gap-2'>
+          <button
+            type='button'
+            className='h-8 border border-white/10 px-3 text-xs text-[#89949a] hover:text-white disabled:opacity-40'
+            onClick={() => setDraft('')}
+            disabled={!draft}
+          >
+            Clear
+          </button>
+          <button
+            type='button'
+            className='h-8 bg-[#d6a85f] px-3 text-xs font-semibold text-[#17130d] hover:bg-[#e4ba76] disabled:opacity-40'
+            onClick={() => onSave(draft)}
+            disabled={draft === saved}
+          >
+            Save
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -27,6 +27,11 @@ const router = createBrowserRouter([
     Component: CampaignComponent,
     loader: async ({ params }) => ({ campaignId: params.campaignId }),
   },
+  {
+    path: '/phase0/campaign/:campaignId/encounters/:encounterId',
+    Component: CampaignComponent,
+    loader: async ({ params }) => ({ campaignId: params.campaignId, encounterId: params.encounterId }),
+  },
 ]);
 
 function Phase0Root() {

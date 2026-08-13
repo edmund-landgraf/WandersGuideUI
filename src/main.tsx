@@ -86,6 +86,16 @@ const router = createBrowserRouter([
     loader: async ({ params }: { params: any }) => {
       return { campaignId: params.campaignId };
     },
+  },
+  {
+    path: '/phase0/campaign/:campaignId/encounters/:encounterId',
+    lazy: async () => {
+      const mod = await import('@pages/phase0/Phase0CampaignPage.tsx');
+      return { Component: mod.CampaignComponent };
+    },
+    loader: async ({ params }: { params: any }) => {
+      return { campaignId: params.campaignId, encounterId: params.encounterId };
+    },
   },  {
     path: '/',
     element: <App />,

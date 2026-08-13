@@ -15,6 +15,11 @@ import { getVariable, getVariableBonuses } from './variable-manager';
 import { compileProficiencyType, compileExpressions, getProficiencyTypeValue } from './variable-utils';
 import { sign } from '@utils/numbers';
 
+function isProfWithoutLevel(id: StoreID) {
+  if (getVariable<VariableBool>(id, 'PROF_WITHOUT_LEVEL')?.value) return true;
+  return id !== 'CHARACTER' && Boolean(getVariable<VariableBool>('CHARACTER', 'PROF_WITHOUT_LEVEL')?.value);
+}
+
 export function getFinalProfValue(
   id: StoreID,
   variableName: string,
@@ -27,7 +32,7 @@ export function getFinalProfValue(
     if (isDC) {
       return '10';
     } else {
-      if (getVariable<VariableBool>('CHARACTER', 'PROF_WITHOUT_LEVEL')?.value) {
+      if (isProfWithoutLevel(id)) {
         return '-2';
       } else {
         return '+0';
@@ -104,7 +109,7 @@ export function getProfValueParts(
   const profType = overrideProfType ?? compileProficiencyType(variable.value);
 
   let level = 0;
-  if (getVariable<VariableBool>('CHARACTER', 'PROF_WITHOUT_LEVEL')?.value) {
+  if (isProfWithoutLevel(id)) {
     level = profType !== 'U' ? 0 : -2;
   } else {
     level = profType !== 'U' ? (getVariable<VariableNum>(id, 'LEVEL')?.value ?? 0) : 0;

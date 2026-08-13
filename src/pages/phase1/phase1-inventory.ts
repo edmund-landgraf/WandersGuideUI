@@ -52,6 +52,10 @@ export async function loadEntityInventory(combatant: Phase1EntityCombatant): Pro
   };
 }
 
+export function inventoryItemToPhase1(entry: InventoryItem, key = entry.id || 'item'): Phase1InvItem {
+  return mapInvItem(entry, new Map(), key, 0);
+}
+
 function mapInvItem(
   entry: InventoryItem,
   traitNames: Map<number, string>,

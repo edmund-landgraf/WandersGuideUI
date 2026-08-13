@@ -14,6 +14,21 @@ function isGmNotesPage(name?: string) {
   return (name ?? '').trim().toLowerCase() === 'gm notes';
 }
 
+export function formatGmNoteStamp(date = new Date()) {
+  const datePart = date.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: '2-digit' });
+  const timePart = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true });
+  return `${datePart} ${timePart}`;
+}
+
+export function insertGmNoteStamp(text: string, cursor = text.length) {
+  const stamp = formatGmNoteStamp();
+  const before = text.slice(0, cursor);
+  const after = text.slice(cursor);
+  const prefix = before.length > 0 && !before.endsWith('\n') ? '\n' : '';
+  const inserted = `${prefix}${stamp}\n`;
+  return { text: before + inserted + after, cursor: before.length + inserted.length };
+}
+
 export function sourceImportPages(notes: { pages?: NotePage[] } | null | undefined): NotePage[] {
   return (notes?.pages ?? []).filter((page) => !isGmNotesPage(page.name));
 }

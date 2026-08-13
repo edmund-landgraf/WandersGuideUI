@@ -1,0 +1,50 @@
+.phase-view-switch {
+  display: inline-flex;
+  height: 2rem;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  background: rgb(0 0 0 / 0.25);
+  white-space: nowrap;
+}
+
+.phase-view-switch a {
+  display: inline-flex;
+  align-items: center;
+  border-right: 1px solid rgb(255 255 255 / 0.1);
+  padding: 0 0.7rem;
+  color: #8b959b;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.phase-view-switch a:last-child {
+  border-right: none;
+}
+
+.phase-view-switch a:hover {
+  color: #f4f7f8;
+  background: rgb(255 255 255 / 0.06);
+}
+
+.phase-view-switch a[aria-current='page'] {
+  color: #f4f7f8;
+  pointer-events: none;
+}
+
+.phase-view-switch[data-current='phase0'] a[aria-current='page'] {
+  background: rgb(14 165 233 / 0.18);
+  color: #dbeafe;
+}
+
+.phase-view-switch[data-current='phase1'] a[aria-current='page'] {
+  background: rgb(214 168 95 / 0.16);
+  color: #f0d29d;
+}
+
+.phase-view-switch a.phase-view-switch-original {
+  color: #c5ced3;
+}

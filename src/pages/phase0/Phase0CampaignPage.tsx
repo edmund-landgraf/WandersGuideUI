@@ -1,5 +1,6 @@
 import './phase0.css';
 import { sessionState } from '@atoms/supabaseAtoms';
+import { CampaignSignIn } from '@auth/CampaignSignIn';
 import { Badge } from '@components/ui/badge';
 import { Button } from '@components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@components/ui/card';
@@ -11,15 +12,15 @@ import { sign } from '@utils/numbers';
 import { useQuery } from '@tanstack/react-query';
 import { ExternalLink, PanelRightOpen, Shield, Swords, UserRound } from 'lucide-react';
 import { uniqBy } from 'lodash-es';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useLoaderData, useNavigate } from 'react-router-dom';
 import { useAtomValue } from 'jotai';
 import { supabase } from '../../supabase-client';
+import { OLD_UI_ORIGIN, PhaseViewSwitch } from '../phase-switch/PhaseViewSwitch';
 
-const OLD_UI_ORIGIN = import.meta.env.VITE_OLD_UI_ORIGIN || 'http://localhost:5193';
 const PANE_STORAGE_KEY = 'phase0-encounter-detail-width';
 
-type CampaignLoaderData = { campaignId: string };
+type CampaignLoaderData = { campaignId: string; encounterId?: string };
 type PopulatedCombatant = Combatant & { data: LivingEntity; access?: { can_edit: boolean; details_revealed: boolean } };
 type SelectedDetail = { type: 'CREATURE'; combatant: PopulatedCombatant } | { type: 'CHARACTER'; combatant: PopulatedCombatant };
 
@@ -32,8 +33,13 @@ type ComputedStats = {
 };
 
 export function CampaignComponent() {
-  const { campaignId } = useLoaderData() as CampaignLoaderData;
-  return <Phase0CampaignPage campaignId={parseInt(campaignId)} />;
+  const { campaignId, encounterId } = useLoaderData() as CampaignLoaderData;
+  return (
+    <Phase0CampaignPage
+      campaignId={parseInt(campaignId)}
+      encounterId={encounterId ? parseInt(encounterId) : null}
+    />
+  );
 }
 
 export function Component() {
@@ -64,16 +70,19 @@ export function Component() {
     },
   });
 
-  if (!session) return <Phase0SignIn />;
+  if (!session) return <CampaignSignIn variant='phase0' />;
   return (
     <div className='min-h-[calc(100dvh-72px)] bg-slate-950 px-6 py-6 text-slate-100'>
       <div className='mx-auto flex max-w-6xl flex-col gap-4'>
-        <div>
-          <Badge variant='outline'>Phase 0 read-only</Badge>
-          <h1 className='mt-3 text-3xl font-semibold tracking-normal'>Parallel Campaign UI</h1>
-          <p className='mt-2 max-w-2xl text-sm text-slate-400'>
-            Select a campaign to inspect existing campaign, player, and encounter data without mutating it.
-          </p>
+        <div className='flex items-start justify-between gap-4'>
+          <div>
+            <Badge variant='outline'>Phase 0 read-only</Badge>
+            <h1 className='mt-3 text-3xl font-semibold tracking-normal'>Parallel Campaign UI</h1>
+            <p className='mt-2 max-w-2xl text-sm text-slate-400'>
+              Select a campaign to inspect existing campaign, player, and encounter data without mutating it.
+            </p>
+          </div>
+          <PhaseViewSwitch current='phase0' />
         </div>
         {isLoading && <Card className='p-6 text-slate-400'>Loading campaigns...</Card>}
         {!isLoading && data?.length === 0 && <Card className='p-6 text-slate-400'>No owned or joined campaigns found.</Card>}
@@ -99,43 +108,10 @@ export function Component() {
   );
 }
 
-function Phase0SignIn() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setError('');
-    const result = await supabase.auth.signInWithPassword({ email, password });
-    if (result.error) setError(result.error.message);
-    setBusy(false);
-  }
-
-  return (
-    <div className='min-h-screen bg-slate-950 px-6 py-10 text-slate-100'>
-      <form className='mx-auto max-w-md rounded-md border border-slate-800 bg-slate-900 p-6' onSubmit={submit}>
-        <Badge variant='outline'>Phase 0 read-only</Badge>
-        <h1 className='mt-4 text-2xl font-semibold'>Sign in to view campaigns</h1>
-        <p className='mt-2 text-sm text-slate-400'>Use the same account as the UI on port 5193.</p>
-        <label className='mt-6 block text-sm text-slate-300'>Email
-          <input className='mt-2 h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3' type='email' required value={email} onChange={(event) => setEmail(event.target.value)} />
-        </label>
-        <label className='mt-4 block text-sm text-slate-300'>Password
-          <input className='mt-2 h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3' type='password' required value={password} onChange={(event) => setPassword(event.target.value)} />
-        </label>
-        {error && <p className='mt-4 text-sm text-red-300'>{error}</p>}
-        <Button className='mt-6 w-full' disabled={busy} type='submit'>{busy ? 'Signing in...' : 'Sign in'}</Button>
-      </form>
-    </div>
-  );
-}
-
-function Phase0CampaignPage({ campaignId }: { campaignId: number }) {
+function Phase0CampaignPage({ campaignId, encounterId }: { campaignId: number; encounterId: number | null }) {
   const session = useAtomValue(sessionState);
-  const [selectedEncounterId, setSelectedEncounterId] = useState<number | null>(null);
+  const navigate = useNavigate();
+  const [selectedEncounterId, setSelectedEncounterId] = useState<number | null>(encounterId);
   const [selectedDetail, setSelectedDetail] = useState<SelectedDetail | null>(null);
   const [detailWidth, setDetailWidth] = useState(() => readStoredPaneWidth());
   const [activeDetailTab, setActiveDetailTab] = useState('summary');
@@ -172,8 +148,14 @@ function Phase0CampaignPage({ campaignId }: { campaignId: number }) {
   const selectedEncounter = encounters.find((encounter) => encounter.id === selectedEncounterId) ?? encounters[0] ?? null;
 
   useEffect(() => {
-    if (!selectedEncounterId && encounters[0]) setSelectedEncounterId(encounters[0].id);
-  }, [selectedEncounterId, encounters]);
+    if (encounterId) setSelectedEncounterId(encounterId);
+  }, [encounterId]);
+
+  useEffect(() => {
+    if (selectedEncounterId || !encounters[0]) return;
+    setSelectedEncounterId(encounters[0].id);
+    navigate(`/phase0/campaign/${campaignId}/encounters/${encounters[0].id}`, { replace: true });
+  }, [campaignId, encounters, navigate, selectedEncounterId]);
 
   useEffect(() => {
     window.localStorage.setItem(PANE_STORAGE_KEY, `${detailWidth}`);
@@ -195,9 +177,10 @@ function Phase0CampaignPage({ campaignId }: { campaignId: number }) {
         <main className='min-w-[560px] flex-1 overflow-auto p-5'>
           <div className='mb-4 flex items-center justify-between gap-3'>
             <div>
-              <div className='mb-2 flex items-center gap-2'>
+              <div className='mb-2 flex flex-wrap items-center gap-2'>
                 <Badge variant='outline'>Phase 0 read-only</Badge>
                 <Badge variant={isGm ? 'success' : 'muted'}>{isGm ? 'GM view' : 'Player view'}</Badge>
+                <PhaseViewSwitch current='phase0' campaignId={campaignId} encounterId={selectedEncounter?.id ?? null} />
               </div>
               <h1 className='text-2xl font-semibold tracking-normal'>{campaign?.name ?? 'Campaign'}</h1>
               <p className='mt-1 max-w-3xl text-sm text-slate-400'>{campaign?.description || 'No campaign description.'}</p>
@@ -263,6 +246,7 @@ function Phase0CampaignPage({ campaignId }: { campaignId: number }) {
                           onClick={() => {
                             setSelectedEncounterId(encounter.id);
                             setSelectedDetail(null);
+                            navigate(`/phase0/campaign/${campaignId}/encounters/${encounter.id}`, { replace: true });
                           }}
                         >
                           <div className='truncate font-medium'>{encounter.name}</div>

@@ -4,7 +4,7 @@ import BlurBox from '@common/BlurBox';
 import ConditionPill from '@common/ConditionPill';
 import TokenSelect from '@common/TokenSelect';
 import { selectContent } from '@common/select/SelectContent';
-import { getConditionByName, getAllConditions, compiledConditions } from '@conditions/condition-handler';
+import { addConditionWithSpawns, compiledConditions, getAllConditions, getConditionByName, removeConditionWithSpawns } from '@conditions/condition-handler';
 import { IMPRINT_BG_COLOR_2 } from '@constants/data';
 import { useMantineTheme, Group, ActionIcon, ScrollArea, Title, Button, Box, Text, GroupProps } from '@mantine/core';
 import { openContextModal, modals } from '@mantine/modals';
@@ -12,18 +12,18 @@ import { IconPlus, IconJewishStar, IconJewishStarFilled } from '@tabler/icons-re
 import { Condition, LivingEntity } from '@schemas/content';
 import { StoreID } from '@schemas/variables';
 import { isCharacter } from '@utils/type-fixing';
-import { cloneDeep } from 'lodash-es';
 import { useNavigate } from 'react-router-dom';
 import { useAtom } from 'jotai';
 import { SetterOrUpdater } from '@utils/type-fixing';
 
 export function selectCondition(currentConditions: Condition[], addCondition: (condition: Condition) => void) {
+  const active = compiledConditions(currentConditions);
   selectContent(
     'ability-block',
     (option) => {
       const condition = getConditionByName(option.name);
       if (!condition) return;
-      const hasCondition = currentConditions?.find((c) => c.name === condition.name);
+      const hasCondition = active.find((c) => c.name === condition.name);
       if (hasCondition) return;
       addCondition(condition);
     },
@@ -70,7 +70,7 @@ export function ConditionSection(props: {
                 ...props.entity,
                 details: {
                   ...props.entity.details,
-                  conditions: [...(props.entity.details?.conditions ?? []), condition],
+                  conditions: addConditionWithSpawns(props.entity.details?.conditions ?? [], condition),
                 },
               });
             });
@@ -108,19 +108,19 @@ export function ConditionPills(props: {
           text={condition.name}
           amount={condition.value}
           onClick={() => {
-            //// Unneeded code because 'Over Bulk Limit' is already set ////
-            // Check if the condition is from being over bulk limit
-            // const isEncumberedFromBulk =
-            //   condition.name === 'Encumbered' &&
-            //   props.entity?.inventory &&
-            //   Math.floor(getInvBulk(props.entity.inventory)) > getBulkLimit(props.id);
-            // if (
-            //   isCharacter(props.entity) &&
-            //   props.entity?.options?.ignore_bulk_limit !== true &&
-            //   isEncumberedFromBulk
-            // ) {
-            //   source = 'Over Bulk Limit';
-            // }
+            if (condition.source || condition.value === undefined) {
+              props.setEntity((c) => {
+                if (!c) return c;
+                return {
+                  ...c,
+                  details: {
+                    ...c.details,
+                    conditions: removeConditionWithSpawns(c.details?.conditions ?? [], condition),
+                  },
+                };
+              });
+              return;
+            }
 
             openContextModal({
               modal: 'condition',
@@ -140,18 +140,10 @@ export function ConditionPills(props: {
                       onClick={() => {
                         modals.closeAll();
 
-                        let newConditions = cloneDeep(props.entity?.details?.conditions ?? []);
-                        // Remove condition
-                        newConditions = newConditions.filter((c) => c.name !== condition.name);
-                        // Add wounded condition if we're removing dying
-                        if (condition.name === 'Dying') {
-                          const wounded = newConditions.find((c) => c.name === 'Wounded');
-                          if (wounded) {
-                            wounded.value = 1 + wounded.value!;
-                          } else {
-                            newConditions.push(getConditionByName('Wounded')!);
-                          }
-                        }
+                        const newConditions = removeConditionWithSpawns(
+                          props.entity?.details?.conditions ?? [],
+                          condition
+                        );
 
                         props.setEntity((c) => {
                           if (!c) return c;

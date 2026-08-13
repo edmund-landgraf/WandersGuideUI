@@ -410,9 +410,13 @@ export function getContentFast<T extends Record<string, any> & { id: number }>(t
   return ids.map((id) => cachedById.get(id)).filter((c): c is T => Boolean(c));
 }
 
-export async function fetchContentById<T = Record<string, any>>(type: ContentType, id: number) {
+export async function fetchContentById<T = Record<string, any>>(
+  type: ContentType,
+  id: number,
+  options?: { skipCache?: boolean }
+) {
   if (!id || id === -1) return null;
-  const results = await fetchContent<T>(type, { id });
+  const results = await fetchContent<T>(type, { id }, options);
   return results.length > 0 ? results[0] : null;
 }
 
@@ -420,10 +424,19 @@ export async function fetchContentAll<T = Record<string, any>>(type: ContentType
   return await fetchContent<T>(type, { content_sources: sources });
 }
 
+type FetchContentOptions = boolean | { dontStore?: boolean; skipCache?: boolean };
+
+function parseFetchOptions(dontStoreOrOptions?: FetchContentOptions) {
+  if (dontStoreOrOptions && typeof dontStoreOrOptions === 'object') {
+    return { dontStore: Boolean(dontStoreOrOptions.dontStore), skipCache: Boolean(dontStoreOrOptions.skipCache) };
+  }
+  return { dontStore: Boolean(dontStoreOrOptions), skipCache: false };
+}
+
 export async function fetchContent<T = Record<string, any>>(
   type: ContentType,
   data: Record<string, any>,
-  dontStore?: boolean
+  dontStoreOrOptions?: FetchContentOptions
 ) {
   const CONTENT_SCHEMA_MAP: Record<ContentType, z.ZodTypeAny> = {
     'ability-block': AbilityBlockSchema,
@@ -467,36 +480,41 @@ export async function fetchContent<T = Record<string, any>>(
     return [] as T[];
   }
 
+  const { dontStore, skipCache } = parseFetchOptions(dontStoreOrOptions);
+
   // Make sure any cache persisted by a previous session/tab is loaded before we check the
   // in-memory stores, so a reload can hit the cache instead of re-fetching from the network.
   await hydrationPromise;
 
-  const storedIds = getStoredIds(type, data);
-  const storedFetch = getStoredFetch(type, data);
-  const storedNames = getStoredNames(type, data);
+  if (!skipCache) {
+    const storedIds = getStoredIds(type, data);
+    const storedFetch = getStoredFetch(type, data);
+    const storedNames = getStoredNames(type, data);
 
-  if (storedFetch) {
-    if (storedFetch && Array.isArray(storedFetch)) {
-      return storedFetch as T[];
-    } else {
-      return storedFetch ? [storedFetch as T] : [];
+    if (storedFetch) {
+      if (storedFetch && Array.isArray(storedFetch)) {
+        return storedFetch as T[];
+      } else {
+        return storedFetch ? [storedFetch as T] : [];
+      }
+    } else if (storedIds) {
+      if (storedIds && Array.isArray(storedIds)) {
+        return storedIds as T[];
+      } else {
+        return storedIds ? [storedIds as T] : [];
+      }
+    } else if (storedNames) {
+      if (storedNames && Array.isArray(storedNames)) {
+        return storedNames as T[];
+      } else {
+        return storedNames ? [storedNames as T] : [];
+      }
     }
-  } else if (storedIds) {
-    if (storedIds && Array.isArray(storedIds)) {
-      return storedIds as T[];
-    } else {
-      return storedIds ? [storedIds as T] : [];
-    }
-  } else if (storedNames) {
-    if (storedNames && Array.isArray(storedNames)) {
-      return storedNames as T[];
-    } else {
-      return storedNames ? [storedNames as T] : [];
-    }
-  } else {
-    // Coalesce concurrent identical fetches (keyed including dontStore so a non-storing
-    // fetch can't swallow a storing one). They share a single in-flight network request.
-    const fetchKey = `${hashFetch(type, data)}|${dontStore ? 1 : 0}`;
+  }
+
+  // Coalesce concurrent identical fetches (keyed including dontStore so a non-storing
+  // fetch can't swallow a storing one). They share a single in-flight network request.
+  const fetchKey = `${hashFetch(type, data)}|${dontStore ? 1 : 0}|${skipCache ? 1 : 0}`;
     const inFlight = inFlightFetches.get(fetchKey);
     if (inFlight) return (await inFlight) as T[];
 
@@ -560,7 +578,6 @@ export async function fetchContent<T = Record<string, any>>(
     } finally {
       inFlightFetches.delete(fetchKey);
     }
-  }
 }
 
 /**

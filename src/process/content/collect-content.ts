@@ -69,13 +69,10 @@ export function collectEntityAbilityBlocks(
     (block) => block.type === 'class-feature' && classFeatureIds.includes(`${block.id}`)
   );
   if (options?.filterBasicClassFeatures) {
-    const BASIC_NAMES = ['Attribute Boosts', 'Skill Feat', 'Skill Increase', 'General Feat'];
-    if (isCharacter(entity)) {
-      BASIC_NAMES.push(`${entity.details?.class?.name} Feat`);
-      BASIC_NAMES.push(`${entity.details?.class_2?.name} Feat`);
-    }
-
-    classFeatures = classFeatures.filter((feature) => !BASIC_NAMES.includes(feature.name));
+    const classNames = isCharacter(entity)
+      ? [entity.details?.class?.name, entity.details?.class_2?.name]
+      : [];
+    classFeatures = classFeatures.filter((feature) => !isProgressionPlaceholder(feature, classNames));
   }
 
   const physicalFeatureIds = getVariable<VariableListStr>(id, 'PHYSICAL_FEATURE_IDS')?.value ?? [];
@@ -108,6 +105,31 @@ export function collectEntityAbilityBlocks(
       ? (entity.abilities_added?.map((id) => blocks.find((b) => id === b.id)).filter(isTruthy) ?? [])
       : [],
   };
+}
+
+/** Progression slots like Attribute Boosts / Fighter Feat are class features, not usable abilities. */
+export function isProgressionPlaceholder(
+  ability: Pick<AbilityBlock, 'name' | 'type'>,
+  classNames: Array<string | null | undefined> = []
+) {
+  if (ability.type && ability.type !== 'class-feature') return false;
+  const name = (ability.name ?? '').trim();
+  if (!name) return false;
+  const lower = name.toLowerCase();
+  const exact = new Set([
+    'attribute boosts',
+    'attribute boost',
+    'ability boosts',
+    'skill feat',
+    'skill increase',
+    'general feat',
+    'ancestry feat',
+    'heritage feat',
+    'class feat',
+  ]);
+  if (exact.has(lower)) return true;
+  if (classNames.some((className) => className && lower === `${className.trim().toLowerCase()} feat`)) return true;
+  return / feat$/i.test(name);
 }
 
 export function collectEntitySenses(id: StoreID, blocks: AbilityBlock[]) {

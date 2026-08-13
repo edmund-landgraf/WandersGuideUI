@@ -29,6 +29,7 @@ const router = createBrowserRouter([
       { path: '/phase1/campaign/:campaignId', Component: Phase1CampaignPage },
       { path: '/phase1/campaign/:campaignId/encounters/:encounterId', Component: Phase1CampaignPage },
       { path: '/phase1/campaign/:campaignId/notes/:noteIndex', Component: Phase1CampaignPage },
+      { path: '/phase1/campaign/:campaignId/settings', Component: Phase1CampaignPage },
     ],
   },
 ]);

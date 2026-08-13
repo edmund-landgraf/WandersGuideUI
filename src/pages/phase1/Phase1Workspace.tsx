@@ -1,15 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, ArrowLeft, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ClipboardCopy, Copy, Crosshair, Eye, ExternalLink, Footprints, GripVertical, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Plus, Search, Shield, Sparkles, Swords, Trash2, UserMinus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type FormEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { Activity, ArrowLeft, BookOpen, Calculator, ChevronDown, ChevronRight, Copy, Crosshair, Eraser, Eye, ExternalLink, Footprints, GripVertical, History, ListChecks, LogOut, Package, PanelRight, Plus, RotateCcw, Search, Settings, Shield, Sparkles, Swords, Trash2, UserMinus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
-import type { Session } from '@supabase/supabase-js';
-import type { Campaign, Character, Combatant, Condition, Encounter, LivingEntity } from '@schemas/content';
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
+import type { Campaign, Character, Combatant, Condition, Creature, Encounter, InitiativeRoundLog, LivingEntity } from '@schemas/content';
+import { CampaignSignIn } from '@auth/CampaignSignIn';
+import { useAuthSession } from '@auth/useAuthSession';
+import { confirmHealth } from '@pages/character_sheet/entity-handler';
 import { supabase } from '../../supabase-client';
 import { phase1Request } from './phase1-api';
 import { loadEntityAbilities, type Phase1Ability } from './phase1-abilities';
 import { calculateEntityStatus, type Phase1CreatureStatus } from './phase1-stats';
 import type { Phase1EntityCombatant } from './phase1-entity';
+import { StatDetailModal, type Phase1StatKey, type Phase1StatTarget } from './phase1-stat-modal';
+import { loadEntityDetails, type Phase1ProfRow } from './phase1-details';
 import { loadEntitySkillsActions, type Phase1ActionGroup, type Phase1Skill } from './phase1-skills';
 import {
   loadEntitySpells,
@@ -21,16 +25,26 @@ import {
   type Phase1SpellEntry,
   type Phase1SpellSection,
 } from './phase1-spells';
-import { flattenInvItems, loadEntityInventory, matchesInvItem, type Phase1InvItem } from './phase1-inventory';
+import { flattenInvItems, inventoryItemToPhase1, loadEntityInventory, matchesInvItem, type Phase1InvItem } from './phase1-inventory';
 import { EntityNotesPanel, ProseMarkdown, SourceImportNotesPanel, noteContentsToMarkdown } from './phase1-markdown';
-import { isContentStackOpen } from './phase1-content-links';
+import { isContentStackOpen, useContentLinks } from './phase1-content-links';
+import { getBestShield, getItemHealth } from '@items/inv-utils';
 import { toGmNotes } from '@pages/character_sheet/panels/gm-notes';
 import { lookupMonsterArt, type Phase1MonsterArt } from './phase1-monster-image';
-import { compiledConditions, getConditionByName } from '@conditions/condition-handler';
+import { addConditionWithSpawns, compiledConditions, removeConditionWithSpawns } from '@conditions/condition-handler';
 import { ConditionDetailModal, SelectConditionModal } from './phase1-conditions';
+import { SelectCreatureModal } from './phase1-creatures';
 import { ActionSymbol } from '@common/Actions';
 import { abilityNameAndCost } from '@utils/actions';
 import { toStandard2eProse } from '@utils/foundry-text';
+import { GiDiceTwentyFacesTwenty } from '@common/game-icons-inline';
+import { rollDie } from '@utils/random';
+import { buildInitiativeRoundLog, formatInitiativeRoll, InitiativeRollModal, nextInitiativeRoundNumber, sortCombatantsByInitiative, type InitiativeRollChoice } from './phase1-initiative';
+import { appendChangeLog, characterCombatFieldsFromEntity, createChangeLogEntry, parseTempHpInput } from './phase1-change-log';
+import { resetCombatant, resetEntityCombatState, resolveResetMaxHp } from './phase1-encounter-reset';
+import { CombatantChangeLogFooter, EditableValueWithNote, GridHpEditPopover } from './phase1-change-log-ui';
+import { OLD_UI_ORIGIN, PhaseViewSwitch } from '../phase-switch/PhaseViewSwitch';
+import { ConfirmDialog, SettingsSurface } from './phase1-campaign-settings';
 
 type Phase1SpellActions = {
   setCast: (entry: Phase1SpellEntry, cast: boolean) => Promise<void>;
@@ -42,7 +56,6 @@ type Phase1SpellActions = {
 type CampaignNotePage = NonNullable<Campaign['notes']>['pages'][number];
 type IndexedNotePage = { page: CampaignNotePage; index: number };
 
-const OLD_UI_ORIGIN = import.meta.env.VITE_OLD_UI_ORIGIN || 'http://localhost:5193';
 const DETAIL_WIDTH_KEY = 'phase1-detail-width';
 const DETAIL_WIDTH_MIN = 340;
 const DETAIL_WIDTH_MAX = 1200;
@@ -51,19 +64,8 @@ const DETAIL_TABS = ['Health', 'Abilities', 'Skills', 'Inventory', 'Spells', 'GM
 type DetailTab = (typeof DETAIL_TABS)[number];
 type PopulatedCombatant = Combatant & { data: LivingEntity; access?: { can_edit: boolean; details_revealed: boolean } };
 
-function useSession() {
-  const [session, setSession] = useState<Session | null | undefined>(undefined);
-  useEffect(() => {
-    let mounted = true;
-    supabase.auth.getSession().then(({ data }) => mounted && setSession(data.session));
-    const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
-    return () => { mounted = false; data.subscription.unsubscribe(); };
-  }, []);
-  return session;
-}
-
 export function Phase1IndexPage() {
-  const session = useSession();
+  const session = useAuthSession();
   const navigate = useNavigate();
   const campaigns = useQuery({
     queryKey: ['phase1-campaigns', session?.user.id],
@@ -78,7 +80,7 @@ export function Phase1IndexPage() {
   });
 
   if (session === undefined) return <LoadingScreen label='Loading session' />;
-  if (!session) return <SignIn />;
+  if (!session) return <CampaignSignIn variant='phase1' />;
   return (
     <div className='min-h-screen bg-[#0d1114] text-[#e7ebed]'>
       <WorkspaceHeader label='Campaigns' />
@@ -104,15 +106,18 @@ export function Phase1IndexPage() {
 }
 
 export function Phase1CampaignPage() {
-  const session = useSession();
+  const session = useAuthSession();
+  const location = useLocation();
   const { campaignId: rawCampaignId, encounterId: rawEncounterId, noteIndex: rawNoteIndex } = useParams();
   const campaignId = Number(rawCampaignId);
   const encounterId = rawEncounterId ? Number(rawEncounterId) : null;
   const viewingNotes = rawNoteIndex !== undefined;
+  const viewingSettings = location.pathname.endsWith('/settings');
   const noteIndex = viewingNotes && Number.isFinite(Number(rawNoteIndex)) ? Number(rawNoteIndex) : null;
   const enabled = Boolean(session && Number.isFinite(campaignId));
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const encounterSaveChain = useRef(Promise.resolve<void>(undefined));
   const campaignKey = ['phase1-campaign', campaignId, session?.user.id] as const;
   const encountersKey = ['phase1-encounters', campaignId, session?.user.id] as const;
   const playersKey = ['phase1-players', campaignId, session?.user.id] as const;
@@ -120,7 +125,12 @@ export function Phase1CampaignPage() {
   const players = useQuery({ queryKey: playersKey, enabled, queryFn: () => phase1Request<Character[]>('find-character', { campaign_id: campaignId }) });
   const encounters = useQuery({ queryKey: encountersKey, enabled, queryFn: () => phase1Request<Encounter[]>('find-encounter', { campaign_id: campaignId }) });
   const updateEncounter = useMutation<boolean, Error, Encounter, { previous?: Encounter[] }>({
-    mutationFn: (encounter) => phase1Request<boolean>('create-encounter', { ...encounter }),
+    mutationKey: ['phase1-update-encounter', campaignId],
+    mutationFn: (encounter) => {
+      const result = encounterSaveChain.current.then(() => phase1Request<boolean>('create-encounter', { ...encounter }));
+      encounterSaveChain.current = result.then(() => undefined, () => undefined);
+      return result;
+    },
     onMutate: async (encounter) => {
       await queryClient.cancelQueries({ queryKey: encountersKey });
       const previous = queryClient.getQueryData<Encounter[]>(encountersKey);
@@ -130,10 +140,13 @@ export function Phase1CampaignPage() {
     onError: (_error, _encounter, context) => {
       if (context?.previous) queryClient.setQueryData(encountersKey, context.previous);
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: encountersKey }),
+    onSettled: () => {
+      if (queryClient.isMutating({ mutationKey: ['phase1-update-encounter', campaignId] }) > 1) return;
+      queryClient.invalidateQueries({ queryKey: encountersKey });
+    },
   });
 
-  const updateCharacter = useMutation<unknown, Error, { id: number; spells?: Character['spells']; details?: Character['details'] }, { previous?: Character[] }>({
+  const updateCharacter = useMutation<unknown, Error, { id: number; spells?: Character['spells']; details?: Character['details']; hp_current?: number; hp_temp?: number }, { previous?: Character[] }>({
     mutationFn: ({ id, ...fields }) => phase1Request('update-character', { id, ...fields }),
     onMutate: async ({ id, ...fields }) => {
       await queryClient.cancelQueries({ queryKey: playersKey });
@@ -172,23 +185,50 @@ export function Phase1CampaignPage() {
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: campaignKey }),
   });
+  const updateCampaign = useMutation<unknown, Error, Campaign, { previous?: Campaign | null }>({
+    mutationFn: (next) => phase1Request('create-campaign', next),
+    onMutate: async (next) => {
+      await queryClient.cancelQueries({ queryKey: campaignKey });
+      const previous = queryClient.getQueryData<Campaign | null>(campaignKey);
+      queryClient.setQueryData(campaignKey, next);
+      return { previous };
+    },
+    onError: (_error, _next, context) => {
+      if (context?.previous !== undefined) queryClient.setQueryData(campaignKey, context.previous);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: campaignKey }),
+  });
+  const resetJoinKey = useMutation({
+    mutationFn: () => phase1Request<Campaign>('reset-campaign-key', { id: campaignId }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: campaignKey }),
+  });
+  const kickPlayer = useMutation({
+    mutationFn: (characterId: number) =>
+      phase1Request('remove-from-campaign', { character_id: characterId, campaign_id: campaignId }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: playersKey }),
+  });
+  const deleteCampaign = useMutation({
+    mutationFn: () => phase1Request('delete-content', { id: campaignId, type: 'campaign' }),
+    onSuccess: () => navigate('/phase1'),
+  });
   if (session === undefined) return <LoadingScreen label='Loading session' />;
-  if (!session) return <SignIn />;
+  if (!session) return <CampaignSignIn variant='phase1' />;
   if (campaign.isLoading || players.isLoading || encounters.isLoading) return <LoadingScreen label='Loading campaign workspace' />;
   const error = campaign.error || players.error || encounters.error;
   if (error) return <PageError error={error} />;
   if (!campaign.data) return <PageError error={new Error('Campaign not found')} />;
 
-  const isGm = campaign.data.user_id === session.user.id;
+  const campaignData = campaign.data;
+  const isGm = campaignData.user_id === session.user.id;
   const ownIds = new Set((players.data ?? []).filter((item) => item.user_id === session.user.id).map((item) => item.id));
   const campaignEncounters = (encounters.data ?? []).filter((encounter) => encounter.campaign_id === campaignId);
   const visible = isGm ? campaignEncounters : campaignEncounters.filter((encounter) => encounter.combatants.list.some((item) => item.type === 'CHARACTER' && item.character && ownIds.has(item.character)));
-  const notePages = visibleNotePages(campaign.data, isGm);
+  const notePages = visibleNotePages(campaignData, isGm);
   const selectedNote = noteIndex == null ? null : notePages.find((item) => item.index === noteIndex) ?? null;
   function handleDeleteNote(index: number) {
-    const pages = [...(campaign.data.notes?.pages ?? [])];
+    const pages = [...(campaignData.notes?.pages ?? [])];
     pages.splice(index, 1);
-    deleteNote.mutate({ ...campaign.data, notes: { ...campaign.data.notes, pages } });
+    deleteNote.mutate({ ...campaignData, notes: { ...campaignData.notes, pages } });
     if (viewingNotes && noteIndex === index) {
       const remaining = notePages.filter((item) => item.index !== index);
       if (remaining[0]) {
@@ -212,26 +252,56 @@ export function Phase1CampaignPage() {
       else navigate(`/phase1/campaign/${campaignId}`);
     }
   }
-  if (!viewingNotes && !encounterId && visible[0]) return <Navigate replace to={`/phase1/campaign/${campaignId}/encounters/${visible[0].id}`} />;
-  return <EncounterWorkspace campaign={campaign.data} encounters={visible} players={players.data ?? []} selectedEncounter={viewingNotes ? null : visible.find((item) => item.id === encounterId) ?? null} notePages={notePages} selectedNote={selectedNote} viewingNotes={viewingNotes} isGm={isGm} sessionUserId={session.user.id} onUpdateEncounter={(encounter) => updateEncounter.mutate(encounter)} onUpdateCharacter={(id, fields) => updateCharacter.mutate({ id, ...fields })} onDeleteNote={handleDeleteNote} onDeleteEncounter={handleDeleteEncounter} rosterSaving={updateEncounter.isPending} rosterError={updateEncounter.error ?? updateCharacter.error ?? deleteEncounter.error ?? deleteNote.error} />;
+  if (!viewingNotes && !viewingSettings && !encounterId && visible[0]) return <Navigate replace to={`/phase1/campaign/${campaignId}/encounters/${visible[0].id}`} />;
+  if (viewingSettings && !isGm) return <PageError error={new Error('Campaign settings are only available to the game master.')} />;
+  return (
+    <EncounterWorkspace
+      campaign={campaignData}
+      encounters={visible}
+      players={players.data ?? []}
+      selectedEncounter={viewingNotes || viewingSettings ? null : visible.find((item) => item.id === encounterId) ?? null}
+      notePages={notePages}
+      selectedNote={selectedNote}
+      viewingNotes={viewingNotes}
+      viewingSettings={viewingSettings}
+      isGm={isGm}
+      sessionUserId={session.user.id}
+      onUpdateEncounter={(encounter) => updateEncounter.mutate(encounter)}
+      onUpdateCharacter={(id, fields) => updateCharacter.mutate({ id, ...fields })}
+      onUpdateCampaign={(next) => updateCampaign.mutate(next)}
+      onResetJoinKey={() => resetJoinKey.mutateAsync()}
+      onKickPlayer={(characterId) => kickPlayer.mutateAsync(characterId)}
+      onDeleteCampaign={() => deleteCampaign.mutateAsync()}
+      onDeleteNote={handleDeleteNote}
+      onDeleteEncounter={handleDeleteEncounter}
+      rosterSaving={updateEncounter.isPending}
+      campaignSaving={updateCampaign.isPending}
+      rosterError={updateEncounter.error ?? updateCharacter.error ?? deleteEncounter.error ?? deleteNote.error}
+      campaignError={updateCampaign.error ?? resetJoinKey.error ?? kickPlayer.error ?? deleteCampaign.error}
+    />
+  );
 }
 
 
-function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, isGm, sessionUserId, onUpdateEncounter, onUpdateCharacter, onDeleteNote, onDeleteEncounter, rosterSaving, rosterError }: {
-  campaign: Campaign; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details'] }) => void; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; rosterSaving: boolean; rosterError: Error | null;
+function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, viewingSettings, isGm, sessionUserId, onUpdateEncounter, onUpdateCharacter, onUpdateCampaign, onResetJoinKey, onKickPlayer, onDeleteCampaign, onDeleteNote, onDeleteEncounter, rosterSaving, campaignSaving, rosterError, campaignError }: {
+  campaign: Campaign; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; hp_current?: number; hp_temp?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; campaignError: Error | null;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailWidth, setDetailWidth] = useState(readDetailWidth);
   const [activeTab, setActiveTab] = useState<DetailTab>('Health');
+  const [initiativeOpen, setInitiativeOpen] = useState(false);
+  const [creaturePickerOpen, setCreaturePickerOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
   const combatants = useMemo(() => populateCombatants(selectedEncounter?.combatants.list ?? [], players), [selectedEncounter, players]);
+  const orderedCombatants = useMemo(() => sortCombatantsByInitiative(combatants), [combatants]);
   const selected = combatants.find((item) => item._id === selectedId) ?? null;
   const statuses = useCombatantStatuses(selectedEncounter?.id ?? null, combatants);
   const encounterNote = notePages.find((item) => item.page.name.trim().toLowerCase() === selectedEncounter?.name.trim().toLowerCase());
   const activeCharacterIds = new Set((selectedEncounter?.combatants.list ?? []).filter((combatant) => combatant.type === 'CHARACTER').map((combatant) => combatant.character));
   const benchPlayers = players.filter((player) => !activeCharacterIds.has(player.id));
 
-  function updateRoster(list: Combatant[]) {
-    if (!selectedEncounter || !isGm || rosterSaving) return;
+  function persistRoster(list: Combatant[], metaPatch?: Partial<Encounter['meta_data']>) {
+    if (!selectedEncounter || !isGm) return;
     const allies = populateCombatants(list, players).filter((combatant) => combatant.ally);
     const levels = allies.map((combatant) => combatant.data.level).filter(Number.isFinite);
     onUpdateEncounter({
@@ -239,10 +309,16 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
       combatants: { list },
       meta_data: {
         ...selectedEncounter.meta_data,
+        ...metaPatch,
         party_size: allies.length,
         party_level: levels.length ? levels.reduce((sum, level) => sum + level, 0) / levels.length : 0,
       },
     });
+  }
+
+  function updateRoster(list: Combatant[]) {
+    if (rosterSaving) return;
+    persistRoster(list);
   }
 
   function addPlayer(characterId: number) {
@@ -266,6 +342,24 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     if (selectedId === combatantId) setSelectedId(null);
   }
 
+  function addCreature(creature: Creature, ally: boolean) {
+    if (!selectedEncounter) return;
+    const id = crypto.randomUUID();
+    updateRoster([
+      ...selectedEncounter.combatants.list,
+      {
+        _id: id,
+        type: 'CREATURE',
+        ally,
+        initiative: undefined,
+        creature: structuredClone(creature),
+        character: undefined,
+        data: undefined,
+      },
+    ]);
+    setSelectedId(id);
+  }
+
   function cloneCreature(combatantId: string) {
     if (!selectedEncounter) return;
     const list = selectedEncounter.combatants.list;
@@ -274,6 +368,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     if (!source || source.type !== 'CREATURE') return;
     const copy = structuredClone(source);
     copy._id = crypto.randomUUID();
+    copy.change_log = undefined;
     updateRoster([...list.slice(0, index + 1), copy, ...list.slice(index + 1)]);
     setSelectedId(copy._id);
   }
@@ -286,15 +381,134 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     if (selectedId === combatantId) setSelectedId(null);
   }
 
-  const canManageSpells = useMemo(() => {
-    if (!selected) return false;
+  function updateInitiative(combatantId: string, initiative: number) {
+    if (!selectedEncounter) return;
+    persistRoster(selectedEncounter.combatants.list.map((combatant) => combatant._id === combatantId ? { ...combatant, initiative, initiative_roll: undefined } : combatant));
+  }
+
+  function rollInitiative(rollBonuses: Map<string, InitiativeRollChoice>) {
+    if (!selectedEncounter) return;
+    const rolledIds = new Set<string>();
+    const list = selectedEncounter.combatants.list.map((combatant) => {
+      const choice = rollBonuses.get(combatant._id);
+      if (!choice) return combatant;
+      rolledIds.add(combatant._id);
+      const die = rollDie('D20');
+      return {
+        ...combatant,
+        initiative: die + choice.bonus,
+        initiative_roll: { die, bonus: choice.bonus, source: choice.source },
+      };
+    });
+    if (rolledIds.size === 0) {
+      setInitiativeOpen(false);
+      return;
+    }
+    const populated = populateCombatants(list, players);
+    const existingLog = selectedEncounter.meta_data.initiative_log ?? [];
+    const roundEntry = buildInitiativeRoundLog(nextInitiativeRoundNumber(existingLog), populated, rolledIds);
+    persistRoster(list, { initiative_log: [...existingLog, roundEntry] });
+    setInitiativeOpen(false);
+  }
+
+  function clearInitiative() {
+    if (!selectedEncounter) return;
+    persistRoster(selectedEncounter.combatants.list.map((combatant) => ({
+      ...combatant,
+      initiative: undefined,
+      initiative_roll: undefined,
+    })));
+  }
+
+  function resetEncounterState() {
+    if (!selectedEncounter || !isGm || rosterSaving) return;
+    const populatedById = new Map(combatants.map((combatant) => [combatant._id, combatant]));
+    persistRoster(
+      selectedEncounter.combatants.list.map((combatant) => {
+        const populated = populatedById.get(combatant._id);
+        const maxHp = populated
+          ? resolveResetMaxHp(populated.data, statuses.data?.[combatant._id]?.maxHp)
+          : combatant.creature
+            ? resolveResetMaxHp(combatant.creature)
+            : 0;
+        if (combatant.type === 'CHARACTER' && combatant.character) {
+          const character = players.find((player) => player.id === combatant.character);
+          if (character) {
+            const resetEntity = resetEntityCombatState(character, maxHp);
+            onUpdateCharacter(combatant.character, {
+              hp_current: resetEntity.hp_current,
+              hp_temp: resetEntity.hp_temp,
+              details: resetEntity.details,
+              spells: resetEntity.spells,
+            });
+          }
+        }
+        return resetCombatant(combatant, maxHp);
+      }),
+      { initiative_log: [] },
+    );
+    setResetOpen(false);
+  }
+
+  const canManageCombatant = (combatant: PopulatedCombatant) => {
     if (isGm) return true;
-    if (selected.type === 'CHARACTER' && selected.character) {
-      const owner = players.find((player) => player.id === selected.character);
+    if (combatant.type === 'CHARACTER' && combatant.character) {
+      const owner = players.find((player) => player.id === combatant.character);
       return owner?.user_id === sessionUserId;
     }
     return false;
+  };
+
+  const canManageSpells = useMemo(() => {
+    if (!selected) return false;
+    return canManageCombatant(selected);
   }, [selected, isGm, players, sessionUserId]);
+
+  function persistCombatantChange(combatant: PopulatedCombatant, entity: LivingEntity, field: 'hp_current' | 'hp_temp' | 'conditions', from: unknown, to: unknown, note: string | null) {
+    if (!selectedEncounter || rosterSaving) return;
+    const rawCombatant = selectedEncounter.combatants.list.find((item) => item._id === combatant._id);
+    if (!rawCombatant) return;
+    const loggedCombatant = appendChangeLog(rawCombatant, createChangeLogEntry(field, from, to, note));
+    if (combatant.type === 'CHARACTER' && combatant.character) {
+      onUpdateCharacter(combatant.character, characterCombatFieldsFromEntity(entity));
+      onUpdateEncounter({
+        ...selectedEncounter,
+        combatants: {
+          list: selectedEncounter.combatants.list.map((item) => (item._id === combatant._id ? loggedCombatant : item)),
+        },
+      });
+      return;
+    }
+    if (combatant.type === 'CREATURE') {
+      onUpdateEncounter({
+        ...selectedEncounter,
+        combatants: {
+          list: selectedEncounter.combatants.list.map((item) => (item._id === combatant._id ? { ...loggedCombatant, creature: entity as Creature } : item)),
+        },
+      });
+    }
+  }
+
+  function persistHpCurrent(combatant: PopulatedCombatant, raw: string, note: string | null, maxHp: number) {
+    const from = combatant.data.hp_current;
+    const result = confirmHealth(raw, maxHp, combatant.data);
+    if (!result || result.value === from) return;
+    persistCombatantChange(combatant, result.entity, 'hp_current', from, result.value, note);
+  }
+
+  function persistTempHp(combatant: PopulatedCombatant, raw: string, note: string | null) {
+    const from = combatant.data.hp_temp;
+    const next = parseTempHpInput(raw);
+    if (next === from) return;
+    persistCombatantChange(combatant, { ...combatant.data, hp_temp: next }, 'hp_temp', from, next, note);
+  }
+
+  function persistHpCurrentById(combatantId: string, raw: string, note: string | null) {
+    const combatant = combatants.find((item) => item._id === combatantId);
+    if (!combatant || !canManageCombatant(combatant)) return;
+    const maxHp = statuses.data?.[combatantId]?.maxHp ?? statsFor(combatant.data).maxHp;
+    persistHpCurrent(combatant, raw, note, maxHp);
+  }
 
   function persistCreature(entity: LivingEntity) {
     if (!selected || !selectedEncounter || selected.type !== 'CREATURE') return;
@@ -311,14 +525,12 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     persistCreature(entity);
   }
 
-  function persistConditions(conditions: Condition[]) {
+  function persistConditions(conditions: Condition[], note: string | null = null) {
     if (!selected || !selectedEncounter) return;
+    const from = selected.data.details?.conditions ?? [];
+    if (JSON.stringify(from) === JSON.stringify(conditions)) return;
     const details = { ...selected.data.details, conditions };
-    if (selected.type === 'CHARACTER' && selected.character) {
-      onUpdateCharacter(selected.character, { details: details as Character['details'] });
-      return;
-    }
-    persistCreature({ ...selected.data, details });
+    persistCombatantChange(selected, { ...selected.data, details }, 'conditions', from, conditions, note);
   }
 
   function persistGmNotes(text: string) {
@@ -350,29 +562,71 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
         },
       }
     : undefined;
-  useEffect(() => setSelectedId(null), [selectedEncounter?.id]);
+  useEffect(() => {
+    setSelectedId(null);
+    setInitiativeOpen(false);
+    setCreaturePickerOpen(false);
+    setResetOpen(false);
+  }, [selectedEncounter?.id]);
   useEffect(() => window.localStorage.setItem(DETAIL_WIDTH_KEY, String(detailWidth)), [detailWidth]);
 
   return (
     <div className='flex h-screen min-h-[680px] flex-col overflow-hidden bg-[#0d1114] text-[#e7ebed]'>
-      <WorkspaceHeader label={campaign.name} />
-      <div className={`grid min-h-0 flex-1 ${viewingNotes ? 'grid-cols-[248px_minmax(280px,1fr)]' : 'grid-cols-[248px_minmax(280px,1fr)_6px_auto]'}`}>
-        <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} selectedEncounter={selectedEncounter} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddAllPlayers={addAllPlayers} onDeleteNote={onDeleteNote} onDeleteEncounter={onDeleteEncounter} />
+      <WorkspaceHeader label={campaign.name} campaignId={campaign.id} encounterId={selectedEncounter?.id ?? null} noteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} />
+      <div className={`grid min-h-0 flex-1 ${viewingNotes || viewingSettings ? 'grid-cols-[248px_minmax(280px,1fr)]' : 'grid-cols-[248px_minmax(280px,1fr)_6px_auto]'}`}>
+        <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} selectedEncounter={selectedEncounter} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddAllPlayers={addAllPlayers} onDeleteNote={onDeleteNote} onDeleteEncounter={onDeleteEncounter} />
         <main className='min-w-0 overflow-auto bg-[#11171a]'>
-          {viewingNotes ? (
+          {viewingSettings ? (
+            <SettingsSurface
+              campaign={campaign}
+              players={players}
+              onUpdateCampaign={onUpdateCampaign}
+              onResetJoinKey={onResetJoinKey}
+              onKickPlayer={onKickPlayer}
+              onDeleteCampaign={onDeleteCampaign}
+              saving={campaignSaving}
+              error={campaignError}
+            />
+          ) : viewingNotes ? (
             <NoteSurface note={selectedNote} isGm={isGm} />
           ) : (
             <>
-              <EncounterHeader encounter={selectedEncounter} count={combatants.length} isGm={isGm} joinKey={isGm ? campaign.join_key : undefined} noteLink={encounterNote ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} />
+              <EncounterHeader encounter={selectedEncounter} count={combatants.length} isGm={isGm} noteLink={encounterNote ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} canRollInitiative={isGm && combatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && combatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} />
               {rosterError && <div className='border-b border-[#a95249]/40 bg-[#a95249]/10 px-5 py-2 text-xs text-[#efaaa3]'>Roster update failed: {rosterError.message}</div>}
-              <div className='p-5'><CombatantGrid combatants={combatants} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} /></div>
+              <div className='p-5'>
+                <CombatantGrid combatants={orderedCombatants} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} />
+                <InitiativeRoundLogPanel log={selectedEncounter?.meta_data.initiative_log ?? []} />
+              </div>
+              {initiativeOpen && selectedEncounter && (
+                <InitiativeRollModal
+                  combatants={combatants}
+                  onConfirm={rollInitiative}
+                  onClose={() => setInitiativeOpen(false)}
+                />
+              )}
+              {creaturePickerOpen && (
+                <SelectCreatureModal
+                  busy={rosterSaving}
+                  onSelect={addCreature}
+                  onClose={() => setCreaturePickerOpen(false)}
+                />
+              )}
+              {resetOpen && (
+                <ConfirmDialog
+                  title='Reset encounter'
+                  message='This restores every combatant to full HP and clears temp HP, conditions, spell usage, initiative, and logs. Player characters will also be updated on their character records.'
+                  confirmLabel='Reset'
+                  onCancel={() => setResetOpen(false)}
+                  onConfirm={resetEncounterState}
+                />
+              )}
             </>
           )}
         </main>
-        {!viewingNotes && (
+        {!viewingNotes && !viewingSettings && (
           <>
             <ResizeRail onResize={(delta) => setDetailWidth((width) => clamp(width - delta, DETAIL_WIDTH_MIN, DETAIL_WIDTH_MAX))} />
-            <Inspector combatant={selected} width={detailWidth} activeTab={activeTab} onTab={setActiveTab} hasMatchingCampaignNote={Boolean(encounterNote)} status={selected ? statuses.data?.[selected._id] : undefined} statusLoading={statuses.isLoading} canManageSpells={canManageSpells} spellActions={spellActions} onChangeConditions={canManageSpells ? persistConditions : undefined} onSaveGmNotes={isGm && selected?.type === 'CREATURE' ? persistGmNotes : undefined} />
+            <Inspector combatant={selected} width={detailWidth} activeTab={activeTab} onTab={setActiveTab} hasMatchingCampaignNote={Boolean(encounterNote)} status={selected ? statuses.data?.[selected._id] : undefined} statusLoading={statuses.isLoading} canManageSpells={canManageSpells} spellActions={spellActions} onChangeConditions={canManageSpells ? persistConditions : undefined} onSaveGmNotes={isGm && selected?.type === 'CREATURE' ? persistGmNotes : undefined} onPersistHpCurrent={selected && canManageSpells ? (raw, note) => persistHpCurrent(selected, raw, note, statuses.data?.[selected._id]?.maxHp ?? statsFor(selected.data).maxHp) : undefined} onPersistTempHp={selected && canManageSpells ? (raw, note) => persistTempHp(selected, raw, note) : undefined} />
           </>
         )}
       </div>
@@ -385,7 +639,7 @@ type CombatantStatusMap = Record<string, Phase1CreatureStatus | null>;
 function useCombatantStatuses(encounterId: number | null, combatants: PopulatedCombatant[]) {
   const signature = combatants.map((combatant) => `${combatant._id}:${combatant.data.hp_current}:${combatant.data.hp_temp}:${JSON.stringify(combatant.data.details?.conditions ?? [])}`).join('|');
   return useQuery({
-    queryKey: ['phase1-encounter-statuses', encounterId, signature],
+    queryKey: ['phase1-encounter-statuses', 'isolated-store', encounterId, signature],
     enabled: encounterId !== null && combatants.length > 0,
     queryFn: async () => {
       const result: CombatantStatusMap = {};
@@ -402,14 +656,16 @@ function useCombatantStatuses(encounterId: number | null, combatants: PopulatedC
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
-function WorkspaceHeader({ label }: { label: string }) {
-  return <header className='flex h-14 shrink-0 items-center gap-4 border-b border-white/10 bg-[#0b0f11] px-5'><a href='/' className='font-semibold'>Wanderer's Guide</a><span className='h-4 w-px bg-white/15' /><span className='truncate text-sm text-[#8e999f]'>{label}</span><span className='ml-auto border border-[#d6a85f]/30 px-2 py-1 text-[10px] font-semibold uppercase text-[#d6a85f]'>Phase 1</span><button className='icon-button' title='Switch account' onClick={() => supabase.auth.signOut()}><LogOut size={15} /></button></header>;
+function WorkspaceHeader({ label, campaignId, encounterId, noteIndex, viewingSettings }: { label: string; campaignId?: number | null; encounterId?: number | null; noteIndex?: number | null; viewingSettings?: boolean }) {
+  return <header className='flex h-14 shrink-0 items-center gap-4 border-b border-white/10 bg-[#0b0f11] px-5'><a href='/' className='font-semibold'>Wanderer's Guide</a><span className='h-4 w-px bg-white/15' /><span className='truncate text-sm text-[#8e999f]'>{label}</span><div className='ml-auto flex items-center gap-2'><PhaseViewSwitch current='phase1' campaignId={campaignId} encounterId={encounterId} noteIndex={noteIndex} viewingSettings={viewingSettings} /><button className='icon-button' title='Switch account' onClick={() => supabase.auth.signOut()}><LogOut size={15} /></button></div></header>;
 }
 
-function CampaignRail({ campaign, encounters, players, selectedEncounter, notePages, selectedNoteIndex, isGm, rosterSaving, onRemovePlayer, onAddAllPlayers, onDeleteNote, onDeleteEncounter }: {
-  campaign: Campaign; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; isGm: boolean; rosterSaving: boolean; onRemovePlayer: (combatantId: string) => void; onAddAllPlayers: () => void; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void;
+function CampaignRail({ campaign, encounters, players, selectedEncounter, notePages, selectedNoteIndex, viewingSettings, isGm, rosterSaving, onRemovePlayer, onAddAllPlayers, onDeleteNote, onDeleteEncounter }: {
+  campaign: Campaign; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; rosterSaving: boolean; onRemovePlayer: (combatantId: string) => void; onAddAllPlayers: () => void; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void;
 }) {
   const [benchActive, setBenchActive] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(selectedNoteIndex != null);
+  const [encountersOpen, setEncountersOpen] = useState(selectedEncounter != null);
   const [menu, setMenu] = useState<RailContextTarget | null>(null);
   const [benchMenu, setBenchMenu] = useState<{ x: number; y: number } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<RailContextTarget | null>(null);
@@ -441,36 +697,54 @@ function CampaignRail({ campaign, encounters, players, selectedEncounter, notePa
         <Link to='/phase1' className='mb-5 flex items-center gap-2 text-xs text-[#879198] hover:text-white'><ArrowLeft size={14} /> Campaigns</Link>
         <Eyebrow>{isGm ? 'Game master' : 'Player'}</Eyebrow><h1 className='mt-2 text-lg font-semibold leading-tight'>{campaign.name}</h1>
       </div>
-      <RailLabel icon={<BookOpen size={14} />} label='Notes' count={notePages.length} />
-      <nav className='px-2 pb-4'>
-        {notePages.map(({ page, index }) => (
-          <Link
-            key={`${page.name}-${index}`}
-            to={`/phase1/campaign/${campaign.id}/notes/${index}`}
-            onContextMenu={(event) => openRailMenu(event, { kind: 'note', id: index, name: page.name })}
-            className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedNoteIndex === index ? 'border-[#d6a85f] bg-white/[0.045] text-white' : 'border-transparent text-[#89949a] hover:bg-white/[0.025] hover:text-white'}`}
-          >
-            <span className='block truncate'>{page.name}</span>
-            {isGm && <span className='mt-0.5 block text-[11px] text-[#667178]'>{page.shared ? 'Shared with party' : 'GM only'}</span>}
-          </Link>
-        ))}
-        {notePages.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-[#68747a]'>{isGm ? 'No campaign notes yet.' : 'No shared campaign notes.'}</p>}
-      </nav>
-      <RailLabel icon={<Swords size={14} />} label='Encounters' count={encounters.length} />
-      <nav className='px-2 pb-4'>
-        {encounters.map((encounter) => (
-          <Link
-            key={encounter.id}
-            to={`/phase1/campaign/${campaign.id}/encounters/${encounter.id}`}
-            onContextMenu={(event) => openRailMenu(event, { kind: 'encounter', id: encounter.id, name: encounter.name })}
-            className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedEncounter?.id === encounter.id ? 'border-[#d6a85f] bg-white/[0.045] text-white' : 'border-transparent text-[#89949a] hover:bg-white/[0.025] hover:text-white'}`}
-          >
-            <span className='block truncate'>{encounter.name}</span>
-            <span className='mt-0.5 block text-[11px] text-[#667178]'>{encounter.combatants.list.length} combatants</span>
-          </Link>
-        ))}
-        {encounters.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-[#68747a]'>No encounters are visible for this campaign.</p>}
-      </nav>
+      <RailLabel icon={<BookOpen size={14} />} label='Notes' count={notePages.length} open={notesOpen} onToggle={() => setNotesOpen((value) => !value)} />
+      {notesOpen && (
+        <nav className='px-2 pb-4'>
+          {notePages.map(({ page, index }) => (
+            <Link
+              key={`${page.name}-${index}`}
+              to={`/phase1/campaign/${campaign.id}/notes/${index}`}
+              onContextMenu={(event) => openRailMenu(event, { kind: 'note', id: index, name: page.name })}
+              className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedNoteIndex === index ? 'border-[#d6a85f] bg-white/[0.045] text-white' : 'border-transparent text-[#89949a] hover:bg-white/[0.025] hover:text-white'}`}
+            >
+              <span className='block truncate'>{page.name}</span>
+              {isGm && <span className='mt-0.5 block text-[11px] text-[#667178]'>{page.shared ? 'Shared with party' : 'GM only'}</span>}
+            </Link>
+          ))}
+          {notePages.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-[#68747a]'>{isGm ? 'No campaign notes yet.' : 'No shared campaign notes.'}</p>}
+        </nav>
+      )}
+      <RailLabel icon={<Swords size={14} />} label='Encounters' count={encounters.length} open={encountersOpen} onToggle={() => setEncountersOpen((value) => !value)} />
+      {encountersOpen && (
+        <nav className='px-2 pb-4'>
+          {encounters.map((encounter) => (
+            <Link
+              key={encounter.id}
+              to={`/phase1/campaign/${campaign.id}/encounters/${encounter.id}`}
+              onContextMenu={(event) => openRailMenu(event, { kind: 'encounter', id: encounter.id, name: encounter.name })}
+              className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedEncounter?.id === encounter.id ? 'border-[#d6a85f] bg-white/[0.045] text-white' : 'border-transparent text-[#89949a] hover:bg-white/[0.025] hover:text-white'}`}
+            >
+              <span className='block truncate'>{encounter.name}</span>
+              <span className='mt-0.5 block text-[11px] text-[#667178]'>{encounter.combatants.list.length} combatants</span>
+            </Link>
+          ))}
+          {encounters.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-[#68747a]'>No encounters are visible for this campaign.</p>}
+        </nav>
+      )}
+      {isGm && (
+        <>
+          <RailLabel icon={<Settings size={14} />} label='Settings' />
+          <nav className='px-2 pb-4'>
+            <Link
+              to={`/phase1/campaign/${campaign.id}/settings`}
+              className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${viewingSettings ? 'border-[#d6a85f] bg-white/[0.045] text-white' : 'border-transparent text-[#89949a] hover:bg-white/[0.025] hover:text-white'}`}
+            >
+              <span className='block truncate'>Campaign settings</span>
+              <span className='mt-0.5 block text-[11px] text-[#667178]'>Player defaults and game config</span>
+            </Link>
+          </nav>
+        </>
+      )}
       <RailLabel icon={<UsersRound size={14} />} label='Party bench' count={players.length} onContextMenu={openBenchMenu} />
       <div className={`mx-2 min-h-16 border px-1 pb-4 pt-1 transition-colors ${benchActive ? 'border-[#d6a85f] bg-[#d6a85f]/[0.07]' : 'border-transparent'}`} onContextMenu={openBenchMenu} onDragOver={(event) => { if (canManageRoster && hasPlayerDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setBenchActive(true); } }} onDragLeave={() => setBenchActive(false)} onDrop={dropOnBench}>
         {players.map((player) => <a key={player.id} href={`${OLD_UI_ORIGIN}/sheet/${player.id}`} target='_blank' rel='noreferrer' draggable={canManageRoster} onDragStart={(event) => writePlayerDrag(event, { source: 'bench', characterId: player.id })} onDragEnd={() => setBenchActive(false)} className='flex items-center gap-2 px-2 py-2 text-sm text-[#89949a] hover:bg-white/[0.025] hover:text-white'>{canManageRoster && <GripVertical size={14} className='shrink-0 cursor-grab text-[#59656b]' />}<UserRound size={15} /><span className='min-w-0 flex-1 truncate'>{player.name}</span><ExternalLink size={12} /></a>)}
@@ -503,6 +777,7 @@ function CampaignRail({ campaign, encounters, players, selectedEncounter, notePa
         <ConfirmDialog
           title={pendingDelete.kind === 'note' ? 'Delete note' : 'Delete encounter'}
           message={`Are you sure you want to delete "${pendingDelete.name}"?`}
+          confirmLabel='Delete'
           onCancel={() => setPendingDelete(null)}
           onConfirm={() => {
             if (pendingDelete.kind === 'note') onDeleteNote(pendingDelete.id);
@@ -514,8 +789,19 @@ function CampaignRail({ campaign, encounters, players, selectedEncounter, notePa
     </aside>
   );
 }
-function RailLabel({ icon, label, count, onContextMenu }: { icon: ReactNode; label: string; count: number; onContextMenu?: (event: ReactMouseEvent) => void }) {
-  return <div className='flex items-center gap-2 px-5 pb-2 pt-5 text-[10px] font-semibold uppercase text-[#68747a]' onContextMenu={onContextMenu}>{icon}{label}<span className='ml-auto'>{count}</span></div>;
+function RailLabel({ icon, label, count, open, onToggle, onContextMenu }: { icon: ReactNode; label: string; count?: number; open?: boolean; onToggle?: () => void; onContextMenu?: (event: ReactMouseEvent) => void }) {
+  const className = `flex w-full items-center gap-2 px-5 pb-2 pt-5 text-[10px] font-semibold uppercase text-[#68747a] ${onToggle ? 'hover:text-[#a5aeb2]' : ''}`;
+  const content = (
+    <>
+      {icon}{label}
+      {count != null && <span className='ml-auto'>{count}</span>}
+      {onToggle && (open ? <ChevronDown size={12} /> : <ChevronRight size={12} />)}
+    </>
+  );
+  if (onToggle) {
+    return <button type='button' className={className} aria-expanded={open} onClick={onToggle} onContextMenu={onContextMenu}>{content}</button>;
+  }
+  return <div className={className} onContextMenu={onContextMenu}>{content}</div>;
 }
 
 type RailContextTarget = { kind: 'note' | 'encounter'; id: number; name: string; x: number; y: number };
@@ -615,29 +901,6 @@ function RailContextMenu({ x, y, onClose, onDelete }: { x: number; y: number; on
   );
 }
 
-function ConfirmDialog({ title, message, onCancel, onConfirm }: { title: string; message: string; onCancel: () => void; onConfirm: () => void }) {
-  useEffect(() => {
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') onCancel();
-    }
-    document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [onCancel]);
-  return createPortal(
-    <div className='fixed inset-0 z-[120] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]' role='presentation' onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel(); }}>
-      <section role='dialog' aria-modal='true' aria-labelledby='confirm-title' className='w-full max-w-sm border border-white/15 bg-[#11171a] p-5 shadow-2xl'>
-        <h2 id='confirm-title' className='text-lg font-semibold'>{title}</h2>
-        <p className='mt-2 text-sm leading-6 text-[#aeb7bc]'>{message}</p>
-        <div className='mt-5 flex justify-end gap-2'>
-          <button type='button' className='toolbar-button' onClick={onCancel}>Cancel</button>
-          <button type='button' className='toolbar-button border-[#a95249]/50 text-[#efaaa3]' onClick={onConfirm}>Delete</button>
-        </div>
-      </section>
-    </div>,
-    document.body
-  );
-}
-
 const PLAYER_DRAG_TYPE = 'application/x-wanderers-guide-player';
 type PlayerDragPayload = { source: 'bench' | 'encounter'; characterId: number; combatantId?: string };
 
@@ -655,59 +918,25 @@ function readPlayerDrag(event: ReactDragEvent): PlayerDragPayload | null {
 }function hasPlayerDrag(event: ReactDragEvent) {
   return Array.from(event.dataTransfer.types).includes(PLAYER_DRAG_TYPE);
 }
-function EncounterHeader({ encounter, count, isGm, joinKey, noteLink }: { encounter: Encounter | null; count: number; isGm: boolean; joinKey?: string; noteLink?: { href: string; name: string } }) {
-  const [joinKeyVisible, setJoinKeyVisible] = useState(false);
-  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
-
-  useEffect(() => {
-    setJoinKeyVisible(false);
-    setCopyState('idle');
-  }, [encounter?.id]);
-
-  useEffect(() => {
-    if (copyState !== 'copied') return;
-    const timeout = window.setTimeout(() => setCopyState('idle'), 2500);
-    return () => window.clearTimeout(timeout);
-  }, [copyState]);
-
-  async function revealAndCopyJoinKey() {
-    if (!joinKey) return;
-    setJoinKeyVisible(true);
-    setCopyState((await copyToClipboard(joinKey)) ? 'copied' : 'failed');
-  }
-
+function EncounterHeader({ encounter, count, isGm, noteLink, canAddCreature, onAddCreature, canRollInitiative, onRollInitiative, canClearInitiative, onClearInitiative, canReset, onReset }: { encounter: Encounter | null; count: number; isGm: boolean; noteLink?: { href: string; name: string }; canAddCreature?: boolean; onAddCreature?: () => void; canRollInitiative?: boolean; onRollInitiative?: () => void; canClearInitiative?: boolean; onClearInitiative?: () => void; canReset?: boolean; onReset?: () => void }) {
   return (
     <div className='sticky top-0 z-10 border-b border-white/10 bg-[#11171a]/95 px-5 py-4 backdrop-blur'>
       <div className='flex items-center gap-5'>
         <div className='min-w-0 flex-1'><Eyebrow>{isGm ? 'GM encounter' : 'Assigned encounter'}</Eyebrow><h2 className='mt-1 truncate text-xl font-semibold'>{encounter?.name ?? 'No encounter selected'}</h2><p className='mt-1 truncate text-xs text-[#778289]'>{encounter?.meta_data.description || `${count} combatants`}</p>{noteLink && <Link to={noteLink.href} className='mt-1 block truncate text-xs text-[#d6a85f] hover:underline'>See campaign Notes page: {noteLink.name}</Link>}</div>
-        {isGm && <button className='toolbar-button' disabled={!joinKey} title={joinKey ? 'Reveal and copy campaign join key' : 'No join key is available'} onClick={revealAndCopyJoinKey}>{copyState === 'copied' ? <Check size={15} /> : joinKeyVisible ? <ClipboardCopy size={15} /> : <KeyRound size={15} />}<span className={joinKeyVisible ? 'font-mono' : ''}>{joinKeyVisible ? joinKey : 'Reveal join key'}</span>{copyState === 'copied' && <span className='text-emerald-300'>Copied</span>}{copyState === 'failed' && <span className='text-red-300'>Copy failed</span>}</button>}
-        <button className='toolbar-button' disabled title='Available after read-only parity'><Swords size={15} /> Roll initiative</button>
+        {isGm && <button className='toolbar-button' disabled={!canAddCreature} title={canAddCreature ? 'Add a creature from the catalog' : 'Wait for the roster to finish saving'} onClick={onAddCreature}><Swords size={15} /> Add creature</button>}
+        <button className='toolbar-button' disabled={!canRollInitiative} title={!isGm ? 'GM only' : count === 0 ? 'Add combatants first' : 'Roll initiative'} onClick={onRollInitiative}><GiDiceTwentyFacesTwenty size={15} /> Roll initiative</button>
+        <button className='toolbar-button' disabled={!canClearInitiative} title={!isGm ? 'GM only' : canClearInitiative ? 'Clear initiative and restore roster order' : 'No initiative to clear'} onClick={onClearInitiative}><Eraser size={15} /> Clear init</button>
+        <button className='toolbar-button' disabled={!canReset} title={!isGm ? 'GM only' : canReset ? 'Reset HP, temp HP, conditions, spells, initiative, and logs' : 'Wait for the roster to finish saving'} onClick={onReset}><RotateCcw size={15} /> Reset</button>
         <button className='toolbar-button' disabled title='Available after read-only parity'><Shield size={15} /> Group check</button>
       </div>
     </div>
   );
 }
 
-async function copyToClipboard(value: string) {
-  try {
-    await navigator.clipboard.writeText(value);
-    return true;
-  } catch {
-    const input = document.createElement('textarea');
-    input.value = value;
-    input.style.position = 'fixed';
-    input.style.opacity = '0';
-    document.body.appendChild(input);
-    input.select();
-    const copied = document.execCommand('copy');
-    input.remove();
-    return copied;
-  }
-}
-
-function CombatantGrid({ combatants, selectedId, onSelect, statuses, calculating, canManageRoster, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature }: { combatants: PopulatedCombatant[]; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void }) {
+function CombatantGrid({ combatants, selectedId, onSelect, statuses, calculating, canManageRoster, canManageCombatant, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature, onUpdateInitiative, onUpdateHp }: { combatants: PopulatedCombatant[]; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; canManageCombatant: (combatant: PopulatedCombatant) => boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void; onUpdateInitiative: (combatantId: string, initiative: number) => void; onUpdateHp: (combatantId: string, raw: string, note: string | null) => void }) {
   const [encounterActive, setEncounterActive] = useState(false);
   const [menu, setMenu] = useState<{ id: string; type: Combatant['type']; x: number; y: number } | null>(null);
+  const [hpEditor, setHpEditor] = useState<{ combatantId: string; name: string; currentHp: number; maxHp: number; rect: DOMRect } | null>(null);
   function dropOnEncounter(event: ReactDragEvent<HTMLDivElement>) {
     const payload = readPlayerDrag(event);
     setEncounterActive(false);
@@ -728,11 +957,27 @@ function CombatantGrid({ combatants, selectedId, onSelect, statuses, calculating
             const draggable = canManageRoster && combatant.type === 'CHARACTER' && typeof combatant.character === 'number';
             return (
               <tr key={combatant._id} draggable={draggable} onDragStart={(event) => { if (draggable && typeof combatant.character === 'number') writePlayerDrag(event, { source: 'encounter', characterId: combatant.character, combatantId: combatant._id }); }} onDragEnd={() => setEncounterActive(false)} onContextMenu={(event) => { if (!canManageRoster || (combatant.type !== 'CREATURE' && combatant.type !== 'CHARACTER')) return; event.preventDefault(); setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY }); }} className={`border-b border-white/[0.07] last:border-0 ${draggable ? 'cursor-grab' : ''} ${combatant._id === selectedId ? 'bg-[#d6a85f]/[0.07]' : 'hover:bg-white/[0.025]'}`}>
-                <td className='px-3 py-3'><input className='h-9 w-14 border border-white/10 bg-[#11181b] px-2 text-center text-[#bdc5c9]' type='number' value={combatant.initiative ?? ''} readOnly disabled aria-label={`${combatant.data.name} initiative`} /></td>
+                <td className='px-3 py-3'><InitiativeCell key={`${combatant._id}:${combatant.initiative ?? ''}:${combatant.initiative_roll?.die ?? ''}`} combatant={combatant} canEdit={canManageRoster} onUpdate={(initiative) => onUpdateInitiative(combatant._id, initiative)} /></td>
                 <td className='px-3 py-3'><button className='flex w-full items-center gap-3 text-left' onClick={() => openCombatant(combatant, onSelect)}>{draggable && <GripVertical size={14} className='shrink-0 text-[#59656b]' />}<EntityIcon type={combatant.type} /><span className='min-w-0'><span className='block truncate font-semibold'>{combatant.data.name}</span><span className='block text-xs text-[#68747a]'>Level {combatant.data.level} | {combatant.ally ? 'Ally' : 'Enemy'}</span></span></button></td>
                 <td className='px-3 py-3'><CombatantConditionPills conditions={detailsVisible ? compiledConditions(combatant.data.details?.conditions ?? []) : []} onOpen={() => openCombatant(combatant, onSelect)} /></td>
                 <td className='px-3 py-3 text-xs text-[#89949a]'>{!detailsVisible ? <span className='text-[#59656b]'>Not revealed</span> : stats ? <>{stats.ac} AC <span className='px-1 text-[#455057]'>|</span> Fort {signed(stats.fortitude)}, Ref {signed(stats.reflex)}, Will {signed(stats.will)}</> : calculating ? <span className='text-[#68747a]'>Calculating...</span> : <span className='text-[#a87a70]'>Unavailable</span>}</td>
-                <td className='px-3 py-3'><span className='inline-flex h-9 min-w-24 items-center justify-center border border-white/10 bg-[#11181b]'>{!detailsVisible ? <span className='text-[#59656b]'>Hidden</span> : stats ? <>{combatant.data.hp_current}<span className='px-2 text-[#59656b]'>/</span>{stats.maxHp}</> : calculating ? <span className='text-[#68747a]'>...</span> : <>{combatant.data.hp_current}<span className='px-2 text-[#59656b]'>/</span>-</>}</span></td>
+                <td className='px-3 py-3'>
+                  {!detailsVisible ? (
+                    <span className='inline-flex h-9 min-w-24 items-center justify-center border border-white/10 bg-[#11181b] text-[#59656b]'>Hidden</span>
+                  ) : (
+                    <GridHpCell
+                      combatant={combatant}
+                      maxHp={stats?.maxHp ?? null}
+                      calculating={calculating}
+                      canEdit={canManageCombatant(combatant)}
+                      onEdit={(rect) => {
+                        const currentHp = combatant.data.hp_current ?? stats?.maxHp ?? 0;
+                        const resolvedMaxHp = stats?.maxHp ?? currentHp;
+                        setHpEditor({ combatantId: combatant._id, name: combatant.data.name, currentHp, maxHp: resolvedMaxHp, rect });
+                      }}
+                    />
+                  )}
+                </td>
                 <td className='px-3 text-center'><button className='icon-button mx-auto' title={`Open ${combatant.data.name}`} onClick={() => openCombatant(combatant, onSelect)}><PanelRight size={16} /></button></td>
               </tr>
             );
@@ -757,9 +1002,168 @@ function CombatantGrid({ combatants, selectedId, onSelect, statuses, calculating
           onRemove={() => { setMenu(null); onRemovePlayer(menu.id); }}
         />
       )}
+      {hpEditor && (
+        <GridHpEditPopover
+          combatantName={hpEditor.name}
+          currentHp={hpEditor.currentHp}
+          maxHp={hpEditor.maxHp}
+          anchorRect={hpEditor.rect}
+          onCommit={(raw, note) => onUpdateHp(hpEditor.combatantId, raw, note)}
+          onClose={() => setHpEditor(null)}
+        />
+      )}
     </div>
   );
 }
+
+function GridHpCell({ combatant, maxHp, calculating, canEdit, onEdit }: { combatant: PopulatedCombatant; maxHp: number | null; calculating: boolean; canEdit: boolean; onEdit: (rect: DOMRect) => void }) {
+  const content = maxHp != null ? (
+    <>
+      {combatant.data.hp_current ?? maxHp}
+      <span className='px-2 text-[#59656b]'>/</span>
+      {maxHp}
+    </>
+  ) : calculating ? (
+    <span className='text-[#68747a]'>...</span>
+  ) : (
+    <>
+      {combatant.data.hp_current ?? '-'}
+      <span className='px-2 text-[#59656b]'>/</span>
+      -
+    </>
+  );
+
+  if (!canEdit) {
+    return <span className='inline-flex h-9 min-w-24 items-center justify-center border border-white/10 bg-[#11181b]'>{content}</span>;
+  }
+
+  return (
+    <button
+      type='button'
+      className='inline-flex h-9 min-w-24 items-center justify-center border border-white/10 bg-[#11181b] hover:border-[#d6a85f]/40 hover:bg-white/[0.03]'
+      onClick={(event) => onEdit(event.currentTarget.getBoundingClientRect())}
+      title={`Edit ${combatant.data.name} hit points`}
+    >
+      {content}
+    </button>
+  );
+}
+
+function InitiativeCell({ combatant, canEdit, onUpdate }: { combatant: PopulatedCombatant; canEdit: boolean; onUpdate: (initiative: number) => void }) {
+  const [value, setValue] = useState(combatant.initiative ?? '');
+  const [tip, setTip] = useState<{ left: number; top: number } | null>(null);
+  const breakdown = combatant.initiative_roll && combatant.initiative !== undefined
+    ? formatInitiativeRoll(combatant.initiative_roll, combatant.initiative)
+    : undefined;
+  useEffect(() => {
+    setValue(combatant.initiative ?? '');
+  }, [combatant.initiative, combatant.initiative_roll?.die, combatant.initiative_roll?.bonus]);
+
+  function commit() {
+    if (!canEdit) return;
+    const parsed = typeof value === 'number' ? value : Number.parseInt(String(value), 10);
+    if (!Number.isFinite(parsed) || parsed === combatant.initiative) return;
+    onUpdate(parsed);
+  }
+
+  return (
+    <div
+      className='relative'
+      onMouseEnter={(event) => {
+        if (!breakdown) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        setTip({ left: rect.left, top: rect.top });
+      }}
+      onMouseLeave={() => setTip(null)}
+    >
+      <input
+        className='h-9 w-14 border border-white/10 bg-[#11181b] px-2 text-center text-[#bdc5c9] disabled:opacity-100'
+        type='number'
+        value={value}
+        readOnly={!canEdit}
+        disabled={!canEdit}
+        aria-label={`${combatant.data.name} initiative`}
+        title={breakdown}
+        onChange={(event) => setValue(event.target.value === '' ? '' : Number(event.target.value))}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
+        }}
+      />
+      {tip && breakdown && createPortal(
+        <div
+          role='tooltip'
+          className='pointer-events-none fixed z-[200] whitespace-nowrap border border-white/15 bg-[#171d20] px-2.5 py-1.5 text-[11px] text-[#dce1e3] shadow-xl'
+          style={{ left: tip.left, top: tip.top - 8, transform: 'translateY(-100%)' }}
+        >
+          {breakdown}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+function sortRoundLogEntries(entries: InitiativeRoundLog['entries']) {
+  return [...entries].sort((a, b) => {
+    if (a.initiative == null && b.initiative == null) return a.name.localeCompare(b.name);
+    if (a.initiative == null) return 1;
+    if (b.initiative == null) return -1;
+    if (a.initiative === b.initiative) return a.name.localeCompare(b.name);
+    return b.initiative - a.initiative;
+  });
+}
+
+function InitiativeRoundLogPanel({ log }: { log: InitiativeRoundLog[] }) {
+  const [open, setOpen] = useState(true);
+  if (log.length === 0) {
+    return <p className='mt-5 text-center text-xs text-[#68747a]'>No rounds logged yet.</p>;
+  }
+  const rounds = [...log].reverse();
+  return (
+    <section className='mt-5 border border-white/10 bg-[#0e1316]'>
+      <button
+        type='button'
+        className='flex w-full items-center gap-2 border-b border-white/10 px-4 py-3 text-left hover:bg-white/[0.025]'
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+      >
+        <History size={15} className='text-[#89949a]' />
+        <span className='text-sm font-semibold'>Round log</span>
+        <span className='text-xs text-[#68747a]'>{log.length} round{log.length === 1 ? '' : 's'}</span>
+        <ChevronDown size={14} className={`ml-auto text-[#68747a] transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && rounds.map((round) => (
+        <div key={round.round} className='border-b border-white/[0.07] px-4 py-3 last:border-0'>
+          <h3 className='mb-2 text-[10px] font-semibold uppercase tracking-wide text-[#d6a85f]'>Round {round.round}</h3>
+          <div className='overflow-x-auto'>
+            <table className='w-full min-w-[640px] border-collapse text-xs'>
+              <thead className='text-[10px] uppercase text-[#68747a]'>
+                <tr className='border-b border-white/10'>
+                  <th className='px-2 py-2 text-left font-semibold'>Combatant</th>
+                  <th className='w-24 px-2 py-2 text-left font-semibold'>Side</th>
+                  <th className='w-16 px-2 py-2 text-left font-semibold'>Init</th>
+                  <th className='px-2 py-2 text-left font-semibold'>Calculation</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortRoundLogEntries(round.entries).map((entry) => (
+                  <tr key={`${round.round}-${entry.name}`} className='border-b border-white/[0.05] last:border-0'>
+                    <td className='px-2 py-2 font-medium text-[#e7ebed]'>{entry.name}</td>
+                    <td className='px-2 py-2 text-[#89949a]'>{entry.ally ? 'Ally' : 'Enemy'}</td>
+                    <td className='px-2 py-2 text-[#bdc5c9]'>{entry.initiative ?? ''}</td>
+                    <td className='px-2 py-2 text-[#89949a]'>{entry.calculation}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function openCombatant(combatant: PopulatedCombatant, onSelect: (id: string) => void) {
   if (combatant.access?.details_revealed === false) return;
   onSelect(combatant._id);
@@ -803,8 +1207,8 @@ function CombatantConditionPills({ conditions, onOpen }: { conditions: Condition
   );
 }
 
-function Inspector({ combatant, width, activeTab, onTab, hasMatchingCampaignNote, status, statusLoading, canManageSpells, spellActions, onChangeConditions, onSaveGmNotes }: {
-  combatant: PopulatedCombatant | null; width: number; activeTab: DetailTab; onTab: (tab: DetailTab) => void; hasMatchingCampaignNote?: boolean; status?: Phase1CreatureStatus | null; statusLoading: boolean; canManageSpells: boolean; spellActions?: Phase1SpellActions; onChangeConditions?: (conditions: Condition[]) => void; onSaveGmNotes?: (text: string) => void;
+function Inspector({ combatant, width, activeTab, onTab, hasMatchingCampaignNote, status, statusLoading, canManageSpells, spellActions, onChangeConditions, onSaveGmNotes, onPersistHpCurrent, onPersistTempHp }: {
+  combatant: PopulatedCombatant | null; width: number; activeTab: DetailTab; onTab: (tab: DetailTab) => void; hasMatchingCampaignNote?: boolean; status?: Phase1CreatureStatus | null; statusLoading: boolean; canManageSpells: boolean; spellActions?: Phase1SpellActions; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onSaveGmNotes?: (text: string) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void;
 }) {
   return (
     <aside className='min-h-0 overflow-hidden bg-[#0c1113]' style={{ width }}>
@@ -816,26 +1220,27 @@ function Inspector({ combatant, width, activeTab, onTab, hasMatchingCampaignNote
           <div className='grid grid-cols-4 border-b border-white/10 bg-[#0a0e10]'>
             {DETAIL_TABS.map((tab) => <button key={tab} className={`border-b-2 px-2 py-2.5 text-[11px] ${activeTab === tab ? 'border-[#d6a85f] text-[#f0d29d]' : 'border-transparent text-[#748087] hover:text-white'}`} onClick={() => onTab(tab)}>{tab}</button>)}
           </div>
-          <div className='min-h-0 flex-1 overflow-y-auto p-4'><InspectorContent combatant={combatant} tab={activeTab} hasMatchingCampaignNote={hasMatchingCampaignNote} status={status} statusLoading={statusLoading} spellActions={spellActions} onChangeConditions={onChangeConditions} onSaveGmNotes={onSaveGmNotes} /></div>
+          <div className='min-h-0 flex-1 overflow-y-auto p-4'><InspectorContent combatant={combatant} tab={activeTab} hasMatchingCampaignNote={hasMatchingCampaignNote} status={status} statusLoading={statusLoading} spellActions={spellActions} onChangeConditions={onChangeConditions} onSaveGmNotes={onSaveGmNotes} onPersistHpCurrent={onPersistHpCurrent} onPersistTempHp={onPersistTempHp} /></div>
+          <CombatantChangeLogFooter entries={combatant.change_log ?? []} />
         </div>
       )}
     </aside>
   );
 }
 
-function InspectorContent({ combatant, tab, hasMatchingCampaignNote, status, statusLoading, spellActions, onChangeConditions, onSaveGmNotes }: { combatant: PopulatedCombatant; tab: DetailTab; hasMatchingCampaignNote?: boolean; status?: Phase1CreatureStatus | null; statusLoading: boolean; spellActions?: Phase1SpellActions; onChangeConditions?: (conditions: Condition[]) => void; onSaveGmNotes?: (text: string) => void }) {
+function InspectorContent({ combatant, tab, hasMatchingCampaignNote, status, statusLoading, spellActions, onChangeConditions, onSaveGmNotes, onPersistHpCurrent, onPersistTempHp }: { combatant: PopulatedCombatant; tab: DetailTab; hasMatchingCampaignNote?: boolean; status?: Phase1CreatureStatus | null; statusLoading: boolean; spellActions?: Phase1SpellActions; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onSaveGmNotes?: (text: string) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void }) {
   const entity = combatant.data;
-  if (tab === 'Health') return <HealthStatusPanel combatant={combatant} calculatedStatus={status} calculating={statusLoading} onChangeConditions={onChangeConditions} />;
+  if (tab === 'Health') return <HealthStatusPanel combatant={combatant} calculatedStatus={status} calculating={statusLoading} onChangeConditions={onChangeConditions} onPersistHpCurrent={onPersistHpCurrent} onPersistTempHp={onPersistTempHp} />;
   if (tab === 'Abilities') return <AbilitiesPanel combatant={combatant} />;
   if (tab === 'Skills') return <SkillsActionsPanel combatant={combatant} />;
   if (tab === 'Spells') return <SpellsPanel combatant={combatant} spellActions={spellActions} />;
   if (tab === 'Inventory') return <InventoryPanel combatant={combatant} />;
   if (tab === 'GM Notes') {
     if (hasMatchingCampaignNote && !onSaveGmNotes) return <p className='border border-white/10 bg-[#11171a] p-4 text-sm leading-5 text-[#c4cbce]'>see campaign note of same name</p>;
-    return <EntityNotesPanel notes={entity.notes} onSave={onSaveGmNotes} />;
+    return <EntityNotesPanel key={combatant._id} notes={entity.notes} onSave={onSaveGmNotes} />;
   }
   if (tab === 'Source') return <SourceImportNotesPanel notes={entity.notes} />;
-  return <DetailsDescriptionPanel entity={entity} />;
+  return <DetailsPanel combatant={combatant} />;
 }
 
 function SkillsActionsPanel({ combatant }: { combatant: PopulatedCombatant }) {
@@ -848,7 +1253,7 @@ function SkillsActionsPanel({ combatant }: { combatant: PopulatedCombatant }) {
   const [selected, setSelected] = useState<Phase1Ability | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<Phase1Skill | null>(null);
   const data = useQuery({
-    queryKey: ['phase1-entity-skills-actions', combatant.type, combatant._id],
+    queryKey: ['phase1-entity-skills-actions', 'isolated-store', combatant.type, combatant._id],
     enabled: detailsAvailable && combatant.access?.details_revealed !== false,
     queryFn: () => loadEntitySkillsActions(combatant as Phase1EntityCombatant),
     staleTime: Number.POSITIVE_INFINITY,
@@ -989,7 +1394,7 @@ function AbilitiesPanel({ combatant }: { combatant: PopulatedCombatant }) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Phase1Ability | null>(null);
   const abilities = useQuery({
-    queryKey: ['phase1-entity-abilities', combatant.type, combatant._id],
+    queryKey: ['phase1-entity-abilities', 'isolated-store', combatant.type, combatant._id],
     enabled: detailsAvailable && combatant.access?.details_revealed !== false,
     queryFn: () => loadEntityAbilities(combatant as Phase1EntityCombatant),
     staleTime: Number.POSITIVE_INFINITY,
@@ -1008,11 +1413,11 @@ function AbilitiesPanel({ combatant }: { combatant: PopulatedCombatant }) {
     {abilities.isLoading && <EmptyState>Loading abilities...</EmptyState>}
     {abilities.isError && <ErrorState error={abilities.error} />}
     {!abilities.isLoading && !visible.length && <EmptyState>No abilities found.</EmptyState>}
-    {(['Base', 'Added', 'Character'] as const).map((source) => {
+    {(['Weapon', 'Base', 'Added', 'Character'] as const).map((source) => {
       const group = visible.filter((ability) => ability.source === source);
       if (!group.length) return null;
       return <section key={source} className='mb-2.5 border border-white/10 bg-[#11171a]'>
-        <h3 className='border-b border-white/10 px-3 py-2 text-xs font-semibold'>{source === 'Character' ? 'Character Abilities' : source + ' Abilities'}</h3>
+        <h3 className='border-b border-white/10 px-3 py-2 text-xs font-semibold'>{abilityGroupLabel(source)}</h3>
         <div className='divide-y divide-white/[0.07]'>
           {group.map((ability, index) => <AbilityRow key={`${ability.id}-${index}`} ability={ability} onOpen={setSelected} />)}
         </div>
@@ -1089,7 +1494,7 @@ function InventoryPanel({ combatant }: { combatant: PopulatedCombatant }) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Phase1InvItem | null>(null);
   const data = useQuery({
-    queryKey: ['phase1-entity-inventory', combatant.type, combatant._id, JSON.stringify(combatant.data.inventory ?? null)],
+    queryKey: ['phase1-entity-inventory', 'isolated-store', combatant.type, combatant._id, JSON.stringify(combatant.data.inventory ?? null)],
     enabled: detailsAvailable && combatant.access?.details_revealed !== false,
     queryFn: () => loadEntityInventory(combatant as Phase1EntityCombatant),
     staleTime: Number.POSITIVE_INFINITY,
@@ -1280,41 +1685,87 @@ function plainText(value: string) {
     .trim();
 }
 function classifyAbility(ability: Phase1Ability) {
+  if (ability.source === 'Weapon') {
+    const text = `${ability.name} ${ability.description}`.toLowerCase();
+    if (/\branged\b/.test(text)) return { type: 'ranged' as const, label: 'Ranged Strike' };
+    return { type: 'melee' as const, label: 'Melee Strike' };
+  }
   const text = `${ability.name} ${ability.description} ${ability.requirements ?? ''}`.toLowerCase();
   if (/\branged\b/.test(text)) return { type: 'ranged' as const, label: 'Ranged ability' };
   if (/\bmelee\b/.test(text)) return { type: 'melee' as const, label: 'Melee ability' };
   return { type: 'feature' as const, label: 'General ability' };
 }
-function HealthStatusPanel({ combatant, calculatedStatus, calculating, onChangeConditions }: { combatant: PopulatedCombatant; calculatedStatus?: Phase1CreatureStatus | null; calculating: boolean; onChangeConditions?: (conditions: Condition[]) => void }) {
+function abilityGroupLabel(source: Phase1Ability['source']) {
+  if (source === 'Weapon') return 'Weapon Attacks';
+  if (source === 'Character') return 'Character Abilities';
+  return `${source} Abilities`;
+}
+function HealthStatusPanel({ combatant, calculatedStatus, calculating, onChangeConditions, onPersistHpCurrent, onPersistTempHp }: { combatant: PopulatedCombatant; calculatedStatus?: Phase1CreatureStatus | null; calculating: boolean; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void }) {
   const entity = combatant.data;
   const status = calculatedStatus ?? fallbackStatus(entity);  const resistanceSummary = status.resistances.length + status.weaknesses.length + status.immunities.length;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [viewing, setViewing] = useState<Condition | null>(null);
+  const [openStat, setOpenStat] = useState<Phase1StatKey | null>(null);
+  const [shieldItem, setShieldItem] = useState<Phase1InvItem | null>(null);
   const rawConditions = entity.details?.conditions ?? [];
   const conditions = compiledConditions(rawConditions);
   const canManage = Boolean(onChangeConditions);
+  const canEditHp = Boolean(onPersistHpCurrent);
+  const canEditTempHp = Boolean(onPersistTempHp);
+  const canOpenStats = hasFullEntityDetails(combatant) && combatant.access?.details_revealed !== false;
+  const openStatDetail = canOpenStats ? setOpenStat : undefined;
+  const shield = getBestShield('CHARACTER', entity.inventory ?? undefined);
+  const shieldHealth = shield ? getItemHealth(shield.item) : null;
+  const currentHp = entity.hp_current ?? status.maxHp;
 
   return (
     <div className='space-y-2.5'>
       <div className='grid grid-cols-[minmax(0,1fr)_86px] gap-2.5'>
         <section className='border border-white/10 bg-[#11171a]'>
           <div className='grid grid-cols-2 px-3 py-3 text-center'>
-            <Metric label='Hit points' value={<><span className='text-[#5bd6a2]'>{entity.hp_current}</span><span className='mx-1.5 text-[#59656b]'>/</span>{status.maxHp}</>} />
-            <Metric label='Temp. HP' value={entity.hp_temp || '-'} />
+            {canEditHp ? (
+              <EditableValueWithNote
+                label='Hit points'
+                displayValue={<><span className='text-[#5bd6a2]'>{currentHp}</span><span className='mx-1.5 text-[#59656b]'>/</span>{status.maxHp}</>}
+                editValue={String(currentHp)}
+                canEdit
+                accentClass='text-[#5bd6a2]'
+                onCommit={(raw, note) => onPersistHpCurrent?.(raw, note)}
+              />
+            ) : (
+              <MetricButton disabled={!openStatDetail} onClick={() => openStatDetail?.('hp')} label='Hit points' value={<><span className='text-[#5bd6a2]'>{currentHp}</span><span className='mx-1.5 text-[#59656b]'>/</span>{status.maxHp}</>} />
+            )}
+            {canEditTempHp ? (
+              <EditableValueWithNote
+                label='Temp. HP'
+                displayValue={entity.hp_temp || '-'}
+                editValue={entity.hp_temp ? String(entity.hp_temp) : ''}
+                canEdit
+                accentClass={entity.hp_temp ? 'text-[#7eb6ff]' : 'text-[#59656b]'}
+                onCommit={(raw, note) => onPersistTempHp?.(raw, note)}
+              />
+            ) : (
+              <Metric label='Temp. HP' value={entity.hp_temp || '-'} />
+            )}
           </div>
-          <div className='border-t border-white/[0.07] px-3 py-2 text-center text-[10px] text-[#7d898f]'>
+          <button
+            type='button'
+            disabled={!openStatDetail}
+            className='w-full border-t border-white/[0.07] px-3 py-2 text-center text-[10px] text-[#7d898f] hover:bg-white/[0.03] hover:text-[#c4cbce] disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-[#7d898f]'
+            onClick={() => openStatDetail?.('resist')}
+          >
             {resistanceSummary ? 'Resistances, weaknesses & immunities' : 'No resistances or weaknesses'}
-          </div>
+          </button>
         </section>
         <CreaturePortrait combatant={combatant} />
       </div>
 
       {resistanceSummary > 0 && (
-        <section className='border border-white/10 bg-[#11171a] px-3 py-2 text-[11px] leading-5'>
+        <button type='button' disabled={!openStatDetail} className='w-full border border-white/10 bg-[#11171a] px-3 py-2 text-left text-[11px] leading-5 hover:border-white/20 hover:bg-white/[0.03] disabled:cursor-default disabled:hover:border-white/10 disabled:hover:bg-[#11171a]' onClick={() => openStatDetail?.('resist')}>
           <StatusLine label='Resist' values={status.resistances} />
           <StatusLine label='Weak' values={status.weaknesses} />
           <StatusLine label='Immune' values={status.immunities} />
-        </section>
+        </button>
       )}
 
       {combatant.type === 'CREATURE' && <section className='border border-white/10 bg-[#11171a] px-3 py-2 text-center text-[11px] text-[#aeb7bc]'>
@@ -1322,8 +1773,8 @@ function HealthStatusPanel({ combatant, calculatedStatus, calculating, onChangeC
       </section>}
 
       <section className='grid grid-cols-3 divide-x divide-white/10 border border-white/10 bg-[#11171a]'>
-        <IconMetric icon={<Eye size={15} />} label='Perception' value={signed(status.perception)} detail={status.vision} />
-        <IconMetric icon={<Footprints size={15} />} label='Speed' value={status.speed ? `${status.speed} ft.` : '-'} detail={status.otherSpeeds.join(', ') || 'Land speed'} />
+        <IconMetric icon={<Eye size={15} />} label='Perception' value={signed(status.perception)} detail={status.vision} onClick={() => openStatDetail?.('perception')} disabled={!openStatDetail} />
+        <IconMetric icon={<Footprints size={15} />} label='Speed' value={status.speed ? `${status.speed} ft.` : '-'} detail={status.otherSpeeds.join(', ') || 'Land speed'} onClick={() => openStatDetail?.('speed')} disabled={!openStatDetail} />
         <div className='min-w-0 px-2 py-3 text-center'>
           <div className='flex items-center justify-center gap-1.5 text-xs text-[#b8c0c4]'>
             <Activity size={15} />
@@ -1347,7 +1798,13 @@ function HealthStatusPanel({ combatant, calculatedStatus, calculating, onChangeC
                 type='button'
                 className={`${CONDITION_PILL_CLASS} hover:border-white/20 hover:bg-white/[0.09]`}
                 title={condition.source ? `${conditionLabel(condition)} from ${condition.source}` : conditionLabel(condition)}
-                onClick={() => setViewing(condition)}
+                onClick={() => {
+                  if (canManage && (condition.source || condition.value === undefined)) {
+                    onChangeConditions?.(removeConditionWithSpawns(rawConditions, condition), null);
+                    return;
+                  }
+                  setViewing(condition);
+                }}
               >
                 {conditionLabel(condition)}
               </button>
@@ -1357,29 +1814,42 @@ function HealthStatusPanel({ combatant, calculatedStatus, calculating, onChangeC
       </section>
 
       <section className='grid grid-cols-[42%_58%] border border-white/10 bg-[#11171a]'>
-        <div className='grid place-items-center border-r border-white/10 px-3 py-3 text-center'>
+        <button type='button' disabled={!openStatDetail} className='grid place-items-center border-r border-white/10 px-3 py-3 text-center hover:bg-white/[0.03] disabled:cursor-default disabled:hover:bg-transparent' onClick={() => openStatDetail?.('ac')}>
           <Shield size={26} className='mb-1 text-[#59656b]' />
           <strong className='text-xl leading-none'>{status.ac}</strong>
           <span className='mt-1 text-[9px] uppercase text-[#68747a]'>Armor class</span>
-        </div>
+        </button>
         <div className='divide-y divide-white/[0.07] px-3 py-1.5'>
-          <DefenseRow label='Fortitude' value={status.fortitude} />
-          <DefenseRow label='Reflex' value={status.reflex} />
-          <DefenseRow label='Will' value={status.will} />
+          <DefenseRow label='Fortitude' value={status.fortitude} onClick={() => openStatDetail?.('fortitude')} disabled={!openStatDetail} />
+          <DefenseRow label='Reflex' value={status.reflex} onClick={() => openStatDetail?.('reflex')} disabled={!openStatDetail} />
+          <DefenseRow label='Will' value={status.will} onClick={() => openStatDetail?.('will')} disabled={!openStatDetail} />
+          <button type='button' disabled={!openStatDetail} className='flex w-full items-center py-1.5 text-left text-xs hover:bg-white/[0.03] disabled:cursor-default disabled:hover:bg-transparent' onClick={() => openStatDetail?.('classDc')}>
+            <span className='text-[#aab3b7]'>Class DC</span>
+            <strong className='ml-auto'>{status.classDc}</strong>
+          </button>
         </div>
       </section>
+      {shield && shieldHealth && (
+        <button type='button' className='flex w-full items-center gap-3 border border-white/10 bg-[#11171a] px-3 py-2 text-left text-xs hover:border-white/20 hover:bg-white/[0.03]' onClick={() => setShieldItem(inventoryItemToPhase1(shield, 'equipped-shield'))}>
+          <Shield size={16} className='shrink-0 text-[#59656b]' />
+          <span className='min-w-0 flex-1 truncate text-[#aab3b7]'>{shield.item.name}</span>
+          <span className='shrink-0 text-[#c4cbce]'>{signed(shield.item.meta_data?.ac_bonus ?? 0)} AC</span>
+          <span className='shrink-0 text-[#89949a]'>Hardness {shieldHealth.hardness}</span>
+          <span className='shrink-0 text-[#89949a]'>HP {shieldHealth.hp_current}/{shieldHealth.hp_max}</span>
+        </button>
+      )}
 
       <section className='grid grid-cols-2 gap-x-2 gap-y-1.5 border border-white/10 bg-[#11171a] p-3'>
-        {ATTRIBUTE_LABELS.map(([key, label]) => <AttributePill key={key} label={label} value={status.attributes[key]} />)}
+        {ATTRIBUTE_LABELS.map(([key, label]) => <AttributePill key={key} label={label} value={status.attributes[key]} onClick={() => openStatDetail?.(key)} disabled={!openStatDetail} />)}
       </section>
 
       {calculating && !calculatedStatus && <p className='text-center text-[10px] text-[#68747a]'>Calculating combatant statistics...</p>}
       {calculatedStatus === null && <p className='text-center text-[10px] text-[#a87a70]'>Using stored values; calculated statistics were unavailable.</p>}
       {pickerOpen && (
         <SelectConditionModal
-          current={rawConditions}
-          onSelect={(condition) => {
-            onChangeConditions?.(addCondition(rawConditions, condition));
+          current={compiledConditions(rawConditions)}
+          onSelect={(condition, note) => {
+            onChangeConditions?.(addConditionWithSpawns(rawConditions, condition), note ?? null);
             setPickerOpen(false);
           }}
           onClose={() => setPickerOpen(false)}
@@ -1389,17 +1859,26 @@ function HealthStatusPanel({ combatant, calculatedStatus, calculating, onChangeC
         <ConditionDetailModal
           condition={viewing}
           canManage={canManage && !viewing.source}
-          onValueChange={(value) => {
-            onChangeConditions?.(setConditionValue(rawConditions, viewing.name, value));
+          onValueChange={(value, note) => {
+            onChangeConditions?.(setConditionValue(rawConditions, viewing.name, value), note ?? null);
             setViewing({ ...viewing, value });
           }}
-          onRemove={() => {
-            onChangeConditions?.(removeCondition(rawConditions, viewing.name));
+          onRemove={(note) => {
+            onChangeConditions?.(removeConditionWithSpawns(rawConditions, viewing), note ?? null);
             setViewing(null);
           }}
           onClose={() => setViewing(null)}
         />
       )}
+      {openStat && (
+        <StatDetailModal
+          key={openStat}
+          combatant={combatant as Phase1EntityCombatant}
+          stat={openStat}
+          onClose={() => setOpenStat(null)}
+        />
+      )}
+      {shieldItem && <ItemModal item={shieldItem} onClose={() => setShieldItem(null)} />}
     </div>
   );
 }
@@ -1413,26 +1892,107 @@ const ATTRIBUTE_LABELS: Array<[keyof Phase1CreatureStatus['attributes'], string]
 function Metric({ label, value }: { label: string; value: ReactNode }) {
   return <div><div className='text-xs text-[#b8c0c4]'>{label}</div><div className='mt-1 text-lg font-semibold'>{value}</div></div>;
 }
-function IconMetric({ icon, label, value, detail }: { icon: ReactNode; label: string; value: ReactNode; detail: string }) {
-  return <div className='min-w-0 px-2 py-3 text-center'><div className='flex items-center justify-center gap-1.5 text-xs text-[#b8c0c4]'>{icon}{label}</div><div className='mt-1 text-lg font-semibold'>{value}</div><div className='mt-1 truncate text-[9px] text-[#68747a]' title={detail}>{detail}</div></div>;
+function MetricButton({ label, value, onClick, disabled }: { label: string; value: ReactNode; onClick: () => void; disabled?: boolean }) {
+  return <button type='button' disabled={disabled} className='w-full hover:bg-white/[0.03] disabled:cursor-default disabled:hover:bg-transparent' onClick={onClick}><Metric label={label} value={value} /></button>;
 }
-function DefenseRow({ label, value }: { label: string; value: number }) {
-  return <div className='flex items-center py-1.5 text-xs'><span className='text-[#aab3b7]'>{label}</span><strong className='ml-auto'>{signed(value)}</strong></div>;
+function IconMetric({ icon, label, value, detail, onClick, disabled }: { icon: ReactNode; label: string; value: ReactNode; detail: string; onClick?: () => void; disabled?: boolean }) {
+  return <button type='button' disabled={disabled} className='min-w-0 px-2 py-3 text-center hover:bg-white/[0.03] disabled:cursor-default disabled:hover:bg-transparent' title={detail} onClick={onClick}><div className='flex items-center justify-center gap-1.5 text-xs text-[#b8c0c4]'>{icon}{label}</div><div className='mt-1 text-lg font-semibold'>{value}</div><div className='mt-1 truncate text-[9px] text-[#68747a]'>{detail}</div></button>;
 }
-function AttributePill({ label, value }: { label: string; value: number }) {
-  return <div className='flex h-6 items-center bg-white/[0.045] px-2 text-[11px]'><span className='truncate text-[#b1b9bd]'>{label}</span><strong className='ml-auto pl-2'>{signed(value)}</strong></div>;
+function DefenseRow({ label, value, onClick, disabled }: { label: string; value: number; onClick?: () => void; disabled?: boolean }) {
+  return <button type='button' disabled={disabled} className='flex w-full items-center py-1.5 text-left text-xs hover:bg-white/[0.03] disabled:cursor-default disabled:hover:bg-transparent' onClick={onClick}><span className='text-[#aab3b7]'>{label}</span><strong className='ml-auto'>{signed(value)}</strong></button>;
+}
+function AttributePill({ label, value, onClick, disabled }: { label: string; value: number; onClick?: () => void; disabled?: boolean }) {
+  return <button type='button' disabled={disabled} className='flex h-6 items-center bg-white/[0.045] px-2 text-left text-[11px] hover:bg-white/[0.08] disabled:cursor-default disabled:hover:bg-white/[0.045]' onClick={onClick}><span className='truncate text-[#b1b9bd]'>{label}</span><strong className='ml-auto pl-2'>{signed(value)}</strong></button>;
 }
 function StatusLine({ label, values }: { label: string; values: string[] }) {
   if (!values.length) return null;
   return <div><span className='mr-2 font-semibold text-[#8f999e]'>{label}</span><span className='text-[#c3c9cc]'>{values.join(', ')}</span></div>;
 }
-function DetailsDescriptionPanel({ entity }: { entity: LivingEntity }) {
-  const description = entityDescription(entity);
-  if (!description) return <EmptyState>No description given.</EmptyState>;
+function DetailsPanel({ combatant }: { combatant: PopulatedCombatant }) {
+  const { open } = useContentLinks();
+  const [openGroup, setOpenGroup] = useState<string | null>('attacks');
+  const [openProf, setOpenProf] = useState<Phase1StatTarget | null>(null);
+  const detailsAvailable = hasFullEntityDetails(combatant) && combatant.access?.details_revealed !== false;
+  const data = useQuery({
+    queryKey: ['phase1-entity-details', 'isolated-store', combatant.type, combatant._id, JSON.stringify(combatant.data.details ?? null)],
+    enabled: detailsAvailable,
+    queryFn: () => loadEntityDetails(combatant as Phase1EntityCombatant),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const fallback = entityDescription(combatant.data);
+  const details = data.data;
+
   return (
-    <section className='border border-white/10 bg-[#11171a] p-4'>
-      <ProseMarkdown>{description}</ProseMarkdown>
+    <div className='space-y-2.5'>
+      <section className='border border-white/10 bg-[#11171a] p-4'>
+        {details?.description || fallback ? <ProseMarkdown>{details?.description || fallback}</ProseMarkdown> : <p className='text-sm italic text-[#7f8a90]'>No description given.</p>}
+      </section>
+      {data.isLoading && <p className='text-center text-[10px] text-[#68747a]'>Loading details...</p>}
+      {data.isError && <p className='text-center text-[10px] text-[#a87a70]'>{data.error instanceof Error ? data.error.message : 'Could not load extra details.'}</p>}
+      {details?.info.map((field) => (
+        <section key={field.label} className='border border-white/10 bg-[#11171a] px-3 py-2.5'>
+          <h3 className='text-[10px] font-semibold uppercase text-[#89949a]'>{field.label}</h3>
+          <p className='mt-1 text-sm leading-6 text-[#c4cbce]'>{field.value}</p>
+        </section>
+      ))}
+      {details && (
+        <>
+          <LinkedNameSection title='Languages' items={details.languages} empty='No languages found.' onOpen={open} />
+          <LinkedNameSection title='Traits' items={details.rarity ? [{ name: details.rarity }, ...details.traits] : details.traits} empty='No traits found.' onOpen={open} />
+          <section className='border border-white/10 bg-[#11171a] px-3 py-2.5'>
+            <h3 className='text-[10px] font-semibold uppercase text-[#89949a]'>Size</h3>
+            <div className='mt-2'><Tag>{details.size}</Tag></div>
+          </section>
+          <section className='border border-white/10 bg-[#11171a]'>
+            <h3 className='border-b border-white/10 px-3 py-2 text-[10px] font-semibold uppercase text-[#89949a]'>Proficiencies</h3>
+            <div className='space-y-1 p-2'>
+              {details.profGroups.map((group) => (
+                <section key={group.id} className='border border-white/10 bg-[#0d1215]'>
+                  <button type='button' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-white/[0.03]' onClick={() => setOpenGroup(openGroup === group.id ? null : group.id)}>
+                    <span className='min-w-0 flex-1 font-semibold text-[#e2e6e8]'>{group.label}</span>
+                    <ChevronDown size={14} className={`text-[#7c878d] transition-transform ${openGroup === group.id ? 'rotate-180' : ''}`} />
+                  </button>
+                  {openGroup === group.id && (
+                    <div className='space-y-1 border-t border-white/10 p-2'>
+                      {group.items.map((item) => (
+                        <ProficiencyRow key={item.variableName} item={item} onOpen={() => setOpenProf({ variableName: item.variableName, isDC: item.isDC })} />
+                      ))}
+                    </div>
+                  )}
+                </section>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
+      {openProf && <StatDetailModal combatant={combatant as Phase1EntityCombatant} stat={openProf} onClose={() => setOpenProf(null)} />}
+    </div>
+  );
+}
+
+function LinkedNameSection({ title, items, empty, onOpen }: { title: string; items: Array<{ name: string; href?: string }>; empty: string; onOpen: (href: string) => void }) {
+  return (
+    <section className='border border-white/10 bg-[#11171a] px-3 py-2.5'>
+      <h3 className='text-[10px] font-semibold uppercase text-[#89949a]'>{title}</h3>
+      <div className='mt-2 flex flex-wrap gap-1.5'>
+        {items.length === 0 && <p className='text-sm italic text-[#7f8a90]'>{empty}</p>}
+        {items.map((item, index) => item.href ? (
+          <button key={`${item.name}-${index}`} type='button' className='border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-[#c4cbce] hover:border-white/20 hover:bg-white/[0.08]' onClick={() => onOpen(item.href!)}>{item.name}</button>
+        ) : (
+          <span key={`${item.name}-${index}`} className='border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-[#c4cbce]'>{item.name}</span>
+        ))}
+      </div>
     </section>
+  );
+}
+
+function ProficiencyRow({ item, onOpen }: { item: Phase1ProfRow; onOpen: () => void }) {
+  return (
+    <button type='button' className='flex w-full items-center gap-2 bg-white/[0.03] px-2 py-1.5 text-left text-xs hover:bg-white/[0.07]' onClick={onOpen}>
+      <span className='min-w-0 flex-1 truncate text-[#dce1e3]'>{item.label}</span>
+      {item.value && <strong className='shrink-0 text-[#e2e6e8]'>{item.value}</strong>}
+      <span className='shrink-0 border border-white/15 px-1.5 py-0.5 text-[10px] font-semibold text-[#dce1e3]'>{item.rank}</span>
+    </button>
   );
 }
 
@@ -1497,7 +2057,7 @@ function entityDescription(entity: LivingEntity) {
 function fallbackStatus(entity: LivingEntity): Phase1CreatureStatus {
   const stats = statsFor(entity);
   return {
-    maxHp: stats.maxHp, ac: stats.ac, fortitude: stats.fort, reflex: stats.reflex, will: stats.will,
+    maxHp: stats.maxHp, ac: stats.ac, fortitude: stats.fort, reflex: stats.reflex, will: stats.will, classDc: 10,
     perception: 0, speed: 0, otherSpeeds: [], vision: 'Normal vision',
     attributes: { strength: 0, dexterity: 0, constitution: 0, intelligence: 0, wisdom: 0, charisma: 0 },
     conditions: entity.details?.conditions?.map((condition) => condition.value ? `${condition.name} ${condition.value}` : condition.name) ?? [],
@@ -1507,11 +2067,12 @@ function fallbackStatus(entity: LivingEntity): Phase1CreatureStatus {
 function SpellsPanel({ combatant, spellActions }: { combatant: PopulatedCombatant; spellActions?: Phase1SpellActions }) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Phase1SpellEntry | null>(null);
+  const [openProf, setOpenProf] = useState<Phase1StatTarget | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [spellError, setSpellError] = useState('');
   const detailsAvailable = hasFullEntityDetails(combatant);
   const data = useQuery({
-    queryKey: ['phase1-entity-spells', combatant.type, combatant._id, JSON.stringify(combatant.data.spells ?? null)],
+    queryKey: ['phase1-entity-spells', 'isolated-store', combatant.type, combatant._id, JSON.stringify(combatant.data.spells ?? null)],
     enabled: detailsAvailable && combatant.access?.details_revealed !== false,
     queryFn: () => loadEntitySpells(combatant as Phase1EntityCombatant),
     staleTime: Number.POSITIVE_INFINITY,
@@ -1543,18 +2104,21 @@ function SpellsPanel({ combatant, spellActions }: { combatant: PopulatedCombatan
     {data.isLoading && <EmptyState>Loading spellcasting...</EmptyState>}
     {data.isError && <ErrorState error={data.error} />}
     <div className='mt-3 space-y-3'>
-      {sections.map((section) => <SpellSection key={section.key} section={section} spellActions={spellActions} busyKey={busyKey} onOpen={setSelected} onCast={(entry) => runSpellAction(`cast-${entry.key}`, () => spellActions!.setCast(entry, true))} onUncast={(entry) => runSpellAction(`uncast-${entry.key}`, () => spellActions!.setCast(entry, false))} onRankSpent={(rank, spent) => runSpellAction(`rank-${section.key}-${rank}`, () => spellActions!.setRankSpent(section, rank, spent))} onFocusSpent={(spent) => runSpellAction(`focus-${section.key}`, () => spellActions!.setFocusSpent(section, spent))} onPreparedSpent={(entry, spent) => runSpellAction(`prepared-${entry.key}`, () => spellActions!.setPreparedSpent(entry, spent))} onInnateSpent={(entry, castsCurrent) => runSpellAction(`innate-${entry.key}`, () => spellActions!.setInnateSpent(entry, castsCurrent))} />)}
+      {sections.map((section) => <SpellSection key={section.key} section={section} spellActions={spellActions} busyKey={busyKey} canOpenStats={detailsAvailable && combatant.access?.details_revealed !== false} onOpen={setSelected} onOpenProf={setOpenProf} onCast={(entry) => runSpellAction(`cast-${entry.key}`, () => spellActions!.setCast(entry, true))} onUncast={(entry) => runSpellAction(`uncast-${entry.key}`, () => spellActions!.setCast(entry, false))} onRankSpent={(rank, spent) => runSpellAction(`rank-${section.key}-${rank}`, () => spellActions!.setRankSpent(section, rank, spent))} onFocusSpent={(spent) => runSpellAction(`focus-${section.key}`, () => spellActions!.setFocusSpent(section, spent))} onPreparedSpent={(entry, spent) => runSpellAction(`prepared-${entry.key}`, () => spellActions!.setPreparedSpent(entry, spent))} onInnateSpent={(entry, castsCurrent) => runSpellAction(`innate-${entry.key}`, () => spellActions!.setInnateSpent(entry, castsCurrent))} />)}
       {data.data && !sections.length && <EmptyState>{needle ? 'No spells match this search.' : 'No spells found.'}</EmptyState>}
     </div>
     {selected && <SpellModal entry={selected} spellActions={spellActions} busy={Boolean(busyKey)} onCast={() => runSpellAction(`modal-cast-${selected.key}`, () => spellActions!.setCast(selected, true), true)} onUncast={() => runSpellAction(`modal-uncast-${selected.key}`, () => spellActions!.setCast(selected, false), true)} onClose={() => setSelected(null)} />}
+    {openProf && <StatDetailModal combatant={combatant as Phase1EntityCombatant} stat={openProf} onClose={() => setOpenProf(null)} />}
   </>;
 }
 
-function SpellSection({ section, spellActions, busyKey, onOpen, onCast, onUncast, onRankSpent, onFocusSpent, onPreparedSpent, onInnateSpent }: {
+function SpellSection({ section, spellActions, busyKey, canOpenStats, onOpen, onOpenProf, onCast, onUncast, onRankSpent, onFocusSpent, onPreparedSpent, onInnateSpent }: {
   section: Phase1SpellSection;
   spellActions?: Phase1SpellActions;
   busyKey: string | null;
+  canOpenStats: boolean;
   onOpen: (entry: Phase1SpellEntry) => void;
+  onOpenProf: (stat: Phase1StatTarget) => void;
   onCast: (entry: Phase1SpellEntry) => void;
   onUncast: (entry: Phase1SpellEntry) => void;
   onRankSpent: (rank: number, spent: number) => void;
@@ -1574,7 +2138,20 @@ function SpellSection({ section, spellActions, busyKey, onOpen, onCast, onUncast
           <SlotCircles count={section.focusPoints.max} spent={focusSpent} editable={Boolean(spellActions)} title='Focus points spent' onChange={onFocusSpent} />
         )}
       </div>
-      {(section.attack != null || section.dc != null) && <div className='mt-2 flex gap-2 text-[11px] text-[#9ca6ab]'>{section.attack != null && <span className='border border-white/10 bg-white/[0.035] px-2 py-1'>Spell attack <strong className='ml-1 text-[#e1e5e7]'>{signed(section.attack)}</strong></span>}{section.dc != null && <span className='border border-white/10 bg-white/[0.035] px-2 py-1'>Spell DC <strong className='ml-1 text-[#e1e5e7]'>{section.dc}</strong></span>}</div>}
+      {(section.attack != null || section.dc != null) && (
+        <div className='mt-2 flex gap-2 text-[11px] text-[#9ca6ab]'>
+          {section.attack != null && (
+            <button type='button' disabled={!canOpenStats} className='border border-white/10 bg-white/[0.035] px-2 py-1 hover:border-white/20 disabled:cursor-default disabled:hover:border-white/10' onClick={() => onOpenProf({ variableName: 'SPELL_ATTACK' })}>
+              Spell attack <strong className='ml-1 text-[#e1e5e7]'>{signed(section.attack)}</strong>
+            </button>
+          )}
+          {section.dc != null && (
+            <button type='button' disabled={!canOpenStats} className='border border-white/10 bg-white/[0.035] px-2 py-1 hover:border-white/20 disabled:cursor-default disabled:hover:border-white/10' onClick={() => onOpenProf({ variableName: 'SPELL_DC', isDC: true })}>
+              Spell DC <strong className='ml-1 text-[#e1e5e7]'>{section.dc}</strong>
+            </button>
+          )}
+        </div>
+      )}
     </header>
     <div className='divide-y divide-white/[0.07]'>
       {ranks.map((rank) => {
@@ -1861,33 +2438,6 @@ function ResizeRail({ onResize }: { onResize: (delta: number) => void }) {
   return <button aria-label='Resize detail panel' className='cursor-col-resize bg-[#20292e] hover:bg-[#d6a85f]' onMouseDown={() => setDragging(true)} />;
 }
 
-function SignIn() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setError('');
-    const result = await supabase.auth.signInWithPassword({ email, password });
-    if (result.error) setError(result.error.message);
-    setBusy(false);
-  }
-  return (
-    <div className='grid min-h-screen place-items-center bg-[#0d1114] px-6 text-[#e7ebed]'>
-      <form onSubmit={submit} className='w-full max-w-sm border border-white/10 bg-[#11171a] p-7'>
-        <Eyebrow>Phase 1</Eyebrow><h1 className='mt-2 text-2xl font-semibold'>Sign in</h1><p className='mt-2 text-sm text-[#7f8a90]'>This parallel UI uses the same account and backend.</p>
-        <label className='mt-6 block text-xs text-[#89949a]'>Email<input className='mt-2 h-10 w-full border border-white/10 bg-[#0b1012] px-3 text-white' type='email' required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-        <label className='mt-4 block text-xs text-[#89949a]'>Password<input className='mt-2 h-10 w-full border border-white/10 bg-[#0b1012] px-3 text-white' type='password' required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-        {error && <p className='mt-4 text-xs text-[#ef8f86]'>{error}</p>}
-        <button className='mt-6 h-10 w-full bg-[#d6a85f] font-semibold text-[#15120d] hover:bg-[#e4ba76] disabled:opacity-50' disabled={busy}>{busy ? 'Signing in...' : 'Sign in'}</button>
-        <a href='/' className='mt-5 block text-center text-xs text-[#7f8a90] hover:text-white'>Back to interface chooser</a>
-      </form>
-    </div>
-  );
-}
-
 function EntityIcon({ type }: { type: Combatant['type'] }) {
   return <span className={`grid h-9 w-9 shrink-0 place-items-center border ${type === 'CREATURE' ? 'border-[#9e574f]/50 text-[#dc8c83]' : 'border-[#527485]/50 text-[#82aec2]'}`}>{type === 'CREATURE' ? <Swords size={16} /> : <UserRound size={16} />}</span>;
 }
@@ -1902,20 +2452,6 @@ function populateCombatants(combatants: Combatant[], players: Character[]): Popu
     const data = combatant.type === 'CHARACTER' ? players.find((player) => player.id === combatant.character) ?? combatant.data : combatant.creature ?? combatant.data;
     return data ? { ...combatant, data } : null;
   }).filter((combatant): combatant is PopulatedCombatant => Boolean(combatant));
-}
-function addCondition(current: Condition[], condition: Condition) {
-  if (current.some((item) => item.name === condition.name)) return current;
-  return [...current, condition];
-}
-function removeCondition(current: Condition[], name: string) {
-  const next = current.filter((item) => item.name !== name);
-  if (name !== 'Dying') return next;
-  const woundedIndex = next.findIndex((item) => item.name === 'Wounded');
-  if (woundedIndex >= 0) {
-    return next.map((item, index) => (index === woundedIndex ? { ...item, value: 1 + (item.value ?? 0) } : item));
-  }
-  const wounded = getConditionByName('Wounded');
-  return wounded ? [...next, wounded] : next;
 }
 function setConditionValue(current: Condition[], name: string, value: number) {
   return current.map((item) => (item.name === name ? { ...item, value } : item));

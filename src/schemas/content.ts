@@ -902,16 +902,51 @@ export type CampaignNPC = z.infer<typeof CampaignNPCSchema>;
 
 // ─── Encounter & Combatant ────────────────────────────────────────────────────
 
+export const CombatantChangeLogFieldSchema = z.enum(['hp_current', 'hp_temp', 'conditions']);
+export type CombatantChangeLogField = z.infer<typeof CombatantChangeLogFieldSchema>;
+
+export const CombatantChangeLogEntrySchema = z.object({
+  id: z.string(),
+  at: z.string(),
+  field: CombatantChangeLogFieldSchema,
+  from: z.unknown(),
+  to: z.unknown(),
+  note: z.string().nullable(),
+});
+export type CombatantChangeLogEntry = z.infer<typeof CombatantChangeLogEntrySchema>;
+
 export const CombatantSchema = z.object({
   _id: z.string(),
   type: z.enum(['CREATURE', 'CHARACTER']),
   ally: z.boolean(),
   initiative: z.number().optional(),
+  initiative_roll: z
+    .object({
+      die: z.number(),
+      bonus: z.number(),
+      source: z.string().optional(),
+    })
+    .optional(),
   creature: CreatureSchema.optional(),
   character: z.number().optional(),
   data: LivingEntitySchema.optional(),
+  change_log: z.array(CombatantChangeLogEntrySchema).optional(),
 });
 export type Combatant = z.infer<typeof CombatantSchema>;
+
+export const InitiativeRoundLogEntrySchema = z.object({
+  name: z.string(),
+  ally: z.boolean(),
+  initiative: z.number().nullable(),
+  calculation: z.string(),
+});
+export type InitiativeRoundLogEntry = z.infer<typeof InitiativeRoundLogEntrySchema>;
+
+export const InitiativeRoundLogSchema = z.object({
+  round: z.number(),
+  entries: z.array(InitiativeRoundLogEntrySchema),
+});
+export type InitiativeRoundLog = z.infer<typeof InitiativeRoundLogSchema>;
 
 export const EncounterSchema = z.object({
   id: z.number(),
@@ -926,6 +961,7 @@ export const EncounterSchema = z.object({
     description: z.string().optional(),
     party_level: z.number().optional(),
     party_size: z.number().optional(),
+    initiative_log: z.array(InitiativeRoundLogSchema).optional(),
   }),
 });
 export type Encounter = z.infer<typeof EncounterSchema>;

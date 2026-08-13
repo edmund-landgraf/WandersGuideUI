@@ -21,6 +21,7 @@ export type Phase1CreatureStatus = {
   fortitude: number;
   reflex: number;
   will: number;
+  classDc: number;
   perception: number;
   speed: number;
   otherSpeeds: string[];
@@ -73,6 +74,7 @@ export async function calculateEntityStatus(combatant: Phase1EntityCombatant): P
     fortitude: parseSigned(getFinalProfValue(storeId, 'SAVE_FORT')),
     reflex: parseSigned(getFinalProfValue(storeId, 'SAVE_REFLEX')),
     will: parseSigned(getFinalProfValue(storeId, 'SAVE_WILL')),
+    classDc: parseSigned(getFinalProfValue(storeId, 'CLASS_DC', true)),
     perception: parseSigned(getFinalProfValue(storeId, 'PERCEPTION')),
     speed: landSpeed?.value ?? 0,
     otherSpeeds: speeds.filter((speed) => speed !== landSpeed).map((speed) => `${toLabel(speed.name.replace('SPEED_', ''))} ${speed.value} ft.`),
