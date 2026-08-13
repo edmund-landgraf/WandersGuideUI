@@ -1,6 +1,7 @@
 import { characterState } from '@atoms/characterAtoms';
 import { drawerState } from '@atoms/navAtoms';
 import { ActionSymbol } from '@common/Actions';
+import { abilityNameAndCost } from '@utils/actions';
 import { DisplayIcon } from '@common/IconDisplay';
 import IndentedText from '@common/IndentedText';
 import RichText from '@common/RichText';
@@ -44,17 +45,18 @@ export function ActionDrawerTitle(props: { data: { id?: number; action?: Ability
     enabled: !!id,
   });
   const action = props.data.action ?? _action;
+  const display = action ? abilityNameAndCost(action.name, action.actions) : null;
 
   return (
     <>
-      {action && (
+      {action && display && (
         <Group justify='space-between' wrap='nowrap'>
           <Group wrap='nowrap' gap={10}>
             <Box>
-              <Title order={3}>{toLabel(action.name)}</Title>
+              <Title order={3}>{toLabel(display.name)}</Title>
             </Box>
             <Box>
-              <ActionSymbol cost={action.actions} size={'2.1rem'} />
+              <ActionSymbol cost={display.cost} size={'2.1rem'} />
             </Box>
           </Group>
           {props.data.onSelect ? (

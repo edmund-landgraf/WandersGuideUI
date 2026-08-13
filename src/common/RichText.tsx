@@ -8,10 +8,12 @@ import { useAtom } from 'jotai';
 import React, { ReactNode, useRef } from 'react';
 import IndentedText from './IndentedText';
 import { IconQuote } from '@tabler/icons-react';
-import { getAllConditions } from '@conditions/condition-handler';
 import { compileExpressions } from '@variables/variable-utils';
 import { StoreID } from '@schemas/variables';
 import { isString } from 'lodash-es';
+import { ActionGlyph } from './Actions';
+import { resolveActionGlyph } from '@utils/actions';
+import { autoLinkConditions, toStandard2eProse } from '@utils/foundry-text';
 
 interface RichTextProps extends TextProps {
   children: any;
@@ -50,19 +52,10 @@ export default function RichText(props: RichTextProps) {
   // Convert the string output from editor table format to be read by react-markdown
   convertedChildren = convertedChildren?.replace(/\|\n\n\|/g, '|\n|');
 
-  // Auto-detect conditions and convert to content links
-  const conditions = getAllConditions()
-    .map((c) => c.name.toLowerCase())
-    .filter((c) => !props.conditionBlacklist?.includes(c) && c !== 'persistent damage');
-  const conditionRegex = new RegExp(`(?<!\\[)\\b(${conditions.join('|')})\\b(?!\\])`, 'g');
-  convertedChildren = convertedChildren?.replace(conditionRegex, (match) => {
-    return `[${match}](link_condition_${match.replace(' ', '~')})`;
-  });
-
-  // Auto-detect persistent damage separately
-  convertedChildren = convertedChildren?.replace(/persistent (\w*?\s|)damage/gi, (match) => {
-    return `[${match}](link_condition_persistent~damage)`;
-  });
+  convertedChildren = convertedChildren ? toStandard2eProse(convertedChildren) : convertedChildren;
+  convertedChildren = convertedChildren
+    ? autoLinkConditions(convertedChildren, props.conditionBlacklist)
+    : convertedChildren;
 
   // Replace arrow up emoji with the actual arrow up unicode character
   convertedChildren = convertedChildren?.replace(/⬆️/g, '⇧');
@@ -182,8 +175,16 @@ export default function RichText(props: RichTextProps) {
           const { children, className } = innerProps;
           // Convert code back to action symbol text as abbr
           if (children?.toString().startsWith('action_symbol_')) {
+            const glyph = resolveActionGlyph(children.toString());
+            if (glyph) {
+              return <ActionGlyph symbol={glyph.id} size='1.15em' />;
+            }
             const symbol = children.toString().replace('action_symbol_', '');
-            return <abbr className='action-symbol'>{symbol}</abbr>;
+            return (
+              <abbr className='action-symbol' data-action-symbol={symbol}>
+                {symbol}
+              </abbr>
+            );
           } else {
             return <Code className={className}>{children}</Code>;
           }

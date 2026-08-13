@@ -38,7 +38,7 @@ import {
 } from '@schemas/content';
 import { DrawerType } from '@schemas/index';
 import { StoreID } from '@schemas/variables';
-import { findActions } from '@utils/actions';
+import { findActions, abilityNameAndCost } from '@utils/actions';
 import { isPhoneSized, mobileQuery } from '@utils/mobile-responsive';
 import { sign } from '@utils/numbers';
 import { toLabel } from '@utils/strings';
@@ -887,6 +887,7 @@ function ActionSelectionOption(props: {
   const theme = useMantineTheme();
   const { hovered, ref } = useHover();
   const [_drawer, openDrawer] = useAtom(drawerState);
+  const { name, cost } = abilityNameAndCost(props.action.name, props.action.cost);
 
   return (
     <StatButton
@@ -930,10 +931,10 @@ function ActionSelectionOption(props: {
         )}
         <Group wrap='nowrap' gap={5}>
           <Box pl={8}>
-            <Text fz='sm'>{props.action.name}</Text>
+            <Text fz='sm'>{name}</Text>
           </Box>
           <Box>
-            <ActionSymbol cost={props.action.cost} />
+            <ActionSymbol cost={cost} />
           </Box>
           {props.action.leftSection && <Box>{props.action.leftSection}</Box>}
         </Group>

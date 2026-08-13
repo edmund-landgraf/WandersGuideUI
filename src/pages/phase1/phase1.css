@@ -1,12 +1,5 @@
 @import 'tailwindcss';
 
-@font-face {
-  font-family: 'ActionIcons';
-  src: url('../../assets/fonts/Pathfinder2eActions.ttf') format('truetype');
-  font-style: normal;
-  font-weight: 400;
-  font-display: block;
-}
 :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #0d1114; }
 * { box-sizing: border-box; }
 html, body, #root { min-height: 100%; margin: 0; }
@@ -66,6 +59,36 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+.ability-prose .pf2e-condition {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: #d6a85f;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+.ability-prose a.pf2e-condition:hover,
+.ability-prose button.pf2e-condition:hover {
+  color: #f0d29d;
+}
+.ability-prose .pf2e-content-link {
+  color: #d6a85f;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ability-prose button.pf2e-content-link,
+.ability-prose button.pf2e-condition {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.ability-prose button.pf2e-content-link:hover {
+  color: #f0d29d;
+}
 .ability-prose p:has(> strong:first-child) {
   max-width: none;
   margin: 1rem 0;
@@ -81,4 +104,69 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   font-weight: 600;
   line-height: 1.2;
   text-transform: uppercase;
+}
+.ability-prose h1,
+.ability-prose h2,
+.ability-prose h3,
+.ability-prose h4,
+.ability-prose h5,
+.ability-prose h6 {
+  margin: 1.35rem 0 0.65rem;
+  color: #e7ebed;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.ability-prose h1 { font-size: 1.45rem; }
+.ability-prose h2 { font-size: 1.2rem; }
+.ability-prose h3 { font-size: 1.05rem; color: #f0d29d; }
+.ability-prose h4,
+.ability-prose h5,
+.ability-prose h6 { font-size: 0.95rem; color: #d6a85f; }
+.ability-prose strong { color: #e2e6e8; font-weight: 600; }
+.ability-prose em { color: #c4cbce; }
+.ability-prose code {
+  border: 1px solid rgb(255 255 255 / 0.08);
+  background: rgb(255 255 255 / 0.04);
+  padding: 0.1rem 0.35rem;
+  font-size: 0.85em;
+}
+.ability-prose pre {
+  overflow-x: auto;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  background: #0d1215;
+  padding: 0.85rem 1rem;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+.ability-prose pre code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+.ability-prose table {
+  width: 100%;
+  margin: 1rem 0;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.ability-prose thead th {
+  border-bottom: 1px solid rgb(255 255 255 / 0.12);
+  padding: 0.55rem 0.65rem;
+  text-align: left;
+  color: #f0d29d;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ability-prose tbody td {
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+  padding: 0.55rem 0.65rem;
+  vertical-align: top;
+}
+.ability-prose tbody tr:nth-child(even) {
+  background: rgb(255 255 255 / 0.02);
+}
+.ability-prose tbody tr:hover {
+  background: rgb(255 255 255 / 0.035);
 }

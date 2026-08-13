@@ -365,6 +365,10 @@ export function getAllConditions() {
   );
 }
 
+export function getAllConditionNames() {
+  return CONDITIONS.map((condition) => condition.name.toLowerCase());
+}
+
 export function applyConditions(id: StoreID, conditions: Condition[]) {
   compiledConditions(conditions).forEach((condition) => {
     applyCondition(id, condition);

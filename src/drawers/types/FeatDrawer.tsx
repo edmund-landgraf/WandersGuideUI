@@ -12,6 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import DrawerLoadState from '@drawers/DrawerLoadState';
 import { AbilityBlock } from '@schemas/content';
 import { toLabel } from '@utils/strings';
+import { abilityNameAndCost } from '@utils/actions';
 import { meetsPrerequisites } from '@variables/prereq-detection';
 import { ReactNode } from 'react';
 import { useAtom, useAtomValue } from 'jotai';
@@ -36,6 +37,7 @@ export function FeatDrawerTitle(props: { data: { id?: number; feat?: AbilityBloc
     enabled: !!id,
   });
   const feat = props.data.feat ?? _feat;
+  const display = feat ? abilityNameAndCost(feat.name, feat.actions) : null;
 
   let type = `Feat ${feat?.level}`;
   if (feat?.meta_data?.unselectable) {
@@ -48,14 +50,14 @@ export function FeatDrawerTitle(props: { data: { id?: number; feat?: AbilityBloc
 
   return (
     <>
-      {feat && (
+      {feat && display && (
         <Group justify='space-between' wrap='nowrap'>
           <Group wrap='nowrap' gap={10}>
             <Box>
-              <Title order={3}>{toLabel(feat.name)}</Title>
+              <Title order={3}>{toLabel(display.name)}</Title>
             </Box>
             <Box>
-              <ActionSymbol cost={feat.actions} size={'2.1rem'} />
+              <ActionSymbol cost={display.cost} size={'2.1rem'} />
             </Box>
           </Group>
           {props.data.onSelect ? (

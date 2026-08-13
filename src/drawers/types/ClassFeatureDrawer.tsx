@@ -12,6 +12,7 @@ import { AbilityBlock } from '@schemas/content';
 import { DisplayOperationSelectionOptions } from './ActionDrawer';
 import ShowInjectedText from '@drawers/ShowInjectedText';
 import { DisplayIcon } from '@common/IconDisplay';
+import { abilityNameAndCost } from '@utils/actions';
 
 export function ClassFeatureDrawerTitle(props: { data: { id?: number; classFeature?: AbilityBlock } }) {
   const id = props.data.id;
@@ -27,17 +28,18 @@ export function ClassFeatureDrawerTitle(props: { data: { id?: number; classFeatu
     enabled: !!id,
   });
   const classFeature = props.data.classFeature ?? _classFeature;
+  const display = classFeature ? abilityNameAndCost(classFeature.name, classFeature.actions) : null;
 
   return (
     <>
-      {classFeature && (
+      {classFeature && display && (
         <Group justify='space-between' wrap='nowrap'>
           <Group wrap='nowrap' gap={10}>
             <Box>
-              <Title order={3}>{classFeature.name}</Title>
+              <Title order={3}>{display.name}</Title>
             </Box>
             <Box>
-              <ActionSymbol cost={classFeature.actions} size={'2.1rem'} />
+              <ActionSymbol cost={display.cost} size={'2.1rem'} />
             </Box>
           </Group>
           {classFeature.level && <Text style={{ textWrap: 'nowrap' }}>Class Feature {classFeature.level}</Text>}

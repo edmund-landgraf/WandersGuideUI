@@ -10,6 +10,7 @@ import { ActionCost, ContentSource, Item, Language, Rarity, Size, Spell, Trait }
 import { toLabel } from '@utils/strings';
 import { isString } from 'lodash-es';
 import { evaluate } from 'mathjs/number';
+import { toStandard2eProse } from '@utils/foundry-text';
 
 export function convertToActionCost(actionType: string, actionValue?: number): ActionCost {
   if (actionType === 'action') {
@@ -335,6 +336,7 @@ export const EQUIPMENT_TYPES = ['equipment', 'weapon', 'armor', 'shield', 'kit',
 //// Foundry Content Linking Parsing & Removal ////
 // - Maybe save some of this data instead of deleting it all
 export function stripFoundryLinking(text: string, level?: number) {
+  text = toStandard2eProse(text);
   text = text.replace(/@actor\.level/g, '1');
   if (level) {
     text = text.replace(/@item\.level/g, `${level}`);

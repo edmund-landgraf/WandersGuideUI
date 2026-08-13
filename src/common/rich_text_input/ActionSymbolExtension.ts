@@ -42,7 +42,30 @@ export const ActionSymbol = Node.create<ActionSymbolOptions>({
   selectable: false,
 
   parseHTML() {
-    return [{ tag: 'abbr[class="action-symbol"]' }];
+    return [
+      {
+        tag: 'abbr.action-symbol, span.action-symbol, abbr[class="action-symbol"]',
+        getAttrs: (el) => {
+          const node = el as HTMLElement;
+          const raw = node.getAttribute('data-action-symbol') || node.textContent?.trim() || '1';
+          const convertDigit = (value: string): ActionCost => {
+            switch (value) {
+              case '2':
+                return 'TWO-ACTIONS';
+              case '3':
+                return 'THREE-ACTIONS';
+              case '4':
+                return 'FREE-ACTION';
+              case '5':
+                return 'REACTION';
+              default:
+                return 'ONE-ACTION';
+            }
+          };
+          return { cost: node.getAttribute('cost') || convertDigit(raw) };
+        },
+      },
+    ];
   },
 
   renderHTML({ HTMLAttributes }) {
@@ -62,12 +85,14 @@ export const ActionSymbol = Node.create<ActionSymbolOptions>({
           return '1';
       }
     };
+    const symbol = convertCost(HTMLAttributes.cost);
     return [
       'abbr',
       mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, {
         class: 'action-symbol',
+        'data-action-symbol': symbol,
       }),
-      convertCost(HTMLAttributes.cost),
+      symbol,
     ];
   },
 

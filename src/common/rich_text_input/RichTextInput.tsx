@@ -1,5 +1,5 @@
 import { RichTextEditor } from '@mantine/tiptap';
-import { Extension, JSONContent, useEditor } from '@tiptap/react';
+import { Editor, Extension, JSONContent, useEditor } from '@tiptap/react';
 import Highlight from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import Superscript from '@tiptap/extension-superscript';
@@ -16,6 +16,7 @@ import { ActionSymbol } from './ActionSymbolExtension';
 import ActionSymbolControl from './ActionSymbolControl';
 import Placeholder from '@tiptap/extension-placeholder';
 import { useElementSize } from '@mantine/hooks';
+import { MutableRefObject, useEffect } from 'react';
 import AutoContentLinkControl from './AutoContentLinkControl';
 import { HighlightColorControl } from './HighlightColorControl';
 import StarterKit from '@tiptap/starter-kit';
@@ -32,6 +33,7 @@ interface RichTextInputProps {
   maxHeight?: number;
   hasColorOptions?: boolean;
   readOnly?: boolean;
+  editorRef?: MutableRefObject<Editor | null>;
 }
 
 export default function RichTextInput(props: RichTextInputProps) {
@@ -61,6 +63,14 @@ export default function RichTextInput(props: RichTextInputProps) {
       }
     },
   });
+
+  useEffect(() => {
+    if (!props.editorRef) return;
+    props.editorRef.current = editor;
+    return () => {
+      if (props.editorRef) props.editorRef.current = null;
+    };
+  }, [editor, props.editorRef]);
 
   const defaultColors = [
     '#25262b',

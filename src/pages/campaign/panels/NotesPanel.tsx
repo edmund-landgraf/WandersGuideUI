@@ -1,12 +1,13 @@
+import { ContextMenu } from '@common/ContextMenu';
 import { EllipsisText } from '@common/EllipsisText';
 import { Icon } from '@common/Icon';
 import RichTextInput from '@common/rich_text_input/RichTextInput';
 import { GUIDE_BLUE } from '@constants/data';
 import { glassStyle } from '@utils/colors';
-import { Tabs, ActionIcon, Badge, Group, ScrollArea, Title, Box, Menu, Button } from '@mantine/core';
+import { Tabs, ActionIcon, Badge, Group, ScrollArea, Title, Box, Menu, Button, Text, rem } from '@mantine/core';
 import { useDebouncedState, useDidUpdate } from '@mantine/hooks';
-import { openContextModal } from '@mantine/modals';
-import { IconCheck, IconPlus, IconSettings } from '@tabler/icons-react';
+import { modals, openContextModal } from '@mantine/modals';
+import { IconCheck, IconPlus, IconSettings, IconTrash } from '@tabler/icons-react';
 import { JSONContent } from '@tiptap/react';
 import { Campaign } from '@schemas/content';
 import { isPhoneSized } from '@utils/mobile-responsive';
@@ -21,6 +22,7 @@ export default function NotesPanel(props: {
   setCampaign: (campaign: Campaign) => void;
 }) {
   const [activeTab, setActiveTab] = useState<string | null>('0');
+  const [contextMenu, setContextMenu] = useState<{ index: number; x: number; y: number } | null>(null);
   const isPhone = isPhoneSized(props.panelWidth);
   const [displayNotes, refreshNotes] = useRefresh();
 
@@ -68,6 +70,35 @@ export default function NotesPanel(props: {
       },
     });
     setActiveTab(`${newPages.length - 1}`);
+  };
+
+  const deletePage = (index: number) => {
+    if (!props.campaign) return;
+    const newPages = cloneDeep(pages);
+    newPages.splice(index, 1);
+    props.setCampaign({
+      ...props.campaign,
+      notes: {
+        ...props.campaign.notes,
+        pages: newPages,
+      },
+    });
+    const current = parseInt(activeTab ?? '0');
+    if (current === index || current >= newPages.length) {
+      setActiveTab('0');
+    } else if (current > index) {
+      setActiveTab(`${current - 1}`);
+    }
+  };
+
+  const confirmDeletePage = (index: number) => {
+    modals.openConfirmModal({
+      title: <Title order={4}>Delete Page</Title>,
+      children: <Text size='sm'>Are you sure you want to delete this page?</Text>,
+      labels: { confirm: 'Confirm', cancel: 'Cancel' },
+      onCancel: () => {},
+      onConfirm: () => deletePage(index),
+    });
   };
 
   const getPage = (
@@ -214,19 +245,7 @@ export default function NotesPanel(props: {
                       },
                     });
                   },
-                  onDelete: () => {
-                    if (!props.campaign) return;
-                    const newPages = cloneDeep(pages);
-                    newPages.splice(index, 1);
-                    props.setCampaign({
-                      ...props.campaign,
-                      notes: {
-                        ...props.campaign.notes,
-                        pages: newPages,
-                      },
-                    });
-                    setActiveTab(`0`);
-                  },
+                  onDelete: () => deletePage(index),
                 },
               });
             }}
@@ -246,6 +265,7 @@ export default function NotesPanel(props: {
     }
   } else {
     return (
+      <>
       <Tabs
         orientation='vertical'
         value={activeTab}
@@ -267,6 +287,11 @@ export default function NotesPanel(props: {
                 </ActionIcon>
               }
               color={page.color}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setContextMenu({ index, x: e.clientX, y: e.clientY });
+              }}
             >
               <Box maw={125}>
                 <EllipsisText fz='sm' openDelay={1000}>
@@ -299,6 +324,23 @@ export default function NotesPanel(props: {
           </Tabs.Panel>
         ))}
       </Tabs>
+      <ContextMenu
+        opened={contextMenu !== null}
+        x={contextMenu?.x ?? 0}
+        y={contextMenu?.y ?? 0}
+        onClose={() => setContextMenu(null)}
+      >
+        <Menu.Item
+          color='red'
+          leftSection={<IconTrash style={{ width: rem(14), height: rem(14) }} />}
+          onClick={() => {
+            if (contextMenu) confirmDeletePage(contextMenu.index);
+          }}
+        >
+          Delete
+        </Menu.Item>
+      </ContextMenu>
+      </>
     );
   }
 }

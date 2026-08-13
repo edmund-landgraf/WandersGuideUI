@@ -5,7 +5,7 @@ import { getBonusText, getFinalProfValue, getProfValueParts } from '@variables/v
 import { getAllSkillVariables, getVariableBonuses, getVariableHistory } from '@variables/variable-manager';
 import { compileProficiencyType, isProficiencyValue, labelToVariable, proficiencyTypeToLabel, variableToLabel } from '@variables/variable-utils';
 import { flattenDeep, uniqBy } from 'lodash-es';
-import type { Phase1Ability } from './phase1-abilities';
+import { collectSelectedCustomAbilities, type Phase1Ability } from './phase1-abilities';
 import { preparePhase1Entity, type Phase1EntityCombatant } from './phase1-entity';
 import { getPhase1SkillDescription } from './phase1-skill-descriptions';
 
@@ -31,8 +31,11 @@ export async function loadEntitySkillsActions(combatant: Phase1EntityCombatant):
     .filter((ability) => ability.type === 'action')
     .map((ability) => enrich(ability, 'Catalog', traitNames))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const collected = flattenDeep(Object.values(collectEntityAbilityBlocks(storeId, entity, content.abilityBlocks))) as AbilityBlock[];
-  const entityAbilities = uniqBy(collected, (ability) => `${ability.id}:${ability.name}`)
+  const collected = flattenDeep(
+    Object.values(collectEntityAbilityBlocks(storeId, entity, content.abilityBlocks, { filterBasicClassFeatures: true }))
+  ) as AbilityBlock[];
+  const withNested = [...collected, ...collectSelectedCustomAbilities(entity, collected)];
+  const entityAbilities = uniqBy(withNested, (ability) => `${ability.id}:${ability.name}`)
     .map((ability) => enrich(ability, kind === 'CHARACTER' ? 'Character' : 'Creature', traitNames));
 
   return {

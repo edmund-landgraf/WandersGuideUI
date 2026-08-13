@@ -37,7 +37,8 @@ import { confirmHealth, handleRest } from '@pages/character_sheet/entity-handler
 import CreatureAbilitiesPanel from '@pages/character_sheet/panels/CreatureAbilitiesPanel';
 import CreatureDetailsPanel from '@pages/character_sheet/panels/CreatureDetailsPanel';
 import InventoryPanel from '@pages/character_sheet/panels/InventoryPanel';
-import NotesPanel from '@pages/character_sheet/panels/NotesPanel';
+import GmNotesPanel from '@pages/character_sheet/panels/GmNotesPanel';
+import SourceImportPanel from '@pages/character_sheet/panels/SourceImportPanel';
 import SkillsActionsPanel from '@pages/character_sheet/panels/SkillsActionsPanel';
 import SpellsPanel from '@pages/character_sheet/panels/SpellsPanel';
 import ArmorSection from '@pages/character_sheet/sections/ArmorSection';
@@ -53,6 +54,7 @@ import {
   IconBackpack,
   IconFlare,
   IconNotebook,
+  IconLink,
   IconListDetails,
   IconDualScreen,
   IconEdit,
@@ -401,11 +403,20 @@ export function CreatureDrawerContent(props: {
                 )}
 
                 {activeTab === 'notes' && (
-                  <NotesPanel
+                  <GmNotesPanel
+                    key={STORE_ID}
                     panelHeight={panelHeight}
                     panelWidth={panelWidth}
                     entity={creature}
                     setEntity={convertToSetEntity(setCreature)}
+                  />
+                )}
+
+                {activeTab === 'source' && (
+                  <SourceImportPanel
+                    panelHeight={panelHeight}
+                    panelWidth={panelWidth}
+                    entity={creature}
                   />
                 )}
 
@@ -522,19 +533,29 @@ export function CreatureDrawerContent(props: {
                                 setOpenedSelectionPanel(false);
                               }}
                             >
-                              Notes
+                              GM Notes
                             </Button>
                             <Button
-                              leftSection={<IconListDetails size='1.2rem' stroke={2} />}
-                              variant={activeTab === 'details' ? 'filled' : 'light'}
+                              leftSection={<IconLink size='1.2rem' stroke={2} />}
+                              variant={activeTab === 'source' ? 'filled' : 'light'}
                               onClick={() => {
-                                setActiveTab('details');
+                                setActiveTab('source');
                                 setOpenedSelectionPanel(false);
                               }}
                             >
-                              Details
+                              Source
                             </Button>
                           </SimpleGrid>
+                          <Button
+                            leftSection={<IconListDetails size='1.2rem' stroke={2} />}
+                            variant={activeTab === 'details' ? 'filled' : 'light'}
+                            onClick={() => {
+                              setActiveTab('details');
+                              setOpenedSelectionPanel(false);
+                            }}
+                          >
+                            Details
+                          </Button>
                         </Stack>
                       </Box>
                     </Popover.Dropdown>

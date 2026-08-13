@@ -1,6 +1,7 @@
 import { creatureDrawerState, drawerState } from '@atoms/navAtoms';
 import { sessionState } from '@atoms/supabaseAtoms';
 import { glassStyle } from '@utils/colors';
+import { ContextMenu } from '@common/ContextMenu';
 import { EllipsisText } from '@common/EllipsisText';
 import { Icon } from '@common/Icon';
 import { DisplayIcon } from '@common/IconDisplay';
@@ -25,9 +26,10 @@ import {
   Badge,
   MantineColor,
   LoadingOverlay,
+  rem,
 } from '@mantine/core';
 import { getHotkeyHandler, useHover, useMediaQuery } from '@mantine/hooks';
-import { openContextModal } from '@mantine/modals';
+import { modals, openContextModal } from '@mantine/modals';
 import { CreateCombatantModal } from '@modals/CreateCombatantModal';
 import { executeOperations } from '@operations/operations.main';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
@@ -42,6 +44,7 @@ import {
   IconSettings,
   IconSparkles,
   IconSword,
+  IconTrash,
   IconUser,
   IconX,
 } from '@tabler/icons-react';
@@ -148,6 +151,7 @@ export default function EncountersPanel(props: {
   //
 
   const [activeTab, setActiveTab] = useState<string | null>('0');
+  const [contextMenu, setContextMenu] = useState<{ index: number; x: number; y: number } | null>(null);
   const isPhone = isPhoneSized(props.panelWidth);
   const [displayEncounters, refreshEncounters] = useRefresh();
 
@@ -184,6 +188,28 @@ export default function EncountersPanel(props: {
     newEncounters.push(encounter);
     updateEncounters(newEncounters);
     setActiveTab(`${newEncounters.length - 1}`);
+  };
+
+  const deleteEncounter = (index: number) => {
+    const newEncounters = cloneDeep(encounters);
+    newEncounters.splice(index, 1);
+    updateEncounters(newEncounters);
+    const current = parseInt(activeTab ?? '0');
+    if (current === index || current >= newEncounters.length) {
+      setActiveTab('0');
+    } else if (current > index) {
+      setActiveTab(`${current - 1}`);
+    }
+  };
+
+  const confirmDeleteEncounter = (index: number) => {
+    modals.openConfirmModal({
+      title: <Title order={4}>Delete Encounter</Title>,
+      children: <Text size='sm'>Are you sure you want to delete this encounter?</Text>,
+      labels: { confirm: 'Confirm', cancel: 'Cancel' },
+      onCancel: () => {},
+      onConfirm: () => deleteEncounter(index),
+    });
   };
 
   const getEncounter = (encounter: Encounter, index: number) => {
@@ -337,12 +363,7 @@ export default function EncountersPanel(props: {
                   newEncounters[index] = encounter;
                   updateEncounters(newEncounters);
                 },
-                onDelete: () => {
-                  const newEncounters = cloneDeep(encounters);
-                  newEncounters.splice(index, 1);
-                  updateEncounters(newEncounters);
-                  setActiveTab(`0`);
-                },
+                onDelete: () => deleteEncounter(index),
               },
             });
           }}
@@ -374,6 +395,7 @@ export default function EncountersPanel(props: {
     }
   } else {
     return (
+      <>
       <Tabs orientation='vertical' value={activeTab} onChange={setActiveTab}>
         <Tabs.List>
           <ScrollArea h={props.panelHeight - 100} w={210} scrollbars='y'>
@@ -388,6 +410,11 @@ export default function EncountersPanel(props: {
                   </ActionIcon>
                 }
                 color={encounter.color}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setContextMenu({ index, x: e.clientX, y: e.clientY });
+                }}
               >
                 <Box maw={150}>
                   <EllipsisText fz='sm' openDelay={1000}>
@@ -451,6 +478,23 @@ export default function EncountersPanel(props: {
           </Tabs.Panel>
         ))}
       </Tabs>
+      <ContextMenu
+        opened={contextMenu !== null}
+        x={contextMenu?.x ?? 0}
+        y={contextMenu?.y ?? 0}
+        onClose={() => setContextMenu(null)}
+      >
+        <Menu.Item
+          color='red'
+          leftSection={<IconTrash style={{ width: rem(14), height: rem(14) }} />}
+          onClick={() => {
+            if (contextMenu) confirmDeleteEncounter(contextMenu.index);
+          }}
+        >
+          Delete
+        </Menu.Item>
+      </ContextMenu>
+      </>
     );
   }
 }

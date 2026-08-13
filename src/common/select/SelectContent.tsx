@@ -2,6 +2,7 @@
 import { characterState } from '@atoms/characterAtoms';
 import { creatureDrawerState, drawerState } from '@atoms/navAtoms';
 import { ActionSymbol } from '@common/Actions';
+import { abilityNameAndCost } from '@utils/actions';
 import { BuyItemButton } from '@common/BuyItemButton';
 import TraitsDisplay from '@common/TraitsDisplay';
 import { fetchContentAll, fetchContentById, getDefaultSources, getDefaultSourcesKey } from '@content/content-store';
@@ -1758,15 +1759,17 @@ export function FeatSelectionOption(props: {
   // Hide deprecated options
   if (props.feat.meta_data?.deprecated && !props.selected) return null;
 
+  const { name, cost } = abilityNameAndCost(props.feat.name, props.feat.actions);
+
   return (
     <BaseSelectionOption
       leftSection={
         <Group wrap='nowrap' gap={5} pl={8}>
           <Box>
-            <Text fz='sm'>{props.feat.name}</Text>
+            <Text fz='sm'>{name}</Text>
           </Box>
           <Box>
-            <ActionSymbol cost={props.feat.actions} gap={5} />
+            <ActionSymbol cost={cost} gap={5} />
           </Box>
           {prereqMet && prereqMet.result && (
             <>
@@ -1842,15 +1845,17 @@ export function ActionSelectionOption(props: {
   // Hide deprecated options
   if (props.action.meta_data?.deprecated && !props.selected) return null;
 
+  const { name, cost } = abilityNameAndCost(props.action.name, props.action.actions);
+
   return (
     <BaseSelectionOption
       leftSection={
         <Group wrap='nowrap' gap={5}>
           <Box pl={8}>
-            <Text fz='sm'>{props.action.name}</Text>
+            <Text fz='sm'>{name}</Text>
           </Box>
           <Box>
-            <ActionSymbol cost={props.action.actions} gap={5} />
+            <ActionSymbol cost={cost} gap={5} />
           </Box>
         </Group>
       }
@@ -1912,18 +1917,20 @@ export function ClassFeatureSelectionOption(props: {
   // Hide deprecated options
   if (props.classFeature.meta_data?.deprecated && !props.selected) return null;
 
+  const { name, cost } = abilityNameAndCost(props.classFeature.name, props.classFeature.actions);
+
   return (
     <BaseSelectionOption
       leftSection={
         <Group wrap='nowrap' gap={5}>
           <Box pl={8}>
             <Text fz='sm'>
-              {props.classFeature.name}
+              {name}
               {selectedOption ? ` — ${selectedOption.title}` : ''}
             </Text>
           </Box>
           <Box>
-            <ActionSymbol cost={props.classFeature.actions} gap={5} />
+            <ActionSymbol cost={cost} gap={5} />
           </Box>
         </Group>
       }
@@ -1975,15 +1982,17 @@ export function HeritageSelectionOption(props: {
   // Hide deprecated options
   if (props.heritage.meta_data?.deprecated && !props.selected) return null;
 
+  const { name, cost } = abilityNameAndCost(props.heritage.name, props.heritage.actions);
+
   return (
     <BaseSelectionOption
       leftSection={
         <Group wrap='nowrap' gap={5}>
           <Box pl={8}>
-            <Text fz='sm'>{props.heritage.name}</Text>
+            <Text fz='sm'>{name}</Text>
           </Box>
           <Box>
-            <ActionSymbol cost={props.heritage.actions} gap={5} />
+            <ActionSymbol cost={cost} gap={5} />
           </Box>
         </Group>
       }
@@ -2034,15 +2043,17 @@ export function PhysicalFeatureSelectionOption(props: {
   // Hide deprecated options
   if (props.physicalFeature.meta_data?.deprecated && !props.selected) return null;
 
+  const { name, cost } = abilityNameAndCost(props.physicalFeature.name, props.physicalFeature.actions);
+
   return (
     <BaseSelectionOption
       leftSection={
         <Group wrap='nowrap' gap={5}>
           <Box pl={8}>
-            <Text fz='sm'>{props.physicalFeature.name}</Text>
+            <Text fz='sm'>{name}</Text>
           </Box>
           <Box>
-            <ActionSymbol cost={props.physicalFeature.actions} gap={5} />
+            <ActionSymbol cost={cost} gap={5} />
           </Box>
         </Group>
       }
@@ -2153,15 +2164,17 @@ export function SenseSelectionOption(props: {
   // Hide deprecated options
   if (props.sense.meta_data?.deprecated && !props.selected) return null;
 
+  const { name, cost } = abilityNameAndCost(props.sense.name, props.sense.actions);
+
   return (
     <BaseSelectionOption
       leftSection={
         <Group wrap='nowrap' gap={5}>
           <Box pl={8}>
-            <Text fz='sm'>{props.sense.name}</Text>
+            <Text fz='sm'>{name}</Text>
           </Box>
           <Box>
-            <ActionSymbol cost={props.sense.actions} gap={5} />
+            <ActionSymbol cost={cost} gap={5} />
           </Box>
         </Group>
       }
