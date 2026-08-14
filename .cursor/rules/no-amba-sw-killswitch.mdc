@@ -1,0 +1,12 @@
+---
+description: Never deploy a service-worker kill-switch on amba (OAuth same-origin)
+alwaysApply: true
+---
+
+# No service-worker kill-switch on amba
+
+Do not replace, alias, or ship a “kill-switch” `/sw.js` on `amba.wandersguide.site` (unregister + `skipWaiting` + `client.navigate`). That host is the SPA **and** GoTrue (`/auth/v1/callback`). A kill-switch made OAuth return to `/sw.js#access_token=...` so the app never saw the session. Incognito worked; regular Chrome did not.
+
+Full write-up: `docs/amba-oauth-pwa-incident.md`.
+
+**Do:** `navigateFallbackDenylist` for `/auth/` `/rest/` `/functions/` `/storage/`; rebuild the Docker frontend; unregister the worker in DevTools once; keep Apache `ProxyPass` for `/auth/v1/` ahead of `/`. **Do not** `client.navigate` from a worker on this origin. **Do not** use `redirectTo: window.location.href`.
