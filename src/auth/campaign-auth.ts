@@ -17,8 +17,12 @@ export function campaignRedirectTo() {
   return window.location.origin;
 }
 
+export function peekOAuthReturnPath(): string | null {
+  return sessionStorage.getItem(OAUTH_NEXT_KEY);
+}
+
 export function consumeOAuthReturnPath(): string | null {
-  const next = sessionStorage.getItem(OAUTH_NEXT_KEY);
+  const next = peekOAuthReturnPath();
   if (!next) return null;
   sessionStorage.removeItem(OAUTH_NEXT_KEY);
   return next;

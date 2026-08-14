@@ -27,10 +27,11 @@ export function useAuthSession() {
 
   useEffect(() => {
     if (!session) return;
+    if (window.location.pathname === '/') return;
     const next = consumeOAuthReturnPath();
     if (!next) return;
     const current = `${window.location.pathname}${window.location.search}`;
-    if (next !== current) {
+    if (next !== current && next.startsWith('/')) {
       window.location.replace(next);
     }
   }, [session]);

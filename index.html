@@ -48,9 +48,14 @@
       Loading Wanderer's Guide...
     </div>
     <script type="module">
+      const search = new URLSearchParams(location.search);
+      const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
+      const isAuthCallback = ['code', 'access_token', 'error', 'error_description', 'token_hash'].some(
+        (key) => search.has(key) || hash.has(key)
+      );
       const application = location.pathname.startsWith('/phase0')
         ? import('/src/pages/phase0/main.tsx')
-        : location.pathname.startsWith('/phase1')
+        : location.pathname.startsWith('/phase1') || location.pathname.startsWith('/sheet') || isAuthCallback
           ? import('/src/pages/phase1/main.tsx')
           : import('/src/pages/launcher/main.tsx');
 

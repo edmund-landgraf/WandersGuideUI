@@ -25,7 +25,7 @@ export function CampaignSignIn({ variant }: CampaignSignInProps) {
   const [oauthBusy, setOauthBusy] = useState<OAuthProvider | null>(null);
 
   useEffect(() => {
-    const oauthError = parseOAuthReturnError(searchParams.toString());
+    const oauthError = parseOAuthReturnError(searchParams.toString()) || parseOAuthReturnError(window.location.hash.replace(/^#/, ''));
     if (!oauthError) return;
     setError(oauthError);
     setSearchParams({}, { replace: true });

@@ -209,7 +209,7 @@ function Phase0CampaignPage({ campaignId, encounterId }: { campaignId: number; e
                       <a
                         key={player.id}
                         className='flex min-w-56 items-center gap-3 rounded-md border border-slate-800 bg-slate-900/70 px-3 py-2 hover:border-sky-500/60'
-                        href={`${OLD_UI_ORIGIN}/sheet/${player.id}`}
+                        href={`/sheet/${player.id}`}
                         target='_blank'
                         rel='noreferrer'
                       >
@@ -408,8 +408,8 @@ function DetailPane({
         <h2 className='mt-3 text-2xl font-semibold tracking-normal'>{detail.combatant.data.name}</h2>
         <p className='mt-2 text-sm text-slate-400'>PC sheets stay in the current UI during Phase 0.</p>
         <Button className='mt-4' asChild>
-          <a href={`${OLD_UI_ORIGIN}/sheet/${detail.combatant.character}`} target='_blank' rel='noreferrer'>
-            Open sheet on 5193
+          <a href={`/sheet/${detail.combatant.character}`} target='_blank' rel='noreferrer'>
+            Open character sheet
             <ExternalLink className='h-4 w-4' />
           </a>
         </Button>
