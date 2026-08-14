@@ -3,7 +3,7 @@ import { supabase } from '../supabase-client';
 export type OAuthProvider = 'google' | 'discord' | 'github';
 
 /** OAuth providers enabled in the campaign UI. Add more as GoTrue is configured. */
-export const ENABLED_OAUTH_PROVIDERS: OAuthProvider[] = ['google'];
+export const ENABLED_OAUTH_PROVIDERS: OAuthProvider[] = ['google', 'github', 'discord'];
 
 const OAUTH_NEXT_KEY = 'wg_oauth_next';
 

@@ -112,6 +112,8 @@ export function CampaignSignIn({ variant }: CampaignSignInProps) {
               onClick={() => handleOAuth(provider)}
             >
               {provider === 'google' && <GoogleMark />}
+              {provider === 'github' && <GitHubMark />}
+              {provider === 'discord' && <DiscordMark />}
               {oauthBusy === provider ? 'Redirecting...' : PROVIDER_LABELS[provider]}
             </button>
           ))}
@@ -152,6 +154,22 @@ export function CampaignSignIn({ variant }: CampaignSignInProps) {
         </a>
       </form>
     </div>
+  );
+}
+
+function DiscordMark() {
+  return (
+    <svg aria-hidden='true' className='h-5 w-5 shrink-0' viewBox='0 0 24 24' fill='#5865F2'>
+      <path d='M20.32 4.37A19.8 19.8 0 0 0 15.89 3l-.2.37a18.3 18.3 0 0 1 4.64 1.5c-4.17-2-8.36-2-12.48 0A17.5 17.5 0 0 1 8.3 3.37L8.11 3A19.9 19.9 0 0 0 3.66 4.39C.5 9.14-.31 13.76.1 18.32A19.9 19.9 0 0 0 6.1 21l.4-.7a13 13 0 0 1-1.9-1.03l.38-.3c3.97 1.87 8.27 1.87 12.2 0l.37.3a12.7 12.7 0 0 1-1.9 1.04l.4.69a19.8 19.8 0 0 0 6-2.67c.48-5.32-.73-9.9-3.73-13.96ZM8.02 15.33c-1.18 0-2.16-1.1-2.16-2.45S6.82 10.44 8.02 10.44s2.18 1.1 2.16 2.44-.98 2.45-2.16 2.45Zm7.96 0c-1.18 0-2.16-1.1-2.16-2.45s.96-2.44 2.16-2.44 2.18 1.1 2.16 2.44-.98 2.45-2.16 2.45Z' />
+    </svg>
+  );
+}
+
+function GitHubMark() {
+  return (
+    <svg aria-hidden='true' className='h-5 w-5 shrink-0' viewBox='0 0 24 24' fill='currentColor'>
+      <path d='M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6A12 12 0 0 0 12 .3z' />
+    </svg>
   );
 }
 
