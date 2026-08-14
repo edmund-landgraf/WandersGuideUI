@@ -5,8 +5,23 @@ export type OAuthProvider = 'google' | 'discord' | 'github';
 /** OAuth providers enabled in the campaign UI. Add more as GoTrue is configured. */
 export const ENABLED_OAUTH_PROVIDERS: OAuthProvider[] = ['google'];
 
+const OAUTH_NEXT_KEY = 'wg_oauth_next';
+
 export function campaignRedirectTo() {
-  return `${window.location.origin}${window.location.pathname}`;
+  const next = `${window.location.pathname}${window.location.search}`;
+  if (next && next !== '/') {
+    sessionStorage.setItem(OAUTH_NEXT_KEY, next);
+  }
+  // Origin only: GoTrue often allow-lists `http://localhost:5194` exactly and
+  // rejects `/phase1`, then falls back to the production Site URL.
+  return window.location.origin;
+}
+
+export function consumeOAuthReturnPath(): string | null {
+  const next = sessionStorage.getItem(OAUTH_NEXT_KEY);
+  if (!next) return null;
+  sessionStorage.removeItem(OAUTH_NEXT_KEY);
+  return next;
 }
 
 export async function signInWithOAuthProvider(

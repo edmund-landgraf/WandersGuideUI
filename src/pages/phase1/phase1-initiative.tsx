@@ -1,5 +1,5 @@
 import { GiDiceTwentyFacesTwenty } from '@common/game-icons-inline';
-import type { Character, Combatant, InitiativeRoundLog, LivingEntity } from '@schemas/content';
+import type { Character, Combatant, Encounter, InitiativeRoundLog, LivingEntity } from '@schemas/content';
 import { sign } from '@utils/numbers';
 import { toLabel } from '@utils/strings';
 import { isCharacter, isCreature, isTruthy } from '@utils/type-fixing';
@@ -43,12 +43,23 @@ export function buildInitiativeRoundLog(
       calculation: 'Skipped',
     };
   });
-  return { round, entries };
+  return { id: crypto.randomUUID(), round, entries };
 }
 
 export function nextInitiativeRoundNumber(log: InitiativeRoundLog[] | undefined) {
   if (!log?.length) return 1;
-  return Math.max(...log.map((round) => round.round)) + 1;
+  const rounds = log.map((entry) => entry.round).filter((round) => Number.isFinite(round));
+  if (rounds.length === 0) return 1;
+  return Math.max(...rounds) + 1;
+}
+
+export function overlayInitiativeLogs(encounters: Encounter[], logs: ReadonlyMap<number, InitiativeRoundLog[]>): Encounter[] {
+  if (logs.size === 0) return encounters;
+  return encounters.map((encounter) => {
+    const log = logs.get(encounter.id);
+    if (log === undefined) return encounter;
+    return { ...encounter, meta_data: { ...encounter.meta_data, initiative_log: log } };
+  });
 }
 
 export function isEmptyInitiative(combatant: Combatant) {
@@ -179,7 +190,7 @@ export function InitiativeRollModal({
   const [optionsById, setOptionsById] = useState<Record<string, InitiativeSkillOption[]>>({});
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Record<string, string | null>>(() =>
-    Object.fromEntries(combatants.map((combatant) => [combatant._id, isEmptyInitiative(combatant) ? 'PERCEPTION' : null]))
+    Object.fromEntries(combatants.map((combatant) => [combatant._id, 'PERCEPTION']))
   );
 
   useEffect(() => {

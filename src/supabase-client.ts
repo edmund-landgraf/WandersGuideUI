@@ -11,7 +11,17 @@ import { createClient } from '@supabase/supabase-js';
  * inactivity was noticed by one client while the rest of the app kept acting
  * logged in with dead credentials.
  */
-export const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_KEY
-);
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_KEY;
+
+function isUnsetEnv(value: string | undefined) {
+  return !value || /[<>]|API_URL|ANON_KEY/.test(value);
+}
+
+if (isUnsetEnv(supabaseUrl) || isUnsetEnv(supabaseKey)) {
+  throw new Error(
+    'Missing VITE_SUPABASE_URL or VITE_SUPABASE_KEY. Copy .env.local.template to .env.local, replace the placeholders, and restart the Vite dev server.'
+  );
+}
+
+export const supabase = createClient(supabaseUrl, supabaseKey);

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, ArrowLeft, BookOpen, Calculator, ChevronDown, ChevronRight, Copy, Crosshair, Eraser, Eye, ExternalLink, Footprints, GripVertical, History, ListChecks, LogOut, Package, PanelRight, Plus, RotateCcw, Search, Settings, Shield, Sparkles, Swords, Trash2, UserMinus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, ArrowLeft, BookOpen, Calculator, ChevronDown, ChevronRight, Copy, Crosshair, Eraser, Eye, ExternalLink, Footprints, GripVertical, HeartPulse, History, ListChecks, LogOut, Package, PanelRight, Plus, RotateCcw, Search, Settings, Shield, Sparkles, Swords, Trash2, UserMinus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -39,9 +39,9 @@ import { abilityNameAndCost } from '@utils/actions';
 import { toStandard2eProse } from '@utils/foundry-text';
 import { GiDiceTwentyFacesTwenty } from '@common/game-icons-inline';
 import { rollDie } from '@utils/random';
-import { buildInitiativeRoundLog, formatInitiativeRoll, InitiativeRollModal, nextInitiativeRoundNumber, sortCombatantsByInitiative, type InitiativeRollChoice } from './phase1-initiative';
+import { buildInitiativeRoundLog, formatInitiativeRoll, InitiativeRollModal, nextInitiativeRoundNumber, overlayInitiativeLogs, sortCombatantsByInitiative, type InitiativeRollChoice } from './phase1-initiative';
 import { appendChangeLog, characterCombatFieldsFromEntity, createChangeLogEntry, parseTempHpInput } from './phase1-change-log';
-import { resetCombatant, resetEntityCombatState, resolveResetMaxHp } from './phase1-encounter-reset';
+import { maxCombatantStats, maxEntityStats, resetCombatant, resetEntityCombatState, resolveResetMaxHp } from './phase1-encounter-reset';
 import { CombatantChangeLogFooter, EditableValueWithNote, GridHpEditPopover } from './phase1-change-log-ui';
 import { OLD_UI_ORIGIN, PhaseViewSwitch } from '../phase-switch/PhaseViewSwitch';
 import { ConfirmDialog, SettingsSurface } from './phase1-campaign-settings';
@@ -118,12 +118,17 @@ export function Phase1CampaignPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const encounterSaveChain = useRef(Promise.resolve<void>(undefined));
+  const initiativeLogsRef = useRef(new Map<number, InitiativeRoundLog[]>());
   const campaignKey = ['phase1-campaign', campaignId, session?.user.id] as const;
   const encountersKey = ['phase1-encounters', campaignId, session?.user.id] as const;
   const playersKey = ['phase1-players', campaignId, session?.user.id] as const;
   const campaign = useQuery({ queryKey: campaignKey, enabled, queryFn: async () => (await phase1Request<Campaign[]>('find-campaign', { id: campaignId }))[0] ?? null });
   const players = useQuery({ queryKey: playersKey, enabled, queryFn: () => phase1Request<Character[]>('find-character', { campaign_id: campaignId }) });
-  const encounters = useQuery({ queryKey: encountersKey, enabled, queryFn: () => phase1Request<Encounter[]>('find-encounter', { campaign_id: campaignId }) });
+  const encounters = useQuery({
+    queryKey: encountersKey,
+    enabled,
+    queryFn: async () => overlayInitiativeLogs(await phase1Request<Encounter[]>('find-encounter', { campaign_id: campaignId }), initiativeLogsRef.current),
+  });
   const updateEncounter = useMutation<boolean, Error, Encounter, { previous?: Encounter[] }>({
     mutationKey: ['phase1-update-encounter', campaignId],
     mutationFn: (encounter) => {
@@ -134,6 +139,9 @@ export function Phase1CampaignPage() {
     onMutate: async (encounter) => {
       await queryClient.cancelQueries({ queryKey: encountersKey });
       const previous = queryClient.getQueryData<Encounter[]>(encountersKey);
+      if (encounter.meta_data.initiative_log !== undefined) {
+        initiativeLogsRef.current.set(encounter.id, encounter.meta_data.initiative_log);
+      }
       queryClient.setQueryData<Encounter[]>(encountersKey, (current = []) => current.map((item) => item.id === encounter.id ? encounter : item));
       return { previous };
     },
@@ -146,7 +154,7 @@ export function Phase1CampaignPage() {
     },
   });
 
-  const updateCharacter = useMutation<unknown, Error, { id: number; spells?: Character['spells']; details?: Character['details']; hp_current?: number; hp_temp?: number }, { previous?: Character[] }>({
+  const updateCharacter = useMutation<unknown, Error, { id: number; spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }, { previous?: Character[] }>({
     mutationFn: ({ id, ...fields }) => phase1Request('update-character', { id, ...fields }),
     onMutate: async ({ id, ...fields }) => {
       await queryClient.cancelQueries({ queryKey: playersKey });
@@ -284,7 +292,7 @@ export function Phase1CampaignPage() {
 
 
 function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, viewingSettings, isGm, sessionUserId, onUpdateEncounter, onUpdateCharacter, onUpdateCampaign, onResetJoinKey, onKickPlayer, onDeleteCampaign, onDeleteNote, onDeleteEncounter, rosterSaving, campaignSaving, rosterError, campaignError }: {
-  campaign: Campaign; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; hp_current?: number; hp_temp?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; campaignError: Error | null;
+  campaign: Campaign; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; campaignError: Error | null;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailWidth, setDetailWidth] = useState(readDetailWidth);
@@ -294,22 +302,39 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const [resetOpen, setResetOpen] = useState(false);
   const combatants = useMemo(() => populateCombatants(selectedEncounter?.combatants.list ?? [], players), [selectedEncounter, players]);
   const orderedCombatants = useMemo(() => sortCombatantsByInitiative(combatants), [combatants]);
+  const selectedEncounterRef = useRef(selectedEncounter);
+  const initiativeLogRef = useRef<InitiativeRoundLog[]>(selectedEncounter?.meta_data.initiative_log ?? []);
+  const initiativeLogEncounterIdRef = useRef(selectedEncounter?.id ?? null);
+  selectedEncounterRef.current = selectedEncounter;
+  if (selectedEncounter && selectedEncounter.id !== initiativeLogEncounterIdRef.current) {
+    initiativeLogEncounterIdRef.current = selectedEncounter.id;
+    initiativeLogRef.current = selectedEncounter.meta_data.initiative_log ?? [];
+  } else if (selectedEncounter?.meta_data.initiative_log && selectedEncounter.meta_data.initiative_log.length >= initiativeLogRef.current.length) {
+    initiativeLogRef.current = selectedEncounter.meta_data.initiative_log;
+  }
   const selected = combatants.find((item) => item._id === selectedId) ?? null;
   const statuses = useCombatantStatuses(selectedEncounter?.id ?? null, combatants);
   const encounterNote = notePages.find((item) => item.page.name.trim().toLowerCase() === selectedEncounter?.name.trim().toLowerCase());
+  const noteEncounter = encounters.find((item) => item.name.trim().toLowerCase() === selectedNote?.page.name.trim().toLowerCase());
   const activeCharacterIds = new Set((selectedEncounter?.combatants.list ?? []).filter((combatant) => combatant.type === 'CHARACTER').map((combatant) => combatant.character));
   const benchPlayers = players.filter((player) => !activeCharacterIds.has(player.id));
 
   function persistRoster(list: Combatant[], metaPatch?: Partial<Encounter['meta_data']>) {
-    if (!selectedEncounter || !isGm) return;
+    const encounter = selectedEncounterRef.current;
+    if (!encounter || !isGm) return;
     const allies = populateCombatants(list, players).filter((combatant) => combatant.ally);
     const levels = allies.map((combatant) => combatant.data.level).filter(Number.isFinite);
+    const initiative_log = metaPatch && 'initiative_log' in metaPatch
+      ? metaPatch.initiative_log ?? []
+      : encounter.meta_data.initiative_log ?? initiativeLogRef.current;
+    initiativeLogRef.current = initiative_log;
     onUpdateEncounter({
-      ...selectedEncounter,
+      ...encounter,
       combatants: { list },
       meta_data: {
-        ...selectedEncounter.meta_data,
+        ...encounter.meta_data,
         ...metaPatch,
+        initiative_log,
         party_size: allies.length,
         party_level: levels.length ? levels.reduce((sum, level) => sum + level, 0) / levels.length : 0,
       },
@@ -387,9 +412,10 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   }
 
   function rollInitiative(rollBonuses: Map<string, InitiativeRollChoice>) {
-    if (!selectedEncounter) return;
+    const encounter = selectedEncounterRef.current;
+    if (!encounter) return;
     const rolledIds = new Set<string>();
-    const list = selectedEncounter.combatants.list.map((combatant) => {
+    const list = encounter.combatants.list.map((combatant) => {
       const choice = rollBonuses.get(combatant._id);
       if (!choice) return combatant;
       rolledIds.add(combatant._id);
@@ -405,7 +431,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
       return;
     }
     const populated = populateCombatants(list, players);
-    const existingLog = selectedEncounter.meta_data.initiative_log ?? [];
+    const existingLog = initiativeLogRef.current.length ? initiativeLogRef.current : encounter.meta_data.initiative_log ?? [];
     const roundEntry = buildInitiativeRoundLog(nextInitiativeRoundNumber(existingLog), populated, rolledIds);
     persistRoster(list, { initiative_log: [...existingLog, roundEntry] });
     setInitiativeOpen(false);
@@ -418,6 +444,12 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
       initiative: undefined,
       initiative_roll: undefined,
     })));
+  }
+
+  function clearInitiativeLog() {
+    const encounter = selectedEncounterRef.current;
+    if (!encounter || !isGm || rosterSaving) return;
+    persistRoster(encounter.combatants.list, { initiative_log: [] });
   }
 
   function resetEncounterState() {
@@ -450,6 +482,35 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     setResetOpen(false);
   }
 
+  function maxEncounterStats() {
+    if (!selectedEncounter || !isGm || rosterSaving) return;
+    const populatedById = new Map(combatants.map((combatant) => [combatant._id, combatant]));
+    persistRoster(
+      selectedEncounter.combatants.list.map((combatant) => {
+        const populated = populatedById.get(combatant._id);
+        const maxHp = populated
+          ? resolveResetMaxHp(populated.data, statuses.data?.[combatant._id]?.maxHp)
+          : combatant.creature
+            ? resolveResetMaxHp(combatant.creature)
+            : 0;
+        if (combatant.type === 'CHARACTER' && combatant.character) {
+          const character = players.find((player) => player.id === combatant.character);
+          if (character) {
+            const maxed = maxEntityStats(character, maxHp);
+            onUpdateCharacter(combatant.character, {
+              hp_current: maxed.hp_current,
+              stamina_current: maxed.stamina_current,
+              resolve_current: maxed.resolve_current,
+              spells: maxed.spells,
+              inventory: maxed.inventory,
+            });
+          }
+        }
+        return maxCombatantStats(combatant, maxHp);
+      }),
+    );
+  }
+
   const canManageCombatant = (combatant: PopulatedCombatant) => {
     if (isGm) return true;
     if (combatant.type === 'CHARACTER' && combatant.character) {
@@ -465,27 +526,19 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   }, [selected, isGm, players, sessionUserId]);
 
   function persistCombatantChange(combatant: PopulatedCombatant, entity: LivingEntity, field: 'hp_current' | 'hp_temp' | 'conditions', from: unknown, to: unknown, note: string | null) {
-    if (!selectedEncounter || rosterSaving) return;
-    const rawCombatant = selectedEncounter.combatants.list.find((item) => item._id === combatant._id);
+    const encounter = selectedEncounterRef.current;
+    if (!encounter || rosterSaving) return;
+    const rawCombatant = encounter.combatants.list.find((item) => item._id === combatant._id);
     if (!rawCombatant) return;
     const loggedCombatant = appendChangeLog(rawCombatant, createChangeLogEntry(field, from, to, note));
+    const list = encounter.combatants.list.map((item) => (item._id === combatant._id ? loggedCombatant : item));
     if (combatant.type === 'CHARACTER' && combatant.character) {
       onUpdateCharacter(combatant.character, characterCombatFieldsFromEntity(entity));
-      onUpdateEncounter({
-        ...selectedEncounter,
-        combatants: {
-          list: selectedEncounter.combatants.list.map((item) => (item._id === combatant._id ? loggedCombatant : item)),
-        },
-      });
+      persistRoster(list);
       return;
     }
     if (combatant.type === 'CREATURE') {
-      onUpdateEncounter({
-        ...selectedEncounter,
-        combatants: {
-          list: selectedEncounter.combatants.list.map((item) => (item._id === combatant._id ? { ...loggedCombatant, creature: entity as Creature } : item)),
-        },
-      });
+      persistRoster(list.map((item) => (item._id === combatant._id ? { ...loggedCombatant, creature: entity as Creature } : item)));
     }
   }
 
@@ -511,9 +564,9 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   }
 
   function persistCreature(entity: LivingEntity) {
-    if (!selected || !selectedEncounter || selected.type !== 'CREATURE') return;
-    const list = selectedEncounter.combatants.list.map((combatant) => combatant._id === selected._id ? { ...combatant, creature: entity } as Combatant : combatant);
-    onUpdateEncounter({ ...selectedEncounter, combatants: { list } });
+    const encounter = selectedEncounterRef.current;
+    if (!selected || !encounter || selected.type !== 'CREATURE') return;
+    persistRoster(encounter.combatants.list.map((combatant) => combatant._id === selected._id ? { ...combatant, creature: entity } as Combatant : combatant));
   }
 
   function persistEntitySpells(entity: LivingEntity) {
@@ -588,14 +641,14 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               error={campaignError}
             />
           ) : viewingNotes ? (
-            <NoteSurface note={selectedNote} isGm={isGm} />
+            <NoteSurface note={selectedNote} isGm={isGm} encounterLink={noteEncounter ? { href: `/phase1/campaign/${campaign.id}/encounters/${noteEncounter.id}`, name: noteEncounter.name } : undefined} />
           ) : (
             <>
-              <EncounterHeader encounter={selectedEncounter} count={combatants.length} isGm={isGm} noteLink={encounterNote ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} canRollInitiative={isGm && combatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && combatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} />
+              <EncounterHeader encounter={selectedEncounter} count={combatants.length} isGm={isGm} noteLink={encounterNote ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} canRollInitiative={isGm && combatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && combatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} />
               {rosterError && <div className='border-b border-[#a95249]/40 bg-[#a95249]/10 px-5 py-2 text-xs text-[#efaaa3]'>Roster update failed: {rosterError.message}</div>}
               <div className='p-5'>
                 <CombatantGrid combatants={orderedCombatants} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} />
-                <InitiativeRoundLogPanel log={selectedEncounter?.meta_data.initiative_log ?? []} />
+                <InitiativeRoundLogPanel log={selectedEncounter?.meta_data.initiative_log ?? []} canClear={isGm && !rosterSaving} onClear={clearInitiativeLog} />
               </div>
               {initiativeOpen && selectedEncounter && (
                 <InitiativeRollModal
@@ -918,7 +971,7 @@ function readPlayerDrag(event: ReactDragEvent): PlayerDragPayload | null {
 }function hasPlayerDrag(event: ReactDragEvent) {
   return Array.from(event.dataTransfer.types).includes(PLAYER_DRAG_TYPE);
 }
-function EncounterHeader({ encounter, count, isGm, noteLink, canAddCreature, onAddCreature, canRollInitiative, onRollInitiative, canClearInitiative, onClearInitiative, canReset, onReset }: { encounter: Encounter | null; count: number; isGm: boolean; noteLink?: { href: string; name: string }; canAddCreature?: boolean; onAddCreature?: () => void; canRollInitiative?: boolean; onRollInitiative?: () => void; canClearInitiative?: boolean; onClearInitiative?: () => void; canReset?: boolean; onReset?: () => void }) {
+function EncounterHeader({ encounter, count, isGm, noteLink, canAddCreature, onAddCreature, canRollInitiative, onRollInitiative, canClearInitiative, onClearInitiative, canMaxStats, onMaxStats, canReset, onReset }: { encounter: Encounter | null; count: number; isGm: boolean; noteLink?: { href: string; name: string }; canAddCreature?: boolean; onAddCreature?: () => void; canRollInitiative?: boolean; onRollInitiative?: () => void; canClearInitiative?: boolean; onClearInitiative?: () => void; canMaxStats?: boolean; onMaxStats?: () => void; canReset?: boolean; onReset?: () => void }) {
   return (
     <div className='sticky top-0 z-10 border-b border-white/10 bg-[#11171a]/95 px-5 py-4 backdrop-blur'>
       <div className='flex items-center gap-5'>
@@ -926,6 +979,7 @@ function EncounterHeader({ encounter, count, isGm, noteLink, canAddCreature, onA
         {isGm && <button className='toolbar-button' disabled={!canAddCreature} title={canAddCreature ? 'Add a creature from the catalog' : 'Wait for the roster to finish saving'} onClick={onAddCreature}><Swords size={15} /> Add creature</button>}
         <button className='toolbar-button' disabled={!canRollInitiative} title={!isGm ? 'GM only' : count === 0 ? 'Add combatants first' : 'Roll initiative'} onClick={onRollInitiative}><GiDiceTwentyFacesTwenty size={15} /> Roll initiative</button>
         <button className='toolbar-button' disabled={!canClearInitiative} title={!isGm ? 'GM only' : canClearInitiative ? 'Clear initiative and restore roster order' : 'No initiative to clear'} onClick={onClearInitiative}><Eraser size={15} /> Clear init</button>
+        <button className='toolbar-button' disabled={!canMaxStats} title={!isGm ? 'GM only' : canMaxStats ? 'Restore HP, spells, focus, wands/staves, and other encounter consumables' : count === 0 ? 'Add combatants first' : 'Wait for the roster to finish saving'} onClick={onMaxStats}><HeartPulse size={15} /> Max stats</button>
         <button className='toolbar-button' disabled={!canReset} title={!isGm ? 'GM only' : canReset ? 'Reset HP, temp HP, conditions, spells, initiative, and logs' : 'Wait for the roster to finish saving'} onClick={onReset}><RotateCcw size={15} /> Reset</button>
         <button className='toolbar-button' disabled title='Available after read-only parity'><Shield size={15} /> Group check</button>
       </div>
@@ -1114,27 +1168,55 @@ function sortRoundLogEntries(entries: InitiativeRoundLog['entries']) {
   });
 }
 
-function InitiativeRoundLogPanel({ log }: { log: InitiativeRoundLog[] }) {
+function InitiativeRoundLogPanel({ log, canClear, onClear }: { log: InitiativeRoundLog[]; canClear?: boolean; onClear?: () => void }) {
   const [open, setOpen] = useState(true);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  function handleClear() {
+    if (!canClear || !onClear) return;
+    if (log.length > 2) {
+      setConfirmOpen(true);
+      return;
+    }
+    onClear();
+  }
   if (log.length === 0) {
     return <p className='mt-5 text-center text-xs text-[#68747a]'>No rounds logged yet.</p>;
   }
   const rounds = [...log].reverse();
   return (
     <section className='mt-5 border border-white/10 bg-[#0e1316]'>
-      <button
-        type='button'
-        className='flex w-full items-center gap-2 border-b border-white/10 px-4 py-3 text-left hover:bg-white/[0.025]'
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-      >
-        <History size={15} className='text-[#89949a]' />
-        <span className='text-sm font-semibold'>Round log</span>
-        <span className='text-xs text-[#68747a]'>{log.length} round{log.length === 1 ? '' : 's'}</span>
-        <ChevronDown size={14} className={`ml-auto text-[#68747a] transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && rounds.map((round) => (
-        <div key={round.round} className='border-b border-white/[0.07] px-4 py-3 last:border-0'>
+      <div className='flex items-center gap-2 border-b border-white/10 px-4 py-3'>
+        <button
+          type='button'
+          className='flex min-w-0 flex-1 items-center gap-2 text-left hover:text-white'
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+        >
+          <History size={15} className='text-[#89949a]' />
+          <span className='text-sm font-semibold'>Round log</span>
+          <span className='text-xs text-[#68747a]'>{log.length} round{log.length === 1 ? '' : 's'}</span>
+          <ChevronDown size={14} className={`ml-auto text-[#68747a] transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+        {canClear && onClear && (
+          <button type='button' className='toolbar-button shrink-0' title='Clear all logged rounds' onClick={handleClear}>
+            <Eraser size={14} /> Clear log
+          </button>
+        )}
+      </div>
+      {confirmOpen && (
+        <ConfirmDialog
+          title='Clear round log'
+          message={`This removes all ${log.length} logged rounds. Combatant initiative scores are not changed.`}
+          confirmLabel='Clear log'
+          onCancel={() => setConfirmOpen(false)}
+          onConfirm={() => {
+            setConfirmOpen(false);
+            onClear?.();
+          }}
+        />
+      )}
+      {open && rounds.map((round, index) => (
+        <div key={round.id ?? `${round.round}-${index}`} className='border-b border-white/[0.07] px-4 py-3 last:border-0'>
           <h3 className='mb-2 text-[10px] font-semibold uppercase tracking-wide text-[#d6a85f]'>Round {round.round}</h3>
           <div className='overflow-x-auto'>
             <table className='w-full min-w-[640px] border-collapse text-xs'>
@@ -1147,8 +1229,8 @@ function InitiativeRoundLogPanel({ log }: { log: InitiativeRoundLog[] }) {
                 </tr>
               </thead>
               <tbody>
-                {sortRoundLogEntries(round.entries).map((entry) => (
-                  <tr key={`${round.round}-${entry.name}`} className='border-b border-white/[0.05] last:border-0'>
+                {sortRoundLogEntries(round.entries).map((entry, entryIndex) => (
+                  <tr key={`${round.id ?? round.round}-${entry.name}-${entryIndex}`} className='border-b border-white/[0.05] last:border-0'>
                     <td className='px-2 py-2 font-medium text-[#e7ebed]'>{entry.name}</td>
                     <td className='px-2 py-2 text-[#89949a]'>{entry.ally ? 'Ally' : 'Enemy'}</td>
                     <td className='px-2 py-2 text-[#bdc5c9]'>{entry.initiative ?? ''}</td>
@@ -1413,7 +1495,7 @@ function AbilitiesPanel({ combatant }: { combatant: PopulatedCombatant }) {
     {abilities.isLoading && <EmptyState>Loading abilities...</EmptyState>}
     {abilities.isError && <ErrorState error={abilities.error} />}
     {!abilities.isLoading && !visible.length && <EmptyState>No abilities found.</EmptyState>}
-    {(['Weapon', 'Base', 'Added', 'Character'] as const).map((source) => {
+    {(['Weapon', 'Base', 'Added', 'Character', 'Feat'] as const).map((source) => {
       const group = visible.filter((ability) => ability.source === source);
       if (!group.length) return null;
       return <section key={source} className='mb-2.5 border border-white/10 bg-[#11171a]'>
@@ -1698,6 +1780,7 @@ function classifyAbility(ability: Phase1Ability) {
 function abilityGroupLabel(source: Phase1Ability['source']) {
   if (source === 'Weapon') return 'Weapon Attacks';
   if (source === 'Character') return 'Character Abilities';
+  if (source === 'Feat') return 'Feats';
   return `${source} Abilities`;
 }
 function HealthStatusPanel({ combatant, calculatedStatus, calculating, onChangeConditions, onPersistHpCurrent, onPersistTempHp }: { combatant: PopulatedCombatant; calculatedStatus?: Phase1CreatureStatus | null; calculating: boolean; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void }) {
@@ -2289,7 +2372,7 @@ function rankLabel(rank: number) {
   const suffix = mod >= 11 && mod <= 13 ? 'th' : rank % 10 === 1 ? 'st' : rank % 10 === 2 ? 'nd' : rank % 10 === 3 ? 'rd' : 'th';
   return `${rank}${suffix}`;
 }
-function NoteSurface({ note, isGm }: { note: IndexedNotePage | null; isGm: boolean }) {
+function NoteSurface({ note, isGm, encounterLink }: { note: IndexedNotePage | null; isGm: boolean; encounterLink?: { href: string; name: string } }) {
   const markdown = note ? noteContentsToMarkdown(note.page.contents) : '';
   return (
     <>
@@ -2297,6 +2380,7 @@ function NoteSurface({ note, isGm }: { note: IndexedNotePage | null; isGm: boole
         <Eyebrow>{isGm ? 'Campaign notes' : 'Shared campaign notes'}</Eyebrow>
         <h2 className='mt-1 truncate text-xl font-semibold'>{note?.page.name ?? 'Note not found'}</h2>
         <p className='mt-1 truncate text-xs text-[#778289]'>{note ? (note.page.shared ? 'Shared with party' : 'Visible to the GM only') : 'This campaign note is unavailable.'}</p>
+        {encounterLink && <Link to={encounterLink.href} className='mt-1 block truncate text-xs text-[#d6a85f] hover:underline'>See encounter: {encounterLink.name}</Link>}
       </div>
       <div className='p-5'>
         {!note && <EmptyState>This campaign note could not be found, or it is not shared with you.</EmptyState>}

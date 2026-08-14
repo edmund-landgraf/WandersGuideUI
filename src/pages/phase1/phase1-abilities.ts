@@ -11,7 +11,7 @@ import { preparePhase1Entity, type Phase1EntityCombatant } from './phase1-entity
 
 export type Phase1Ability = AbilityBlock & {
   traitNames: string[];
-  source: 'Base' | 'Added' | 'Character' | 'Catalog' | 'Creature' | 'Weapon';
+  source: 'Base' | 'Added' | 'Character' | 'Feat' | 'Catalog' | 'Creature' | 'Weapon';
 };
 
 export async function loadEntityAbilities(combatant: Phase1EntityCombatant): Promise<Phase1Ability[]> {
@@ -34,7 +34,7 @@ export async function loadEntityAbilities(combatant: Phase1EntityCombatant): Pro
   );
   const withNested = [...usable, ...collectSelectedCustomAbilities(entity, usable)];
   return uniqBy(withNested, (ability) => `${ability.id}:${ability.name}`)
-    .map((ability) => enrich(ability, 'Character', traits))
+    .map((ability) => enrich(ability, ability.type === 'feat' ? 'Feat' : 'Character', traits))
     .sort((a, b) => (a.level ?? 0) - (b.level ?? 0) || a.name.localeCompare(b.name));
 }
 

@@ -20,8 +20,6 @@ type CampaignSignInProps = {
 
 export function CampaignSignIn({ variant }: CampaignSignInProps) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [oauthBusy, setOauthBusy] = useState<OAuthProvider | null>(null);
@@ -33,8 +31,12 @@ export function CampaignSignIn({ variant }: CampaignSignInProps) {
     setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  async function submit(event: FormEvent) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const email = String(data.get('email') ?? '').trim();
+    const password = String(data.get('password') ?? '');
     setBusy(true);
     setError('');
     const result = await signInWithEmail(email, password);
@@ -83,7 +85,7 @@ export function CampaignSignIn({ variant }: CampaignSignInProps) {
 
   return (
     <div className={shellClass}>
-      <form className={formClass} onSubmit={submit}>
+      <form className={formClass} method='post' autoComplete='on' onSubmit={submit}>
         {isPhase0 ? (
           <>
             <div className='inline-flex rounded-md border border-slate-700 px-2 py-0.5 text-xs uppercase tracking-wide text-slate-400'>
@@ -121,22 +123,24 @@ export function CampaignSignIn({ variant }: CampaignSignInProps) {
           Email
           <input
             className={inputClass}
+            id='campaign-sign-in-email'
+            name='email'
             type='email'
             required
-            autoComplete='email'
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            autoComplete='username'
+            defaultValue=''
           />
         </label>
         <label className={isPhase0 ? 'mt-4 block text-sm text-slate-300' : 'mt-4 block text-xs text-[#89949a]'}>
           Password
           <input
             className={inputClass}
+            id='campaign-sign-in-password'
+            name='password'
             type='password'
             required
             autoComplete='current-password'
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
+            defaultValue=''
           />
         </label>
         {error && <p className={errorClass}>{error}</p>}

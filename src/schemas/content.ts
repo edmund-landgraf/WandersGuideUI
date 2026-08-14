@@ -943,6 +943,7 @@ export const InitiativeRoundLogEntrySchema = z.object({
 export type InitiativeRoundLogEntry = z.infer<typeof InitiativeRoundLogEntrySchema>;
 
 export const InitiativeRoundLogSchema = z.object({
+  id: z.string().optional(),
   round: z.number(),
   entries: z.array(InitiativeRoundLogEntrySchema),
 });
