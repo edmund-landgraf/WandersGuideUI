@@ -31,7 +31,7 @@ function restoreInventoryItemPools(entry: InventoryItem, staffChargeMax: number)
   const meta = entry.item.meta_data;
   let item = entry.item;
   if (meta || isStaff || isWand) {
-    const nextMeta = { ...(meta ?? {}) };
+    const nextMeta = { bulk: {}, ...(meta ?? {}) };
     let changed = false;
     const hpMax = numericOrUndefined(nextMeta.hp_max);
     const hp = numericOrUndefined(nextMeta.hp);

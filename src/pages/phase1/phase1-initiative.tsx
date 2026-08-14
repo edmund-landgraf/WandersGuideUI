@@ -81,6 +81,7 @@ export function sortCombatantsByInitiative<T extends Combatant>(combatants: T[])
       if (!a.ally && b.ally) return -1;
       return a._id.localeCompare(b._id);
     }
+    if (aI == null || bI == null) return 0;
     return bI - aI;
   });
 }
