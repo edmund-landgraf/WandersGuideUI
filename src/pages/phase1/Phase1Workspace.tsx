@@ -692,7 +692,7 @@ type CombatantStatusMap = Record<string, Phase1CreatureStatus | null>;
 function useCombatantStatuses(encounterId: number | null, combatants: PopulatedCombatant[]) {
   const signature = combatants.map((combatant) => `${combatant._id}:${combatant.data.hp_current}:${combatant.data.hp_temp}:${JSON.stringify(combatant.data.details?.conditions ?? [])}`).join('|');
   return useQuery({
-    queryKey: ['phase1-encounter-statuses', 'isolated-store', encounterId, signature],
+    queryKey: ['phase1-encounter-statuses', 'isolated-store', 'keep-encounter-ops', encounterId, signature],
     enabled: encounterId !== null && combatants.length > 0,
     queryFn: async () => {
       const result: CombatantStatusMap = {};
@@ -2545,7 +2545,8 @@ function hasFullEntityDetails(combatant: PopulatedCombatant) {
 }
 function statsFor(entity: LivingEntity) {
   const profs = entity.meta_data?.calculated_stats?.profs;
-  return { ac: entity.meta_data?.calculated_stats?.ac ?? 10, fort: profs?.SAVE_FORT?.total ?? 0, reflex: profs?.SAVE_REFLEX?.total ?? 0, will: profs?.SAVE_WILL?.total ?? 0, maxHp: entity.meta_data?.calculated_stats?.hp_max ?? entity.hp_current };
+  const storedMax = entity.meta_data?.calculated_stats?.hp_max;
+  return { ac: entity.meta_data?.calculated_stats?.ac ?? 10, fort: profs?.SAVE_FORT?.total ?? 0, reflex: profs?.SAVE_REFLEX?.total ?? 0, will: profs?.SAVE_WILL?.total ?? 0, maxHp: storedMax && storedMax > 0 ? storedMax : entity.hp_current };
 }
 function signed(value: number) { return value >= 0 ? `+${value}` : String(value); }
 function uniqueById(campaigns: Campaign[]) { return [...new Map(campaigns.map((campaign) => [campaign.id, campaign])).values()]; }

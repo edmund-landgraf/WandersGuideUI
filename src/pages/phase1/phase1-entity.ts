@@ -7,10 +7,12 @@ import {
   fetchContentSources,
   getDefaultSources,
 } from '@content/content-store';
-import { isItemEquippable, isItemImplantable, isItemInvestable, isItemWeapon } from '@items/inv-utils';
+import { isItemEquippable, isItemImplantable, isItemInvestable } from '@items/inv-utils';
 import { executeOperations } from '@operations/operations.main';
 import type { Character, Combatant, ContentPackage, Creature, InventoryItem, Item } from '@schemas/content';
 import type { VariableListStr } from '@schemas/variables';
+import { adjustCreature } from '@utils/creature';
+import { getFinalHealthValue } from '@variables/variable-helpers';
 import { exportVariableStore, getVariable, importVariableStore } from '@variables/variable-manager';
 import { cloneDeep, uniq, uniqBy } from 'lodash-es';
 
@@ -62,7 +64,7 @@ async function preparePhase1EntityNow(combatant: Phase1EntityCombatant): Promise
       return { entity: character, content, storeId, kind: 'CHARACTER' };
     }
 
-    let creature = await hydrateCreatureRecord(cloneDeep(combatant.data as Creature));
+    let creature = await hydrateCreatureForCombat(cloneDeep(combatant.data as Creature));
     const storeId = `CREATURE_${combatant._id}`;
     const content = await fetchContentPackage(getDefaultSources('PAGE'), {
       fetchSources: false,
@@ -74,6 +76,7 @@ async function preparePhase1EntityNow(combatant: Phase1EntityCombatant): Promise
     }, { directExecution: true });
     creature = applyGivenItems(storeId, content.items, creature);
     applyConditions(storeId, creature.details?.conditions ?? []);
+    creature = fillCurrentHp(creature, getFinalHealthValue(storeId));
     return { entity: creature, content, storeId, kind: 'CREATURE' };
   } finally {
     defineDefaultSources('PAGE', previousPage);
@@ -81,24 +84,65 @@ async function preparePhase1EntityNow(combatant: Phase1EntityCombatant): Promise
   }
 }
 
-async function hydrateCreatureRecord(creature: Creature): Promise<Creature> {
-  if (!creature.id || creature.id <= 0) return creature;
-  const hasAbilities = Boolean(creature.abilities_base?.length || creature.abilities_added?.length);
-  const hasWeapons = (creature.inventory?.items ?? []).some((entry) => isItemWeapon(entry.item));
-  if (hasAbilities || hasWeapons) return creature;
-  const full = await fetchContentById<Creature>('creature', creature.id, { skipCache: true });
-  if (!full) return creature;
+/**
+ * The original drawer always loads the catalog row by id. Encounter JSON and the
+ * creature list cache can keep abilities while dropping HP/AC/attribute ops, and
+ * `meta_data.calculated_stats` is often null on official monsters. Skip the in-memory
+ * content cache so we do not reuse a truncated list record.
+ */
+export async function hydrateCreatureForCombat(creature: Creature, adjustment?: 'ELITE' | 'WEAK'): Promise<Creature> {
+  const { creature: base, replacedFromCatalog } = await hydrateCreatureRecord(creature);
+  const applyAdjustment = adjustment ?? (replacedFromCatalog ? creature.details.adjustment : undefined);
+  const next = applyAdjustment ? adjustCreature(structuredClone(base), applyAdjustment) : base;
+  return fillCurrentHp(next);
+}
+
+async function hydrateCreatureRecord(creature: Creature): Promise<{ creature: Creature; replacedFromCatalog: boolean }> {
+  if (!creature.id || creature.id <= 0) {
+    return { creature: fillCurrentHp(creature), replacedFromCatalog: false };
+  }
+
+  const catalog = await fetchContentById<Creature>('creature', creature.id, { skipCache: true });
+  if (!catalog) return { creature: fillCurrentHp(creature), replacedFromCatalog: false };
+
   return {
-    ...full,
-    hp_current: creature.hp_current ?? full.hp_current,
-    hp_temp: creature.hp_temp,
-    details: {
-      ...full.details,
-      ...creature.details,
-      conditions: creature.details?.conditions ?? full.details.conditions,
-    },
-    notes: creature.notes ?? full.notes,
+    replacedFromCatalog: true,
+    creature: fillCurrentHp({
+      ...catalog,
+      hp_current: creature.hp_current || catalog.hp_current,
+      hp_temp: creature.hp_temp,
+      details: {
+        ...catalog.details,
+        conditions: creature.details?.conditions ?? catalog.details.conditions,
+        image_url: creature.details?.image_url ?? catalog.details.image_url,
+        adjustment: creature.details.adjustment,
+      },
+      notes: creature.notes ?? catalog.notes,
+      meta_data: {
+        ...catalog.meta_data,
+        ...creature.meta_data,
+        calculated_stats: hasUsefulCalculatedStats(creature.meta_data?.calculated_stats)
+          ? creature.meta_data?.calculated_stats
+          : catalog.meta_data?.calculated_stats,
+      },
+    }),
   };
+}
+
+function hasUsefulCalculatedStats(stats?: { hp_max?: number; ac?: number } | null) {
+  return Boolean(stats && ((typeof stats.hp_max === 'number' && stats.hp_max > 0) || (typeof stats.ac === 'number' && stats.ac > 10)));
+}
+
+function fillCurrentHp(creature: Creature, computedMax?: number) {
+  if (creature.hp_current) return creature;
+  const stored = creature.meta_data?.calculated_stats?.hp_max;
+  const maxHp = typeof computedMax === 'number' && computedMax > 0
+    ? computedMax
+    : typeof stored === 'number' && stored > 0
+      ? stored
+      : 0;
+  if (maxHp <= 0) return creature;
+  return { ...creature, hp_current: maxHp };
 }
 
 function applyGivenItems(storeId: string, items: Item[], creature: Creature): Creature {

@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { fetchContentAll, fetchContentById, getDefaultSources, getDefaultSourcesKey } from '@content/content-store';
+import { fetchContentAll, getDefaultSources, getDefaultSourcesKey } from '@content/content-store';
 import type { Creature } from '@schemas/content';
-import { adjustCreature } from '@utils/creature';
 import { getEntityLevel } from '@utils/entity-utils';
 import { ChevronDown, Swords } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { hydrateCreatureForCombat } from './phase1-entity';
 import { lookupMonsterArt } from './phase1-monster-image';
 import { ProseMarkdown } from './phase1-markdown';
 import { Phase1PickerModal } from './phase1-picker-modal';
@@ -290,11 +290,5 @@ function labelize(value: string) {
 }
 
 async function hydrateCreature(creature: Creature, adjustment?: 'ELITE' | 'WEAK') {
-  const full = (await fetchContentById<Creature>('creature', creature.id, { skipCache: true })) ?? creature;
-  const next = adjustment ? adjustCreature(full, adjustment) : structuredClone(full);
-  if (next.hp_current == null && !adjustment) {
-    const maxHp = next.meta_data?.calculated_stats?.hp_max;
-    if (typeof maxHp === 'number') next.hp_current = maxHp;
-  }
-  return next;
+  return hydrateCreatureForCombat(creature, adjustment);
 }

@@ -534,7 +534,9 @@ function getComputedStats(entity: LivingEntity): ComputedStats {
     fort: profs?.SAVE_FORT?.total ?? 0,
     reflex: profs?.SAVE_REFLEX?.total ?? 0,
     will: profs?.SAVE_WILL?.total ?? 0,
-    maxHp: entity.meta_data?.calculated_stats?.hp_max ?? entity.hp_current ?? 0,
+    maxHp: (entity.meta_data?.calculated_stats?.hp_max && entity.meta_data.calculated_stats.hp_max > 0)
+      ? entity.meta_data.calculated_stats.hp_max
+      : entity.hp_current ?? 0,
   };
 }
 

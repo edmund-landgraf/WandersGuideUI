@@ -68,8 +68,8 @@ export async function calculateEntityStatus(combatant: Phase1EntityCombatant): P
     }
   }
 
-  return {
-    maxHp: getFinalHealthValue(storeId),
+  return overlayStoredStats({
+    maxHp: resolveMaxHp(getFinalHealthValue(storeId), entity),
     ac: getFinalAcValue(storeId, getBestArmor(storeId, entity.inventory)?.item),
     fortitude: parseSigned(getFinalProfValue(storeId, 'SAVE_FORT')),
     reflex: parseSigned(getFinalProfValue(storeId, 'SAVE_REFLEX')),
@@ -92,10 +92,34 @@ export async function calculateEntityStatus(combatant: Phase1EntityCombatant): P
     weaknesses: getResistWeaks(storeId, 'WEAKNESSES'),
     immunities: (getVariable<VariableListStr>(storeId, 'IMMUNITIES')?.value ?? []).map((value) => toLabel(value)),
     recallKnowledge,
-  };
+  }, entity);
 }
 
 function parseSigned(value: string) {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function resolveMaxHp(computed: number, entity: { hp_current?: number | null; meta_data?: { calculated_stats?: { hp_max?: number } } | null }) {
+  if (computed > 0) return computed;
+  const stored = entity.meta_data?.calculated_stats?.hp_max;
+  if (typeof stored === 'number' && stored > 0) return stored;
+  return entity.hp_current ?? computed;
+}
+
+function overlayStoredStats(live: Phase1CreatureStatus, entity: { hp_current?: number | null; meta_data?: { calculated_stats?: { hp_max?: number; ac?: number; profs?: Record<string, { total: number }> } } | null }): Phase1CreatureStatus {
+  const stored = entity.meta_data?.calculated_stats;
+  const profs = stored?.profs;
+  const pick = (liveValue: number, storedValue: number | undefined, empty = 0) =>
+    liveValue !== empty ? liveValue : storedValue ?? liveValue;
+  return {
+    ...live,
+    maxHp: live.maxHp > 0 ? live.maxHp : stored?.hp_max || entity.hp_current || 0,
+    ac: live.ac > 10 ? live.ac : stored?.ac ?? live.ac,
+    fortitude: pick(live.fortitude, profs?.SAVE_FORT?.total),
+    reflex: pick(live.reflex, profs?.SAVE_REFLEX?.total),
+    will: pick(live.will, profs?.SAVE_WILL?.total),
+    classDc: live.classDc !== 10 ? live.classDc : profs?.CLASS_DC?.total ?? live.classDc,
+    perception: pick(live.perception, profs?.PERCEPTION?.total),
+  };
 }

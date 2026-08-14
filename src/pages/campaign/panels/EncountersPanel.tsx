@@ -1274,7 +1274,9 @@ async function computeCombatants(combatants: PopulatedCombatant[]) {
         fort: combatant.data.meta_data?.calculated_stats?.profs?.SAVE_FORT?.total ?? 0,
         reflex: combatant.data.meta_data?.calculated_stats?.profs?.SAVE_REFLEX?.total ?? 0,
         will: combatant.data.meta_data?.calculated_stats?.profs?.SAVE_WILL?.total ?? 0,
-        maxHp: combatant.data.meta_data?.calculated_stats?.hp_max ?? 0,
+        maxHp: (combatant.data.meta_data?.calculated_stats?.hp_max && combatant.data.meta_data.calculated_stats.hp_max > 0)
+          ? combatant.data.meta_data.calculated_stats.hp_max
+          : combatant.data.hp_current ?? 0,
       };
     } else if (combatant.type === 'CREATURE') {
       const creature = cloneDeep(combatant.data) as Creature;
