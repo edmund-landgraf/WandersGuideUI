@@ -8,7 +8,7 @@ export type Phase1SpellMode = 'PREPARED' | 'SPONTANEOUS' | 'FOCUS' | 'INNATE';
 
 export type Phase1SpellEntry = {
   key: string;
-  spell: Spell;
+  spell?: Spell;
   rank: number;
   traitNames: string[];
   sourceName: string;
@@ -18,6 +18,17 @@ export type Phase1SpellEntry = {
   exhausted: boolean;
   usesCurrent?: number;
   usesMax?: number;
+  slotId?: string;
+  empty?: boolean;
+};
+
+export type Phase1SpellbookEntry = {
+  key: string;
+  spell: Spell;
+  rank: number;
+  sourceName: string;
+  traitNames: string[];
+  cantrip: boolean;
 };
 
 export type Phase1SpellSection = {
@@ -45,23 +56,27 @@ export async function loadEntitySpells(combatant: Phase1EntityCombatant): Promis
     const mode = source.type.startsWith('PREPARED-') ? 'PREPARED' : source.type.startsWith('SPONTANEOUS-') ? 'SPONTANEOUS' : null;
     if (mode) {
       const sourceSlots = data.slots.filter((slot) => slot.source === source.name);
-      const records = mode === 'PREPARED'
-        ? sourceSlots.filter((slot) => slot.spell_id != null).map((slot, index) => ({ spell_id: slot.spell_id!, rank: slot.rank, exhausted: Boolean(slot.exhausted), index }))
-        : data.list.filter((entry) => entry.source === source.name).map((entry, index) => ({ ...entry, exhausted: false, index }));
-      const entries = records.flatMap((record) => {
-        const spell = spellById.get(record.spell_id);
-        if (!spell) return [];
-        const traitNames = namesFor(spell, traitById);
-        const cantrip = traitNames.some((name) => name.toLowerCase() === 'cantrip');
-        const rankSlots = sourceSlots.filter((slot) => slot.rank === record.rank);
-        const exhausted = mode === 'PREPARED'
-          ? record.exhausted
-          : cantrip
-            ? false
-            : !rankSlots.some((slot) => !slot.exhausted);
-        const available = cantrip || (mode === 'PREPARED' ? !record.exhausted : rankSlots.some((slot) => !slot.exhausted));
-        return [makeEntry(spell, record.rank, traitNames, source.name, mode, cantrip, available, exhausted, record.index)];
-      });
+      const entries = mode === 'PREPARED'
+        ? sourceSlots.flatMap((slot, index) => {
+            if (slot.spell_id == null) {
+              return [makeEmptyEntry(source.name, slot.rank, slot.id, Boolean(slot.exhausted))];
+            }
+            const spell = spellById.get(slot.spell_id);
+            if (!spell) return [makeEmptyEntry(source.name, slot.rank, slot.id, Boolean(slot.exhausted))];
+            const traitNames = namesFor(spell, traitById);
+            const cantrip = isCantrip(traitNames, slot.rank);
+            return [makeEntry(spell, slot.rank, traitNames, source.name, mode, cantrip, cantrip || !slot.exhausted, Boolean(slot.exhausted), index, undefined, undefined, slot.id)];
+          })
+        : data.list.filter((entry) => entry.source === source.name).flatMap((record, index) => {
+            const spell = spellById.get(record.spell_id);
+            if (!spell) return [];
+            const traitNames = namesFor(spell, traitById);
+            const cantrip = isCantrip(traitNames, record.rank);
+            const rankSlots = sourceSlots.filter((slot) => slot.rank === record.rank);
+            const exhausted = cantrip ? false : !rankSlots.some((slot) => !slot.exhausted);
+            const available = cantrip || rankSlots.some((slot) => !slot.exhausted);
+            return [makeEntry(spell, record.rank, traitNames, source.name, mode, cantrip, available, exhausted, index)];
+          });
       if (entries.length || sourceSlots.length) {
         sections.push({
           key: `${mode}-${source.name}`,
@@ -115,6 +130,32 @@ export async function loadEntitySpells(combatant: Phase1EntityCombatant): Promis
   return sections;
 }
 
+export function spellbookEntriesForSource(
+  list: Array<{ spell_id: number; rank: number; source: string }>,
+  sourceName: string,
+  spells: Spell[],
+  traits: Array<{ id: number; name: string }>,
+): Phase1SpellbookEntry[] {
+  const spellById = new Map(spells.map((spell) => [spell.id, spell]));
+  const traitById = new Map(traits.map((trait) => [trait.id, trait.name]));
+  return list
+    .filter((entry) => entry.source === sourceName)
+    .flatMap((entry, index) => {
+      const spell = spellById.get(entry.spell_id);
+      if (!spell) return [];
+      const traitNames = namesFor(spell, traitById);
+      return [{
+        key: `${sourceName}-${entry.spell_id}-${entry.rank}-${index}`,
+        spell,
+        rank: entry.rank,
+        sourceName,
+        traitNames,
+        cantrip: isCantrip(traitNames, entry.rank),
+      }];
+    })
+    .sort((a, b) => a.rank - b.rank || a.spell.name.localeCompare(b.spell.name));
+}
+
 /** @deprecated Use setEntitySpellCast instead */
 export async function castEntitySpell(combatant: Phase1EntityCombatant, entry: Phase1SpellEntry): Promise<LivingEntity> {
   return setEntitySpellCast(combatant, entry, true);
@@ -122,7 +163,7 @@ export async function castEntitySpell(combatant: Phase1EntityCombatant, entry: P
 
 export async function setEntitySpellCast(combatant: Phase1EntityCombatant, entry: Phase1SpellEntry, cast: boolean): Promise<LivingEntity> {
   const raw = cloneDeep(combatant.data);
-  if (entry.cantrip) return raw;
+  if (entry.cantrip || entry.empty || !entry.spell) return raw;
 
   const { entity, storeId } = await preparePhase1Entity(combatant);
   const data = collectEntitySpellcasting(storeId, entity);
@@ -131,7 +172,7 @@ export async function setEntitySpellCast(combatant: Phase1EntityCombatant, entry
   if (entry.mode === 'PREPARED') {
     const index = spells.slots.findIndex(
       (slot) =>
-        slot.spell_id === entry.spell.id &&
+        slot.spell_id === entry.spell!.id &&
         slot.rank === entry.rank &&
         slot.source === entry.sourceName &&
         Boolean(slot.exhausted) === !cast,
@@ -150,7 +191,7 @@ export async function setEntitySpellCast(combatant: Phase1EntityCombatant, entry
     spells.focus_point_current = Math.max((spells.focus_point_current ?? 0) + (cast ? -1 : 1), 0);
   } else if (entry.mode === 'INNATE') {
     spells.innate_casts = spells.innate_casts.map((innate) =>
-      innate.spell_id === entry.spell.id && innate.rank === entry.rank
+      innate.spell_id === entry.spell!.id && innate.rank === entry.rank
         ? {
             ...innate,
             casts_current: cast
@@ -227,6 +268,109 @@ export async function setEntityInnateSpent(
   return { ...raw, spells };
 }
 
+export async function addEntitySpellToList(
+  combatant: Phase1EntityCombatant,
+  sourceName: string,
+  spell: Spell,
+  rank: number,
+): Promise<LivingEntity> {
+  const raw = cloneDeep(combatant.data);
+  const { entity, storeId } = await preparePhase1Entity(combatant);
+  const data = collectEntitySpellcasting(storeId, entity);
+  const spells = buildSpellState(raw, data);
+  const exists = spells.list.some((entry) => entry.spell_id === spell.id && entry.rank === rank && entry.source === sourceName);
+  if (!exists) spells.list.push({ spell_id: spell.id, rank, source: sourceName });
+  return { ...raw, spells };
+}
+
+export async function removeEntitySpellFromList(
+  combatant: Phase1EntityCombatant,
+  sourceName: string,
+  spellId: number,
+  rank?: number,
+): Promise<LivingEntity> {
+  const raw = cloneDeep(combatant.data);
+  const { entity, storeId } = await preparePhase1Entity(combatant);
+  const data = collectEntitySpellcasting(storeId, entity);
+  const spells = buildSpellState(raw, data);
+  spells.list = spells.list.filter((entry) => {
+    if (entry.spell_id !== spellId || entry.source !== sourceName) return true;
+    return rank != null && entry.rank !== rank;
+  });
+  spells.slots = spells.slots.map((slot) =>
+    slot.source === sourceName && slot.spell_id === spellId && (rank == null || slot.rank === rank)
+      ? { ...slot, spell_id: undefined }
+      : slot,
+  );
+  return { ...raw, spells };
+}
+
+export async function prepareEntitySpellSlot(
+  combatant: Phase1EntityCombatant,
+  sourceName: string,
+  slotId: string | undefined,
+  spell: Spell,
+  rank: number,
+): Promise<LivingEntity> {
+  const raw = cloneDeep(combatant.data);
+  const { entity, storeId } = await preparePhase1Entity(combatant);
+  const data = collectEntitySpellcasting(storeId, entity);
+  const spells = buildSpellState(raw, data);
+  const slotRank = rank;
+  let index = slotId
+    ? spells.slots.findIndex((slot) => slot.id === slotId && slot.source === sourceName && slot.rank === slotRank)
+    : -1;
+  if (index < 0) {
+    index = spells.slots.findIndex((slot) => slot.source === sourceName && slot.rank === slotRank && slot.spell_id == null);
+  }
+  if (index < 0) {
+    throw new Error(`No empty ${slotRank === 0 ? 'cantrip' : `rank ${slotRank}`} slot left for ${sourceName}.`);
+  }
+  spells.slots[index] = { ...spells.slots[index], spell_id: spell.id };
+  const exists = spells.list.some((entry) => entry.spell_id === spell.id && entry.rank === rank && entry.source === sourceName);
+  if (!exists) spells.list.push({ spell_id: spell.id, rank, source: sourceName });
+  return { ...raw, spells };
+}
+
+export async function applyEntityDivineFont(
+  combatant: Phase1EntityCombatant,
+  sourceName: string,
+  choice: 'heal' | 'harm',
+): Promise<LivingEntity> {
+  const raw = cloneDeep(combatant.data);
+  const { entity, content, storeId } = await preparePhase1Entity(combatant);
+  const data = collectEntitySpellcasting(storeId, entity);
+  const spells = buildSpellState(raw, data);
+  const target = content.spells.find((spell) => spell.name.toLowerCase() === choice);
+  if (!target) throw new Error(`Could not find the ${choice} spell in your content sources.`);
+  const ranks = [...new Set(spells.slots.filter((slot) => slot.source === sourceName && slot.rank > 0).map((slot) => slot.rank))];
+  if (!ranks.length) throw new Error('No ranked spell slots to fill with Divine Font.');
+  for (const rank of ranks) {
+    const exists = spells.list.some((entry) => entry.spell_id === target.id && entry.rank === rank && entry.source === sourceName);
+    if (!exists) spells.list.push({ spell_id: target.id, rank, source: sourceName });
+    spells.slots = spells.slots.map((slot) =>
+      slot.source === sourceName && slot.rank === rank && slot.spell_id == null ? { ...slot, spell_id: target.id } : slot,
+    );
+  }
+  return { ...raw, spells };
+}
+
+export function isDivinePreparedSource(source?: { name?: string; tradition?: string; type?: string }) {
+  if (!source) return false;
+  const tradition = (source.tradition ?? '').toLowerCase();
+  const name = (source.name ?? '').toLowerCase();
+  return tradition === 'divine' || name.includes('divine');
+}
+
+export async function clearEntitySpellSlot(combatant: Phase1EntityCombatant, slotId: string): Promise<LivingEntity> {
+  const raw = cloneDeep(combatant.data);
+  const { entity, storeId } = await preparePhase1Entity(combatant);
+  const data = collectEntitySpellcasting(storeId, entity);
+  const spells = buildSpellState(raw, data);
+  spells.slots = spells.slots.map((slot) => (slot.id === slotId ? { ...slot, spell_id: undefined } : slot));
+  return { ...raw, spells };
+}
+
 function buildSpellState(raw: LivingEntity, data: ReturnType<typeof collectEntitySpellcasting>) {
   return {
     slots: [...data.slots],
@@ -248,8 +392,40 @@ function makeEntry(
   index: number,
   usesCurrent?: number,
   usesMax?: number,
+  slotId?: string,
 ): Phase1SpellEntry {
-  return { key: `${mode}-${sourceName}-${rank}-${spell.id}-${index}`, spell, rank, traitNames, sourceName, mode, cantrip, available, exhausted, usesCurrent, usesMax };
+  return { key: `${mode}-${sourceName}-${rank}-${spell.id}-${slotId ?? index}`, spell, rank, traitNames, sourceName, mode, cantrip, available, exhausted, usesCurrent, usesMax, slotId };
+}
+
+function makeEmptyEntry(sourceName: string, rank: number, slotId: string, exhausted: boolean): Phase1SpellEntry {
+  return {
+    key: `PREPARED-${sourceName}-${rank}-empty-${slotId}`,
+    rank,
+    traitNames: [],
+    sourceName,
+    mode: 'PREPARED',
+    cantrip: rank === 0,
+    available: true,
+    exhausted,
+    slotId,
+    empty: true,
+  };
+}
+
+function isCantrip(traitNames: string[], rank: number) {
+  return rank === 0 || traitNames.some((name) => name.toLowerCase() === 'cantrip');
+}
+
+export function spellFitsSlot(spell: Spell, slotRank: number, listRank?: number) {
+  const rank = listRank ?? spell.rank;
+  const isCantripSpell = rank === 0;
+  if (slotRank === 0) return isCantripSpell;
+  return !isCantripSpell && rank <= slotRank;
+}
+
+export function heightenRanksFor(spell: Spell) {
+  const base = Math.max(spell.rank, 1);
+  return Array.from({ length: 11 - base }, (_, index) => base + index);
 }
 
 function namesFor(spell: Spell, traits: Map<number, string>) {

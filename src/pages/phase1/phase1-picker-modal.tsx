@@ -115,9 +115,9 @@ export function Phase1PickerModal<T>({
         role='dialog'
         aria-modal='true'
         aria-labelledby={titleId}
-        className={`flex ${maxHeightClass} w-full ${maxWidthClass} flex-col border border-white/15 bg-[#11171a] shadow-2xl`}
+        className={`flex ${maxHeightClass} w-full ${maxWidthClass} flex-col border border-p1-border bg-p1-surface shadow-2xl`}
       >
-        <header className='flex items-center gap-3 border-b border-white/10 px-4 py-3'>
+        <header className='flex items-center gap-3 border-b border-p1-border px-4 py-3'>
           <h2 id={titleId} className='min-w-0 flex-1 text-lg font-semibold'>
             {title}
           </h2>
@@ -125,15 +125,15 @@ export function Phase1PickerModal<T>({
             <X size={18} />
           </button>
         </header>
-        <div className='border-b border-white/10 p-3 pb-2'>
+        <div className='border-b border-p1-border p-3 pb-2'>
           <div className='relative'>
-            <Search className='absolute left-3 top-1/2 -translate-y-1/2 text-[#68747a]' size={14} />
+            <Search className='absolute left-3 top-1/2 -translate-y-1/2 text-p1-faint' size={14} />
             <input
               ref={searchRef}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={searchPlaceholder}
-              className='h-9 w-full border border-white/10 bg-[#0d1215] pl-9 pr-3 text-sm outline-none placeholder:text-[#5f6a70] focus:border-[#d6a85f]/60'
+              className='h-9 w-full border border-p1-border bg-p1-inset pl-9 pr-3 text-sm outline-none placeholder:text-p1-faint focus:border-p1-accent/60'
             />
           </div>
           <div className='mt-2 flex flex-wrap justify-center gap-0.5' role='group' aria-label='Filter by first letter'>
@@ -154,10 +154,10 @@ export function Phase1PickerModal<T>({
           {toolbar}
         </div>
         <div className={`flex min-h-0 flex-1 ${aside ? 'flex-row' : 'flex-col'}`}>
-          <div ref={listRef} className={`min-h-0 flex-1 overflow-y-auto ${aside ? 'border-r border-white/10 md:max-w-md' : ''}`}>
-            {loading && <p className='px-4 py-8 text-center text-sm text-[#7f8a90]'>Loading...</p>}
-            {error && <p className='px-4 py-8 text-center text-sm text-[#efaaa3]'>{error}</p>}
-            {!loading && !error && visible.length === 0 && <p className='px-4 py-8 text-center text-sm text-[#7f8a90]'>{empty}</p>}
+          <div ref={listRef} className={`min-h-0 flex-1 overflow-y-auto ${aside ? 'border-r border-p1-border md:max-w-md' : ''}`}>
+            {loading && <p className='px-4 py-8 text-center text-sm text-p1-muted'>Loading...</p>}
+            {error && <p className='px-4 py-8 text-center text-sm text-p1-danger-soft'>{error}</p>}
+            {!loading && !error && visible.length === 0 && <p className='px-4 py-8 text-center text-sm text-p1-muted'>{empty}</p>}
             {!loading && !error && visible.map((item) => <div key={getKey(item)}>{renderItem(item)}</div>)}
             {hasMore && <div ref={sentinelRef} className='h-4' />}
           </div>
@@ -194,8 +194,8 @@ function LetterButton({
       onClick={onClick}
       className={`grid h-6 min-w-6 place-items-center px-1 text-[10px] font-semibold ${
         active
-          ? 'bg-[#d6a85f] text-[#17130d]'
-          : 'text-[#aeb7bc] hover:bg-white/[0.08] hover:text-white disabled:text-[#3d484e] disabled:hover:bg-transparent'
+          ? 'bg-p1-accent text-p1-accent-ink'
+          : 'text-p1-muted hover:bg-p1-hover hover:text-p1-text disabled:text-p1-faint disabled:hover:bg-transparent'
       }`}
     >
       {children}

@@ -257,21 +257,21 @@ export function InitiativeRollModal({
         role='dialog'
         aria-modal='true'
         aria-labelledby='initiative-roll-title'
-        className='flex max-h-[min(82vh,640px)] w-full max-w-md flex-col border border-white/15 bg-[#11171a] shadow-2xl'
+        className='flex max-h-[min(82vh,640px)] w-full max-w-md flex-col border border-p1-border bg-p1-surface shadow-2xl'
       >
-        <header className='flex items-start gap-3 border-b border-white/10 px-4 py-3'>
+        <header className='flex items-start gap-3 border-b border-p1-border px-4 py-3'>
           <div className='min-w-0 flex-1'>
             <h2 id='initiative-roll-title' className='text-lg font-semibold'>
               Assign Initiative Skills
             </h2>
-            <p className='mt-1 text-sm text-[#8e999f]'>Set which bonus to use for roll (or none to skip).</p>
+            <p className='mt-1 text-sm text-p1-muted'>Set which bonus to use for roll (or none to skip).</p>
           </div>
           <button type='button' className='icon-button shrink-0' onClick={onClose} title='Close'>
             <X size={18} />
           </button>
         </header>
         <div className='min-h-0 flex-1 overflow-y-auto px-4 py-3'>
-          {loading && <p className='py-8 text-center text-sm text-[#7f8a90]'>Loading modifiers...</p>}
+          {loading && <p className='py-8 text-center text-sm text-p1-muted'>Loading modifiers...</p>}
           {!loading && (
             <div className='flex flex-col gap-3'>
               {combatants.map((combatant) => (
@@ -287,10 +287,10 @@ export function InitiativeRollModal({
             </div>
           )}
         </div>
-        <div className='border-t border-white/10 p-4'>
+        <div className='border-t border-p1-border p-4'>
           <button
             type='button'
-            className='inline-flex h-11 w-full items-center justify-center gap-2 bg-[#3b82f6] text-sm font-bold italic text-white hover:bg-[#4f8ff3] disabled:opacity-50'
+            className='inline-flex h-11 w-full items-center justify-center gap-2 bg-p1-action text-sm font-bold italic text-p1-action-ink hover:bg-p1-action-hover disabled:opacity-50'
             disabled={loading}
             onClick={() => onConfirm(rollBonuses)}
           >
@@ -326,7 +326,7 @@ function InitiativeSelect({
       <div className='relative'>
         <select
           id={selectId}
-          className='h-10 w-full appearance-none border border-white/10 bg-[#1a2124] py-0 pl-3 pr-16 text-sm text-[#e7ebed] outline-none focus:border-[#d6a85f]/60'
+          className='h-10 w-full appearance-none border border-p1-border bg-p1-inset py-0 pl-3 pr-16 text-sm text-p1-text outline-none focus:border-p1-accent/60'
           value={value ?? ''}
           onChange={(event) => onChange(event.target.value || null)}
         >
@@ -341,14 +341,14 @@ function InitiativeSelect({
           {value && (
             <button
               type='button'
-              className='pointer-events-auto grid h-7 w-7 place-items-center text-[#89949a] hover:text-white'
+              className='pointer-events-auto grid h-7 w-7 place-items-center text-p1-muted hover:text-p1-text'
               title='Skip'
               onClick={() => onChange(null)}
             >
               <X size={14} />
             </button>
           )}
-          <ChevronsUpDown className='text-[#68747a]' size={14} />
+          <ChevronsUpDown className='text-p1-faint' size={14} />
         </div>
       </div>
     </div>

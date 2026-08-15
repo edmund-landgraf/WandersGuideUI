@@ -1,43 +1,189 @@
 @import 'tailwindcss';
 
-:root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #0d1114; }
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+  --p1-bg-page: #0d1114;
+  --p1-bg-header: #0b0f11;
+  --p1-bg-surface: #11171a;
+  --p1-bg-inset: #0c1113;
+  --p1-bg-raised: #11181b;
+  --p1-text: #e7ebed;
+  --p1-text-muted: #89949a;
+  --p1-text-faint: #68747a;
+  --p1-border: rgb(255 255 255 / 0.1);
+  --p1-hover: rgb(255 255 255 / 0.06);
+  --p1-accent: #d6a85f;
+  --p1-accent-soft: #f0d29d;
+  --p1-accent-ink: #17130d;
+  --p1-danger: #a95249;
+  --p1-danger-soft: #efaaa3;
+  --p1-pc: #82aec2;
+  --p1-creature: #dc8c83;
+  --p1-hp: #5bd6a2;
+  --p1-temp-hp: #7eb6ff;
+  --p1-code-number: #8ec8e8;
+  --p1-code-string: #9dce9a;
+  --p1-code-key: #c9b38a;
+  --p1-action: #3b82f6;
+  --p1-action-hover: #4f8ff3;
+  --p1-action-ink: #f4f7f8;
+  --p1-scrollbar-thumb: #39434a;
+  --p1-scrollbar-track: #12181c;
+}
+
+[data-theme='grey'] {
+  color-scheme: light;
+  --p1-bg-page: #c8c4bb;
+  --p1-bg-header: #bdb8ae;
+  --p1-bg-surface: #d5d1c8;
+  --p1-bg-inset: #b8b3a9;
+  --p1-bg-raised: #d0ccc3;
+  --p1-text: #2a2926;
+  --p1-text-muted: #5c5953;
+  --p1-text-faint: #7a766e;
+  --p1-border: rgb(40 38 32 / 0.18);
+  --p1-hover: rgb(40 38 32 / 0.08);
+  --p1-accent: #b8863a;
+  --p1-accent-soft: #8a6528;
+  --p1-accent-ink: #17130d;
+  --p1-danger: #8f3d36;
+  --p1-danger-soft: #a95249;
+  --p1-pc: #3d6f86;
+  --p1-creature: #a85a52;
+  --p1-hp: #1b6b3a;
+  --p1-temp-hp: #1a5a9c;
+  --p1-code-number: #1a5f7a;
+  --p1-code-string: #2d6b32;
+  --p1-code-key: #8a6528;
+  --p1-action: #2563eb;
+  --p1-action-hover: #1d4ed8;
+  --p1-action-ink: #f4f7f8;
+  --p1-scrollbar-thumb: #9a958c;
+  --p1-scrollbar-track: #b8b3a9;
+}
+
+[data-theme='parchment'] {
+  color-scheme: light;
+  --p1-bg-page: #f3ead6;
+  --p1-bg-header: #ebe1c8;
+  --p1-bg-surface: #faf3e4;
+  --p1-bg-inset: #efe6d0;
+  --p1-bg-raised: #f7eedc;
+  --p1-text: #2c2416;
+  --p1-text-muted: #6b5e48;
+  --p1-text-faint: #8a7b62;
+  --p1-border: rgb(80 55 20 / 0.16);
+  --p1-hover: rgb(80 55 20 / 0.08);
+  --p1-accent: #b8863a;
+  --p1-accent-soft: #8a6528;
+  --p1-accent-ink: #17130d;
+  --p1-danger: #8f3d36;
+  --p1-danger-soft: #a95249;
+  --p1-pc: #3d6f86;
+  --p1-creature: #a85a52;
+  --p1-hp: #18753f;
+  --p1-temp-hp: #1a5a9c;
+  --p1-code-number: #1a5f7a;
+  --p1-code-string: #2d6b32;
+  --p1-code-key: #8a6528;
+  --p1-action: #2563eb;
+  --p1-action-hover: #1d4ed8;
+  --p1-action-ink: #f4f7f8;
+  --p1-scrollbar-thumb: #c4b492;
+  --p1-scrollbar-track: #efe6d0;
+}
+
+@theme {
+  --color-p1-page: var(--p1-bg-page);
+  --color-p1-header: var(--p1-bg-header);
+  --color-p1-surface: var(--p1-bg-surface);
+  --color-p1-inset: var(--p1-bg-inset);
+  --color-p1-raised: var(--p1-bg-raised);
+  --color-p1-text: var(--p1-text);
+  --color-p1-muted: var(--p1-text-muted);
+  --color-p1-faint: var(--p1-text-faint);
+  --color-p1-border: var(--p1-border);
+  --color-p1-hover: var(--p1-hover);
+  --color-p1-accent: var(--p1-accent);
+  --color-p1-accent-soft: var(--p1-accent-soft);
+  --color-p1-accent-ink: var(--p1-accent-ink);
+  --color-p1-danger: var(--p1-danger);
+  --color-p1-danger-soft: var(--p1-danger-soft);
+  --color-p1-pc: var(--p1-pc);
+  --color-p1-creature: var(--p1-creature);
+  --color-p1-hp: var(--p1-hp);
+  --color-p1-temp-hp: var(--p1-temp-hp);
+  --color-p1-code-number: var(--p1-code-number);
+  --color-p1-code-string: var(--p1-code-string);
+  --color-p1-code-key: var(--p1-code-key);
+  --color-p1-action: var(--p1-action);
+  --color-p1-action-hover: var(--p1-action-hover);
+  --color-p1-action-ink: var(--p1-action-ink);
+}
+
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: var(--p1-bg-page); color: var(--p1-text); }
 * { box-sizing: border-box; }
 html, body, #root { min-height: 100%; margin: 0; }
 button, input, select { font: inherit; }
-button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid #d6a85f; outline-offset: 2px; }
-* { scrollbar-color: #39434a #12181c; scrollbar-width: thin; }
+button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--p1-accent); outline-offset: 2px; }
+* { scrollbar-color: var(--p1-scrollbar-thumb) var(--p1-scrollbar-track); scrollbar-width: thin; }
 .icon-button {
   display: grid;
   width: 2.25rem;
   height: 2.25rem;
   place-items: center;
-  border: 1px solid rgb(255 255 255 / 0.1);
-  color: #89949a;
-  background: #11181b;
+  border: 1px solid var(--p1-border);
+  color: var(--p1-text-muted);
+  background: var(--p1-bg-raised);
 }
-.icon-button:hover { border-color: rgb(214 168 95 / 0.5); color: #f0d29d; }
+.icon-button:hover { border-color: color-mix(in srgb, var(--p1-accent) 50%, transparent); color: var(--p1-accent-soft); }
+.phase1-theme-switch {
+  display: inline-flex;
+  height: 2.25rem;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--p1-border);
+  background: var(--p1-bg-raised);
+}
+.phase1-theme-switch button {
+  display: grid;
+  width: 2rem;
+  place-items: center;
+  border: 0;
+  border-right: 1px solid var(--p1-border);
+  color: var(--p1-text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+.phase1-theme-switch button:last-child { border-right: 0; }
+.phase1-theme-switch button:hover { color: var(--p1-accent-soft); background: var(--p1-hover); }
+.phase1-theme-switch button.is-active {
+  color: var(--p1-accent-soft);
+  background: color-mix(in srgb, var(--p1-accent) 16%, transparent);
+}
 .toolbar-button {
   display: inline-flex;
   height: 2.25rem;
   align-items: center;
   gap: 0.5rem;
-  border: 1px solid rgb(255 255 255 / 0.1);
+  border: 1px solid var(--p1-border);
   padding: 0 0.75rem;
-  color: #89949a;
-  background: #0d1215;
+  color: var(--p1-text-muted);
+  background: var(--p1-bg-inset);
   font-size: 0.75rem;
   white-space: nowrap;
 }
 .toolbar-button:disabled { cursor: not-allowed; opacity: 0.45; }
 .settings-input {
   width: 100%;
-  border: 1px solid rgb(255 255 255 / 0.1);
-  background: #0d1215;
+  border: 1px solid var(--p1-border);
+  background: var(--p1-bg-inset);
   padding: 0.55rem 0.75rem;
-  color: #e7ebed;
+  color: var(--p1-text);
   font-size: 0.875rem;
 }
-.settings-input:focus { border-color: rgb(214 168 95 / 0.55); outline: none; }
+.settings-input:focus { border-color: color-mix(in srgb, var(--p1-accent) 55%, transparent); outline: none; }
 
 
 .ability-prose > :first-child { margin-top: 0; }
@@ -55,32 +201,32 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .ability-prose ol { list-style: decimal; }
 .ability-prose li + li { margin-top: 0.35rem; }
 .ability-prose blockquote {
-  border-left: 2px solid rgb(214 168 95 / 0.55);
+  border-left: 2px solid color-mix(in srgb, var(--p1-accent) 55%, transparent);
   padding: 0.25rem 0 0.25rem 1rem;
-  color: #aeb7bc;
+  color: var(--p1-text-muted);
 }
 .ability-prose hr {
   margin: 1.1rem 0;
-  border-color: rgb(255 255 255 / 0.1);
+  border-color: var(--p1-border);
 }
 .ability-prose a {
-  color: #d6a85f;
+  color: var(--p1-accent);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 .ability-prose .pf2e-condition {
   color: inherit;
   text-decoration: underline;
-  text-decoration-color: #d6a85f;
+  text-decoration-color: var(--p1-accent);
   text-underline-offset: 2px;
   text-decoration-thickness: 1px;
 }
 .ability-prose a.pf2e-condition:hover,
 .ability-prose button.pf2e-condition:hover {
-  color: #f0d29d;
+  color: var(--p1-accent-soft);
 }
 .ability-prose .pf2e-content-link {
-  color: #d6a85f;
+  color: var(--p1-accent);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -96,19 +242,19 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   cursor: pointer;
 }
 .ability-prose button.pf2e-content-link:hover {
-  color: #f0d29d;
+  color: var(--p1-accent-soft);
 }
 .ability-prose p:has(> strong:first-child) {
   max-width: none;
   margin: 1rem 0;
-  border-left: 2px solid rgb(214 168 95 / 0.65);
-  background: rgb(255 255 255 / 0.025);
+  border-left: 2px solid color-mix(in srgb, var(--p1-accent) 65%, transparent);
+  background: var(--p1-hover);
   padding: 0.7rem 0.9rem 0.75rem;
 }
 .ability-prose p:has(> strong:first-child) > strong:first-child {
   display: block;
   margin-bottom: 0.25rem;
-  color: #f0d29d;
+  color: var(--p1-accent-soft);
   font-size: 0.7rem;
   font-weight: 600;
   line-height: 1.2;
@@ -121,28 +267,28 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .ability-prose h5,
 .ability-prose h6 {
   margin: 1.35rem 0 0.65rem;
-  color: #e7ebed;
+  color: var(--p1-text);
   font-weight: 600;
   line-height: 1.25;
 }
 .ability-prose h1 { font-size: 1.45rem; }
 .ability-prose h2 { font-size: 1.2rem; }
-.ability-prose h3 { font-size: 1.05rem; color: #f0d29d; }
+.ability-prose h3 { font-size: 1.05rem; color: var(--p1-accent-soft); }
 .ability-prose h4,
 .ability-prose h5,
-.ability-prose h6 { font-size: 0.95rem; color: #d6a85f; }
-.ability-prose strong { color: #e2e6e8; font-weight: 600; }
-.ability-prose em { color: #c4cbce; }
+.ability-prose h6 { font-size: 0.95rem; color: var(--p1-accent); }
+.ability-prose strong { color: var(--p1-text); font-weight: 600; }
+.ability-prose em { color: var(--p1-text-muted); }
 .ability-prose code {
-  border: 1px solid rgb(255 255 255 / 0.08);
-  background: rgb(255 255 255 / 0.04);
+  border: 1px solid var(--p1-border);
+  background: var(--p1-hover);
   padding: 0.1rem 0.35rem;
   font-size: 0.85em;
 }
 .ability-prose pre {
   overflow-x: auto;
-  border: 1px solid rgb(255 255 255 / 0.1);
-  background: #0d1215;
+  border: 1px solid var(--p1-border);
+  background: var(--p1-bg-inset);
   padding: 0.85rem 1rem;
   font-size: 0.82rem;
   line-height: 1.55;
@@ -159,23 +305,23 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   font-size: 0.82rem;
 }
 .ability-prose thead th {
-  border-bottom: 1px solid rgb(255 255 255 / 0.12);
+  border-bottom: 1px solid var(--p1-border);
   padding: 0.55rem 0.65rem;
   text-align: left;
-  color: #f0d29d;
+  color: var(--p1-accent-soft);
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 .ability-prose tbody td {
-  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+  border-bottom: 1px solid var(--p1-border);
   padding: 0.55rem 0.65rem;
   vertical-align: top;
 }
 .ability-prose tbody tr:nth-child(even) {
-  background: rgb(255 255 255 / 0.02);
+  background: var(--p1-hover);
 }
 .ability-prose tbody tr:hover {
-  background: rgb(255 255 255 / 0.035);
+  background: var(--p1-hover);
 }

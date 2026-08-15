@@ -81,11 +81,11 @@ function CatalogModal({
         role='dialog'
         aria-modal='true'
         aria-labelledby='content-stack-title'
-        className={`flex max-h-[min(82vh,820px)] w-full flex-col border border-white/15 bg-[#11171a] shadow-2xl ${wide ? 'max-w-4xl' : 'max-w-2xl'}`}
+        className={`flex max-h-[min(82vh,820px)] w-full flex-col border border-p1-border bg-p1-surface shadow-2xl ${wide ? 'max-w-4xl' : 'max-w-2xl'}`}
       >
-        <header className='flex items-start gap-4 border-b border-white/10 px-5 py-4'>
+        <header className='flex items-start gap-4 border-b border-p1-border px-5 py-4'>
           <div className='min-w-0 flex-1'>
-            {content.isLoading && <h2 id='content-stack-title' className='text-xl font-semibold leading-tight text-[#89949a]'>Loading...</h2>}
+            {content.isLoading && <h2 id='content-stack-title' className='text-xl font-semibold leading-tight text-p1-muted'>Loading...</h2>}
             {content.isError && <h2 id='content-stack-title' className='text-xl font-semibold leading-tight'>Couldn't open this link</h2>}
             {loaded && (
               <>
@@ -94,7 +94,7 @@ function CatalogModal({
                   <h2 id='content-stack-title' className='text-xl font-semibold leading-tight'>
                     {loaded.title}
                   </h2>
-                  {loaded.subtitle && <span className='shrink-0 text-sm text-[#89949a]'>{loaded.subtitle}</span>}
+                  {loaded.subtitle && <span className='shrink-0 text-sm text-p1-muted'>{loaded.subtitle}</span>}
                 </div>
                 {loaded.tags.length > 0 && (
                   <div className='mt-2 flex flex-wrap gap-1.5'>
@@ -121,12 +121,12 @@ function CatalogModal({
         </header>
         <div className='min-h-0 overflow-y-auto px-5 py-4'>
           {content.isError && (
-            <p className='text-sm text-[#efaaa3]'>{content.error instanceof Error ? content.error.message : 'This record could not be loaded.'}</p>
+            <p className='text-sm text-p1-danger-soft'>{content.error instanceof Error ? content.error.message : 'This record could not be loaded.'}</p>
           )}
           {loaded && (
             <>
               {loaded.facts.some((fact) => fact.value) && (
-                <div className='mb-4 space-y-1 border-b border-white/10 pb-4 text-sm leading-6'>
+                <div className='mb-4 space-y-1 border-b border-p1-border pb-4 text-sm leading-6'>
                   {loaded.facts.map((fact) => (
                     <Fact key={fact.label} label={fact.label} value={fact.value} />
                   ))}
@@ -191,8 +191,8 @@ async function loadCatalogContent(entry: ContentLinkRef): Promise<CatalogView | 
       ],
       description: ability.description,
       extra: ability.special ? (
-        <div className='mt-4 border-t border-white/10 pt-4'>
-          <strong className='mr-2 text-[#e2e6e8]'>Special</strong>
+        <div className='mt-4 border-t border-p1-border pt-4'>
+          <strong className='mr-2 text-p1-text'>Special</strong>
           <ProseMarkdown>{ability.special}</ProseMarkdown>
         </div>
       ) : undefined,
@@ -239,8 +239,8 @@ async function loadCatalogContent(entry: ContentLinkRef): Promise<CatalogView | 
       ],
       description: spell.description,
       extra: spell.heightened?.text?.map((heightened, index) => (
-        <div key={index} className='mt-4 border-t border-white/10 pt-4'>
-          <strong className='mr-2 text-[#e2e6e8]'>Heightened ({heightened.amount})</strong>
+        <div key={index} className='mt-4 border-t border-p1-border pt-4'>
+          <strong className='mr-2 text-p1-text'>Heightened ({heightened.amount})</strong>
           <ProseMarkdown>{heightened.text}</ProseMarkdown>
         </div>
       )),
@@ -311,12 +311,12 @@ function Fact({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null;
   return (
     <div>
-      <strong className='mr-2 text-[#e2e6e8]'>{label}</strong>
-      <span className='text-[#aeb7bc]'>{value}</span>
+      <strong className='mr-2 text-p1-text'>{label}</strong>
+      <span className='text-p1-muted'>{value}</span>
     </div>
   );
 }
 
 function Tag({ children }: { children: ReactNode }) {
-  return <span className='border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] uppercase text-[#98a2a7]'>{children}</span>;
+  return <span className='border border-p1-border bg-p1-hover px-2 py-0.5 text-[10px] uppercase text-p1-muted'>{children}</span>;
 }

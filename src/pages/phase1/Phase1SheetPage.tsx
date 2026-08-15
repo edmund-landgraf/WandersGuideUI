@@ -8,9 +8,11 @@ import type { VariableListStr } from '@schemas/variables';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getVariable } from '@variables/variable-manager';
 import { cloneDeep } from 'lodash-es';
-import { ArrowLeft, Flag, HeartPulse, RotateCcw, Star } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Flag, HeartPulse, RotateCcw, Star } from 'lucide-react';
+import { OLD_UI_ORIGIN } from '../phase-switch/PhaseViewSwitch';
+import { Phase1ThemeToggle } from './Phase1ThemeToggle';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { parseTempHpInput } from './phase1-change-log';
 import { phase1Request } from './phase1-api';
 import {
@@ -29,6 +31,10 @@ import {
 } from './phase1-entity-panels';
 import { preparePhase1Entity, type Phase1EntityCombatant } from './phase1-entity';
 import {
+  addEntitySpellToList,
+  applyEntityDivineFont,
+  prepareEntitySpellSlot,
+  removeEntitySpellFromList,
   setEntityFocusSpent,
   setEntityInnateSpent,
   setEntityPreparedEntrySpent,
@@ -43,6 +49,8 @@ type SheetTab = (typeof SHEET_TABS)[number];
 
 export function Phase1SheetPage() {
   const session = useAuthSession();
+  const navigate = useNavigate();
+  const location = useLocation();
   const { characterId: rawId } = useParams();
   const characterId = Number(rawId);
   const queryClient = useQueryClient();
@@ -143,10 +151,10 @@ export function Phase1SheetPage() {
     if (character?.name) document.title = `${character.name} | Sheet`;
   }, [character?.name]);
 
-  if (session === undefined) return <div className='grid min-h-screen place-items-center bg-[#0d1114] text-sm text-[#7f8a90]'>Loading session...</div>;
+  if (session === undefined) return <div className='grid min-h-screen place-items-center bg-p1-page text-sm text-p1-muted'>Loading session...</div>;
   if (!Number.isFinite(characterId)) return <SheetError title='Invalid sheet' body='This character id is not valid.' />;
   if (characterQuery.isPending || characterQuery.isLoading || (characterQuery.isFetching && !character)) {
-    return <div className='grid min-h-screen place-items-center bg-[#0d1114] text-sm text-[#7f8a90]'>Loading character...</div>;
+    return <div className='grid min-h-screen place-items-center bg-p1-page text-sm text-p1-muted'>Loading character...</div>;
   }
   if (characterQuery.isError) {
     const message = characterQuery.error instanceof Error ? characterQuery.error.message : String(characterQuery.error);
@@ -197,7 +205,24 @@ export function Phase1SheetPage() {
           patchCharacter(() => next as Character);
         },
         setInnateSpent: async (entry, castsCurrent) => {
+          if (!entry.spell) return;
           const next = await setEntityInnateSpent(combatant as Phase1EntityCombatant, entry.spell.id, entry.rank, castsCurrent);
+          patchCharacter(() => next as Character);
+        },
+        addToList: async (sourceName, spell, rank) => {
+          const next = await addEntitySpellToList(combatant as Phase1EntityCombatant, sourceName, spell, rank);
+          patchCharacter(() => next as Character);
+        },
+        removeFromList: async (sourceName, spellId, rank) => {
+          const next = await removeEntitySpellFromList(combatant as Phase1EntityCombatant, sourceName, spellId, rank);
+          patchCharacter(() => next as Character);
+        },
+        prepareSlot: async (sourceName, slotId, spell, rank) => {
+          const next = await prepareEntitySpellSlot(combatant as Phase1EntityCombatant, sourceName, slotId, spell, rank);
+          patchCharacter(() => next as Character);
+        },
+        applyDivineFont: async (sourceName, choice) => {
+          const next = await applyEntityDivineFont(combatant as Phase1EntityCombatant, sourceName, choice);
           patchCharacter(() => next as Character);
         },
       }
@@ -236,27 +261,39 @@ export function Phase1SheetPage() {
   }
 
   return (
-    <div className='min-h-screen bg-[#0d1114] text-[#e7ebed]'>
-      <header className='flex h-14 items-center gap-4 border-b border-white/10 bg-[#0b0f11] px-5'>
-        <Link to='/phase1' className='icon-button' title='Back to campaigns'><ArrowLeft size={16} /></Link>
+    <div className='min-h-screen bg-p1-page text-p1-text'>
+      <header className='flex h-14 items-center gap-4 border-b border-p1-border bg-p1-header px-5'>
+        <button type='button' className='icon-button' title='Back' onClick={() => (location.key === 'default' ? navigate('/phase1/characters') : navigate(-1))}><ArrowLeft size={16} /></button>
         <span className='font-semibold'>Wanderer's Guide</span>
-        <span className='h-4 w-px bg-white/15' />
-        <span className='truncate text-sm text-[#8e999f]'>Character sheet</span>
-        {saveCharacter.isPending && <span className='ml-auto text-[11px] text-[#68747a]'>Saving...</span>}
+        <span className='h-4 w-px bg-p1-hover' />
+        <span className='truncate text-sm text-p1-muted'>Character sheet</span>
+        <div className='ml-auto flex items-center gap-2'>
+          {saveCharacter.isPending && <span className='text-[11px] text-p1-faint'>Saving...</span>}
+          <Phase1ThemeToggle />
+        </div>
       </header>
       <main className='mx-auto max-w-5xl px-4 py-6'>
-        <section className='mb-4 flex flex-wrap items-start gap-4 border border-white/10 bg-[#11171a] p-4'>
+        <section className='mb-4 flex flex-wrap items-start gap-4 border border-p1-border bg-p1-surface p-4'>
           {character.details?.image_url && <img src={character.details.image_url} alt='' className='h-20 w-20 object-cover' />}
           <div className='min-w-0 flex-1'>
             <Eyebrow>Player character</Eyebrow>
             <h1 className='mt-1 truncate text-2xl font-semibold'>{character.name}</h1>
-            <p className='mt-1 text-sm text-[#89949a]'>{identity || 'Ancestry, background, and class load with calculated details.'}</p>
-            <p className='mt-1 text-xs text-[#68747a]'>Level {character.level}{canEdit ? '' : ' · Read only'}</p>
+            <p className='mt-1 text-sm text-p1-muted'>{identity || 'Ancestry, background, and class load with calculated details.'}</p>
+            <p className='mt-1 text-xs text-p1-faint'>Level {character.level}{canEdit ? '' : ' · Read only'}</p>
           </div>
           <div className='flex flex-wrap items-center gap-2'>
             {character.campaign_id && (
               <Link className='toolbar-button' to={`/phase1/campaign/${character.campaign_id}`}><Flag size={14} /> Campaign</Link>
             )}
+            <a
+              className='toolbar-button'
+              href={`${OLD_UI_ORIGIN}/sheet/${character.id}`}
+              target='_blank'
+              rel='noreferrer'
+              title='Open the original character sheet'
+            >
+              <ExternalLink size={14} /> Original
+            </a>
             {canEdit && <button className='toolbar-button' onClick={() => setRestOpen(true)}><RotateCcw size={14} /> Rest</button>}
             <label className='toolbar-button'>
               XP
@@ -286,8 +323,8 @@ export function Phase1SheetPage() {
         </section>
 
         {(modesQuery.data?.modes.length ?? 0) > 0 && (
-          <section className='mb-4 border border-white/10 bg-[#11171a] p-3'>
-            <h2 className='mb-2 text-xs font-semibold uppercase text-[#89949a]'>Modes</h2>
+          <section className='mb-4 border border-p1-border bg-p1-surface p-3'>
+            <h2 className='mb-2 text-xs font-semibold uppercase text-p1-muted'>Modes</h2>
             <div className='flex flex-wrap gap-2'>
               {modesQuery.data!.modes.map((mode) => {
                 const active = (character.meta_data?.active_modes ?? []).includes(labelToVariable(mode.name));
@@ -296,7 +333,7 @@ export function Phase1SheetPage() {
                     key={mode.id}
                     type='button'
                     disabled={!canEdit}
-                    className={`border px-3 py-1.5 text-xs ${active ? 'border-[#d6a85f] bg-[#d6a85f]/15 text-[#f0d29d]' : 'border-white/10 text-[#89949a]'}`}
+                    className={`border px-3 py-1.5 text-xs ${active ? 'border-p1-accent bg-p1-accent/15 text-p1-accent-soft' : 'border-p1-border text-p1-muted'}`}
                     onClick={() => toggleMode(mode.name)}
                   >
                     {mode.name}
@@ -316,12 +353,12 @@ export function Phase1SheetPage() {
           onPersistTempHp={canEdit ? persistTempHp : undefined}
         />
 
-        <div className='mt-4 grid grid-cols-4 border border-white/10 bg-[#0a0e10] sm:grid-cols-8'>
+        <div className='mt-4 grid grid-cols-4 border border-p1-border bg-p1-inset sm:grid-cols-8'>
           {SHEET_TABS.map((item) => (
-            <button key={item} className={`border-b-2 px-2 py-2.5 text-[11px] ${tab === item ? 'border-[#d6a85f] text-[#f0d29d]' : 'border-transparent text-[#748087] hover:text-white'}`} onClick={() => setTab(item)}>{item}</button>
+            <button key={item} className={`border-b-2 px-2 py-2.5 text-[11px] ${tab === item ? 'border-p1-accent text-p1-accent-soft' : 'border-transparent text-p1-faint hover:text-p1-text'}`} onClick={() => setTab(item)}>{item}</button>
           ))}
         </div>
-        <div className='border border-t-0 border-white/10 bg-[#0c1113] p-4'>
+        <div className='border border-t-0 border-p1-border bg-p1-inset p-4'>
           {tab === 'Skills' && <SkillsActionsPanel combatant={combatant} />}
           {tab === 'Inventory' && <InventoryPanel combatant={combatant} itemActions={itemActions} />}
           {tab === 'Spells' && <SpellsPanel combatant={combatant} spellActions={spellActions} />}
@@ -341,12 +378,12 @@ export function Phase1SheetPage() {
 
       {restOpen && (
         <div className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5' onMouseDown={(event) => { if (event.target === event.currentTarget) setRestOpen(false); }}>
-          <section className='w-full max-w-md border border-white/15 bg-[#11171a] p-5'>
+          <section className='w-full max-w-md border border-p1-border bg-p1-surface p-5'>
             <h2 className='text-lg font-semibold'>Rest?</h2>
-            <p className='mt-2 text-sm leading-6 text-[#aeb7bc]'>You will regain some HP (Con. mod × level), reset spell slots and focus points, and you may recover from or improve certain conditions.</p>
+            <p className='mt-2 text-sm leading-6 text-p1-muted'>You will regain some HP (Con. mod × level), reset spell slots and focus points, and you may recover from or improve certain conditions.</p>
             <div className='mt-4 flex justify-end gap-2'>
               <button className='toolbar-button' onClick={() => setRestOpen(false)}>Cancel</button>
-              <button className='toolbar-button text-[#17130d]' style={{ background: '#d6a85f', color: '#17130d', borderColor: '#d6a85f' }} onClick={rest}><HeartPulse size={14} /> Rest</button>
+              <button className='toolbar-button text-p1-accent-ink' style={{ background: 'var(--p1-accent)', color: 'var(--p1-accent-ink)', borderColor: 'var(--p1-accent)' }} onClick={rest}><HeartPulse size={14} /> Rest</button>
             </div>
           </section>
         </div>
@@ -363,7 +400,7 @@ function CompanionsSection({ character, canEdit, onChange }: { character: Charac
       {companions.map((companion, index) => {
         const combatant = creatureAsCombatant(companion, index, canEdit);
         return (
-          <section key={combatant._id} className='border border-white/10 bg-[#11171a] p-3'>
+          <section key={combatant._id} className='border border-p1-border bg-p1-surface p-3'>
             <h3 className='mb-3 text-sm font-semibold'>{companion.name}</h3>
             <CompanionHealth companion={companion} combatant={combatant} canEdit={canEdit} onChange={(next) => onChange(companions.map((item, itemIndex) => (itemIndex === index ? next : item)))} />
           </section>
@@ -432,12 +469,12 @@ function CharacterNotesPanel({ notes, canEdit, onSave }: { notes: Character['not
   const [draft, setDraft] = useState(saved);
   useEffect(() => setDraft(saved), [saved]);
   if (!canEdit) {
-    return saved ? <pre className='whitespace-pre-wrap border border-white/10 bg-[#11171a] p-4 text-sm leading-6 text-[#c4cbce]'>{saved}</pre> : <EmptyState>No notes yet.</EmptyState>;
+    return saved ? <pre className='whitespace-pre-wrap border border-p1-border bg-p1-surface p-4 text-sm leading-6 text-p1-text'>{saved}</pre> : <EmptyState>No notes yet.</EmptyState>;
   }
   return (
     <div className='flex min-h-[280px] flex-col gap-3'>
-      <textarea className='min-h-[220px] flex-1 resize-y border border-white/10 bg-[#11171a] p-3 text-sm leading-6 text-[#c4cbce] outline-none focus:border-[#d6a85f]/60' value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => { if (draft !== saved) onSave(draft); }} />
-      <button type='button' className='h-8 self-end bg-[#d6a85f] px-3 text-xs font-semibold text-[#17130d]' onClick={() => onSave(draft)}>Save notes</button>
+      <textarea className='min-h-[220px] flex-1 resize-y border border-p1-border bg-p1-surface p-3 text-sm leading-6 text-p1-text outline-none focus:border-p1-accent/60' value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => { if (draft !== saved) onSave(draft); }} />
+      <button type='button' className='h-8 self-end bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink' onClick={() => onSave(draft)}>Save notes</button>
     </div>
   );
 }
@@ -480,12 +517,12 @@ function UnauthorizedSheet() {
 
 function SheetError({ code = 'Error', title, body }: { code?: string; title: string; body: string }) {
   return (
-    <div className='grid min-h-screen place-items-center bg-[#0d1114] p-6 text-[#e7ebed]'>
-      <div className='max-w-lg border border-white/10 bg-[#11171a] p-6 text-center'>
+    <div className='grid min-h-screen place-items-center bg-p1-page p-6 text-p1-text'>
+      <div className='max-w-lg border border-p1-border bg-p1-surface p-6 text-center'>
         <Eyebrow>{code}</Eyebrow>
         <h1 className='mt-2 text-xl font-semibold'>{title}</h1>
-        <p className='mt-3 text-sm leading-6 text-[#89949a]'>{body}</p>
-        <Link to='/phase1' className='mt-5 inline-block text-sm text-[#d6a85f] hover:underline'>Back to campaigns</Link>
+        <p className='mt-3 text-sm leading-6 text-p1-muted'>{body}</p>
+        <Link to='/phase1/characters' className='mt-5 inline-block text-sm text-p1-accent hover:underline'>Back to characters</Link>
       </div>
     </div>
   );

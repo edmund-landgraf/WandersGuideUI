@@ -75,7 +75,7 @@ export function SelectCreatureModal({
       batchSize={16}
       toolbar={
         <div className='mt-2 flex items-center gap-2'>
-          <div className='flex border border-white/10' role='group' aria-label='Combatant side'>
+          <div className='flex border border-p1-border' role='group' aria-label='Combatant side'>
             <SideButton active={!ally} onClick={() => setAlly(false)}>
               Enemy
             </SideButton>
@@ -89,15 +89,15 @@ export function SelectCreatureModal({
       renderItem={(creature) => (
         <button
           type='button'
-          className={`flex w-full items-center gap-3 border-b border-white/[0.07] px-3 py-2.5 text-left hover:bg-white/[0.04] ${
-            creature.id === selectedId ? 'bg-[#d6a85f]/[0.08]' : ''
+          className={`flex w-full items-center gap-3 border-b border-p1-border px-3 py-2.5 text-left hover:bg-p1-hover ${
+            creature.id === selectedId ? 'bg-p1-accent/[0.08]' : ''
           }`}
           onClick={() => setSelectedId(creature.id)}
         >
           <CreatureThumb src={creature.details.image_url} name={creature.name} />
           <span className='min-w-0 flex-1'>
-            <span className='block truncate text-sm text-[#e7ebed]'>{creature.name}</span>
-            <span className='block text-[11px] uppercase tracking-wide text-[#68747a]'>
+            <span className='block truncate text-sm text-p1-text'>{creature.name}</span>
+            <span className='block text-[11px] uppercase tracking-wide text-p1-faint'>
               Level {getEntityLevel(creature)}
               {creature.rarity !== 'COMMON' ? ` · ${labelize(creature.rarity)}` : ''}
             </span>
@@ -122,7 +122,7 @@ function CreaturePreview({
 }) {
   if (!creature) {
     return (
-      <div className='grid h-full place-items-center px-6 text-center text-sm text-[#7f8a90]'>
+      <div className='grid h-full place-items-center px-6 text-center text-sm text-p1-muted'>
         Choose a creature to preview, then add it as an {ally ? 'ally' : 'enemy'}.
       </div>
     );
@@ -137,17 +137,17 @@ function CreaturePreview({
         <CreatureArt name={creature.name} fallback={creature.details.image_url} />
         <div className='mt-3 flex flex-wrap items-end gap-x-3 gap-y-1'>
           <h3 className='text-xl font-semibold leading-tight'>{creature.name}</h3>
-          <span className='text-sm text-[#89949a]'>Level {getEntityLevel(creature)}</span>
+          <span className='text-sm text-p1-muted'>Level {getEntityLevel(creature)}</span>
           {creature.rarity !== 'COMMON' && (
-            <span className='border border-white/15 bg-white/[0.06] px-2 py-0.5 text-[10px] font-semibold uppercase text-[#dce1e3]'>
+            <span className='border border-p1-border bg-p1-hover px-2 py-0.5 text-[10px] font-semibold uppercase text-p1-text'>
               {labelize(creature.rarity)}
             </span>
           )}
         </div>
         {stats && (
-          <p className='mt-2 text-xs text-[#89949a]'>
+          <p className='mt-2 text-xs text-p1-muted'>
             {stats.hp_max != null && <>{stats.hp_max} HP</>}
-            {stats.hp_max != null && stats.ac != null && <span className='px-1.5 text-[#455057]'>|</span>}
+            {stats.hp_max != null && stats.ac != null && <span className='px-1.5 text-p1-faint'>|</span>}
             {stats.ac != null && <>{stats.ac} AC</>}
           </p>
         )}
@@ -157,7 +157,7 @@ function CreaturePreview({
           </div>
         )}
       </div>
-      <div className='flex items-center justify-end gap-2 border-t border-white/10 px-4 py-3'>
+      <div className='flex items-center justify-end gap-2 border-t border-p1-border px-4 py-3'>
         <AddCreatureButtons disabled={busy} onAdd={() => onAdd(creature)} onElite={() => onAdd(creature, 'ELITE')} onWeak={() => onAdd(creature, 'WEAK')} />
       </div>
     </div>
@@ -173,19 +173,19 @@ function CreatureArt({ name, fallback }: { name: string; fallback?: string }) {
   const src = art.data?.thumbSrc || fallback;
   if (!src) {
     return (
-      <div className='grid h-40 w-full place-items-center border border-white/10 bg-[#0d1215] text-[#59656b]'>
+      <div className='grid h-40 w-full place-items-center border border-p1-border bg-p1-inset text-p1-faint'>
         <Swords size={28} />
       </div>
     );
   }
-  return <img src={src} alt='' className='h-40 w-full border border-white/10 object-contain bg-[#0d1215]' />;
+  return <img src={src} alt='' className='h-40 w-full border border-p1-border object-contain bg-p1-inset' />;
 }
 
 function CreatureThumb({ src, name }: { src?: string; name: string }) {
   const [failed, setFailed] = useState(false);
   if (!src || failed) {
     return (
-      <span className='grid h-9 w-9 shrink-0 place-items-center border border-white/10 bg-[#0d1215] text-[#59656b]' aria-hidden>
+      <span className='grid h-9 w-9 shrink-0 place-items-center border border-p1-border bg-p1-inset text-p1-faint' aria-hidden>
         <Swords size={14} />
       </span>
     );
@@ -195,7 +195,7 @@ function CreatureThumb({ src, name }: { src?: string; name: string }) {
       src={src}
       alt=''
       title={name}
-      className='h-9 w-9 shrink-0 border border-white/10 object-contain bg-[#0d1215]'
+      className='h-9 w-9 shrink-0 border border-p1-border object-contain bg-p1-inset'
       onError={() => setFailed(true)}
     />
   );
@@ -226,12 +226,12 @@ function AddCreatureButtons({
 
   return (
     <div ref={menuRef} className='relative flex'>
-      <button type='button' className='toolbar-button border-[#d6a85f]/40 text-[#f0d29d]' disabled={disabled} onClick={onAdd}>
+      <button type='button' className='toolbar-button border-p1-accent/40 text-p1-accent-soft' disabled={disabled} onClick={onAdd}>
         Add
       </button>
       <button
         type='button'
-        className='toolbar-button border-l-0 border-[#d6a85f]/40 px-2 text-[#f0d29d]'
+        className='toolbar-button border-l-0 border-p1-accent/40 px-2 text-p1-accent-soft'
         disabled={disabled}
         aria-haspopup='menu'
         aria-expanded={open}
@@ -241,11 +241,11 @@ function AddCreatureButtons({
         <ChevronDown size={14} />
       </button>
       {open && (
-        <div role='menu' className='absolute bottom-full right-0 z-10 mb-1 min-w-36 border border-white/15 bg-[#11171a] py-1 shadow-2xl'>
+        <div role='menu' className='absolute bottom-full right-0 z-10 mb-1 min-w-36 border border-p1-border bg-p1-surface py-1 shadow-2xl'>
           <button
             type='button'
             role='menuitem'
-            className='block w-full px-3 py-2 text-left text-sm text-[#e7ebed] hover:bg-white/[0.06]'
+            className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover'
             onClick={() => {
               setOpen(false);
               onElite();
@@ -256,7 +256,7 @@ function AddCreatureButtons({
           <button
             type='button'
             role='menuitem'
-            className='block w-full px-3 py-2 text-left text-sm text-[#e7ebed] hover:bg-white/[0.06]'
+            className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover'
             onClick={() => {
               setOpen(false);
               onWeak();
@@ -277,7 +277,7 @@ function SideButton({ children, active, onClick }: { children: string; active: b
       aria-pressed={active}
       onClick={onClick}
       className={`h-8 px-3 text-[11px] font-semibold uppercase ${
-        active ? 'bg-[#d6a85f] text-[#17130d]' : 'bg-transparent text-[#89949a] hover:text-white'
+        active ? 'bg-p1-accent text-p1-accent-ink' : 'bg-transparent text-p1-muted hover:text-p1-text'
       }`}
     >
       {children}

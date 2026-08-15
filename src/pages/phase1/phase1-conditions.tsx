@@ -8,10 +8,10 @@ import { Phase1PickerModal } from './phase1-picker-modal';
 
 function ChangeNoteField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return (
-    <label className='block border-t border-white/10 px-4 py-3'>
-      <span className='mb-1.5 block text-[10px] uppercase text-[#68747a]'>Why (optional)</span>
+    <label className='block border-t border-p1-border px-4 py-3'>
+      <span className='mb-1.5 block text-[10px] uppercase text-p1-faint'>Why (optional)</span>
       <input
-        className='h-8 w-full border border-white/10 bg-[#0d1114] px-2 text-xs text-[#c4cbce] outline-none placeholder:text-[#59656b] focus:border-white/20'
+        className='h-8 w-full border border-p1-border bg-p1-page px-2 text-xs text-p1-text outline-none placeholder:text-p1-faint focus:border-p1-border'
         placeholder='Reason for this change'
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -52,7 +52,7 @@ export function SelectConditionModal({
       renderItem={(condition) => (
         <button
           type='button'
-          className='flex w-full items-center border-b border-white/[0.07] px-4 py-3 text-left text-sm text-[#e7ebed] hover:bg-white/[0.04]'
+          className='flex w-full items-center border-b border-p1-border px-4 py-3 text-left text-sm text-p1-text hover:bg-p1-hover'
           onClick={() => onSelect(condition, note.trim() || null)}
         >
           {condition.name}
@@ -105,14 +105,14 @@ export function ConditionDetailModal({
         role='dialog'
         aria-modal='true'
         aria-labelledby='condition-detail-title'
-        className='flex max-h-[min(82vh,640px)] w-full max-w-lg flex-col border border-white/15 bg-[#11171a] shadow-2xl'
+        className='flex max-h-[min(82vh,640px)] w-full max-w-lg flex-col border border-p1-border bg-p1-surface shadow-2xl'
       >
-        <header className='flex items-start gap-3 border-b border-white/10 px-4 py-3'>
+        <header className='flex items-start gap-3 border-b border-p1-border px-4 py-3'>
           <div className='min-w-0 flex-1'>
             <h2 id='condition-detail-title' className='text-lg font-semibold'>
               {condition.name}
             </h2>
-            {condition.source && <p className='mt-1 text-xs italic text-[#89949a]'>From: {condition.source}</p>}
+            {condition.source && <p className='mt-1 text-xs italic text-p1-muted'>From: {condition.source}</p>}
           </div>
           {canManage && onRemove && (
             <button type='button' className='toolbar-button shrink-0' onClick={() => onRemove(note.trim() || null)}>
@@ -127,7 +127,7 @@ export function ConditionDetailModal({
           <ProseMarkdown>{condition.description}</ProseMarkdown>
         </div>
         {canManage && condition.value !== undefined && onValueChange && (
-          <div className='flex items-center justify-center gap-3 border-t border-white/10 px-4 py-3'>
+          <div className='flex items-center justify-center gap-3 border-t border-p1-border px-4 py-3'>
             <button
               type='button'
               className='icon-button'
@@ -137,7 +137,7 @@ export function ConditionDetailModal({
             >
               <Minus size={16} />
             </button>
-            <span className='grid h-9 w-12 place-items-center border border-white/10 bg-white/[0.04] text-sm font-semibold'>
+            <span className='grid h-9 w-12 place-items-center border border-p1-border bg-p1-hover text-sm font-semibold'>
               {value}
             </span>
             <button

@@ -13,7 +13,7 @@ export function Phase1AuthCallback() {
   }, [session]);
 
   if (session === undefined) {
-    return <div className='grid min-h-screen place-items-center bg-[#0d1114] text-sm text-[#7f8a90]'>Signing in...</div>;
+    return <div className='grid min-h-screen place-items-center bg-p1-page text-sm text-p1-muted'>Signing in...</div>;
   }
   if (!session) return <CampaignSignIn variant='phase1' />;
   return <Navigate to={next} replace />;

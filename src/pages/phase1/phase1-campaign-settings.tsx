@@ -230,20 +230,20 @@ export function SettingsSurface({
 
   return (
     <>
-      <div className='sticky top-0 z-10 border-b border-white/10 bg-[#11171a]/95 px-5 py-4 backdrop-blur'>
+      <div className='sticky top-0 z-10 border-b border-p1-border bg-p1-surface/95 px-5 py-4 backdrop-blur'>
         <SettingsEyebrow>Campaign settings</SettingsEyebrow>
         <h2 className='mt-1 truncate text-xl font-semibold'>Player defaults and game config</h2>
-        <p className='mt-1 truncate text-xs text-[#778289]'>
+        <p className='mt-1 truncate text-xs text-p1-faint'>
           Recommended books, variants, and options for characters joining this campaign.
         </p>
-        {error && <p className='mt-2 text-xs text-[#efaaa3]'>Save failed: {error.message}</p>}
-        {saving && <p className='mt-2 text-xs text-[#68747a]'>Saving...</p>}
+        {error && <p className='mt-2 text-xs text-p1-danger-soft'>Save failed: {error.message}</p>}
+        {saving && <p className='mt-2 text-xs text-p1-faint'>Saving...</p>}
       </div>
       <div className='p-5'>
         <div className='grid gap-5 xl:grid-cols-[minmax(0,1.85fr)_minmax(280px,1fr)]'>
-          <section className='min-w-0 border border-white/10 bg-[#0e1316]'>
-            <h3 className='border-b border-white/10 px-4 py-3 text-sm font-semibold'>Player Default Settings</h3>
-            <div className='flex flex-wrap gap-1 border-b border-white/10 px-2 py-2'>
+          <section className='min-w-0 border border-p1-border bg-p1-inset'>
+            <h3 className='border-b border-p1-border px-4 py-3 text-sm font-semibold'>Player Default Settings</h3>
+            <div className='flex flex-wrap gap-1 border-b border-p1-border px-2 py-2'>
               {(
                 [
                   ['books', 'Books'],
@@ -255,7 +255,7 @@ export function SettingsSurface({
                 <button
                   key={value}
                   type='button'
-                  className={`px-3 py-1.5 text-xs ${tab === value ? 'bg-white/[0.06] text-white' : 'text-[#89949a] hover:bg-white/[0.03] hover:text-white'}`}
+                  className={`px-3 py-1.5 text-xs ${tab === value ? 'bg-p1-hover text-p1-text' : 'text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
                   onClick={() => setTab(value)}
                 >
                   {label}
@@ -299,10 +299,10 @@ export function SettingsSurface({
                     }))}
                   />
                   {campaign.recommended_options?.custom_operations && (
-                    <p className='border-t border-white/10 px-4 py-3 text-xs leading-5 text-[#89949a]'>
+                    <p className='border-t border-p1-border px-4 py-3 text-xs leading-5 text-p1-muted'>
                       Custom operation lists are edited in the{' '}
                       <a
-                        className='text-[#d6a85f] hover:underline'
+                        className='text-p1-accent hover:underline'
                         href={`${OLD_UI_ORIGIN}/campaign/${campaign.id}?tab=settings`}
                         target='_blank'
                         rel='noreferrer'
@@ -317,8 +317,8 @@ export function SettingsSurface({
             </div>
           </section>
 
-          <section className='min-w-0 border border-white/10 bg-[#0e1316]'>
-            <h3 className='border-b border-white/10 px-4 py-3 text-sm font-semibold'>Game Config</h3>
+          <section className='min-w-0 border border-p1-border bg-p1-inset'>
+            <h3 className='border-b border-p1-border px-4 py-3 text-sm font-semibold'>Game Config</h3>
             <div className='space-y-4 p-4'>
               <Field label='Name'>
                 <input className='settings-input' value={name} onChange={(event) => setName(event.target.value)} placeholder='My Campaign' />
@@ -374,23 +374,23 @@ export function SettingsSurface({
                   </button>
                 </div>
               </Field>
-              <div className='space-y-2 border-t border-white/10 pt-4'>
+              <div className='space-y-2 border-t border-p1-border pt-4'>
                 <div className='relative'>
                   <button
                     type='button'
-                    className='toolbar-button w-full justify-center border-[#a95249]/40 text-[#efaaa3]'
+                    className='toolbar-button w-full justify-center border-p1-danger/40 text-p1-danger-soft'
                     disabled={players.length === 0}
                     onClick={() => setKickMenuOpen((open) => !open)}
                   >
                     Kick Player
                   </button>
                   {kickMenuOpen && players.length > 0 && (
-                    <div className='absolute left-0 right-0 z-20 mt-1 border border-white/10 bg-[#151b1e] py-1 shadow-2xl'>
+                    <div className='absolute left-0 right-0 z-20 mt-1 border border-p1-border bg-p1-surface py-1 shadow-2xl'>
                       {players.map((player) => (
                         <button
                           key={player.id}
                           type='button'
-                          className='block w-full px-3 py-2 text-left text-sm text-[#c4cbce] hover:bg-white/[0.05]'
+                          className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover'
                           onClick={() => {
                             setKickMenuOpen(false);
                             setPendingKick(player);
@@ -404,7 +404,7 @@ export function SettingsSurface({
                 </div>
                 <button
                   type='button'
-                  className='toolbar-button w-full justify-center border-[#a95249]/40 text-[#efaaa3]'
+                  className='toolbar-button w-full justify-center border-p1-danger/40 text-p1-danger-soft'
                   onClick={() => setPendingDelete(true)}
                 >
                   Delete Campaign
@@ -483,7 +483,7 @@ function BooksPanel({
         if (groupBooks.length === 0) return null;
         return (
           <div key={group.key}>
-            {index > 0 && <div className='mx-4 my-2 border-t border-white/10' />}
+            {index > 0 && <div className='mx-4 my-2 border-t border-p1-border' />}
             <BookGroup
               label={group.label}
               icon={group.icon}
@@ -515,7 +515,7 @@ function HomebrewPanel({
     return (
       <EmptySettingsState>
         No subscribed bundles found.{' '}
-        <a className='text-[#d6a85f] hover:underline' href={`${OLD_UI_ORIGIN}/homebrew`} target='_blank' rel='noreferrer'>
+        <a className='text-p1-accent hover:underline' href={`${OLD_UI_ORIGIN}/homebrew`} target='_blank' rel='noreferrer'>
           Go add some!
         </a>
       </EmptySettingsState>
@@ -564,18 +564,18 @@ function BookGroup({
 
   return (
     <div>
-      <button type='button' className='flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-white/[0.025]' onClick={() => setOpen((value) => !value)}>
-        <span className='text-[#89949a]'>{icon}</span>
+      <button type='button' className='flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-p1-hover' onClick={() => setOpen((value) => !value)}>
+        <span className='text-p1-muted'>{icon}</span>
         <span className='min-w-0 flex-1 font-medium'>{label}</span>
-        <span className='text-xs text-[#68747a]'>
+        <span className='text-xs text-p1-faint'>
           {enabledCount}/{books.length}
         </span>
-        {open ? <ChevronDown size={14} className='text-[#68747a]' /> : <ChevronRight size={14} className='text-[#68747a]' />}
+        {open ? <ChevronDown size={14} className='text-p1-faint' /> : <ChevronRight size={14} className='text-p1-faint' />}
       </button>
       {open && (
         <div className='pb-2'>
           <div className='px-4 pb-2'>
-            <button type='button' className='text-xs text-[#d6a85f] hover:underline' onClick={onEnableAll}>
+            <button type='button' className='text-xs text-p1-accent hover:underline' onClick={onEnableAll}>
               Enable all
             </button>
           </div>
@@ -625,18 +625,18 @@ function ToggleRow({
   indent?: boolean;
 }) {
   return (
-    <label className={`flex cursor-pointer items-start gap-3 px-4 py-2.5 hover:bg-white/[0.025] ${indent ? 'pl-8' : ''}`}>
+    <label className={`flex cursor-pointer items-start gap-3 px-4 py-2.5 hover:bg-p1-hover ${indent ? 'pl-8' : ''}`}>
       <input type='checkbox' className='mt-1' checked={enabled} onChange={(event) => onChange(event.target.checked)} />
       <span className='min-w-0 flex-1'>
         <span className='flex items-center gap-2'>
           <span className='text-sm'>{label}</span>
           {href && (
-            <a href={href} target='_blank' rel='noreferrer' className='text-[#68747a] hover:text-[#d6a85f]' onClick={(event) => event.stopPropagation()}>
+            <a href={href} target='_blank' rel='noreferrer' className='text-p1-faint hover:text-p1-accent' onClick={(event) => event.stopPropagation()}>
               <ExternalLink size={12} />
             </a>
           )}
         </span>
-        {info && <span className='mt-0.5 block text-xs leading-5 text-[#68747a]'>{info}</span>}
+        {info && <span className='mt-0.5 block text-xs leading-5 text-p1-faint'>{info}</span>}
       </span>
     </label>
   );
@@ -645,19 +645,19 @@ function ToggleRow({
 function Field({ label, error, children }: { label: string; error?: string; children: ReactNode }) {
   return (
     <label className='block'>
-      <span className='mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#89949a]'>{label}</span>
+      <span className='mb-1.5 block text-xs font-semibold uppercase tracking-wide text-p1-muted'>{label}</span>
       {children}
-      {error && <span className='mt-1 block text-xs text-[#efaaa3]'>{error}</span>}
+      {error && <span className='mt-1 block text-xs text-p1-danger-soft'>{error}</span>}
     </label>
   );
 }
 
 function EmptySettingsState({ children }: { children: ReactNode }) {
-  return <p className='px-4 py-8 text-center text-sm italic text-[#68747a]'>{children}</p>;
+  return <p className='px-4 py-8 text-center text-sm italic text-p1-faint'>{children}</p>;
 }
 
 function SettingsEyebrow({ children }: { children: ReactNode }) {
-  return <div className='text-[10px] font-semibold uppercase text-[#d6a85f]'>{children}</div>;
+  return <div className='text-[10px] font-semibold uppercase text-p1-accent'>{children}</div>;
 }
 
 export function ConfirmDialog({
@@ -693,18 +693,18 @@ export function ConfirmDialog({
         if (event.target === event.currentTarget) onCancel();
       }}
     >
-      <section role='dialog' aria-modal='true' aria-labelledby='confirm-title' className='w-full max-w-sm border border-white/15 bg-[#11171a] p-5 shadow-2xl'>
+      <section role='dialog' aria-modal='true' aria-labelledby='confirm-title' className='w-full max-w-sm border border-p1-border bg-p1-surface p-5 shadow-2xl'>
         <h2 id='confirm-title' className='text-lg font-semibold'>
           {title}
         </h2>
-        <div className='mt-2 text-sm leading-6 text-[#aeb7bc]'>{message}</div>
+        <div className='mt-2 text-sm leading-6 text-p1-muted'>{message}</div>
         <div className='mt-5 flex justify-end gap-2'>
           <button type='button' className='toolbar-button' onClick={onCancel}>
             {cancelLabel}
           </button>
           <button
             type='button'
-            className={`toolbar-button ${confirmDanger ? 'border-[#a95249]/50 text-[#efaaa3]' : ''}`}
+            className={`toolbar-button ${confirmDanger ? 'border-p1-danger/50 text-p1-danger-soft' : ''}`}
             onClick={() => void onConfirm()}
           >
             {confirmLabel}

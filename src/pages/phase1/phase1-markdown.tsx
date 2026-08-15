@@ -16,7 +16,7 @@ export function ProseMarkdown({ children, className = '' }: { children: string; 
   if (!children.trim()) return null;
   const prose = autoLinkConditions(toStandard2eProse(children));
   return (
-    <div className={`ability-prose text-sm leading-7 text-[#c4cbce] ${className}`.trim()}>
+    <div className={`ability-prose text-sm leading-7 text-p1-text ${className}`.trim()}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -38,7 +38,7 @@ export function ProseMarkdown({ children, className = '' }: { children: string; 
               );
             }
             return (
-              <a href={href} target='_blank' rel='noreferrer' className='text-[#d6a85f] hover:underline'>
+              <a href={href} target='_blank' rel='noreferrer' className='text-p1-accent hover:underline'>
                 {children}
               </a>
             );
@@ -53,10 +53,10 @@ export function ProseMarkdown({ children, className = '' }: { children: string; 
 
 export function NoteContentPanel({ title, contents }: { title?: string; contents: unknown }) {
   const markdown = noteContentsToMarkdown(contents);
-  if (!markdown) return <p className='border border-white/10 bg-[#11171a] p-4 text-xs text-[#7f8a90]'>This note is empty.</p>;
+  if (!markdown) return <p className='border border-p1-border bg-p1-surface p-4 text-xs text-p1-muted'>This note is empty.</p>;
   return (
     <section>
-      {title && <h3 className='mb-3 text-xs font-semibold uppercase text-[#89949a]'>{title}</h3>}
+      {title && <h3 className='mb-3 text-xs font-semibold uppercase text-p1-muted'>{title}</h3>}
       <ProseMarkdown>{markdown}</ProseMarkdown>
     </section>
   );
@@ -108,15 +108,15 @@ export function EntityNotesPanel({
   };
 
   if (!onSave) {
-    if (!saved) return <p className='border border-white/10 bg-[#11171a] p-4 text-xs text-[#7f8a90]'>No GM notes yet.</p>;
-    return <pre className='whitespace-pre-wrap border border-white/10 bg-[#11171a] p-4 text-sm leading-6 text-[#c4cbce]'>{saved}</pre>;
+    if (!saved) return <p className='border border-p1-border bg-p1-surface p-4 text-xs text-p1-muted'>No GM notes yet.</p>;
+    return <pre className='whitespace-pre-wrap border border-p1-border bg-p1-surface p-4 text-sm leading-6 text-p1-text'>{saved}</pre>;
   }
 
   return (
     <div className='flex min-h-[280px] flex-col gap-3'>
       <textarea
         ref={textareaRef}
-        className='min-h-[220px] flex-1 resize-y border border-white/10 bg-[#11171a] p-3 text-sm leading-6 text-[#c4cbce] outline-none placeholder:text-[#5f6a70] focus:border-[#d6a85f]/60'
+        className='min-h-[220px] flex-1 resize-y border border-p1-border bg-p1-surface p-3 text-sm leading-6 text-p1-text outline-none placeholder:text-p1-faint focus:border-p1-accent/60'
         placeholder='Creature is burning for 3 rounds...'
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
@@ -124,7 +124,7 @@ export function EntityNotesPanel({
       <div className='flex items-center justify-between gap-2'>
         <button
           type='button'
-          className='h-8 border border-white/10 px-3 text-xs text-[#89949a] hover:text-white'
+          className='h-8 border border-p1-border px-3 text-xs text-p1-muted hover:text-p1-text'
           onClick={insertStamp}
         >
           Date/Time
@@ -132,7 +132,7 @@ export function EntityNotesPanel({
         <div className='flex gap-2'>
           <button
             type='button'
-            className='h-8 border border-white/10 px-3 text-xs text-[#89949a] hover:text-white disabled:opacity-40'
+            className='h-8 border border-p1-border px-3 text-xs text-p1-muted hover:text-p1-text disabled:opacity-40'
             onClick={() => setDraft('')}
             disabled={!draft}
           >
@@ -140,7 +140,7 @@ export function EntityNotesPanel({
           </button>
           <button
             type='button'
-            className='h-8 bg-[#d6a85f] px-3 text-xs font-semibold text-[#17130d] hover:bg-[#e4ba76] disabled:opacity-40'
+            className='h-8 bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink hover:bg-p1-accent-soft disabled:opacity-40'
             onClick={() => onSave(draft)}
             disabled={draft === saved}
           >
@@ -154,12 +154,12 @@ export function EntityNotesPanel({
 
 export function SourceImportNotesPanel({ notes }: { notes: { pages: Array<{ name: string; contents: unknown }> } | null | undefined }) {
   const pages = sourceImportPages(notes).filter((page) => notePageToMarkdown(page.contents));
-  if (!pages.length) return <p className='border border-white/10 bg-[#11171a] p-4 text-xs text-[#7f8a90]'>No source import info.</p>;
+  if (!pages.length) return <p className='border border-p1-border bg-p1-surface p-4 text-xs text-p1-muted'>No source import info.</p>;
   return (
     <div className='space-y-3'>
       {pages.map((page, index) => (
-        <section key={`${page.name ?? 'source'}-${index}`} className='border border-white/10 bg-[#11171a] p-4'>
-          {pages.length > 1 && page.name && <h3 className='mb-3 text-xs font-semibold uppercase text-[#89949a]'>{page.name}</h3>}
+        <section key={`${page.name ?? 'source'}-${index}`} className='border border-p1-border bg-p1-surface p-4'>
+          {pages.length > 1 && page.name && <h3 className='mb-3 text-xs font-semibold uppercase text-p1-muted'>{page.name}</h3>}
           <ProseMarkdown>{notePageToMarkdown(page.contents)}</ProseMarkdown>
         </section>
       ))}

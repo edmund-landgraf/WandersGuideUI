@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, ArrowLeft, BookOpen, Calculator, ChevronDown, ChevronRight, Copy, Crosshair, Eraser, Eye, ExternalLink, Footprints, GripVertical, HeartPulse, History, ListChecks, LogOut, Package, PanelRight, Plus, RotateCcw, Search, Settings, Shield, Sparkles, Swords, Trash2, UserMinus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, ArrowLeft, BookOpen, Calculator, Check, ChevronDown, ChevronRight, Copy, Crosshair, Eraser, Eye, ExternalLink, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Plus, RotateCcw, Search, Settings, Shield, Sparkles, Swords, Trash2, UserMinus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -16,14 +16,15 @@ import { StatDetailModal, type Phase1StatKey, type Phase1StatTarget } from './ph
 import { loadEntityDetails, type Phase1ProfRow } from './phase1-details';
 import { loadEntitySkillsActions, type Phase1ActionGroup, type Phase1Skill } from './phase1-skills';
 import {
-  loadEntitySpells,
+  addEntitySpellToList,
+  applyEntityDivineFont,
+  prepareEntitySpellSlot,
+  removeEntitySpellFromList,
   setEntityFocusSpent,
   setEntityInnateSpent,
   setEntityPreparedEntrySpent,
   setEntitySpellCast,
   setEntitySpellRankSpent,
-  type Phase1SpellEntry,
-  type Phase1SpellSection,
 } from './phase1-spells';
 import { flattenInvItems, inventoryItemToPhase1, loadEntityInventory, matchesInvItem, type Phase1InvItem } from './phase1-inventory';
 import { EntityNotesPanel, ProseMarkdown, SourceImportNotesPanel, noteContentsToMarkdown } from './phase1-markdown';
@@ -38,6 +39,7 @@ import { ActionSymbol } from '@common/Actions';
 import { abilityNameAndCost } from '@utils/actions';
 import { toStandard2eProse } from '@utils/foundry-text';
 import { GiDiceTwentyFacesTwenty } from '@common/game-icons-inline';
+import { Phase1ThemeToggle } from './Phase1ThemeToggle';
 import { rollDie } from '@utils/random';
 import { buildInitiativeRoundLog, formatInitiativeRoll, InitiativeRollModal, nextInitiativeRoundNumber, overlayInitiativeLogs, sortCombatantsByInitiative, type InitiativeRollChoice } from './phase1-initiative';
 import { appendChangeLog, characterCombatFieldsFromEntity, createChangeLogEntry, parseTempHpInput } from './phase1-change-log';
@@ -45,15 +47,7 @@ import { maxCombatantStats, maxEntityStats, resetCombatant, resetEntityCombatSta
 import { CombatantChangeLogFooter, EditableValueWithNote, GridHpEditPopover } from './phase1-change-log-ui';
 import { PhaseViewSwitch } from '../phase-switch/PhaseViewSwitch';
 import { ConfirmDialog, SettingsSurface } from './phase1-campaign-settings';
-import { InspectorContent, fallbackStatus, hasFullEntityDetails, signed, statsFor } from './phase1-entity-panels';
-
-type Phase1SpellActions = {
-  setCast: (entry: Phase1SpellEntry, cast: boolean) => Promise<void>;
-  setRankSpent: (section: Phase1SpellSection, rank: number, spent: number) => Promise<void>;
-  setPreparedSpent: (entry: Phase1SpellEntry, spent: boolean) => Promise<void>;
-  setFocusSpent: (section: Phase1SpellSection, spent: number) => Promise<void>;
-  setInnateSpent: (entry: Phase1SpellEntry, castsCurrent: number) => Promise<void>;
-};
+import { InspectorContent, fallbackStatus, hasFullEntityDetails, signed, statsFor, type Phase1SpellActions } from './phase1-entity-panels';
 type CampaignNotePage = NonNullable<Campaign['notes']>['pages'][number];
 type IndexedNotePage = { page: CampaignNotePage; index: number };
 
@@ -83,22 +77,19 @@ export function Phase1IndexPage() {
   if (session === undefined) return <LoadingScreen label='Loading session' />;
   if (!session) return <CampaignSignIn variant='phase1' />;
   return (
-    <div className='min-h-screen bg-[#0d1114] text-[#e7ebed]'>
+    <div className='min-h-screen bg-p1-page text-p1-text'>
       <WorkspaceHeader section='campaigns' />
       <main className='mx-auto max-w-5xl px-6 py-10'>
-        <div className='mb-8 flex items-end justify-between gap-6 border-b border-white/10 pb-6'>
-          <div><Eyebrow>Phase 1</Eyebrow><h1 className='mt-2 text-3xl font-semibold'>Campaign workspace</h1><p className='mt-2 text-sm text-[#8e999f]'>Choose an owned or joined campaign, or open Characters from the header.</p></div>
+        <div className='mb-8 flex items-end justify-between gap-6 border-b border-p1-border pb-6'>
+          <div><Eyebrow>Phase 1</Eyebrow><h1 className='mt-2 text-3xl font-semibold'>Campaign workspace</h1><p className='mt-2 text-sm text-p1-muted'>Choose an owned or joined campaign, or open Characters from the header.</p></div>
           <button className='icon-button' title='Sign out' onClick={() => supabase.auth.signOut()}><LogOut size={17} /></button>
         </div>
         {campaigns.isLoading && <EmptyState>Loading campaigns...</EmptyState>}
         {campaigns.error && <ErrorState error={campaigns.error} />}
         {campaigns.data?.length === 0 && <EmptyState>No campaigns are available.</EmptyState>}
-        <div className='divide-y divide-white/10 border-y border-white/10'>
+        <div className='divide-y divide-p1-border border-y border-p1-border'>
           {campaigns.data?.map((campaign) => (
-            <button key={campaign.id} className='group grid w-full grid-cols-[1fr_auto] items-center gap-6 px-2 py-5 text-left hover:bg-white/[0.025]' onClick={() => navigate(`/phase1/campaign/${campaign.id}`)}>
-              <div><div className='font-semibold'>{campaign.name}</div><div className='mt-1 line-clamp-1 text-sm text-[#7f8a90]'>{campaign.description || 'No campaign description'}</div></div>
-              <ChevronRight className='text-[#616d73] group-hover:text-[#d6a85f]' size={18} />
-            </button>
+            <CampaignWorkspaceRow key={campaign.id} campaign={campaign} onOpen={() => navigate(`/phase1/campaign/${campaign.id}`)} />
           ))}
         </div>
       </main>
@@ -106,38 +97,148 @@ export function Phase1IndexPage() {
   );
 }
 
+type AddAllJoinResult = {
+  assigned: number;
+  skippedSame: number;
+  skippedAssigned: number;
+  failed: number;
+  firstError?: string;
+  campaignName?: string;
+};
+
 export function Phase1CharactersPage() {
   const session = useAuthSession();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [joinKey, setJoinKey] = useState('');
+  const [reassign, setReassign] = useState(false);
+  const [joinStatus, setJoinStatus] = useState<string | null>(null);
   const characters = useQuery({
     queryKey: ['phase1-characters', session?.user.id],
     enabled: Boolean(session),
     queryFn: () => phase1Request<Character[]>('find-character', { user_id: session!.user.id }),
   });
 
+  const addAllToJoinKey = useMutation({
+    mutationFn: async (): Promise<AddAllJoinResult> => {
+      const key = joinKey.trim();
+      if (!key) throw new Error('Enter a join key.');
+      const roster = characters.data ?? [];
+      const campaigns = await phase1Request<Campaign[]>('find-campaign', { join_key: key });
+      const campaign = campaigns?.[0];
+      if (!campaign) throw new Error('Invalid join key. Please ask your GM for a valid key.');
+
+      let skippedSame = 0;
+      let skippedAssigned = 0;
+      const eligible: Character[] = [];
+      for (const character of roster) {
+        if (character.campaign_id === campaign.id) {
+          skippedSame += 1;
+          continue;
+        }
+        if (character.campaign_id != null && !reassign) {
+          skippedAssigned += 1;
+          continue;
+        }
+        eligible.push(character);
+      }
+
+      let assigned = 0;
+      let failed = 0;
+      let firstError: string | undefined;
+      for (const character of eligible) {
+        try {
+          await phase1Request('update-character', { id: character.id, campaign_id: campaign.id });
+          assigned += 1;
+        } catch (error) {
+          failed += 1;
+          if (!firstError) firstError = error instanceof Error ? error.message : 'update-character failed';
+        }
+      }
+
+      return { assigned, skippedSame, skippedAssigned, failed, firstError, campaignName: campaign.name };
+    },
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] });
+      void queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] });
+      if (result.assigned === 0 && result.failed === 0) {
+        setJoinStatus('Nothing to assign.');
+        return;
+      }
+      const parts = [`Assigned ${result.assigned} to ${result.campaignName ?? 'campaign'}`];
+      if (result.skippedSame) parts.push(`${result.skippedSame} already in campaign`);
+      if (result.skippedAssigned) parts.push(`${result.skippedAssigned} already assigned`);
+      if (result.failed) parts.push(`${result.failed} failed${result.firstError ? `: ${result.firstError}` : ''}`);
+      setJoinStatus(parts.join(' · '));
+    },
+    onError: (error) => {
+      setJoinStatus(error instanceof Error ? error.message : 'Could not add characters to join key.');
+    },
+  });
+
+  const canAddAll = Boolean(joinKey.trim()) && Boolean(characters.data?.length) && !addAllToJoinKey.isPending;
+
   if (session === undefined) return <LoadingScreen label='Loading session' />;
   if (!session) return <CampaignSignIn variant='phase1' />;
   return (
-    <div className='min-h-screen bg-[#0d1114] text-[#e7ebed]'>
+    <div className='min-h-screen bg-p1-page text-p1-text'>
       <WorkspaceHeader section='characters' />
       <main className='mx-auto max-w-5xl px-6 py-10'>
-        <div className='mb-8 flex items-end justify-between gap-6 border-b border-white/10 pb-6'>
-          <div><Eyebrow>Phase 1</Eyebrow><h1 className='mt-2 text-3xl font-semibold'>Character workspace</h1><p className='mt-2 text-sm text-[#8e999f]'>Open a character sheet, or switch to Campaigns from the header.</p></div>
-          <button className='icon-button' title='Sign out' onClick={() => supabase.auth.signOut()}><LogOut size={17} /></button>
+        <div className='mb-8 flex flex-wrap items-end justify-between gap-6 border-b border-p1-border pb-6'>
+          <div>
+            <Eyebrow>Phase 1</Eyebrow>
+            <h1 className='mt-2 text-3xl font-semibold'>Character workspace</h1>
+            <p className='mt-2 text-sm text-p1-muted'>Open a character sheet, or switch to Campaigns from the header.</p>
+          </div>
+          <div className='flex min-w-0 flex-col items-stretch gap-2 sm:items-end'>
+            <div className='flex flex-wrap items-center gap-2'>
+              <button type='button' className='toolbar-button' disabled={!canAddAll} onClick={() => addAllToJoinKey.mutate()}>
+                <Plus size={15} />
+                {addAllToJoinKey.isPending ? 'Adding…' : 'Add all'}
+              </button>
+              <div className='relative min-w-[12rem] flex-1'>
+                <KeyRound className='pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-p1-faint' size={14} />
+                <input
+                  className='settings-input h-9 w-full pl-8'
+                  aria-label='Join key'
+                  placeholder='Join key'
+                  value={joinKey}
+                  disabled={addAllToJoinKey.isPending}
+                  onChange={(event) => {
+                    setJoinKey(event.target.value);
+                    setJoinStatus(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && canAddAll) addAllToJoinKey.mutate();
+                  }}
+                />
+              </div>
+            </div>
+            <label className='flex items-center gap-2 text-sm text-p1-muted'>
+              <input
+                type='checkbox'
+                checked={reassign}
+                disabled={addAllToJoinKey.isPending}
+                onChange={(event) => setReassign(event.target.checked)}
+              />
+              Reassign PCs to this join key
+            </label>
+            {joinStatus && <p className='max-w-md text-right text-xs text-p1-muted'>{joinStatus}</p>}
+          </div>
         </div>
         {characters.isLoading && <EmptyState>Loading characters...</EmptyState>}
         {characters.error && <ErrorState error={characters.error} />}
         {characters.data?.length === 0 && <EmptyState>No characters are available.</EmptyState>}
-        <div className='divide-y divide-white/10 border-y border-white/10'>
+        <div className='divide-y divide-p1-border border-y border-p1-border'>
           {characters.data?.map((character) => {
             const identity = [character.details?.ancestry?.name, character.details?.class?.name].filter(Boolean).join(' · ');
             return (
-              <button key={character.id} className='group grid w-full grid-cols-[1fr_auto] items-center gap-6 px-2 py-5 text-left hover:bg-white/[0.025]' onClick={() => navigate(`/sheet/${character.id}`)}>
+              <button key={character.id} className='group grid w-full grid-cols-[1fr_auto] items-center gap-6 px-2 py-5 text-left hover:bg-p1-hover' onClick={() => navigate(`/sheet/${character.id}`)}>
                 <div>
                   <div className='font-semibold'>{character.name}</div>
-                  <div className='mt-1 line-clamp-1 text-sm text-[#7f8a90]'>Level {character.level}{identity ? ` · ${identity}` : ''}</div>
+                  <div className='mt-1 line-clamp-1 text-sm text-p1-muted'>Level {character.level}{identity ? ` · ${identity}` : ''}</div>
                 </div>
-                <ChevronRight className='text-[#616d73] group-hover:text-[#d6a85f]' size={18} />
+                <ChevronRight className='text-p1-faint group-hover:text-p1-accent' size={18} />
               </button>
             );
           })}
@@ -652,8 +753,24 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
           persistEntitySpells(await setEntityFocusSpent(selected as Phase1EntityCombatant, section.focusPoints.max, spent));
         },
         setInnateSpent: async (entry, castsCurrent) => {
-          if (!selected) return;
+          if (!selected || !entry.spell) return;
           persistEntitySpells(await setEntityInnateSpent(selected as Phase1EntityCombatant, entry.spell.id, entry.rank, castsCurrent));
+        },
+        addToList: async (sourceName, spell, rank) => {
+          if (!selected) return;
+          persistEntitySpells(await addEntitySpellToList(selected as Phase1EntityCombatant, sourceName, spell, rank));
+        },
+        removeFromList: async (sourceName, spellId, rank) => {
+          if (!selected) return;
+          persistEntitySpells(await removeEntitySpellFromList(selected as Phase1EntityCombatant, sourceName, spellId, rank));
+        },
+        prepareSlot: async (sourceName, slotId, spell, rank) => {
+          if (!selected) return;
+          persistEntitySpells(await prepareEntitySpellSlot(selected as Phase1EntityCombatant, sourceName, slotId, spell, rank));
+        },
+        applyDivineFont: async (sourceName, choice) => {
+          if (!selected) return;
+          persistEntitySpells(await applyEntityDivineFont(selected as Phase1EntityCombatant, sourceName, choice));
         },
       }
     : undefined;
@@ -666,11 +783,11 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   useEffect(() => window.localStorage.setItem(DETAIL_WIDTH_KEY, String(detailWidth)), [detailWidth]);
 
   return (
-    <div className='flex h-screen min-h-[680px] flex-col overflow-hidden bg-[#0d1114] text-[#e7ebed]'>
+    <div className='flex h-screen min-h-[680px] flex-col overflow-hidden bg-p1-page text-p1-text'>
       <WorkspaceHeader label={campaign.name} campaignId={campaign.id} encounterId={selectedEncounter?.id ?? null} noteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} />
       <div className={`grid min-h-0 flex-1 ${viewingNotes || viewingSettings ? 'grid-cols-[248px_minmax(280px,1fr)]' : 'grid-cols-[248px_minmax(280px,1fr)_6px_auto]'}`}>
         <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} selectedEncounter={selectedEncounter} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddAllPlayers={addAllPlayers} onDeleteNote={onDeleteNote} onDeleteEncounter={onDeleteEncounter} />
-        <main className='min-w-0 overflow-auto bg-[#11171a]'>
+        <main className='min-w-0 overflow-auto bg-p1-surface'>
           {viewingSettings ? (
             <SettingsSurface
               campaign={campaign}
@@ -687,7 +804,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
           ) : (
             <>
               <EncounterHeader encounter={selectedEncounter} count={combatants.length} isGm={isGm} noteLink={encounterNote ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} canRollInitiative={isGm && combatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && combatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} />
-              {rosterError && <div className='border-b border-[#a95249]/40 bg-[#a95249]/10 px-5 py-2 text-xs text-[#efaaa3]'>Roster update failed: {rosterError.message}</div>}
+              {rosterError && <div className='border-b border-p1-danger/40 bg-p1-danger/10 px-5 py-2 text-xs text-p1-danger-soft'>Roster update failed: {rosterError.message}</div>}
               <div className='p-5'>
                 <CombatantGrid combatants={orderedCombatants} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} />
                 <InitiativeRoundLogPanel log={selectedEncounter?.meta_data.initiative_log ?? []} canClear={isGm && !rosterSaving} onClear={clearInitiativeLog} />
@@ -752,15 +869,15 @@ function useCombatantStatuses(encounterId: number | null, combatants: PopulatedC
   });
 }
 function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, viewingSettings }: { label?: string; section?: 'campaigns' | 'characters'; campaignId?: number | null; encounterId?: number | null; noteIndex?: number | null; viewingSettings?: boolean }) {
-  const navClass = (active: boolean) => `text-sm ${active ? 'text-white' : 'text-[#8e999f] hover:text-white'}`;
+  const navClass = (active: boolean) => `text-sm ${active ? 'text-p1-text' : 'text-p1-muted hover:text-p1-text'}`;
   return (
-    <header className='flex h-14 shrink-0 items-center gap-4 border-b border-white/10 bg-[#0b0f11] px-5'>
+    <header className='flex h-14 shrink-0 items-center gap-4 border-b border-p1-border bg-p1-header px-5'>
       <a href='/' className='font-semibold'>Wanderer's Guide</a>
-      <span className='h-4 w-px bg-white/15' />
+      <span className='h-4 w-px bg-p1-border' />
       <Link to='/phase1' className={navClass(section === 'campaigns')}>Campaigns</Link>
       <Link to='/phase1/characters' className={navClass(section === 'characters')}>Characters</Link>
-      {label && <><span className='text-[#3d474c]'>/</span><span className='truncate text-sm text-[#8e999f]'>{label}</span></>}
-      <div className='ml-auto flex items-center gap-2'><PhaseViewSwitch current='phase1' campaignId={campaignId} encounterId={encounterId} noteIndex={noteIndex} viewingSettings={viewingSettings} /><button className='icon-button' title='Switch account' onClick={() => supabase.auth.signOut()}><LogOut size={15} /></button></div>
+      {label && <><span className='text-p1-faint'>/</span><span className='truncate text-sm text-p1-muted'>{label}</span></>}
+      <div className='ml-auto flex items-center gap-2'><Phase1ThemeToggle /><PhaseViewSwitch current='phase1' section={section} campaignId={campaignId} encounterId={encounterId} noteIndex={noteIndex} viewingSettings={viewingSettings} /><button className='icon-button' title='Switch account' onClick={() => supabase.auth.signOut()}><LogOut size={15} /></button></div>
     </header>
   );
 }
@@ -797,9 +914,9 @@ function CampaignRail({ campaign, encounters, players, selectedEncounter, notePa
   }
 
   return (
-    <aside className='min-h-0 overflow-y-auto border-r border-white/10 bg-[#0f1417]'>
-      <div className='border-b border-white/10 p-4'>
-        <Link to='/phase1' className='mb-5 flex items-center gap-2 text-xs text-[#879198] hover:text-white'><ArrowLeft size={14} /> Campaigns</Link>
+    <aside className='min-h-0 overflow-y-auto border-r border-p1-border bg-p1-header'>
+      <div className='border-b border-p1-border p-4'>
+        <Link to='/phase1' className='mb-5 flex items-center gap-2 text-xs text-p1-muted hover:text-p1-text'><ArrowLeft size={14} /> Campaigns</Link>
         <Eyebrow>{isGm ? 'Game master' : 'Player'}</Eyebrow><h1 className='mt-2 text-lg font-semibold leading-tight'>{campaign.name}</h1>
       </div>
       <RailLabel icon={<BookOpen size={14} />} label='Notes' count={notePages.length} open={notesOpen} onToggle={() => setNotesOpen((value) => !value)} />
@@ -810,13 +927,13 @@ function CampaignRail({ campaign, encounters, players, selectedEncounter, notePa
               key={`${page.name}-${index}`}
               to={`/phase1/campaign/${campaign.id}/notes/${index}`}
               onContextMenu={(event) => openRailMenu(event, { kind: 'note', id: index, name: page.name })}
-              className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedNoteIndex === index ? 'border-[#d6a85f] bg-white/[0.045] text-white' : 'border-transparent text-[#89949a] hover:bg-white/[0.025] hover:text-white'}`}
+              className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedNoteIndex === index ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
             >
               <span className='block truncate'>{page.name}</span>
-              {isGm && <span className='mt-0.5 block text-[11px] text-[#667178]'>{page.shared ? 'Shared with party' : 'GM only'}</span>}
+              {isGm && <span className='mt-0.5 block text-[11px] text-p1-faint'>{page.shared ? 'Shared with party' : 'GM only'}</span>}
             </Link>
           ))}
-          {notePages.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-[#68747a]'>{isGm ? 'No campaign notes yet.' : 'No shared campaign notes.'}</p>}
+          {notePages.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>{isGm ? 'No campaign notes yet.' : 'No shared campaign notes.'}</p>}
         </nav>
       )}
       <RailLabel icon={<Swords size={14} />} label='Encounters' count={encounters.length} open={encountersOpen} onToggle={() => setEncountersOpen((value) => !value)} />
@@ -827,13 +944,13 @@ function CampaignRail({ campaign, encounters, players, selectedEncounter, notePa
               key={encounter.id}
               to={`/phase1/campaign/${campaign.id}/encounters/${encounter.id}`}
               onContextMenu={(event) => openRailMenu(event, { kind: 'encounter', id: encounter.id, name: encounter.name })}
-              className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedEncounter?.id === encounter.id ? 'border-[#d6a85f] bg-white/[0.045] text-white' : 'border-transparent text-[#89949a] hover:bg-white/[0.025] hover:text-white'}`}
+              className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedEncounter?.id === encounter.id ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
             >
               <span className='block truncate'>{encounter.name}</span>
-              <span className='mt-0.5 block text-[11px] text-[#667178]'>{encounter.combatants.list.length} combatants</span>
+              <span className='mt-0.5 block text-[11px] text-p1-faint'>{encounter.combatants.list.length} combatants</span>
             </Link>
           ))}
-          {encounters.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-[#68747a]'>No encounters are visible for this campaign.</p>}
+          {encounters.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>No encounters are visible for this campaign.</p>}
         </nav>
       )}
       {isGm && (
@@ -842,18 +959,18 @@ function CampaignRail({ campaign, encounters, players, selectedEncounter, notePa
           <nav className='px-2 pb-4'>
             <Link
               to={`/phase1/campaign/${campaign.id}/settings`}
-              className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${viewingSettings ? 'border-[#d6a85f] bg-white/[0.045] text-white' : 'border-transparent text-[#89949a] hover:bg-white/[0.025] hover:text-white'}`}
+              className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${viewingSettings ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
             >
               <span className='block truncate'>Campaign settings</span>
-              <span className='mt-0.5 block text-[11px] text-[#667178]'>Player defaults and game config</span>
+              <span className='mt-0.5 block text-[11px] text-p1-faint'>Player defaults and game config</span>
             </Link>
           </nav>
         </>
       )}
       <RailLabel icon={<UsersRound size={14} />} label='Party bench' count={players.length} onContextMenu={openBenchMenu} />
-      <div className={`mx-2 min-h-16 border px-1 pb-4 pt-1 transition-colors ${benchActive ? 'border-[#d6a85f] bg-[#d6a85f]/[0.07]' : 'border-transparent'}`} onContextMenu={openBenchMenu} onDragOver={(event) => { if (canManageRoster && hasPlayerDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setBenchActive(true); } }} onDragLeave={() => setBenchActive(false)} onDrop={dropOnBench}>
-        {players.map((player) => <a key={player.id} href={`/sheet/${player.id}`} target='_blank' rel='noreferrer' draggable={canManageRoster} onDragStart={(event) => writePlayerDrag(event, { source: 'bench', characterId: player.id })} onDragEnd={() => setBenchActive(false)} className='flex items-center gap-2 px-2 py-2 text-sm text-[#89949a] hover:bg-white/[0.025] hover:text-white'>{canManageRoster && <GripVertical size={14} className='shrink-0 cursor-grab text-[#59656b]' />}<UserRound size={15} /><span className='min-w-0 flex-1 truncate'>{player.name}</span><ExternalLink size={12} /></a>)}
-        {players.length === 0 && <p className='px-2 py-3 text-xs text-[#68747a]'>No PCs on the bench.</p>}
+      <div className={`mx-2 min-h-16 border px-1 pb-4 pt-1 transition-colors ${benchActive ? 'border-p1-accent bg-p1-accent/[0.07]' : 'border-transparent'}`} onContextMenu={openBenchMenu} onDragOver={(event) => { if (canManageRoster && hasPlayerDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setBenchActive(true); } }} onDragLeave={() => setBenchActive(false)} onDrop={dropOnBench}>
+        {players.map((player) => <a key={player.id} href={`/sheet/${player.id}`} target='_blank' rel='noreferrer' draggable={canManageRoster} onDragStart={(event) => writePlayerDrag(event, { source: 'bench', characterId: player.id })} onDragEnd={() => setBenchActive(false)} className='flex items-center gap-2 px-2 py-2 text-sm text-p1-muted hover:bg-p1-hover hover:text-p1-text'>{canManageRoster && <GripVertical size={14} className='shrink-0 cursor-grab text-p1-faint' />}<UserRound size={15} /><span className='min-w-0 flex-1 truncate'>{player.name}</span><ExternalLink size={12} /></a>)}
+        {players.length === 0 && <p className='px-2 py-3 text-xs text-p1-faint'>No PCs on the bench.</p>}
       </div>
       {menu && (
         <RailContextMenu
@@ -895,7 +1012,7 @@ function CampaignRail({ campaign, encounters, players, selectedEncounter, notePa
   );
 }
 function RailLabel({ icon, label, count, open, onToggle, onContextMenu }: { icon: ReactNode; label: string; count?: number; open?: boolean; onToggle?: () => void; onContextMenu?: (event: ReactMouseEvent) => void }) {
-  const className = `flex w-full items-center gap-2 px-5 pb-2 pt-5 text-[10px] font-semibold uppercase text-[#68747a] ${onToggle ? 'hover:text-[#a5aeb2]' : ''}`;
+  const className = `flex w-full items-center gap-2 px-5 pb-2 pt-5 text-[10px] font-semibold uppercase text-p1-faint ${onToggle ? 'hover:text-p1-muted' : ''}`;
   const content = (
     <>
       {icon}{label}
@@ -924,8 +1041,8 @@ function PlayerContextMenu({ x, y, onClose, onRemove }: { x: number; y: number; 
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
-      <div role='menu' className='fixed z-[110] min-w-40 border border-white/10 bg-[#151b1e] py-1 shadow-2xl' style={{ left, top }}>
-        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[#e7ebed] hover:bg-white/[0.05]' onClick={onRemove}>
+      <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onRemove}>
           <UserMinus size={14} /> Remove
         </button>
       </div>
@@ -947,11 +1064,11 @@ function CombatantContextMenu({ x, y, onClose, onClone, onDelete }: { x: number;
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
-      <div role='menu' className='fixed z-[110] min-w-40 border border-white/10 bg-[#151b1e] py-1 shadow-2xl' style={{ left, top }}>
-        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[#e7ebed] hover:bg-white/[0.05]' onClick={onClone}>
+      <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onClone}>
           <Copy size={14} /> Clone
         </button>
-        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[#efaaa3] hover:bg-white/[0.05]' onClick={onDelete}>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onDelete}>
           <Trash2 size={14} /> Delete
         </button>
       </div>
@@ -973,8 +1090,8 @@ function BenchContextMenu({ x, y, disabled, onClose, onAddAll }: { x: number; y:
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
-      <div role='menu' className='fixed z-[110] min-w-40 border border-white/10 bg-[#151b1e] py-1 shadow-2xl' style={{ left, top }}>
-        <button type='button' role='menuitem' disabled={disabled} className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[#e7ebed] hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:text-[#68747a] disabled:hover:bg-transparent' onClick={onAddAll}>
+      <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        <button type='button' role='menuitem' disabled={disabled} className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint disabled:hover:bg-transparent' onClick={onAddAll}>
           <Plus size={14} /> Add all
         </button>
       </div>
@@ -996,8 +1113,8 @@ function RailContextMenu({ x, y, onClose, onDelete }: { x: number; y: number; on
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
-      <div role='menu' className='fixed z-[110] min-w-40 border border-white/10 bg-[#151b1e] py-1 shadow-2xl' style={{ left, top }}>
-        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[#efaaa3] hover:bg-white/[0.05]' onClick={onDelete}>
+      <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onDelete}>
           <Trash2 size={14} /> Delete
         </button>
       </div>
@@ -1025,9 +1142,9 @@ function readPlayerDrag(event: ReactDragEvent): PlayerDragPayload | null {
 }
 function EncounterHeader({ encounter, count, isGm, noteLink, canAddCreature, onAddCreature, canRollInitiative, onRollInitiative, canClearInitiative, onClearInitiative, canMaxStats, onMaxStats, canReset, onReset }: { encounter: Encounter | null; count: number; isGm: boolean; noteLink?: { href: string; name: string }; canAddCreature?: boolean; onAddCreature?: () => void; canRollInitiative?: boolean; onRollInitiative?: () => void; canClearInitiative?: boolean; onClearInitiative?: () => void; canMaxStats?: boolean; onMaxStats?: () => void; canReset?: boolean; onReset?: () => void }) {
   return (
-    <div className='sticky top-0 z-10 border-b border-white/10 bg-[#11171a]/95 px-5 py-4 backdrop-blur'>
+    <div className='sticky top-0 z-10 border-b border-p1-border bg-p1-surface/95 px-5 py-4 backdrop-blur'>
       <div className='flex items-center gap-5'>
-        <div className='min-w-0 flex-1'><Eyebrow>{isGm ? 'GM encounter' : 'Assigned encounter'}</Eyebrow><h2 className='mt-1 truncate text-xl font-semibold'>{encounter?.name ?? 'No encounter selected'}</h2>{noteLink ? <Link to={noteLink.href} className='mt-1 block truncate text-xs text-[#d6a85f] hover:underline'>See campaign Notes page: {noteLink.name}</Link> : <p className='mt-1 truncate text-xs text-[#778289]'>{encounter?.meta_data.description || `${count} combatants`}</p>}</div>
+        <div className='min-w-0 flex-1'><Eyebrow>{isGm ? 'GM encounter' : 'Assigned encounter'}</Eyebrow><h2 className='mt-1 truncate text-xl font-semibold'>{encounter?.name ?? 'No encounter selected'}</h2>{noteLink ? <Link to={noteLink.href} className='mt-1 block truncate text-xs text-p1-accent hover:underline'>See campaign Notes page: {noteLink.name}</Link> : <p className='mt-1 truncate text-xs text-p1-faint'>{encounter?.meta_data.description || `${count} combatants`}</p>}</div>
         {isGm && <button className='toolbar-button' disabled={!canAddCreature} title={canAddCreature ? 'Add a creature from the catalog' : 'Wait for the roster to finish saving'} onClick={onAddCreature}><Swords size={15} /> Add creature</button>}
         <button className='toolbar-button' disabled={!canRollInitiative} title={!isGm ? 'GM only' : count === 0 ? 'Add combatants first' : 'Roll initiative'} onClick={onRollInitiative}><GiDiceTwentyFacesTwenty size={15} /> Roll initiative</button>
         <button className='toolbar-button' disabled={!canClearInitiative} title={!isGm ? 'GM only' : canClearInitiative ? 'Clear initiative and restore roster order' : 'No initiative to clear'} onClick={onClearInitiative}><Eraser size={15} /> Clear init</button>
@@ -1051,9 +1168,9 @@ function CombatantGrid({ combatants, selectedId, onSelect, statuses, calculating
     onAddPlayer(payload.characterId);
   }
   return (
-    <div className={`overflow-x-auto border bg-[#0e1316] transition-colors ${encounterActive ? 'border-[#d6a85f] bg-[#d6a85f]/[0.04]' : 'border-white/10'}`} onDragOver={(event) => { if (canManageRoster && hasPlayerDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setEncounterActive(true); } }} onDragLeave={() => setEncounterActive(false)} onDrop={dropOnEncounter}>
+    <div className={`overflow-x-auto border bg-p1-inset transition-colors ${encounterActive ? 'border-p1-accent bg-p1-accent/[0.04]' : 'border-p1-border'}`} onDragOver={(event) => { if (canManageRoster && hasPlayerDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setEncounterActive(true); } }} onDragLeave={() => setEncounterActive(false)} onDrop={dropOnEncounter}>
       <table className='w-full min-w-[920px] table-fixed border-collapse text-sm'>
-        <thead className='border-b border-white/10 bg-[#0b1012] text-[10px] uppercase text-[#68747a]'><tr><th className='w-20 px-3 py-3 text-left'>Init</th><th className='px-3 text-left'>Combatant</th><th className='w-44 px-3 text-left'>Conditions</th><th className='w-64 px-3 text-left'>Defenses</th><th className='w-32 px-3 text-left'>HP</th><th className='w-16 px-3 text-center'>Open</th></tr></thead>
+        <thead className='border-b border-p1-border bg-p1-header text-[10px] uppercase text-p1-faint'><tr><th className='w-20 px-3 py-3 text-left'>Init</th><th className='px-3 text-left'>Combatant</th><th className='w-44 px-3 text-left'>Conditions</th><th className='w-64 px-3 text-left'>Defenses</th><th className='w-32 px-3 text-left'>HP</th><th className='w-16 px-3 text-center'>Open</th></tr></thead>
         <tbody>
           {combatants.map((combatant) => {
             const detailsVisible = combatant.access?.details_revealed !== false;
@@ -1062,14 +1179,14 @@ function CombatantGrid({ combatants, selectedId, onSelect, statuses, calculating
             const stats = calculated ?? (!calculable ? fallbackStatus(combatant.data) : null);
             const draggable = canManageRoster && combatant.type === 'CHARACTER' && typeof combatant.character === 'number';
             return (
-              <tr key={combatant._id} draggable={draggable} onDragStart={(event) => { if (draggable && typeof combatant.character === 'number') writePlayerDrag(event, { source: 'encounter', characterId: combatant.character, combatantId: combatant._id }); }} onDragEnd={() => setEncounterActive(false)} onContextMenu={(event) => { if (!canManageRoster || (combatant.type !== 'CREATURE' && combatant.type !== 'CHARACTER')) return; event.preventDefault(); setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY }); }} className={`border-b border-white/[0.07] last:border-0 ${draggable ? 'cursor-grab' : ''} ${combatant._id === selectedId ? 'bg-[#d6a85f]/[0.07]' : 'hover:bg-white/[0.025]'}`}>
+              <tr key={combatant._id} draggable={draggable} onDragStart={(event) => { if (draggable && typeof combatant.character === 'number') writePlayerDrag(event, { source: 'encounter', characterId: combatant.character, combatantId: combatant._id }); }} onDragEnd={() => setEncounterActive(false)} onContextMenu={(event) => { if (!canManageRoster || (combatant.type !== 'CREATURE' && combatant.type !== 'CHARACTER')) return; event.preventDefault(); setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY }); }} className={`border-b border-p1-border last:border-0 ${draggable ? 'cursor-grab' : ''} ${combatant._id === selectedId ? 'bg-p1-accent/[0.07]' : 'hover:bg-p1-hover'}`}>
                 <td className='px-3 py-3'><InitiativeCell key={`${combatant._id}:${combatant.initiative ?? ''}:${combatant.initiative_roll?.die ?? ''}`} combatant={combatant} canEdit={canManageRoster} onUpdate={(initiative) => onUpdateInitiative(combatant._id, initiative)} /></td>
-                <td className='px-3 py-3'><button className='flex w-full items-center gap-3 text-left' onClick={() => openCombatant(combatant, onSelect)}>{draggable && <GripVertical size={14} className='shrink-0 text-[#59656b]' />}<EntityIcon type={combatant.type} /><span className='min-w-0'><span className='block truncate font-semibold'>{combatant.data.name}</span><span className='block text-xs text-[#68747a]'>Level {combatant.data.level} | {combatant.ally ? 'Ally' : 'Enemy'}</span></span></button></td>
+                <td className='px-3 py-3'><button className='flex w-full items-center gap-3 text-left' onClick={() => openCombatant(combatant, onSelect)}>{draggable && <GripVertical size={14} className='shrink-0 text-p1-faint' />}<EntityIcon type={combatant.type} /><span className='min-w-0'><span className='block truncate font-semibold'>{combatant.data.name}</span><span className='block text-xs text-p1-faint'>Level {combatant.data.level} | {combatant.ally ? 'Ally' : 'Enemy'}</span></span></button></td>
                 <td className='px-3 py-3'><CombatantConditionPills conditions={detailsVisible ? compiledConditions(combatant.data.details?.conditions ?? []) : []} onOpen={() => openCombatant(combatant, onSelect)} /></td>
-                <td className='px-3 py-3 text-xs text-[#89949a]'>{!detailsVisible ? <span className='text-[#59656b]'>Not revealed</span> : stats ? <>{stats.ac} AC <span className='px-1 text-[#455057]'>|</span> Fort {signed(stats.fortitude)}, Ref {signed(stats.reflex)}, Will {signed(stats.will)}</> : calculating ? <span className='text-[#68747a]'>Calculating...</span> : <span className='text-[#a87a70]'>Unavailable</span>}</td>
+                <td className='px-3 py-3 text-xs text-p1-muted'>{!detailsVisible ? <span className='text-p1-faint'>Not revealed</span> : stats ? <>{stats.ac} AC <span className='px-1 text-p1-faint'>|</span> Fort {signed(stats.fortitude)}, Ref {signed(stats.reflex)}, Will {signed(stats.will)}</> : calculating ? <span className='text-p1-faint'>Calculating...</span> : <span className='text-p1-danger-soft'>Unavailable</span>}</td>
                 <td className='px-3 py-3'>
                   {!detailsVisible ? (
-                    <span className='inline-flex h-9 min-w-24 items-center justify-center border border-white/10 bg-[#11181b] text-[#59656b]'>Hidden</span>
+                    <span className='inline-flex h-9 min-w-24 items-center justify-center border border-p1-border bg-p1-raised text-p1-faint'>Hidden</span>
                   ) : (
                     <GridHpCell
                       combatant={combatant}
@@ -1088,7 +1205,7 @@ function CombatantGrid({ combatants, selectedId, onSelect, statuses, calculating
               </tr>
             );
           })}
-          {combatants.length === 0 && <tr><td colSpan={6} className='p-12 text-center text-sm text-[#68747a]'>No combatants in this encounter.</td></tr>}
+          {combatants.length === 0 && <tr><td colSpan={6} className='p-12 text-center text-sm text-p1-faint'>No combatants in this encounter.</td></tr>}
         </tbody>
       </table>
       {menu?.type === 'CREATURE' && (
@@ -1126,27 +1243,27 @@ function GridHpCell({ combatant, maxHp, calculating, canEdit, onEdit }: { combat
   const content = maxHp != null ? (
     <>
       {combatant.data.hp_current ?? maxHp}
-      <span className='px-2 text-[#59656b]'>/</span>
+      <span className='px-2 text-p1-faint'>/</span>
       {maxHp}
     </>
   ) : calculating ? (
-    <span className='text-[#68747a]'>...</span>
+    <span className='text-p1-faint'>...</span>
   ) : (
     <>
       {combatant.data.hp_current ?? '-'}
-      <span className='px-2 text-[#59656b]'>/</span>
+      <span className='px-2 text-p1-faint'>/</span>
       -
     </>
   );
 
   if (!canEdit) {
-    return <span className='inline-flex h-9 min-w-24 items-center justify-center border border-white/10 bg-[#11181b]'>{content}</span>;
+    return <span className='inline-flex h-9 min-w-24 items-center justify-center border border-p1-border bg-p1-raised'>{content}</span>;
   }
 
   return (
     <button
       type='button'
-      className='inline-flex h-9 min-w-24 items-center justify-center border border-white/10 bg-[#11181b] hover:border-[#d6a85f]/40 hover:bg-white/[0.03]'
+      className='inline-flex h-9 min-w-24 items-center justify-center border border-p1-border bg-p1-raised hover:border-p1-accent/40 hover:bg-p1-hover'
       onClick={(event) => onEdit(event.currentTarget.getBoundingClientRect())}
       title={`Edit ${combatant.data.name} hit points`}
     >
@@ -1183,7 +1300,7 @@ function InitiativeCell({ combatant, canEdit, onUpdate }: { combatant: Populated
       onMouseLeave={() => setTip(null)}
     >
       <input
-        className='h-9 w-14 border border-white/10 bg-[#11181b] px-2 text-center text-[#bdc5c9] disabled:opacity-100'
+        className='h-9 w-14 border border-p1-border bg-p1-raised px-2 text-center text-p1-text disabled:opacity-100'
         type='number'
         value={value}
         readOnly={!canEdit}
@@ -1199,7 +1316,7 @@ function InitiativeCell({ combatant, canEdit, onUpdate }: { combatant: Populated
       {tip && breakdown && createPortal(
         <div
           role='tooltip'
-          className='pointer-events-none fixed z-[200] whitespace-nowrap border border-white/15 bg-[#171d20] px-2.5 py-1.5 text-[11px] text-[#dce1e3] shadow-xl'
+          className='pointer-events-none fixed z-[200] whitespace-nowrap border border-p1-border bg-p1-surface px-2.5 py-1.5 text-[11px] text-p1-text shadow-xl'
           style={{ left: tip.left, top: tip.top - 8, transform: 'translateY(-100%)' }}
         >
           {breakdown}
@@ -1232,22 +1349,22 @@ function InitiativeRoundLogPanel({ log, canClear, onClear }: { log: InitiativeRo
     onClear();
   }
   if (log.length === 0) {
-    return <p className='mt-5 text-center text-xs text-[#68747a]'>No rounds logged yet.</p>;
+    return <p className='mt-5 text-center text-xs text-p1-faint'>No rounds logged yet.</p>;
   }
   const rounds = [...log].reverse();
   return (
-    <section className='mt-5 border border-white/10 bg-[#0e1316]'>
-      <div className='flex items-center gap-2 border-b border-white/10 px-4 py-3'>
+    <section className='mt-5 border border-p1-border bg-p1-inset'>
+      <div className='flex items-center gap-2 border-b border-p1-border px-4 py-3'>
         <button
           type='button'
-          className='flex min-w-0 flex-1 items-center gap-2 text-left hover:text-white'
+          className='flex min-w-0 flex-1 items-center gap-2 text-left hover:text-p1-text'
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
         >
-          <History size={15} className='text-[#89949a]' />
+          <History size={15} className='text-p1-muted' />
           <span className='text-sm font-semibold'>Round log</span>
-          <span className='text-xs text-[#68747a]'>{log.length} round{log.length === 1 ? '' : 's'}</span>
-          <ChevronDown size={14} className={`ml-auto text-[#68747a] transition-transform ${open ? 'rotate-180' : ''}`} />
+          <span className='text-xs text-p1-faint'>{log.length} round{log.length === 1 ? '' : 's'}</span>
+          <ChevronDown size={14} className={`ml-auto text-p1-faint transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
         {canClear && onClear && (
           <button type='button' className='toolbar-button shrink-0' title='Clear all logged rounds' onClick={handleClear}>
@@ -1268,12 +1385,12 @@ function InitiativeRoundLogPanel({ log, canClear, onClear }: { log: InitiativeRo
         />
       )}
       {open && rounds.map((round, index) => (
-        <div key={round.id ?? `${round.round}-${index}`} className='border-b border-white/[0.07] px-4 py-3 last:border-0'>
-          <h3 className='mb-2 text-[10px] font-semibold uppercase tracking-wide text-[#d6a85f]'>Round {round.round}</h3>
+        <div key={round.id ?? `${round.round}-${index}`} className='border-b border-p1-border px-4 py-3 last:border-0'>
+          <h3 className='mb-2 text-[10px] font-semibold uppercase tracking-wide text-p1-accent'>Round {round.round}</h3>
           <div className='overflow-x-auto'>
             <table className='w-full min-w-[640px] border-collapse text-xs'>
-              <thead className='text-[10px] uppercase text-[#68747a]'>
-                <tr className='border-b border-white/10'>
+              <thead className='text-[10px] uppercase text-p1-faint'>
+                <tr className='border-b border-p1-border'>
                   <th className='px-2 py-2 text-left font-semibold'>Combatant</th>
                   <th className='w-24 px-2 py-2 text-left font-semibold'>Side</th>
                   <th className='w-16 px-2 py-2 text-left font-semibold'>Init</th>
@@ -1282,11 +1399,11 @@ function InitiativeRoundLogPanel({ log, canClear, onClear }: { log: InitiativeRo
               </thead>
               <tbody>
                 {sortRoundLogEntries(round.entries).map((entry, entryIndex) => (
-                  <tr key={`${round.id ?? round.round}-${entry.name}-${entryIndex}`} className='border-b border-white/[0.05] last:border-0'>
-                    <td className='px-2 py-2 font-medium text-[#e7ebed]'>{entry.name}</td>
-                    <td className='px-2 py-2 text-[#89949a]'>{entry.ally ? 'Ally' : 'Enemy'}</td>
-                    <td className='px-2 py-2 text-[#bdc5c9]'>{entry.initiative ?? ''}</td>
-                    <td className='px-2 py-2 text-[#89949a]'>{entry.calculation}</td>
+                  <tr key={`${round.id ?? round.round}-${entry.name}-${entryIndex}`} className='border-b border-p1-border last:border-0'>
+                    <td className='px-2 py-2 font-medium text-p1-text'>{entry.name}</td>
+                    <td className='px-2 py-2 text-p1-muted'>{entry.ally ? 'Ally' : 'Enemy'}</td>
+                    <td className='px-2 py-2 text-p1-text'>{entry.initiative ?? ''}</td>
+                    <td className='px-2 py-2 text-p1-muted'>{entry.calculation}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1304,7 +1421,7 @@ function openCombatant(combatant: PopulatedCombatant, onSelect: (id: string) => 
 }
 
 const CONDITION_PILL_MAX = 2;
-const CONDITION_PILL_CLASS = 'inline-flex max-w-[8.5rem] items-center truncate rounded-full border border-white/12 bg-white/[0.055] px-2 py-[3px] text-[10px] font-medium leading-none tracking-wide text-[#d5dcde]';
+const CONDITION_PILL_CLASS = 'inline-flex max-w-[8.5rem] items-center truncate rounded-full border border-p1-border bg-p1-hover px-2 py-[3px] text-[10px] font-medium leading-none tracking-wide text-p1-text';
 
 function conditionLabel(condition: Condition) {
   return condition.value != null ? `${condition.name} ${condition.value}` : condition.name;
@@ -1320,7 +1437,7 @@ function CombatantConditionPills({ conditions, onOpen }: { conditions: Condition
         <button
           key={`${condition.name}-${condition.source ?? 'direct'}`}
           type='button'
-          className={`${CONDITION_PILL_CLASS} hover:border-white/20 hover:bg-white/[0.09]`}
+          className={`${CONDITION_PILL_CLASS} hover:border-p1-border hover:bg-p1-hover`}
           title={condition.source ? `${conditionLabel(condition)} from ${condition.source}` : conditionLabel(condition)}
           onClick={onOpen}
         >
@@ -1330,7 +1447,7 @@ function CombatantConditionPills({ conditions, onOpen }: { conditions: Condition
       {extra.length > 0 && (
         <button
           type='button'
-          className='inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full border border-white/10 bg-white/[0.04] px-1.5 text-[9px] font-semibold text-[#8b969c] hover:border-white/20 hover:text-[#d5dcde]'
+          className='inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full border border-p1-border bg-p1-hover px-1.5 text-[9px] font-semibold text-p1-muted hover:border-p1-border hover:text-p1-text'
           title={extra.map(conditionLabel).join(', ')}
           onClick={onOpen}
         >
@@ -1345,14 +1462,14 @@ function Inspector({ combatant, width, activeTab, onTab, hasMatchingCampaignNote
   combatant: PopulatedCombatant | null; width: number; activeTab: DetailTab; onTab: (tab: DetailTab) => void; hasMatchingCampaignNote?: boolean; status?: Phase1CreatureStatus | null; statusLoading: boolean; canManageSpells: boolean; spellActions?: Phase1SpellActions; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onSaveGmNotes?: (text: string) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void;
 }) {
   return (
-    <aside className='min-h-0 overflow-hidden bg-[#0c1113]' style={{ width }}>
+    <aside className='min-h-0 overflow-hidden bg-p1-inset' style={{ width }}>
       {!combatant ? (
-        <div className='flex h-full flex-col items-center justify-center px-8 text-center'><PanelRight className='mb-4 text-[#465158]' size={28} /><p className='text-sm font-semibold'>Select a combatant</p><p className='mt-2 max-w-56 text-xs leading-5 text-[#68747a]'>PCs, NPCs, and creatures open in this shared read-only inspector.</p></div>
+        <div className='flex h-full flex-col items-center justify-center px-8 text-center'><PanelRight className='mb-4 text-p1-faint' size={28} /><p className='text-sm font-semibold'>Select a combatant</p><p className='mt-2 max-w-56 text-xs leading-5 text-p1-faint'>PCs, NPCs, and creatures open in this shared read-only inspector.</p></div>
       ) : (
         <div className='flex h-full min-w-0 flex-col'>
-<div className='flex items-start gap-3 border-b border-white/10 px-4 py-3.5'><div className='min-w-0 flex-1'><Eyebrow>{combatant.type === 'CREATURE' ? (combatant.ally ? 'NPC / Creature' : 'Creature') : 'Player character'}</Eyebrow><h2 className='mt-1 truncate text-lg font-semibold leading-tight'>{combatant.data.name}</h2><p className='mt-1 text-xs text-[#748087]'>Level {combatant.data.level} | {canManageSpells ? 'Spell tracking' : 'Read only'}</p></div>{combatant.type === 'CHARACTER' && combatant.data.id && <a className='icon-button shrink-0' href={`/sheet/${combatant.data.id}`} target='_blank' rel='noreferrer' title='Open full character sheet'><ExternalLink size={16} /></a>}</div>
-          <div className='grid grid-cols-4 border-b border-white/10 bg-[#0a0e10]'>
-            {DETAIL_TABS.map((tab) => <button key={tab} className={`border-b-2 px-2 py-2.5 text-[11px] ${activeTab === tab ? 'border-[#d6a85f] text-[#f0d29d]' : 'border-transparent text-[#748087] hover:text-white'}`} onClick={() => onTab(tab)}>{tab}</button>)}
+<div className='flex items-start gap-3 border-b border-p1-border px-4 py-3.5'><div className='min-w-0 flex-1'><Eyebrow>{combatant.type === 'CREATURE' ? (combatant.ally ? 'NPC / Creature' : 'Creature') : 'Player character'}</Eyebrow><h2 className='mt-1 truncate text-lg font-semibold leading-tight'>{combatant.data.name}</h2><p className='mt-1 text-xs text-p1-faint'>Level {combatant.data.level} | {canManageSpells ? 'Spell tracking' : 'Read only'}</p></div>{combatant.type === 'CHARACTER' && combatant.data.id && <a className='icon-button shrink-0' href={`/sheet/${combatant.data.id}`} target='_blank' rel='noreferrer' title='Open full character sheet'><ExternalLink size={16} /></a>}</div>
+          <div className='grid grid-cols-4 border-b border-p1-border bg-p1-inset'>
+            {DETAIL_TABS.map((tab) => <button key={tab} className={`border-b-2 px-2 py-2.5 text-[11px] ${activeTab === tab ? 'border-p1-accent text-p1-accent-soft' : 'border-transparent text-p1-faint hover:text-p1-text'}`} onClick={() => onTab(tab)}>{tab}</button>)}
           </div>
           <div className='min-h-0 flex-1 overflow-y-auto p-4'><InspectorContent combatant={combatant} tab={activeTab} hasMatchingCampaignNote={hasMatchingCampaignNote} status={status} statusLoading={statusLoading} spellActions={spellActions} onChangeConditions={onChangeConditions} onSaveGmNotes={onSaveGmNotes} onPersistHpCurrent={onPersistHpCurrent} onPersistTempHp={onPersistTempHp} /></div>
           <CombatantChangeLogFooter entries={combatant.change_log ?? []} />
@@ -1366,11 +1483,11 @@ function NoteSurface({ note, isGm, encounterLink }: { note: IndexedNotePage | nu
   const markdown = note ? noteContentsToMarkdown(note.page.contents) : '';
   return (
     <>
-      <div className='sticky top-0 z-10 border-b border-white/10 bg-[#11171a]/95 px-5 py-4 backdrop-blur'>
+      <div className='sticky top-0 z-10 border-b border-p1-border bg-p1-surface/95 px-5 py-4 backdrop-blur'>
         <Eyebrow>{isGm ? 'Campaign notes' : 'Shared campaign notes'}</Eyebrow>
         <h2 className='mt-1 truncate text-xl font-semibold'>{note?.page.name ?? 'Note not found'}</h2>
-        <p className='mt-1 truncate text-xs text-[#778289]'>{note ? (note.page.shared ? 'Shared with party' : 'Visible to the GM only') : 'This campaign note is unavailable.'}</p>
-        {encounterLink && <Link to={encounterLink.href} className='mt-1 block truncate text-xs text-[#d6a85f] hover:underline'>See encounter: {encounterLink.name}</Link>}
+        <p className='mt-1 truncate text-xs text-p1-faint'>{note ? (note.page.shared ? 'Shared with party' : 'Visible to the GM only') : 'This campaign note is unavailable.'}</p>
+        {encounterLink && <Link to={encounterLink.href} className='mt-1 block truncate text-xs text-p1-accent hover:underline'>See encounter: {encounterLink.name}</Link>}
       </div>
       <div className='p-5'>
         {!note && <EmptyState>This campaign note could not be found, or it is not shared with you.</EmptyState>}
@@ -1392,17 +1509,17 @@ function ResizeRail({ onResize }: { onResize: (delta: number) => void }) {
     window.addEventListener('mouseup', up);
     return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
   }, [dragging, onResize]);
-  return <button aria-label='Resize detail panel' className='cursor-col-resize bg-[#20292e] hover:bg-[#d6a85f]' onMouseDown={() => setDragging(true)} />;
+  return <button aria-label='Resize detail panel' className='cursor-col-resize bg-p1-raised hover:bg-p1-accent' onMouseDown={() => setDragging(true)} />;
 }
 
 function EntityIcon({ type }: { type: Combatant['type'] }) {
-  return <span className={`grid h-9 w-9 shrink-0 place-items-center border ${type === 'CREATURE' ? 'border-[#9e574f]/50 text-[#dc8c83]' : 'border-[#527485]/50 text-[#82aec2]'}`}>{type === 'CREATURE' ? <Swords size={16} /> : <UserRound size={16} />}</span>;
+  return <span className={`grid h-9 w-9 shrink-0 place-items-center border ${type === 'CREATURE' ? 'border-p1-creature/50 text-p1-creature' : 'border-p1-pc/50 text-p1-pc'}`}>{type === 'CREATURE' ? <Swords size={16} /> : <UserRound size={16} />}</span>;
 }
-function Eyebrow({ children }: { children: ReactNode }) { return <div className='text-[10px] font-semibold uppercase text-[#d6a85f]'>{children}</div>; }
-function EmptyState({ children }: { children: ReactNode }) { return <div className='border border-white/10 p-8 text-center text-sm text-[#7f8a90]'>{children}</div>; }
-function ErrorState({ error }: { error: Error }) { return <div className='border border-[#a95249]/40 bg-[#a95249]/10 p-4 text-sm text-[#efaaa3]'>{error.message}</div>; }
-function PageError({ error }: { error: Error }) { return <div className='min-h-screen bg-[#0d1114] p-8 text-[#e7ebed]'><Link to='/phase1' className='text-sm text-[#d6a85f]'>Back to campaigns</Link><div className='mt-6 max-w-xl'><ErrorState error={error} /></div></div>; }
-function LoadingScreen({ label }: { label: string }) { return <div className='grid min-h-screen place-items-center bg-[#0d1114] text-sm text-[#7f8a90]'>{label}...</div>; }
+function Eyebrow({ children }: { children: ReactNode }) { return <div className='text-[10px] font-semibold uppercase text-p1-accent'>{children}</div>; }
+function EmptyState({ children }: { children: ReactNode }) { return <div className='border border-p1-border p-8 text-center text-sm text-p1-muted'>{children}</div>; }
+function ErrorState({ error }: { error: Error }) { return <div className='border border-p1-danger/40 bg-p1-danger/10 p-4 text-sm text-p1-danger-soft'>{error.message}</div>; }
+function PageError({ error }: { error: Error }) { return <div className='min-h-screen bg-p1-page p-8 text-p1-text'><Link to='/phase1' className='text-sm text-p1-accent'>Back to campaigns</Link><div className='mt-6 max-w-xl'><ErrorState error={error} /></div></div>; }
+function LoadingScreen({ label }: { label: string }) { return <div className='grid min-h-screen place-items-center bg-p1-page text-sm text-p1-muted'>{label}...</div>; }
 
 function populateCombatants(combatants: Combatant[], players: Character[]): PopulatedCombatant[] {
   return combatants.map((combatant) => {
@@ -1410,6 +1527,56 @@ function populateCombatants(combatants: Combatant[], players: Character[]): Popu
     return data ? { ...combatant, data } : null;
   }).filter((combatant): combatant is PopulatedCombatant => Boolean(combatant));
 }
+function CampaignWorkspaceRow({ campaign, onOpen }: { campaign: Campaign; onOpen: () => void }) {
+  const [visible, setVisible] = useState(false);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const hasKey = Boolean(campaign.join_key);
+
+  async function revealAndCopy(event: ReactMouseEvent) {
+    event.stopPropagation();
+    if (!campaign.join_key) return;
+    setVisible(true);
+    setCopyState((await copyJoinKey(campaign.join_key)) ? 'copied' : 'failed');
+  }
+
+  return (
+    <div className='group grid w-full grid-cols-[1fr_auto] items-center gap-6 px-2 py-5 hover:bg-p1-hover'>
+      <button type='button' className='min-w-0 text-left' onClick={onOpen}>
+        <div className='font-semibold'>{campaign.name}</div>
+        <div className='mt-1 line-clamp-1 text-sm text-p1-muted'>{campaign.description || 'No campaign description'}</div>
+      </button>
+      <div className='flex items-center gap-2'>
+        {hasKey && (
+          <button type='button' className='toolbar-button' title='Reveal and copy join key' onClick={revealAndCopy}>
+            {copyState === 'copied' ? <Check size={14} /> : visible ? <Copy size={14} /> : <KeyRound size={14} />}
+            <span className={visible ? 'font-mono' : ''}>{visible ? campaign.join_key : 'Copy key'}</span>
+          </button>
+        )}
+        <button type='button' className='icon-button' title={`Open ${campaign.name}`} onClick={onOpen}>
+          <ChevronRight className='text-p1-faint group-hover:text-p1-accent' size={18} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+async function copyJoinKey(value: string) {
+  try {
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch {
+    const input = document.createElement('textarea');
+    input.value = value;
+    input.style.position = 'fixed';
+    input.style.opacity = '0';
+    document.body.appendChild(input);
+    input.select();
+    const copied = document.execCommand('copy');
+    input.remove();
+    return copied;
+  }
+}
+
 function uniqueById(campaigns: Campaign[]) { return [...new Map(campaigns.map((campaign) => [campaign.id, campaign])).values()]; }
 function visibleNotePages(campaign: Campaign, isGm: boolean): IndexedNotePage[] {
   return (campaign.notes?.pages ?? []).map((page, index) => ({ page, index })).filter((item) => isGm || item.page.shared);

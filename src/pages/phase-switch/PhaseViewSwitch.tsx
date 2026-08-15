@@ -5,6 +5,7 @@ export const OLD_UI_ORIGIN = import.meta.env.VITE_OLD_UI_ORIGIN || 'http://local
 export type PhaseView = 'phase0' | 'phase1';
 
 export type PhaseLocation = {
+  section?: 'campaigns' | 'characters';
   campaignId?: number | null;
   encounterId?: number | null;
   noteIndex?: number | null;
@@ -12,7 +13,10 @@ export type PhaseLocation = {
 };
 
 export function phaseWorkspacePath(phase: PhaseView, location: PhaseLocation = {}): string {
-  if (!location.campaignId) return `/${phase}`;
+  if (!location.campaignId) {
+    if (phase === 'phase1' && location.section === 'characters') return '/phase1/characters';
+    return `/${phase}`;
+  }
   if (phase === 'phase1') {
     if (location.viewingSettings) return `/phase1/campaign/${location.campaignId}/settings`;
     if (location.noteIndex != null) return `/phase1/campaign/${location.campaignId}/notes/${location.noteIndex}`;
@@ -24,6 +28,7 @@ export function phaseWorkspacePath(phase: PhaseView, location: PhaseLocation = {
 }
 
 export function originalCampaignUrl(location: PhaseLocation = {}): string {
+  if (location.section === 'characters') return `${OLD_UI_ORIGIN}/characters`;
   if (!location.campaignId) return `${OLD_UI_ORIGIN}/campaigns`;
   const params = new URLSearchParams();
   if (location.viewingSettings) {
@@ -37,11 +42,16 @@ export function originalCampaignUrl(location: PhaseLocation = {}): string {
   return `${OLD_UI_ORIGIN}/campaign/${location.campaignId}?${params.toString()}`;
 }
 
-export function PhaseViewSwitch({ current, campaignId, encounterId, noteIndex, viewingSettings }: PhaseLocation & { current: PhaseView }) {
-  const location = { campaignId, encounterId, noteIndex, viewingSettings };
+export function PhaseViewSwitch({ current, section, campaignId, encounterId, noteIndex, viewingSettings }: PhaseLocation & { current: PhaseView }) {
+  const location = { section, campaignId, encounterId, noteIndex, viewingSettings };
   const phase0Href = phaseWorkspacePath('phase0', location);
   const phase1Href = phaseWorkspacePath('phase1', location);
   const originalHref = originalCampaignUrl(location);
+  const originalTitle = section === 'characters'
+    ? 'Open the original characters page'
+    : campaignId
+      ? 'Open the original campaign tab for this encounter'
+      : 'Open the original campaigns page';
 
   return (
     <nav className='phase-view-switch' data-current={current} aria-label='Interface version'>
@@ -51,7 +61,7 @@ export function PhaseViewSwitch({ current, campaignId, encounterId, noteIndex, v
       <a href={phase1Href} aria-current={current === 'phase1' ? 'page' : undefined} title='Switch to Phase 1 in this window'>
         Phase 1
       </a>
-      <a className='phase-view-switch-original' href={originalHref} target='_blank' rel='noreferrer' title='Open the original campaign tab for this encounter'>
+      <a className='phase-view-switch-original' href={originalHref} target='_blank' rel='noreferrer' title={originalTitle}>
         Original
       </a>
     </nav>

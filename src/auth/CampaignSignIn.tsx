@@ -63,25 +63,25 @@ export function CampaignSignIn({ variant }: CampaignSignInProps) {
   const isPhase0 = variant === 'phase0';
   const shellClass = isPhase0
     ? 'min-h-screen bg-slate-950 px-6 py-10 text-slate-100'
-    : 'grid min-h-screen place-items-center bg-[#0d1114] px-6 text-[#e7ebed]';
+    : 'grid min-h-screen place-items-center bg-p1-page px-6 text-p1-text';
   const formClass = isPhase0
     ? 'mx-auto max-w-md rounded-md border border-slate-800 bg-slate-900 p-6'
-    : 'w-full max-w-sm border border-white/10 bg-[#11171a] p-7';
-  const labelClass = isPhase0 ? 'mt-6 block text-sm text-slate-300' : 'mt-6 block text-xs text-[#89949a]';
+    : 'w-full max-w-sm border border-p1-border bg-p1-surface p-7';
+  const labelClass = isPhase0 ? 'mt-6 block text-sm text-slate-300' : 'mt-6 block text-xs text-p1-muted';
   const inputClass = isPhase0
     ? 'mt-2 h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3'
-    : 'mt-2 h-10 w-full border border-white/10 bg-[#0b1012] px-3 text-white';
-  const errorClass = isPhase0 ? 'mt-4 text-sm text-red-300' : 'mt-4 text-xs text-[#ef8f86]';
+    : 'mt-2 h-10 w-full border border-p1-border bg-p1-header px-3 text-p1-text';
+  const errorClass = isPhase0 ? 'mt-4 text-sm text-red-300' : 'mt-4 text-xs text-p1-danger-soft';
   const oauthButtonClass = isPhase0
     ? 'flex h-10 w-full items-center justify-center gap-3 rounded-md border border-slate-700 bg-slate-950 px-3 text-sm font-medium text-slate-100 transition hover:border-slate-500 hover:bg-slate-900 disabled:opacity-50'
-    : 'flex h-10 w-full items-center justify-center gap-3 border border-white/10 bg-[#0b1012] px-3 text-sm font-medium text-white transition hover:border-white/20 hover:bg-[#11171a] disabled:opacity-50';
-  const dividerClass = isPhase0 ? 'my-5 border-t border-slate-800' : 'my-5 border-t border-white/10';
+    : 'flex h-10 w-full items-center justify-center gap-3 border border-p1-border bg-p1-header px-3 text-sm font-medium text-p1-text transition hover:border-p1-accent/40 hover:bg-p1-surface disabled:opacity-50';
+  const dividerClass = isPhase0 ? 'my-5 border-t border-slate-800' : 'my-5 border-t border-p1-border';
   const submitClass = isPhase0
     ? 'mt-6 h-10 w-full rounded-md bg-sky-600 font-semibold text-white hover:bg-sky-500 disabled:opacity-50'
-    : 'mt-6 h-10 w-full bg-[#d6a85f] font-semibold text-[#15120d] hover:bg-[#e4ba76] disabled:opacity-50';
+    : 'mt-6 h-10 w-full bg-p1-accent font-semibold text-p1-accent-ink hover:bg-p1-accent-soft disabled:opacity-50';
   const backLinkClass = isPhase0
     ? 'mt-5 block text-center text-sm text-slate-400 hover:text-slate-200'
-    : 'mt-5 block text-center text-xs text-[#7f8a90] hover:text-white';
+    : 'mt-5 block text-center text-xs text-p1-muted hover:text-p1-text';
 
   return (
     <div className={shellClass}>
@@ -96,9 +96,9 @@ export function CampaignSignIn({ variant }: CampaignSignInProps) {
           </>
         ) : (
           <>
-            <div className='text-[10px] font-semibold uppercase text-[#d6a85f]'>Phase 1</div>
+            <div className='text-[10px] font-semibold uppercase text-p1-accent'>Phase 1</div>
             <h1 className='mt-2 text-2xl font-semibold'>Sign in</h1>
-            <p className='mt-2 text-sm text-[#7f8a90]'>This parallel UI uses the same account and backend.</p>
+            <p className='mt-2 text-sm text-p1-muted'>This parallel UI uses the same account and backend.</p>
           </>
         )}
 
@@ -133,7 +133,7 @@ export function CampaignSignIn({ variant }: CampaignSignInProps) {
             defaultValue=''
           />
         </label>
-        <label className={isPhase0 ? 'mt-4 block text-sm text-slate-300' : 'mt-4 block text-xs text-[#89949a]'}>
+        <label className={isPhase0 ? 'mt-4 block text-sm text-slate-300' : 'mt-4 block text-xs text-p1-muted'}>
           Password
           <input
             className={inputClass}
