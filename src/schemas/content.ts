@@ -915,6 +915,20 @@ export const CombatantChangeLogEntrySchema = z.object({
 });
 export type CombatantChangeLogEntry = z.infer<typeof CombatantChangeLogEntrySchema>;
 
+export const CombatantActionLogKindSchema = z.enum(['attack', 'action', 'spell']);
+export type CombatantActionLogKind = z.infer<typeof CombatantActionLogKindSchema>;
+
+export const CombatantActionLogEntrySchema = z.object({
+  id: z.string(),
+  at: z.string(),
+  name: z.string(),
+  cost: ActionCostSchema,
+  kind: CombatantActionLogKindSchema,
+  extra: z.string().nullable().optional(),
+  round: z.number().optional(),
+});
+export type CombatantActionLogEntry = z.infer<typeof CombatantActionLogEntrySchema>;
+
 export const CombatantSchema = z.object({
   _id: z.string(),
   type: z.enum(['CREATURE', 'CHARACTER']),
@@ -931,6 +945,8 @@ export const CombatantSchema = z.object({
   character: z.number().optional(),
   data: LivingEntitySchema.optional(),
   change_log: z.array(CombatantChangeLogEntrySchema).optional(),
+  action_log: z.array(CombatantActionLogEntrySchema).optional(),
+  out: z.enum(['dead', 'incapacitated']).optional(),
 });
 export type Combatant = z.infer<typeof CombatantSchema>;
 
@@ -939,6 +955,8 @@ export const InitiativeRoundLogEntrySchema = z.object({
   ally: z.boolean(),
   initiative: z.number().nullable(),
   calculation: z.string(),
+  combatant_id: z.string().optional(),
+  note: z.string().optional(),
 });
 export type InitiativeRoundLogEntry = z.infer<typeof InitiativeRoundLogEntrySchema>;
 

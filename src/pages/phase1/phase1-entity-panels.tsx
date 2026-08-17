@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Activity, BookOpen, Calculator, ChevronDown, ChevronRight, Crosshair, Eye, Footprints, History, ListChecks, Package, Plus, Search, Shield, Sparkles, Swords, WandSparkles, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { Character, Combatant, Condition, LivingEntity, Spell } from '@schemas/content';
+import type { Character, Combatant, CombatantActionLogEntry, CombatantChangeLogEntry, Condition, InitiativeRoundLog, InitiativeRoundLogEntry, LivingEntity, Spell } from '@schemas/content';
 import { loadEntityAbilities, type Phase1Ability } from './phase1-abilities';
 import { type Phase1CreatureStatus } from './phase1-stats';
 import type { Phase1EntityCombatant } from './phase1-entity';
@@ -12,6 +12,7 @@ import { loadEntitySkillsActions, type Phase1ActionGroup, type Phase1Skill } fro
 import { isDivinePreparedSource, loadEntitySpells, spellFitsSlot, type Phase1SpellEntry, type Phase1SpellSection } from './phase1-spells';
 import { Phase1SpellbookModal, type SpellbookAssign } from './phase1-spellbook';
 import { flattenInvItems, inventoryItemToPhase1, loadEntityInventory, matchesInvItem, type Phase1InvItem } from './phase1-inventory';
+import { ConfirmDialog } from './phase1-campaign-settings';
 import { EntityNotesPanel, ProseMarkdown, SourceImportNotesPanel } from './phase1-markdown';
 import { isContentStackOpen, useContentLinks } from './phase1-content-links';
 import { getBestShield, getItemHealth } from '@items/inv-utils';
@@ -21,7 +22,11 @@ import { ConditionDetailModal, SelectConditionModal } from './phase1-conditions'
 import { ActionSymbol } from '@common/Actions';
 import { abilityNameAndCost } from '@utils/actions';
 import { toStandard2eProse } from '@utils/foundry-text';
-import { EditableValueWithNote } from './phase1-change-log-ui';
+import { EditableValueWithNote, RoundNoteField } from './phase1-change-log-ui';
+import { formatChangeLogField, formatChangeLogTime, formatChangeLogValue } from './phase1-change-log';
+import { actionCostCount, currentActionRound, draftFromAbility, groupActionLogByRound, isExecutableActionCost, isLoggableAbility, roundActionTotal, wouldExceedRoundActions, type ActionLogDraft } from './phase1-action-log';
+import { useClickVsDoubleClick } from './phase1-click';
+import { roundLogEntryMatchesCombatant } from './phase1-initiative';
 
 export type Phase1SpellActions = {
   setCast: (entry: Phase1SpellEntry, cast: boolean) => Promise<void>;
@@ -34,8 +39,14 @@ export type Phase1SpellActions = {
   prepareSlot: (sourceName: string, slotId: string | undefined, spell: Spell, rank: number) => Promise<void>;
   applyDivineFont: (sourceName: string, choice: 'heal' | 'harm') => Promise<void>;
 };
-export const DETAIL_TABS = ['Health', 'Abilities', 'Skills', 'Inventory', 'Spells', 'GM Notes', 'Source', 'Details'] as const;
+export const DETAIL_TABS = ['Health', 'Abilities', 'Skills', 'Inventory', 'Spells', 'Notes', 'Details', 'Log'] as const;
 export type DetailTab = (typeof DETAIL_TABS)[number];
+export function normalizeDetailTab(tab: string): DetailTab {
+  if (tab === 'Source') return 'Details';
+  if ((DETAIL_TABS as readonly string[]).includes(tab)) return tab as DetailTab;
+  return 'Health';
+}
+export type LogActionFn = (draft: ActionLogDraft, beforeLog?: () => void | Promise<void>) => void;
 export type PopulatedCombatant = Combatant & { data: LivingEntity; access?: { can_edit: boolean; details_revealed: boolean } };
 
 export const CONDITION_PILL_CLASS = 'inline-flex max-w-[8.5rem] items-center truncate rounded-full border border-p1-border bg-p1-hover px-2 py-[3px] text-[10px] font-medium leading-none tracking-wide text-p1-text';
@@ -58,22 +69,124 @@ export function EmptyState({ children }: { children: ReactNode }) { return <div 
 export function ErrorState({ error }: { error: Error }) { return <div className='border border-p1-danger/40 bg-p1-danger/10 p-4 text-sm text-p1-danger-soft'>{error.message}</div>; }
 export function Eyebrow({ children }: { children: ReactNode }) { return <div className='text-[10px] font-semibold uppercase text-p1-accent'>{children}</div>; }
 
-export function InspectorContent({ combatant, tab, hasMatchingCampaignNote, status, statusLoading, spellActions, onChangeConditions, onSaveGmNotes, onPersistHpCurrent, onPersistTempHp }: { combatant: PopulatedCombatant; tab: DetailTab; hasMatchingCampaignNote?: boolean; status?: Phase1CreatureStatus | null; statusLoading: boolean; spellActions?: Phase1SpellActions; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onSaveGmNotes?: (text: string) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void }) {
-  const entity = combatant.data;
-  if (tab === 'Health') return <HealthStatusPanel combatant={combatant} calculatedStatus={status} calculating={statusLoading} onChangeConditions={onChangeConditions} onPersistHpCurrent={onPersistHpCurrent} onPersistTempHp={onPersistTempHp} />;
-  if (tab === 'Abilities') return <AbilitiesPanel combatant={combatant} />;
-  if (tab === 'Skills') return <SkillsActionsPanel combatant={combatant} />;
-  if (tab === 'Spells') return <SpellsPanel combatant={combatant} spellActions={spellActions} />;
-  if (tab === 'Inventory') return <InventoryPanel combatant={combatant} />;
-  if (tab === 'GM Notes') {
-    if (hasMatchingCampaignNote && !onSaveGmNotes) return <p className='border border-p1-border bg-p1-surface p-4 text-sm leading-5 text-p1-text'>see campaign note of same name</p>;
-    return <EntityNotesPanel key={combatant._id} notes={entity.notes} onSave={onSaveGmNotes} />;
-  }
-  if (tab === 'Source') return <SourceImportNotesPanel notes={entity.notes} />;
-  return <DetailsPanel combatant={combatant} />;
+export function InspectorContent({ combatant, tab, hasMatchingCampaignNote, status, statusLoading, spellActions, onChangeConditions, onSaveGmNotes, onPersistHpCurrent, onPersistTempHp, initiativeLog, canEditRoundNotes, onUpdateRoundNote, onLogAction, onDeleteLogEntry }: { combatant: PopulatedCombatant; tab: DetailTab; hasMatchingCampaignNote?: boolean; status?: Phase1CreatureStatus | null; statusLoading: boolean; spellActions?: Phase1SpellActions; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onSaveGmNotes?: (text: string) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void; initiativeLog?: InitiativeRoundLog[]; canEditRoundNotes?: boolean; onUpdateRoundNote?: (round: InitiativeRoundLog, entry: InitiativeRoundLogEntry, note: string) => void; onLogAction?: (draft: ActionLogDraft) => void; onDeleteLogEntry?: (entryId: string) => void }) {
+  const [pendingOverLimit, setPendingOverLimit] = useState<{ draft: ActionLogDraft; run: () => void | Promise<void> } | null>(null);
+  const round = currentActionRound(initiativeLog);
+
+  const requestLog: LogActionFn = (draft, beforeLog) => {
+    const run = async () => {
+      await beforeLog?.();
+      onLogAction?.(draft);
+    };
+    if (onLogAction && wouldExceedRoundActions(combatant.action_log, round, draft.cost)) {
+      setPendingOverLimit({ draft, run });
+      return;
+    }
+    void run();
+  };
+
+  const overLimitDialog = pendingOverLimit ? (
+    <ConfirmDialog
+      title={`Round ${round} would exceed 3 actions`}
+      message={`${pendingOverLimit.draft.name} would bring this round to ${roundActionTotal(combatant.action_log, round) + actionCostCount(pendingOverLimit.draft.cost)} actions. Log it anyway?`}
+      confirmLabel='Log anyway'
+      cancelLabel='Cancel'
+      confirmDanger
+      onCancel={() => setPendingOverLimit(null)}
+      onConfirm={async () => {
+        await pendingOverLimit.run();
+        setPendingOverLimit(null);
+      }}
+    />
+  ) : null;
+
+  let body: ReactNode;
+  if (tab === 'Health') body = <HealthStatusPanel combatant={combatant} calculatedStatus={status} calculating={statusLoading} onChangeConditions={onChangeConditions} onPersistHpCurrent={onPersistHpCurrent} onPersistTempHp={onPersistTempHp} />;
+  else if (tab === 'Abilities') body = <AbilitiesPanel combatant={combatant} onLogAction={onLogAction ? requestLog : undefined} />;
+  else if (tab === 'Skills') body = <SkillsActionsPanel combatant={combatant} onLogAction={onLogAction ? requestLog : undefined} />;
+  else if (tab === 'Spells') body = <SpellsPanel combatant={combatant} spellActions={spellActions} onLogAction={onLogAction ? requestLog : undefined} />;
+  else if (tab === 'Inventory') body = <InventoryPanel combatant={combatant} />;
+  else if (tab === 'Notes') {
+    body = (
+      <CombatantNotesPanel
+        combatant={combatant}
+        hasMatchingCampaignNote={hasMatchingCampaignNote}
+        onSaveGmNotes={onSaveGmNotes}
+        initiativeLog={initiativeLog ?? []}
+        canEditRoundNotes={canEditRoundNotes}
+        onUpdateRoundNote={onUpdateRoundNote}
+      />
+    );
+  } else if (tab === 'Log') body = <ActionLogPanel combatant={combatant} onDelete={onDeleteLogEntry} />;
+  else body = <DetailsAndSourcePanel combatant={combatant} />;
+
+  return (
+    <>
+      {body}
+      {overLimitDialog}
+    </>
+  );
 }
 
-export function SkillsActionsPanel({ combatant }: { combatant: PopulatedCombatant }) {
+function CombatantNotesPanel({ combatant, hasMatchingCampaignNote, onSaveGmNotes, initiativeLog, canEditRoundNotes, onUpdateRoundNote }: { combatant: PopulatedCombatant; hasMatchingCampaignNote?: boolean; onSaveGmNotes?: (text: string) => void; initiativeLog: InitiativeRoundLog[]; canEditRoundNotes?: boolean; onUpdateRoundNote?: (round: InitiativeRoundLog, entry: InitiativeRoundLogEntry, note: string) => void }) {
+  const [innerTab, setInnerTab] = useState<'gm' | 'combat'>('gm');
+  const rounds = [...initiativeLog].reverse().flatMap((round) => {
+    const entry = round.entries.find((item) => roundLogEntryMatchesCombatant(item, combatant));
+    return entry ? [{ round, entry }] : [];
+  });
+  const changes = [...(combatant.change_log ?? [])].reverse();
+
+  return (
+    <>
+      <div className='mb-2.5 grid grid-cols-2 border-b border-p1-border'>
+        <InnerTab active={innerTab === 'gm'} onClick={() => setInnerTab('gm')}>GM notes</InnerTab>
+        <InnerTab active={innerTab === 'combat'} onClick={() => setInnerTab('combat')}>Combat log</InnerTab>
+      </div>
+      {innerTab === 'gm' && (
+        hasMatchingCampaignNote && !onSaveGmNotes
+          ? <p className='border border-p1-border bg-p1-surface p-4 text-sm leading-5 text-p1-text'>see campaign note of same name</p>
+          : <EntityNotesPanel key={combatant._id} notes={combatant.data.notes} onSave={onSaveGmNotes} />
+      )}
+      {innerTab === 'combat' && (
+        <div className='space-y-4'>
+          {rounds.length === 0 && changes.length === 0 && <p className='py-6 text-center text-xs italic text-p1-faint'>No rounds logged for this combatant yet.</p>}
+          {rounds.map(({ round, entry }, index) => (
+            <div key={round.id ?? `${round.round}-${index}`} className='border border-p1-border bg-p1-surface p-3'>
+              <p className='text-[10px] font-semibold uppercase tracking-wide text-p1-accent'>Round {round.round}</p>
+              <p className='mt-1 text-xs text-p1-muted'>{entry.initiative != null ? `Init ${entry.initiative}` : 'No init'}{entry.calculation ? ` · ${entry.calculation}` : ''}</p>
+              <div className='mt-2'>
+                <RoundNoteField value={entry.note} disabled={!canEditRoundNotes} onCommit={(note) => onUpdateRoundNote?.(round, entry, note)} />
+              </div>
+            </div>
+          ))}
+          {changes.length > 0 && (
+            <div>
+              <p className='mb-2 text-[10px] font-semibold uppercase tracking-wide text-p1-faint'>Status changes</p>
+              <ul className='space-y-2'>
+                {changes.map((entry: CombatantChangeLogEntry) => (
+                  <li key={entry.id} className='border border-p1-border bg-p1-surface px-2.5 py-2 text-[10px] leading-5 text-p1-text'>
+                    <div className='flex flex-wrap items-baseline gap-x-2 gap-y-0.5'>
+                      <span className='text-p1-faint'>{formatChangeLogTime(entry.at)}</span>
+                      <span className='font-semibold'>{formatChangeLogField(entry.field)}</span>
+                      <span>
+                        {formatChangeLogValue(entry.field, entry.from)}
+                        <span className='px-1 text-p1-faint'>→</span>
+                        {formatChangeLogValue(entry.field, entry.to)}
+                      </span>
+                    </div>
+                    {entry.note ? <p className='mt-1 italic text-p1-muted'>“{entry.note}”</p> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+export function SkillsActionsPanel({ combatant, onLogAction }: { combatant: PopulatedCombatant; onLogAction?: LogActionFn }) {
   const detailsAvailable = hasFullEntityDetails(combatant);
   const [innerTab, setInnerTab] = useState<'skills' | 'actions'>('skills');
   const [skillQuery, setSkillQuery] = useState('');
@@ -108,14 +221,61 @@ export function SkillsActionsPanel({ combatant }: { combatant: PopulatedCombatan
     {data.isLoading && <EmptyState>Calculating skills and actions...</EmptyState>}
     {data.isError && <ErrorState error={data.error} />}
     {data.data && innerTab === 'skills' && <SkillsList skills={skills} query={skillQuery} onQuery={setSkillQuery} onOpen={setSelectedSkill} />}
-    {data.data && innerTab === 'actions' && <ActionsCatalog groups={groups} query={actionQuery} onQuery={setActionQuery} cost={actionCost} onCost={setActionCost} openGroup={openGroup} onOpenGroup={setOpenGroup} filtering={filtering} onOpen={setSelected} />}
+    {data.data && innerTab === 'actions' && <ActionsCatalog groups={groups} query={actionQuery} onQuery={setActionQuery} cost={actionCost} onCost={setActionCost} openGroup={openGroup} onOpenGroup={setOpenGroup} filtering={filtering} onOpen={setSelected} onExecute={onLogAction} />}
     {selected && <AbilityModal ability={selected} onClose={() => setSelected(null)} />}
-    {selectedSkill && <SkillModal skill={selectedSkill} onClose={() => setSelectedSkill(null)} />}
+    {selectedSkill && <SkillModal skill={selectedSkill} onClose={() => setSelectedSkill(null)} onLogAction={onLogAction} />}
   </>;
 }
 
 function InnerTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
   return <button className={`border-b-2 px-2 py-2 text-xs ${active ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:text-p1-text'}`} onClick={onClick}>{children}</button>;
+}
+
+function DetailsAndSourcePanel({ combatant }: { combatant: PopulatedCombatant }) {
+  const [innerTab, setInnerTab] = useState<'details' | 'source'>('details');
+  return (
+    <>
+      <div className='mb-2.5 grid grid-cols-2 border-b border-p1-border'>
+        <InnerTab active={innerTab === 'details'} onClick={() => setInnerTab('details')}>Details</InnerTab>
+        <InnerTab active={innerTab === 'source'} onClick={() => setInnerTab('source')}>Source</InnerTab>
+      </div>
+      {innerTab === 'details' ? <DetailsPanel combatant={combatant} /> : <SourceImportNotesPanel notes={combatant.data.notes} />}
+    </>
+  );
+}
+
+function ActionLogPanel({ combatant, onDelete }: { combatant: PopulatedCombatant; onDelete?: (entryId: string) => void }) {
+  const groups = groupActionLogByRound(combatant.action_log);
+  if (groups.length === 0) return <EmptyState>No actions logged yet. Double-click an attack or 1–3 action ability, or press Cast on a spell.</EmptyState>;
+  return (
+    <div className='space-y-4'>
+      {groups.map((group) => (
+        <section key={group.round}>
+          <div className='mb-2 flex items-baseline gap-2'>
+            <h3 className='text-[10px] font-semibold uppercase tracking-wide text-p1-accent'>Round {group.round}</h3>
+            <span className={`text-[10px] ${group.spent > 3 ? 'text-p1-danger-soft' : 'text-p1-faint'}`}>{group.spent} / 3 actions</span>
+          </div>
+          <ul className='space-y-1.5'>
+            {group.entries.map((entry: CombatantActionLogEntry) => (
+              <li key={entry.id} className='flex items-center gap-2 border border-p1-border bg-p1-surface px-2.5 py-2'>
+                <span className='shrink-0 text-[10px] text-p1-faint'>{formatChangeLogTime(entry.at)}</span>
+                <ActionSymbol cost={entry.cost} />
+                <span className='min-w-0 flex-1 truncate text-sm'>
+                  {entry.name}
+                  {entry.extra ? <span className='ml-2 text-[10px] text-p1-muted'>{entry.extra}</span> : null}
+                </span>
+                {onDelete && (
+                  <button type='button' className='icon-button shrink-0' title='Remove log entry' onClick={() => onDelete(entry.id)}>
+                    <X size={14} />
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
 }
 
 function SkillsList({ skills, query, onQuery, onOpen }: { skills: Phase1Skill[]; query: string; onQuery: (value: string) => void; onOpen: (skill: Phase1Skill) => void }) {
@@ -140,7 +300,7 @@ const SKILL_MODAL_TABS: Array<{ id: SkillModalTab; label: string; icon: ReactNod
   { id: 'timeline', label: 'Timeline', icon: <History size={15} /> },
 ];
 
-function SkillModal({ skill, onClose }: { skill: Phase1Skill; onClose: () => void }) {
+function SkillModal({ skill, onClose, onLogAction }: { skill: Phase1Skill; onClose: () => void; onLogAction?: LogActionFn }) {
   const [tab, setTab] = useState<SkillModalTab>('description');
   const [selectedAction, setSelectedAction] = useState<Phase1Ability | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -167,7 +327,7 @@ function SkillModal({ skill, onClose }: { skill: Phase1Skill; onClose: () => voi
         </div>
         <div className='min-h-0 flex-1 overflow-y-auto p-5'>
           {tab === 'description' && <div className='mx-auto max-w-3xl text-sm leading-7 text-p1-text'><p>{skill.description}</p></div>}
-          {tab === 'actions' && <div className='mx-auto max-w-3xl space-y-1.5'>{skill.actions.map((ability, index) => <AbilityRow key={`${ability.id}-${index}`} ability={ability} onOpen={setSelectedAction} compact />)}{skill.actions.length === 0 && <EmptyState>No actions found for this skill.</EmptyState>}</div>}
+          {tab === 'actions' && <div className='mx-auto max-w-3xl space-y-1.5'>{skill.actions.map((ability, index) => <AbilityRow key={`${ability.id}-${index}`} ability={ability} onOpen={setSelectedAction} onExecute={onLogAction} compact />)}{skill.actions.length === 0 && <EmptyState>No actions found for this skill.</EmptyState>}</div>}
           {tab === 'breakdown' && <SkillBreakdown skill={skill} />}
           {tab === 'timeline' && <SkillTimeline skill={skill} />}
         </div>
@@ -190,9 +350,10 @@ function SkillTimeline({ skill }: { skill: Phase1Skill }) {
   if (!skill.timeline.length) return <EmptyState>No recorded history found for this proficiency.</EmptyState>;
   return <ol className='mx-auto max-w-2xl'>{skill.timeline.map((item, index) => <li key={`${item.timestamp}-${index}`} className='grid grid-cols-[28px_minmax(0,1fr)]'><span className='relative flex justify-center'><span className={`z-10 mt-1.5 h-3 w-3 border ${item.type === 'ADJUSTMENT' ? 'border-p1-accent bg-p1-accent' : 'border-p1-pc bg-p1-pc'}`} />{index < skill.timeline.length - 1 && <span className='absolute bottom-0 top-4 w-px bg-p1-hover' />}</span><div className='pb-6'><strong className='text-sm text-p1-text'>{item.title}</strong><p className='mt-1 text-xs italic text-p1-muted'>{item.description}</p></div></li>)}</ol>;
 }
-function ActionsCatalog({ groups, query, onQuery, cost, onCost, openGroup, onOpenGroup, filtering, onOpen }: {
+function ActionsCatalog({ groups, query, onQuery, cost, onCost, openGroup, onOpenGroup, filtering, onOpen, onExecute }: {
   groups: Phase1ActionGroup[]; query: string; onQuery: (value: string) => void; cost: string; onCost: (value: string) => void;
   openGroup: string | null; onOpenGroup: (value: string | null) => void; filtering: boolean; onOpen: (ability: Phase1Ability) => void;
+  onExecute?: (draft: ActionLogDraft) => void;
 }) {
   const costs = ['ALL', 'ONE-ACTION', 'TWO-ACTIONS', 'THREE-ACTIONS', 'FREE-ACTION', 'REACTION'];
   return <div>
@@ -207,7 +368,7 @@ function ActionsCatalog({ groups, query, onQuery, cost, onCost, openGroup, onOpe
           <button className='flex h-9 w-full items-center px-1 text-left text-sm font-semibold hover:bg-p1-hover' onClick={() => onOpenGroup(openGroup === group.id ? null : group.id)}>
             <span className='truncate'>{group.label}</span><span className='ml-auto mr-2 border border-p1-border px-2 py-0.5 text-[10px] font-normal text-p1-muted'>{group.actions.length}</span><ChevronDown size={14} className={`text-p1-muted transition-transform ${open ? 'rotate-180' : ''}`} />
           </button>
-          {open && <div className='space-y-1 pb-2 pt-1'>{group.actions.map((ability, index) => <AbilityRow key={`${group.id}-${ability.id}-${index}`} ability={ability} onOpen={onOpen} compact />)}</div>}
+          {open && <div className='space-y-1 pb-2 pt-1'>{group.actions.map((ability, index) => <AbilityRow key={`${group.id}-${ability.id}-${index}`} ability={ability} onOpen={onOpen} onExecute={onExecute} compact />)}</div>}
         </section>;
       })}
       {!groups.length && <EmptyState>No actions match these filters.</EmptyState>}
@@ -219,7 +380,7 @@ function SearchField({ value, onChange, placeholder }: { value: string; onChange
   return <div className='relative'><Search className='absolute left-3 top-1/2 -translate-y-1/2 text-p1-faint' size={14} /><input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className='h-9 w-full border border-p1-border bg-p1-surface pl-9 pr-3 text-sm outline-none placeholder:text-p1-faint focus:border-p1-accent/60' /></div>;
 }
 function proficiencyName(rank: string) { return ({ U: 'Untrained', T: 'Trained', E: 'Expert', M: 'Master', L: 'Legendary' } as Record<string, string>)[rank] ?? rank; }
-export function AbilitiesPanel({ combatant }: { combatant: PopulatedCombatant }) {
+export function AbilitiesPanel({ combatant, onLogAction }: { combatant: PopulatedCombatant; onLogAction?: LogActionFn }) {
   const detailsAvailable = hasFullEntityDetails(combatant);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Phase1Ability | null>(null);
@@ -249,7 +410,7 @@ export function AbilitiesPanel({ combatant }: { combatant: PopulatedCombatant })
       return <section key={source} className='mb-2.5 border border-p1-border bg-p1-surface'>
         <h3 className='border-b border-p1-border px-3 py-2 text-xs font-semibold'>{abilityGroupLabel(source)}</h3>
         <div className='divide-y divide-white/[0.07]'>
-          {group.map((ability, index) => <AbilityRow key={`${ability.id}-${index}`} ability={ability} onOpen={setSelected} />)}
+          {group.map((ability, index) => <AbilityRow key={`${ability.id}-${index}`} ability={ability} onOpen={setSelected} onExecute={onLogAction} />)}
         </div>
       </section>;
     })}
@@ -257,11 +418,13 @@ export function AbilitiesPanel({ combatant }: { combatant: PopulatedCombatant })
   </>;
 }
 
-function AbilityRow({ ability, onOpen, compact = false }: { ability: Phase1Ability; onOpen: (ability: Phase1Ability) => void; compact?: boolean }) {
+function AbilityRow({ ability, onOpen, onExecute, compact = false }: { ability: Phase1Ability; onOpen: (ability: Phase1Ability) => void; onExecute?: (draft: ActionLogDraft) => void; compact?: boolean }) {
   const kind = classifyAbility(ability);
   const preview = plainText(ability.description).slice(0, 180);
   const { name, cost } = abilityNameAndCost(ability.name, ability.actions);
-  return <button className='group relative grid w-full grid-cols-[42px_minmax(0,1fr)] items-stretch border border-p1-border bg-p1-surface text-left hover:border-p1-border hover:bg-p1-hover focus-visible:outline focus-visible:outline-1 focus-visible:outline-p1-accent' onClick={() => onOpen(ability)}>
+  const loggable = Boolean(onExecute) && isLoggableAbility(ability);
+  const onClick = useClickVsDoubleClick(() => onOpen(ability), loggable ? () => onExecute?.(draftFromAbility(ability)) : undefined);
+  return <button className='group relative grid w-full grid-cols-[42px_minmax(0,1fr)] items-stretch border border-p1-border bg-p1-surface text-left hover:border-p1-border hover:bg-p1-hover focus-visible:outline focus-visible:outline-1 focus-visible:outline-p1-accent' onClick={onClick} title={loggable ? 'Click for info, double-click to log' : undefined}>
     <span className='grid place-items-center border-r border-p1-border text-p1-muted' title={kind.label}>
       {kind.type === 'ranged' ? <Crosshair size={17} /> : kind.type === 'melee' ? <Swords size={17} /> : <Sparkles size={16} />}
       <span className='sr-only'>{kind.label}</span>
@@ -917,7 +1080,7 @@ export function fallbackStatus(entity: LivingEntity): Phase1CreatureStatus {
     resistances: [], weaknesses: [], immunities: [], recallKnowledge: null,
   };
 }
-export function SpellsPanel({ combatant, spellActions }: { combatant: PopulatedCombatant; spellActions?: Phase1SpellActions }) {
+export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatant: PopulatedCombatant; spellActions?: Phase1SpellActions; onLogAction?: LogActionFn }) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Phase1SpellEntry | null>(null);
   const [openProf, setOpenProf] = useState<Phase1StatTarget | null>(null);
@@ -955,6 +1118,32 @@ export function SpellsPanel({ combatant, spellActions }: { combatant: PopulatedC
     }
   }
 
+  function spellDraft(entry: Phase1SpellEntry): ActionLogDraft | null {
+    if (!entry.spell) return null;
+    return {
+      name: entry.spell.name,
+      cost: isExecutableActionCost(entry.spell.cast) ? entry.spell.cast : null,
+      kind: 'spell',
+      extra: rankLabel(entry.rank),
+    };
+  }
+
+  function logSpell(entry: Phase1SpellEntry) {
+    const draft = spellDraft(entry);
+    if (!draft || !onLogAction) return;
+    onLogAction(draft);
+  }
+
+  function castAndLog(entry: Phase1SpellEntry, key: string, closeModal = false) {
+    const draft = spellDraft(entry);
+    const cast = () => runSpellAction(key, () => spellActions!.setCast(entry, true), closeModal);
+    if (!draft || !onLogAction) {
+      void cast();
+      return;
+    }
+    onLogAction(draft, cast);
+  }
+
   return <>
     <SearchField value={query} onChange={setQuery} placeholder='Search spells' />
     {spellError && <div className='mt-2 border border-p1-danger/40 bg-p1-danger/10 px-3 py-2 text-xs text-p1-danger-soft'>{spellError}</div>}
@@ -962,10 +1151,10 @@ export function SpellsPanel({ combatant, spellActions }: { combatant: PopulatedC
     {data.isLoading && <EmptyState>Loading spellcasting...</EmptyState>}
     {data.isError && <ErrorState error={data.error} />}
     <div className='mt-3 space-y-3'>
-      {sections.map((section) => <SpellSection key={section.key} section={section} spellActions={spellActions} busyKey={busyKey} canOpenStats={detailsAvailable && combatant.access?.details_revealed !== false} onOpen={setSelected} onOpenBook={(assign) => section.source && setBook({ sourceName: section.source.name, assign })} onOpenProf={setOpenProf} onCast={(entry) => runSpellAction(`cast-${entry.key}`, () => spellActions!.setCast(entry, true))} onUncast={(entry) => runSpellAction(`uncast-${entry.key}`, () => spellActions!.setCast(entry, false))} onRankSpent={(rank, spent) => runSpellAction(`rank-${section.key}-${rank}`, () => spellActions!.setRankSpent(section, rank, spent))} onFocusSpent={(spent) => runSpellAction(`focus-${section.key}`, () => spellActions!.setFocusSpent(section, spent))} onPreparedSpent={(entry, spent) => runSpellAction(`prepared-${entry.key}`, () => spellActions!.setPreparedSpent(entry, spent))} onInnateSpent={(entry, castsCurrent) => runSpellAction(`innate-${entry.key}`, () => spellActions!.setInnateSpent(entry, castsCurrent))} onRemoveFromList={(entry) => entry.spell && runSpellAction(`remove-${entry.key}`, () => spellActions!.removeFromList(entry.sourceName, entry.spell!.id, entry.rank))} onApplyFont={spellActions && section.mode === 'PREPARED' && isDivinePreparedSource(section.source) ? (choice) => runSpellAction(`font-${section.key}-${choice}`, () => spellActions.applyDivineFont(section.source!.name, choice)) : undefined} />)}
+      {sections.map((section) => <SpellSection key={section.key} section={section} spellActions={spellActions} busyKey={busyKey} canOpenStats={detailsAvailable && combatant.access?.details_revealed !== false} onOpen={setSelected} onOpenBook={(assign) => section.source && setBook({ sourceName: section.source.name, assign })} onOpenProf={setOpenProf} onCast={(entry) => castAndLog(entry, `cast-${entry.key}`)} onUncast={(entry) => runSpellAction(`uncast-${entry.key}`, () => spellActions!.setCast(entry, false))} onRankSpent={(rank, spent) => runSpellAction(`rank-${section.key}-${rank}`, () => spellActions!.setRankSpent(section, rank, spent))} onFocusSpent={(spent) => runSpellAction(`focus-${section.key}`, () => spellActions!.setFocusSpent(section, spent))} onPreparedSpent={(entry, spent) => runSpellAction(`prepared-${entry.key}`, () => spellActions!.setPreparedSpent(entry, spent))} onInnateSpent={(entry, castsCurrent) => runSpellAction(`innate-${entry.key}`, () => spellActions!.setInnateSpent(entry, castsCurrent))} onRemoveFromList={(entry) => entry.spell && runSpellAction(`remove-${entry.key}`, () => spellActions!.removeFromList(entry.sourceName, entry.spell!.id, entry.rank))} onApplyFont={spellActions && section.mode === 'PREPARED' && isDivinePreparedSource(section.source) ? (choice) => runSpellAction(`font-${section.key}-${choice}`, () => spellActions.applyDivineFont(section.source!.name, choice)) : undefined} onLogCantrip={onLogAction ? logSpell : undefined} />)}
       {data.data && !sections.length && <EmptyState>{needle ? 'No spells match this search.' : 'No spells found.'}</EmptyState>}
     </div>
-    {selected && selected.spell && <SpellModal entry={selected} spellActions={spellActions} busy={Boolean(busyKey)} onCast={() => runSpellAction(`modal-cast-${selected.key}`, () => spellActions!.setCast(selected, true), true)} onUncast={() => runSpellAction(`modal-uncast-${selected.key}`, () => spellActions!.setCast(selected, false), true)} onClose={() => setSelected(null)} />}
+    {selected && selected.spell && <SpellModal entry={selected} spellActions={spellActions} busy={Boolean(busyKey)} onCast={() => castAndLog(selected, `modal-cast-${selected.key}`, true)} onUncast={() => runSpellAction(`modal-uncast-${selected.key}`, () => spellActions!.setCast(selected, false), true)} onClose={() => setSelected(null)} />}
     {openProf && <StatDetailModal combatant={combatant as Phase1EntityCombatant} stat={openProf} onClose={() => setOpenProf(null)} />}
     {book && spellActions && (
       <Phase1SpellbookModal
@@ -990,7 +1179,7 @@ export function SpellsPanel({ combatant, spellActions }: { combatant: PopulatedC
   </>;
 }
 
-function SpellSection({ section, spellActions, busyKey, canOpenStats, onOpen, onOpenBook, onOpenProf, onCast, onUncast, onRankSpent, onFocusSpent, onPreparedSpent, onInnateSpent, onRemoveFromList, onApplyFont }: {
+function SpellSection({ section, spellActions, busyKey, canOpenStats, onOpen, onOpenBook, onOpenProf, onCast, onUncast, onRankSpent, onFocusSpent, onPreparedSpent, onInnateSpent, onRemoveFromList, onApplyFont, onLogCantrip }: {
   section: Phase1SpellSection;
   spellActions?: Phase1SpellActions;
   busyKey: string | null;
@@ -1006,6 +1195,7 @@ function SpellSection({ section, spellActions, busyKey, canOpenStats, onOpen, on
   onInnateSpent: (entry: Phase1SpellEntry, castsCurrent: number) => void;
   onRemoveFromList: (entry: Phase1SpellEntry) => void;
   onApplyFont?: (choice: 'heal' | 'harm') => void;
+  onLogCantrip?: (entry: Phase1SpellEntry) => void;
 }) {
   const slotRanks = section.slots.map((slot) => (slot.rank === 0 ? -1 : slot.rank));
   const ranks = [...new Set([...section.entries.map((entry) => entry.cantrip ? -1 : entry.rank), ...slotRanks])].sort((a, b) => a - b);
@@ -1078,6 +1268,7 @@ function SpellSection({ section, spellActions, busyKey, canOpenStats, onOpen, on
                 onPreparedSpent={(spent) => onPreparedSpent(entry, spent)}
                 onInnateSpent={(castsCurrent) => onInnateSpent(entry, castsCurrent)}
                 onRemoveFromList={() => onRemoveFromList(entry)}
+                onLogCantrip={onLogCantrip}
               />
             ))}
           </div>
@@ -1093,7 +1284,7 @@ function SpellSection({ section, spellActions, busyKey, canOpenStats, onOpen, on
   </section>;
 }
 
-function SpellRow({ entry, spellActions, busy, onOpen, onOpenEmpty, onCast, onUncast, onPreparedSpent, onInnateSpent, onRemoveFromList }: {
+function SpellRow({ entry, spellActions, busy, onOpen, onOpenEmpty, onCast, onUncast, onPreparedSpent, onInnateSpent, onRemoveFromList, onLogCantrip }: {
   entry: Phase1SpellEntry;
   spellActions?: Phase1SpellActions;
   busy: boolean;
@@ -1104,8 +1295,13 @@ function SpellRow({ entry, spellActions, busy, onOpen, onOpenEmpty, onCast, onUn
   onPreparedSpent: (spent: boolean) => void;
   onInnateSpent: (castsCurrent: number) => void;
   onRemoveFromList: () => void;
+  onLogCantrip?: (entry: Phase1SpellEntry) => void;
 }) {
   const innateSpent = entry.usesMax != null && entry.usesCurrent != null ? entry.usesMax - entry.usesCurrent : 0;
+  const cantripExecute = entry.cantrip && entry.spell && onLogCantrip && isExecutableActionCost(entry.spell.cast)
+    ? () => onLogCantrip(entry)
+    : undefined;
+  const onNameClick = useClickVsDoubleClick(() => onOpen(entry), cantripExecute);
   if (entry.empty || !entry.spell) {
     return (
       <button
@@ -1129,7 +1325,7 @@ function SpellRow({ entry, spellActions, busy, onOpen, onOpenEmpty, onCast, onUn
     {entry.mode === 'INNATE' && !entry.cantrip && entry.usesMax != null && entry.usesMax > 0 && (
       <SlotCircles count={entry.usesMax} spent={innateSpent} editable={Boolean(spellActions)} title={`${entry.spell.name} uses spent`} onChange={onInnateSpent} />
     )}
-    <button className='flex min-w-0 flex-1 items-center gap-2 text-left' onClick={() => onOpen(entry)}>
+    <button className='flex min-w-0 flex-1 items-center gap-2 text-left' onClick={onNameClick} title={cantripExecute ? 'Click for info, double-click to log' : undefined}>
       <ActionSymbol cost={entry.spell.cast} />
       <span className='min-w-0 flex-1'><span className='block truncate text-sm font-medium'>{entry.spell.name}</span><span className='mt-0.5 block truncate text-[9px] uppercase text-p1-faint'>{entry.traitNames.join(' | ') || entry.spell.traditions.join(' | ')}</span></span>
       {entry.mode !== 'INNATE' && entry.usesMax != null && <span className='text-[10px] text-p1-muted'>{entry.usesCurrent}/{entry.usesMax}</span>}

@@ -108,6 +108,8 @@ export function resetCombatant(combatant: Combatant, maxHp: number): Combatant {
     initiative: undefined,
     initiative_roll: undefined,
     change_log: [],
+    action_log: [],
+    out: undefined,
   };
   if (combatant.type === 'CREATURE' && combatant.creature) {
     next.creature = resetEntityCombatState(combatant.creature, maxHp) as Creature;

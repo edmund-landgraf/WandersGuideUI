@@ -1,6 +1,6 @@
 import type { CombatantChangeLogEntry } from '@schemas/content';
 import { ChevronDown, ChevronUp, History } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { formatChangeLogField, formatChangeLogTime, formatChangeLogValue } from './phase1-change-log';
 
@@ -52,6 +52,35 @@ export function CombatantChangeLogFooter({ entries }: { entries: CombatantChange
         </div>
       )}
     </section>
+  );
+}
+
+export function RoundNoteField({ value, disabled, onCommit }: { value?: string; disabled?: boolean; onCommit: (note: string) => void }) {
+  const [text, setText] = useState(value ?? '');
+  useEffect(() => {
+    setText(value ?? '');
+  }, [value]);
+
+  function commit() {
+    if (disabled) return;
+    if (text === (value ?? '')) return;
+    onCommit(text);
+  }
+
+  return (
+    <input
+      className='h-8 w-full min-w-[10rem] border border-p1-border bg-p1-raised px-2 text-xs text-p1-text placeholder:text-p1-faint disabled:opacity-100'
+      placeholder='What happened this round…'
+      value={text}
+      readOnly={disabled}
+      disabled={disabled}
+      aria-label='What happened this round'
+      onChange={(event) => setText(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
+      }}
+    />
   );
 }
 

@@ -1,5 +1,5 @@
 import { GiDiceTwentyFacesTwenty } from '@common/game-icons-inline';
-import type { Character, Combatant, Encounter, InitiativeRoundLog, LivingEntity } from '@schemas/content';
+import type { Character, Combatant, Encounter, InitiativeRoundLog, InitiativeRoundLogEntry, LivingEntity } from '@schemas/content';
 import { sign } from '@utils/numbers';
 import { toLabel } from '@utils/strings';
 import { isCharacter, isCreature, isTruthy } from '@utils/type-fixing';
@@ -34,6 +34,7 @@ export function buildInitiativeRoundLog(
         ally: combatant.ally,
         initiative: combatant.initiative,
         calculation: formatInitiativeRoll(combatant.initiative_roll, combatant.initiative),
+        combatant_id: combatant._id,
       };
     }
     return {
@@ -41,6 +42,7 @@ export function buildInitiativeRoundLog(
       ally: combatant.ally,
       initiative: combatant.initiative ?? null,
       calculation: 'Skipped',
+      combatant_id: combatant._id,
     };
   });
   return { id: crypto.randomUUID(), round, entries };
@@ -59,6 +61,46 @@ export function overlayInitiativeLogs(encounters: Encounter[], logs: ReadonlyMap
     const log = logs.get(encounter.id);
     if (log === undefined) return encounter;
     return { ...encounter, meta_data: { ...encounter.meta_data, initiative_log: log } };
+  });
+}
+
+export function isCombatantOut(combatant: Pick<Combatant, 'out'>) {
+  return combatant.out === 'dead' || combatant.out === 'incapacitated';
+}
+
+export function roundLogEntryMatchesCombatant(
+  entry: InitiativeRoundLogEntry,
+  combatant: Pick<Combatant, '_id' | 'ally'> & { data?: { name: string } },
+) {
+  if (entry.combatant_id) return entry.combatant_id === combatant._id;
+  return entry.name === combatant.data?.name && entry.ally === combatant.ally;
+}
+
+function sameRoundLog(a: InitiativeRoundLog, b: InitiativeRoundLog) {
+  if (a.id && b.id) return a.id === b.id;
+  return a.round === b.round;
+}
+
+function sameRoundLogEntry(a: InitiativeRoundLogEntry, b: InitiativeRoundLogEntry) {
+  if (a.combatant_id && b.combatant_id) return a.combatant_id === b.combatant_id;
+  return a.name === b.name && a.ally === b.ally && a.calculation === b.calculation;
+}
+
+export function setRoundLogEntryNote(
+  log: InitiativeRoundLog[],
+  round: InitiativeRoundLog,
+  entry: InitiativeRoundLogEntry,
+  note: string,
+): InitiativeRoundLog[] {
+  const nextNote = note.trim() || undefined;
+  return log.map((item) => {
+    if (!sameRoundLog(item, round)) return item;
+    return {
+      ...item,
+      entries: item.entries.map((current) => (
+        sameRoundLogEntry(current, entry) ? { ...current, note: nextNote } : current
+      )),
+    };
   });
 }
 

@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, ArrowLeft, BookOpen, Calculator, Check, ChevronDown, ChevronRight, Copy, Crosshair, Eraser, Eye, ExternalLink, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Plus, RotateCcw, Search, Settings, Shield, Sparkles, Swords, Trash2, UserMinus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, ArrowLeft, BookOpen, Calculator, Check, ChevronDown, ChevronRight, Copy, Crosshair, Eraser, Eye, ExternalLink, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Plus, RotateCcw, Search, Settings, Shield, Skull, Sparkles, Swords, Trash2, UserMinus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
-import type { Campaign, Character, Combatant, Condition, Creature, Encounter, InitiativeRoundLog, LivingEntity } from '@schemas/content';
+import type { Campaign, Character, Combatant, Condition, Creature, Encounter, InitiativeRoundLog, InitiativeRoundLogEntry, LivingEntity } from '@schemas/content';
 import { CampaignSignIn } from '@auth/CampaignSignIn';
 import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
@@ -41,13 +41,15 @@ import { toStandard2eProse } from '@utils/foundry-text';
 import { GiDiceTwentyFacesTwenty } from '@common/game-icons-inline';
 import { Phase1ThemeToggle } from './Phase1ThemeToggle';
 import { rollDie } from '@utils/random';
-import { buildInitiativeRoundLog, formatInitiativeRoll, InitiativeRollModal, nextInitiativeRoundNumber, overlayInitiativeLogs, sortCombatantsByInitiative, type InitiativeRollChoice } from './phase1-initiative';
+import { buildInitiativeRoundLog, formatInitiativeRoll, InitiativeRollModal, isCombatantOut, nextInitiativeRoundNumber, overlayInitiativeLogs, setRoundLogEntryNote, sortCombatantsByInitiative, type InitiativeRollChoice } from './phase1-initiative';
 import { appendChangeLog, characterCombatFieldsFromEntity, createChangeLogEntry, parseTempHpInput } from './phase1-change-log';
+import { appendActionLog, createActionLogEntry, currentActionRound, removeActionLogEntry, type ActionLogDraft } from './phase1-action-log';
 import { maxCombatantStats, maxEntityStats, resetCombatant, resetEntityCombatState, resolveResetMaxHp } from './phase1-encounter-reset';
-import { CombatantChangeLogFooter, EditableValueWithNote, GridHpEditPopover } from './phase1-change-log-ui';
+import { CombatantChangeLogFooter, EditableValueWithNote, GridHpEditPopover, RoundNoteField } from './phase1-change-log-ui';
 import { PhaseViewSwitch } from '../phase-switch/PhaseViewSwitch';
 import { ConfirmDialog, SettingsSurface } from './phase1-campaign-settings';
-import { InspectorContent, fallbackStatus, hasFullEntityDetails, signed, statsFor, type Phase1SpellActions } from './phase1-entity-panels';
+import { calculateDifficulty, formatLevelDelta, shouldDisplayEncounterDifficulty, type EncounterDifficulty } from '@utils/encounter-difficulty';
+import { InspectorContent, DETAIL_TABS, fallbackStatus, hasFullEntityDetails, normalizeDetailTab, signed, statsFor, type DetailTab, type Phase1SpellActions } from './phase1-entity-panels';
 type CampaignNotePage = NonNullable<Campaign['notes']>['pages'][number];
 type IndexedNotePage = { page: CampaignNotePage; index: number };
 
@@ -55,8 +57,6 @@ const DETAIL_WIDTH_KEY = 'phase1-detail-width';
 const DETAIL_WIDTH_MIN = 340;
 const DETAIL_WIDTH_MAX = 1200;
 const DETAIL_WIDTH_DEFAULT = 560;
-const DETAIL_TABS = ['Health', 'Abilities', 'Skills', 'Inventory', 'Spells', 'GM Notes', 'Source', 'Details'] as const;
-type DetailTab = (typeof DETAIL_TABS)[number];
 type PopulatedCombatant = Combatant & { data: LivingEntity; access?: { can_edit: boolean; details_revealed: boolean } };
 
 export function Phase1IndexPage() {
@@ -444,7 +444,9 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const [creaturePickerOpen, setCreaturePickerOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const combatants = useMemo(() => populateCombatants(selectedEncounter?.combatants.list ?? [], players), [selectedEncounter, players]);
-  const orderedCombatants = useMemo(() => sortCombatantsByInitiative(combatants), [combatants]);
+  const activeCombatants = useMemo(() => combatants.filter((combatant) => !isCombatantOut(combatant)), [combatants]);
+  const outCombatants = useMemo(() => combatants.filter((combatant) => isCombatantOut(combatant)), [combatants]);
+  const orderedCombatants = useMemo(() => sortCombatantsByInitiative(activeCombatants), [activeCombatants]);
   const selectedEncounterRef = useRef(selectedEncounter);
   const initiativeLogRef = useRef<InitiativeRoundLog[]>(selectedEncounter?.meta_data.initiative_log ?? []);
   const initiativeLogEncounterIdRef = useRef(selectedEncounter?.id ?? null);
@@ -537,6 +539,8 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     const copy = structuredClone(source);
     copy._id = crypto.randomUUID();
     copy.change_log = undefined;
+    copy.action_log = undefined;
+    copy.out = undefined;
     updateRoster([...list.slice(0, index + 1), copy, ...list.slice(index + 1)]);
     setSelectedId(copy._id);
   }
@@ -573,7 +577,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
       setInitiativeOpen(false);
       return;
     }
-    const populated = populateCombatants(list, players);
+    const populated = populateCombatants(list, players).filter((combatant) => !isCombatantOut(combatant));
     const existingLog = initiativeLogRef.current.length ? initiativeLogRef.current : encounter.meta_data.initiative_log ?? [];
     const roundEntry = buildInitiativeRoundLog(nextInitiativeRoundNumber(existingLog), populated, rolledIds);
     persistRoster(list, { initiative_log: [...existingLog, roundEntry] });
@@ -654,6 +658,21 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     );
   }
 
+  function setCombatantOut(combatantId: string, out: Combatant['out']) {
+    if (!selectedEncounter) return;
+    persistRoster(selectedEncounter.combatants.list.map((combatant) => (
+      combatant._id === combatantId ? { ...combatant, out } : combatant
+    )));
+  }
+
+  function updateRoundNote(round: InitiativeRoundLog, entry: InitiativeRoundLogEntry, note: string) {
+    const encounter = selectedEncounterRef.current;
+    if (!encounter || !isGm || rosterSaving) return;
+    persistRoster(encounter.combatants.list, {
+      initiative_log: setRoundLogEntryNote(initiativeLogRef.current, round, entry, note),
+    });
+  }
+
   const canManageCombatant = (combatant: PopulatedCombatant) => {
     if (isGm) return true;
     if (combatant.type === 'CHARACTER' && combatant.character) {
@@ -729,6 +748,37 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     persistCombatantChange(selected, { ...selected.data, details }, 'conditions', from, conditions, note);
   }
 
+  function persistCombatantRecord(next: Combatant) {
+    const encounter = selectedEncounterRef.current;
+    if (!encounter || rosterSaving) return;
+    const list = encounter.combatants.list.map((item) => (item._id === next._id ? next : item));
+    if (isGm) {
+      persistRoster(list);
+      return;
+    }
+    onUpdateEncounter({
+      ...encounter,
+      combatants: { list },
+      meta_data: { ...encounter.meta_data },
+    });
+  }
+
+  function persistLogAction(draft: ActionLogDraft) {
+    const encounter = selectedEncounterRef.current;
+    if (!selected || !encounter) return;
+    const raw = encounter.combatants.list.find((item) => item._id === selected._id);
+    if (!raw) return;
+    persistCombatantRecord(appendActionLog(raw, createActionLogEntry(draft, currentActionRound(encounter.meta_data.initiative_log))));
+  }
+
+  function persistDeleteLogEntry(entryId: string) {
+    const encounter = selectedEncounterRef.current;
+    if (!selected || !encounter) return;
+    const raw = encounter.combatants.list.find((item) => item._id === selected._id);
+    if (!raw) return;
+    persistCombatantRecord(removeActionLogEntry(raw, entryId));
+  }
+
   function persistGmNotes(text: string) {
     if (!selected || !selectedEncounter || selected.type !== 'CREATURE') return;
     persistEntitySpells({ ...selected.data, notes: toGmNotes(text, selected.data.notes) });
@@ -786,7 +836,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     <div className='flex h-screen min-h-[680px] flex-col overflow-hidden bg-p1-page text-p1-text'>
       <WorkspaceHeader label={campaign.name} campaignId={campaign.id} encounterId={selectedEncounter?.id ?? null} noteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} />
       <div className={`grid min-h-0 flex-1 ${viewingNotes || viewingSettings ? 'grid-cols-[248px_minmax(280px,1fr)]' : 'grid-cols-[248px_minmax(280px,1fr)_6px_auto]'}`}>
-        <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} selectedEncounter={selectedEncounter} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddAllPlayers={addAllPlayers} onDeleteNote={onDeleteNote} onDeleteEncounter={onDeleteEncounter} />
+        <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddAllPlayers={addAllPlayers} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onDeleteNote={onDeleteNote} onDeleteEncounter={onDeleteEncounter} />
         <main className='min-w-0 overflow-auto bg-p1-surface'>
           {viewingSettings ? (
             <SettingsSurface
@@ -803,15 +853,15 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
             <NoteSurface note={selectedNote} isGm={isGm} encounterLink={noteEncounter ? { href: `/phase1/campaign/${campaign.id}/encounters/${noteEncounter.id}`, name: noteEncounter.name } : undefined} />
           ) : (
             <>
-              <EncounterHeader encounter={selectedEncounter} count={combatants.length} isGm={isGm} noteLink={encounterNote ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} canRollInitiative={isGm && combatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && combatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} />
+              <EncounterHeader encounter={selectedEncounter} combatants={combatants} count={activeCombatants.length} isGm={isGm} noteLink={encounterNote ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} canRollInitiative={isGm && activeCombatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && activeCombatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} />
               {rosterError && <div className='border-b border-p1-danger/40 bg-p1-danger/10 px-5 py-2 text-xs text-p1-danger-soft'>Roster update failed: {rosterError.message}</div>}
               <div className='p-5'>
-                <CombatantGrid combatants={orderedCombatants} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} />
-                <InitiativeRoundLogPanel log={selectedEncounter?.meta_data.initiative_log ?? []} canClear={isGm && !rosterSaving} onClear={clearInitiativeLog} />
+                <CombatantGrid combatants={orderedCombatants} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} />
+                <InitiativeRoundLogPanel log={selectedEncounter?.meta_data.initiative_log ?? []} canEdit={isGm && !rosterSaving} canClear={isGm && !rosterSaving} onClear={clearInitiativeLog} onUpdateNote={updateRoundNote} />
               </div>
               {initiativeOpen && selectedEncounter && (
                 <InitiativeRollModal
-                  combatants={combatants}
+                  combatants={activeCombatants}
                   onConfirm={rollInitiative}
                   onClose={() => setInitiativeOpen(false)}
                 />
@@ -838,7 +888,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
         {!viewingNotes && !viewingSettings && (
           <>
             <ResizeRail onResize={(delta) => setDetailWidth((width) => clamp(width - delta, DETAIL_WIDTH_MIN, DETAIL_WIDTH_MAX))} />
-            <Inspector combatant={selected} width={detailWidth} activeTab={activeTab} onTab={setActiveTab} hasMatchingCampaignNote={Boolean(encounterNote)} status={selected ? statuses.data?.[selected._id] : undefined} statusLoading={statuses.isLoading} canManageSpells={canManageSpells} spellActions={spellActions} onChangeConditions={canManageSpells ? persistConditions : undefined} onSaveGmNotes={isGm && selected?.type === 'CREATURE' ? persistGmNotes : undefined} onPersistHpCurrent={selected && canManageSpells ? (raw, note) => persistHpCurrent(selected, raw, note, statuses.data?.[selected._id]?.maxHp ?? statsFor(selected.data).maxHp) : undefined} onPersistTempHp={selected && canManageSpells ? (raw, note) => persistTempHp(selected, raw, note) : undefined} />
+            <Inspector combatant={selected} width={detailWidth} activeTab={normalizeDetailTab(activeTab)} onTab={setActiveTab} hasMatchingCampaignNote={Boolean(encounterNote)} status={selected ? statuses.data?.[selected._id] : undefined} statusLoading={statuses.isLoading} canManageSpells={canManageSpells} spellActions={spellActions} onChangeConditions={canManageSpells ? persistConditions : undefined} onSaveGmNotes={isGm && selected?.type === 'CREATURE' ? persistGmNotes : undefined} onPersistHpCurrent={selected && canManageSpells ? (raw, note) => persistHpCurrent(selected, raw, note, statuses.data?.[selected._id]?.maxHp ?? statsFor(selected.data).maxHp) : undefined} onPersistTempHp={selected && canManageSpells ? (raw, note) => persistTempHp(selected, raw, note) : undefined} initiativeLog={selectedEncounter?.meta_data.initiative_log ?? []} canEditRoundNotes={isGm && !rosterSaving} onUpdateRoundNote={updateRoundNote} onLogAction={selected && canManageSpells ? persistLogAction : undefined} onDeleteLogEntry={selected && canManageSpells ? persistDeleteLogEntry : undefined} />
           </>
         )}
       </div>
@@ -882,23 +932,33 @@ function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, v
   );
 }
 
-function CampaignRail({ campaign, encounters, players, selectedEncounter, notePages, selectedNoteIndex, viewingSettings, isGm, rosterSaving, onRemovePlayer, onAddAllPlayers, onDeleteNote, onDeleteEncounter }: {
-  campaign: Campaign; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; rosterSaving: boolean; onRemovePlayer: (combatantId: string) => void; onAddAllPlayers: () => void; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void;
+function CampaignRail({ campaign, encounters, players, outCombatants, selectedEncounter, selectedId, notePages, selectedNoteIndex, viewingSettings, isGm, rosterSaving, onRemovePlayer, onAddAllPlayers, onSelectCombatant, onMarkOut, onDeleteNote, onDeleteEncounter }: {
+  campaign: Campaign; encounters: Encounter[]; players: Character[]; outCombatants: PopulatedCombatant[]; selectedEncounter: Encounter | null; selectedId: string | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; rosterSaving: boolean; onRemovePlayer: (combatantId: string) => void; onAddAllPlayers: () => void; onSelectCombatant: (id: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void;
 }) {
   const [benchActive, setBenchActive] = useState(false);
+  const [outActive, setOutActive] = useState(false);
   const [notesOpen, setNotesOpen] = useState(selectedNoteIndex != null);
   const [encountersOpen, setEncountersOpen] = useState(selectedEncounter != null);
   const [menu, setMenu] = useState<RailContextTarget | null>(null);
   const [benchMenu, setBenchMenu] = useState<{ x: number; y: number } | null>(null);
+  const [outMenu, setOutMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<RailContextTarget | null>(null);
   const canManageRoster = isGm && !rosterSaving && Boolean(selectedEncounter);
 
   function dropOnBench(event: ReactDragEvent<HTMLDivElement>) {
-    const payload = readPlayerDrag(event);
+    const payload = readCombatantDrag(event);
     setBenchActive(false);
-    if (!canManageRoster || payload?.source !== 'encounter' || !payload.combatantId) return;
+    if (!canManageRoster || payload?.source !== 'encounter' || !payload.combatantId || payload.characterId == null) return;
     event.preventDefault();
     onRemovePlayer(payload.combatantId);
+  }
+
+  function dropOnOut(event: ReactDragEvent<HTMLDivElement>) {
+    const payload = readCombatantDrag(event);
+    setOutActive(false);
+    if (!canManageRoster || payload?.source !== 'encounter' || !payload.combatantId) return;
+    event.preventDefault();
+    onMarkOut(payload.combatantId, 'incapacitated');
   }
 
   function openRailMenu(event: ReactMouseEvent, target: Omit<RailContextTarget, 'x' | 'y'>) {
@@ -967,11 +1027,40 @@ function CampaignRail({ campaign, encounters, players, selectedEncounter, notePa
           </nav>
         </>
       )}
-      <RailLabel icon={<UsersRound size={14} />} label='Party bench' count={players.length} onContextMenu={openBenchMenu} />
-      <div className={`mx-2 min-h-16 border px-1 pb-4 pt-1 transition-colors ${benchActive ? 'border-p1-accent bg-p1-accent/[0.07]' : 'border-transparent'}`} onContextMenu={openBenchMenu} onDragOver={(event) => { if (canManageRoster && hasPlayerDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setBenchActive(true); } }} onDragLeave={() => setBenchActive(false)} onDrop={dropOnBench}>
-        {players.map((player) => <a key={player.id} href={`/sheet/${player.id}`} target='_blank' rel='noreferrer' draggable={canManageRoster} onDragStart={(event) => writePlayerDrag(event, { source: 'bench', characterId: player.id })} onDragEnd={() => setBenchActive(false)} className='flex items-center gap-2 px-2 py-2 text-sm text-p1-muted hover:bg-p1-hover hover:text-p1-text'>{canManageRoster && <GripVertical size={14} className='shrink-0 cursor-grab text-p1-faint' />}<UserRound size={15} /><span className='min-w-0 flex-1 truncate'>{player.name}</span><ExternalLink size={12} /></a>)}
-        {players.length === 0 && <p className='px-2 py-3 text-xs text-p1-faint'>No PCs on the bench.</p>}
-      </div>
+      {selectedEncounter && (
+        <>
+          <RailLabel icon={<UsersRound size={14} />} label='Party bench' count={players.length} onContextMenu={openBenchMenu} />
+          <div className={`mx-2 min-h-16 border px-1 pb-4 pt-1 transition-colors ${benchActive ? 'border-p1-accent bg-p1-accent/[0.07]' : 'border-transparent'}`} onContextMenu={openBenchMenu} onDragOver={(event) => { if (canManageRoster && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setBenchActive(true); } }} onDragLeave={() => setBenchActive(false)} onDrop={dropOnBench}>
+            {players.map((player) => <a key={player.id} href={`/sheet/${player.id}`} target='_blank' rel='noreferrer' draggable={canManageRoster} onDragStart={(event) => writeCombatantDrag(event, { source: 'bench', characterId: player.id })} onDragEnd={() => setBenchActive(false)} className='flex items-center gap-2 px-2 py-2 text-sm text-p1-muted hover:bg-p1-hover hover:text-p1-text'>{canManageRoster && <GripVertical size={14} className='shrink-0 cursor-grab text-p1-faint' />}<UserRound size={15} /><span className='min-w-0 flex-1 truncate'>{player.name}</span><ExternalLink size={12} /></a>)}
+            {players.length === 0 && <p className='px-2 py-3 text-xs text-p1-faint'>No PCs on the bench.</p>}
+          </div>
+          <RailLabel icon={<Skull size={14} />} label='Dead / Incapacitated' count={outCombatants.length} />
+          <div className={`mx-2 min-h-16 border px-1 pb-4 pt-1 transition-colors ${outActive ? 'border-p1-accent bg-p1-accent/[0.07]' : 'border-transparent'}`} onDragOver={(event) => { if (canManageRoster && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setOutActive(true); } }} onDragLeave={() => setOutActive(false)} onDrop={dropOnOut}>
+            {outCombatants.map((combatant) => (
+              <button
+                key={combatant._id}
+                type='button'
+                draggable={canManageRoster}
+                onDragStart={(event) => writeCombatantDrag(event, { source: 'out', combatantId: combatant._id, characterId: combatant.character })}
+                onDragEnd={() => setOutActive(false)}
+                onClick={() => onSelectCombatant(combatant._id)}
+                onContextMenu={(event) => {
+                  if (!canManageRoster) return;
+                  event.preventDefault();
+                  setOutMenu({ id: combatant._id, x: event.clientX, y: event.clientY });
+                }}
+                className={`flex w-full items-center gap-2 px-2 py-2 text-left text-sm hover:bg-p1-hover ${combatant._id === selectedId ? 'bg-p1-hover text-p1-text' : 'text-p1-muted hover:text-p1-text'}`}
+              >
+                {canManageRoster && <GripVertical size={14} className='shrink-0 cursor-grab text-p1-faint' />}
+                <Skull size={15} className='shrink-0' />
+                <span className='min-w-0 flex-1 truncate'>{combatant.data.name}</span>
+                <span className='shrink-0 text-[10px] uppercase text-p1-faint'>{combatant.out === 'dead' ? 'Dead' : 'Incap.'}</span>
+              </button>
+            ))}
+            {outCombatants.length === 0 && <p className='px-2 py-3 text-xs text-p1-faint'>No combatants out of the fight.</p>}
+          </div>
+        </>
+      )}
       {menu && (
         <RailContextMenu
           x={menu.x}
@@ -992,6 +1081,17 @@ function CampaignRail({ campaign, encounters, players, selectedEncounter, notePa
           onAddAll={() => {
             setBenchMenu(null);
             onAddAllPlayers();
+          }}
+        />
+      )}
+      {outMenu && (
+        <OutContextMenu
+          x={outMenu.x}
+          y={outMenu.y}
+          onClose={() => setOutMenu(null)}
+          onReturn={() => {
+            setOutMenu(null);
+            onMarkOut(outMenu.id, undefined);
           }}
         />
       )}
@@ -1028,7 +1128,68 @@ function RailLabel({ icon, label, count, open, onToggle, onContextMenu }: { icon
 
 type RailContextTarget = { kind: 'note' | 'encounter'; id: number; name: string; x: number; y: number };
 
-function PlayerContextMenu({ x, y, onClose, onRemove }: { x: number; y: number; onClose: () => void; onRemove: () => void }) {
+function PlayerContextMenu({ x, y, onClose, onRemove, onIncapacitate, onMarkDead }: { x: number; y: number; onClose: () => void; onRemove: () => void; onIncapacitate: () => void; onMarkDead: () => void }) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+  const left = Math.min(x, window.innerWidth - 176);
+  const top = Math.min(y, window.innerHeight - 140);
+  return createPortal(
+    <>
+      <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
+      <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onIncapacitate}>
+          <Skull size={14} /> Move to incapacitated
+        </button>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onMarkDead}>
+          <Skull size={14} /> Mark dead
+        </button>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onRemove}>
+          <UserMinus size={14} /> Remove
+        </button>
+      </div>
+    </>,
+    document.body
+  );
+}
+
+function CombatantContextMenu({ x, y, onClose, onClone, onIncapacitate, onMarkDead, onDelete }: { x: number; y: number; onClose: () => void; onClone: () => void; onIncapacitate: () => void; onMarkDead: () => void; onDelete: () => void }) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+  const left = Math.min(x, window.innerWidth - 176);
+  const top = Math.min(y, window.innerHeight - 168);
+  return createPortal(
+    <>
+      <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
+      <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onClone}>
+          <Copy size={14} /> Clone
+        </button>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onIncapacitate}>
+          <Skull size={14} /> Move to incapacitated
+        </button>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onMarkDead}>
+          <Skull size={14} /> Mark dead
+        </button>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onDelete}>
+          <Trash2 size={14} /> Delete
+        </button>
+      </div>
+    </>,
+    document.body
+  );
+}
+
+function OutContextMenu({ x, y, onClose, onReturn }: { x: number; y: number; onClose: () => void; onReturn: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -1042,34 +1203,8 @@ function PlayerContextMenu({ x, y, onClose, onRemove }: { x: number; y: number; 
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
       <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
-        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onRemove}>
-          <UserMinus size={14} /> Remove
-        </button>
-      </div>
-    </>,
-    document.body
-  );
-}
-
-function CombatantContextMenu({ x, y, onClose, onClone, onDelete }: { x: number; y: number; onClose: () => void; onClone: () => void; onDelete: () => void }) {
-  useEffect(() => {
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [onClose]);
-  const left = Math.min(x, window.innerWidth - 176);
-  const top = Math.min(y, window.innerHeight - 88);
-  return createPortal(
-    <>
-      <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
-      <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
-        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onClone}>
-          <Copy size={14} /> Clone
-        </button>
-        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onDelete}>
-          <Trash2 size={14} /> Delete
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onReturn}>
+          <RotateCcw size={14} /> Return to encounter
         </button>
       </div>
     </>,
@@ -1123,28 +1258,135 @@ function RailContextMenu({ x, y, onClose, onDelete }: { x: number; y: number; on
   );
 }
 
-const PLAYER_DRAG_TYPE = 'application/x-wanderers-guide-player';
-type PlayerDragPayload = { source: 'bench' | 'encounter'; characterId: number; combatantId?: string };
+const COMBATANT_DRAG_TYPE = 'application/x-wanderers-guide-player';
+type CombatantDragPayload = { source: 'bench' | 'encounter' | 'out'; combatantId?: string; characterId?: number };
 
-function writePlayerDrag(event: ReactDragEvent, payload: PlayerDragPayload) {
+function writeCombatantDrag(event: ReactDragEvent, payload: CombatantDragPayload) {
   event.dataTransfer.effectAllowed = 'move';
-  event.dataTransfer.setData(PLAYER_DRAG_TYPE, JSON.stringify(payload));
+  event.dataTransfer.setData(COMBATANT_DRAG_TYPE, JSON.stringify(payload));
 }
-function readPlayerDrag(event: ReactDragEvent): PlayerDragPayload | null {
+function readCombatantDrag(event: ReactDragEvent): CombatantDragPayload | null {
   try {
-    const value = event.dataTransfer.getData(PLAYER_DRAG_TYPE);
-    return value ? JSON.parse(value) as PlayerDragPayload : null;
+    const value = event.dataTransfer.getData(COMBATANT_DRAG_TYPE);
+    return value ? JSON.parse(value) as CombatantDragPayload : null;
   } catch {
     return null;
   }
-}function hasPlayerDrag(event: ReactDragEvent) {
-  return Array.from(event.dataTransfer.types).includes(PLAYER_DRAG_TYPE);
 }
-function EncounterHeader({ encounter, count, isGm, noteLink, canAddCreature, onAddCreature, canRollInitiative, onRollInitiative, canClearInitiative, onClearInitiative, canMaxStats, onMaxStats, canReset, onReset }: { encounter: Encounter | null; count: number; isGm: boolean; noteLink?: { href: string; name: string }; canAddCreature?: boolean; onAddCreature?: () => void; canRollInitiative?: boolean; onRollInitiative?: () => void; canClearInitiative?: boolean; onClearInitiative?: () => void; canMaxStats?: boolean; onMaxStats?: () => void; canReset?: boolean; onReset?: () => void }) {
+function hasCombatantDrag(event: ReactDragEvent) {
+  return Array.from(event.dataTransfer.types).includes(COMBATANT_DRAG_TYPE);
+}
+function EncounterDifficultyModal({ difficulty, onClose }: { difficulty: EncounterDifficulty; onClose: () => void }) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      document.body.style.overflow = overflow;
+    };
+  }, [onClose]);
+  const partyLevelLabel = Number.isInteger(difficulty.partyLevel) ? String(difficulty.partyLevel) : difficulty.partyLevel.toFixed(1);
+  const sum = difficulty.lines.map((line) => line.xp).join(' + ') || '0';
+  return createPortal(
+    <div
+      className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]'
+      role='presentation'
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section role='dialog' aria-modal='true' aria-labelledby='xp-challenge-title' className='flex max-h-[min(82vh,720px)] w-full max-w-xl flex-col border border-p1-border bg-p1-surface shadow-2xl'>
+        <header className='flex items-start gap-4 border-b border-p1-border px-5 py-4'>
+          <div className='min-w-0 flex-1'>
+            <div className='flex flex-wrap items-center gap-2'>
+              <h2 id='xp-challenge-title' className='text-xl font-semibold'>XP challenge</h2>
+              <span className='xp-challenge pointer-events-none'>
+                <span className={`xp-challenge-dot xp-challenge-dot-${difficulty.color}`} />
+                {difficulty.status} ({difficulty.xp} XP)
+              </span>
+            </div>
+            <p className='mt-1 text-xs text-p1-muted'>Pathfinder 2e encounter budget from creature levels vs party level. Not an operations formula.</p>
+          </div>
+          <button type='button' className='icon-button shrink-0' onClick={onClose} title='Close'><X size={18} /></button>
+        </header>
+        <div className='min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4'>
+          <div className='grid grid-cols-2 gap-3 text-sm'>
+            <div className='border border-p1-border bg-p1-inset px-3 py-2'>
+              <p className='text-[10px] uppercase text-p1-faint'>Party level</p>
+              <p className='mt-0.5 font-semibold'>{partyLevelLabel}</p>
+              <p className='text-xs text-p1-muted'>{difficulty.partyLevelFromEncounter ? 'Stored on the encounter' : 'Average of allies in the encounter'}</p>
+            </div>
+            <div className='border border-p1-border bg-p1-inset px-3 py-2'>
+              <p className='text-[10px] uppercase text-p1-faint'>Party size</p>
+              <p className='mt-0.5 font-semibold'>{difficulty.partySize}</p>
+              <p className='text-xs text-p1-muted'>{difficulty.partySizeFromEncounter ? 'Stored on the encounter' : 'Allies in the encounter'} · thresholds use size − 4 = {difficulty.partySize - 4}</p>
+            </div>
+          </div>
+          <div className='border border-p1-border'>
+            <div className='border-b border-p1-border bg-p1-inset px-3 py-2 text-sm font-semibold'>Enemy XP</div>
+            <table className='w-full border-collapse text-sm'>
+              <thead>
+                <tr className='border-b border-p1-border text-left text-[10px] uppercase text-p1-faint'>
+                  <th className='px-3 py-2'>Creature</th>
+                  <th className='px-3 py-2'>Level</th>
+                  <th className='px-3 py-2'>Vs party</th>
+                  <th className='px-3 py-2 text-right'>XP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {difficulty.lines.map((line, index) => (
+                  <tr key={`${line.name}-${index}`} className='border-b border-p1-border last:border-0'>
+                    <td className='px-3 py-2'>{line.name}</td>
+                    <td className='px-3 py-2 text-p1-muted'>{line.level}</td>
+                    <td className='px-3 py-2 text-p1-muted'>{formatLevelDelta(line.delta)}</td>
+                    <td className='px-3 py-2 text-right font-semibold'>{line.xp}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className='border-t border-p1-border bg-p1-inset'>
+                  <td className='px-3 py-2 text-p1-muted' colSpan={3}>{sum} = {difficulty.xp}</td>
+                  <td className='px-3 py-2 text-right font-semibold'>{difficulty.xp} XP</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <div className='border border-p1-border'>
+            <div className='border-b border-p1-border bg-p1-inset px-3 py-2 text-sm font-semibold'>Difficulty bands</div>
+            <ul className='divide-y divide-p1-border text-sm'>
+              {difficulty.thresholds.map((band) => (
+                <li key={band.status} className={`flex items-center justify-between px-3 py-2 ${band.status === difficulty.status ? 'bg-p1-accent/[0.08]' : ''}`}>
+                  <span className={band.status === difficulty.status ? 'font-semibold' : 'text-p1-muted'}>{band.status}</span>
+                  <span className='text-p1-muted'>{band.status === 'Trivial' ? `< ${difficulty.thresholds[1]?.min ?? 50}` : `≥ ${band.min}`}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+function EncounterHeader({ encounter, combatants, count, isGm, noteLink, canAddCreature, onAddCreature, canRollInitiative, onRollInitiative, canClearInitiative, onClearInitiative, canMaxStats, onMaxStats, canReset, onReset }: { encounter: Encounter | null; combatants: PopulatedCombatant[]; count: number; isGm: boolean; noteLink?: { href: string; name: string }; canAddCreature?: boolean; onAddCreature?: () => void; canRollInitiative?: boolean; onRollInitiative?: () => void; canClearInitiative?: boolean; onClearInitiative?: () => void; canMaxStats?: boolean; onMaxStats?: () => void; canReset?: boolean; onReset?: () => void }) {
+  const [xpOpen, setXpOpen] = useState(false);
+  const difficulty = encounter && shouldDisplayEncounterDifficulty(combatants) ? calculateDifficulty(encounter, combatants) : null;
   return (
     <div className='sticky top-0 z-10 border-b border-p1-border bg-p1-surface/95 px-5 py-4 backdrop-blur'>
       <div className='flex items-center gap-5'>
         <div className='min-w-0 flex-1'><Eyebrow>{isGm ? 'GM encounter' : 'Assigned encounter'}</Eyebrow><h2 className='mt-1 truncate text-xl font-semibold'>{encounter?.name ?? 'No encounter selected'}</h2>{noteLink ? <Link to={noteLink.href} className='mt-1 block truncate text-xs text-p1-accent hover:underline'>See campaign Notes page: {noteLink.name}</Link> : <p className='mt-1 truncate text-xs text-p1-faint'>{encounter?.meta_data.description || `${count} combatants`}</p>}</div>
+        {difficulty && (
+          <button type='button' className='xp-challenge' title='Open XP budget math' onClick={() => setXpOpen(true)}>
+            <span className={`xp-challenge-dot xp-challenge-dot-${difficulty.color}`} />
+            {difficulty.status} ({difficulty.xp} XP)
+          </button>
+        )}
+        {xpOpen && difficulty && <EncounterDifficultyModal difficulty={difficulty} onClose={() => setXpOpen(false)} />}
         {isGm && <button className='toolbar-button' disabled={!canAddCreature} title={canAddCreature ? 'Add a creature from the catalog' : 'Wait for the roster to finish saving'} onClick={onAddCreature}><Swords size={15} /> Add creature</button>}
         <button className='toolbar-button' disabled={!canRollInitiative} title={!isGm ? 'GM only' : count === 0 ? 'Add combatants first' : 'Roll initiative'} onClick={onRollInitiative}><GiDiceTwentyFacesTwenty size={15} /> Roll initiative</button>
         <button className='toolbar-button' disabled={!canClearInitiative} title={!isGm ? 'GM only' : canClearInitiative ? 'Clear initiative and restore roster order' : 'No initiative to clear'} onClick={onClearInitiative}><Eraser size={15} /> Clear init</button>
@@ -1156,19 +1398,26 @@ function EncounterHeader({ encounter, count, isGm, noteLink, canAddCreature, onA
   );
 }
 
-function CombatantGrid({ combatants, selectedId, onSelect, statuses, calculating, canManageRoster, canManageCombatant, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature, onUpdateInitiative, onUpdateHp }: { combatants: PopulatedCombatant[]; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; canManageCombatant: (combatant: PopulatedCombatant) => boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void; onUpdateInitiative: (combatantId: string, initiative: number) => void; onUpdateHp: (combatantId: string, raw: string, note: string | null) => void }) {
+function CombatantGrid({ combatants, selectedId, onSelect, statuses, calculating, canManageRoster, canManageCombatant, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature, onRestoreCombatant, onMarkOut, onUpdateInitiative, onUpdateHp }: { combatants: PopulatedCombatant[]; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; canManageCombatant: (combatant: PopulatedCombatant) => boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void; onRestoreCombatant: (combatantId: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onUpdateInitiative: (combatantId: string, initiative: number) => void; onUpdateHp: (combatantId: string, raw: string, note: string | null) => void }) {
   const [encounterActive, setEncounterActive] = useState(false);
   const [menu, setMenu] = useState<{ id: string; type: Combatant['type']; x: number; y: number } | null>(null);
   const [hpEditor, setHpEditor] = useState<{ combatantId: string; name: string; currentHp: number; maxHp: number; rect: DOMRect } | null>(null);
   function dropOnEncounter(event: ReactDragEvent<HTMLDivElement>) {
-    const payload = readPlayerDrag(event);
+    const payload = readCombatantDrag(event);
     setEncounterActive(false);
-    if (!canManageRoster || payload?.source !== 'bench') return;
-    event.preventDefault();
-    onAddPlayer(payload.characterId);
+    if (!canManageRoster) return;
+    if (payload?.source === 'bench' && payload.characterId != null) {
+      event.preventDefault();
+      onAddPlayer(payload.characterId);
+      return;
+    }
+    if (payload?.source === 'out' && payload.combatantId) {
+      event.preventDefault();
+      onRestoreCombatant(payload.combatantId);
+    }
   }
   return (
-    <div className={`overflow-x-auto border bg-p1-inset transition-colors ${encounterActive ? 'border-p1-accent bg-p1-accent/[0.04]' : 'border-p1-border'}`} onDragOver={(event) => { if (canManageRoster && hasPlayerDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setEncounterActive(true); } }} onDragLeave={() => setEncounterActive(false)} onDrop={dropOnEncounter}>
+    <div className={`overflow-x-auto border bg-p1-inset transition-colors ${encounterActive ? 'border-p1-accent bg-p1-accent/[0.04]' : 'border-p1-border'}`} onDragOver={(event) => { if (canManageRoster && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setEncounterActive(true); } }} onDragLeave={() => setEncounterActive(false)} onDrop={dropOnEncounter}>
       <table className='w-full min-w-[920px] table-fixed border-collapse text-sm'>
         <thead className='border-b border-p1-border bg-p1-header text-[10px] uppercase text-p1-faint'><tr><th className='w-20 px-3 py-3 text-left'>Init</th><th className='px-3 text-left'>Combatant</th><th className='w-44 px-3 text-left'>Conditions</th><th className='w-64 px-3 text-left'>Defenses</th><th className='w-32 px-3 text-left'>HP</th><th className='w-16 px-3 text-center'>Open</th></tr></thead>
         <tbody>
@@ -1177,9 +1426,9 @@ function CombatantGrid({ combatants, selectedId, onSelect, statuses, calculating
             const calculable = detailsVisible && hasFullEntityDetails(combatant);
             const calculated = statuses?.[combatant._id];
             const stats = calculated ?? (!calculable ? fallbackStatus(combatant.data) : null);
-            const draggable = canManageRoster && combatant.type === 'CHARACTER' && typeof combatant.character === 'number';
+            const draggable = canManageRoster;
             return (
-              <tr key={combatant._id} draggable={draggable} onDragStart={(event) => { if (draggable && typeof combatant.character === 'number') writePlayerDrag(event, { source: 'encounter', characterId: combatant.character, combatantId: combatant._id }); }} onDragEnd={() => setEncounterActive(false)} onContextMenu={(event) => { if (!canManageRoster || (combatant.type !== 'CREATURE' && combatant.type !== 'CHARACTER')) return; event.preventDefault(); setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY }); }} className={`border-b border-p1-border last:border-0 ${draggable ? 'cursor-grab' : ''} ${combatant._id === selectedId ? 'bg-p1-accent/[0.07]' : 'hover:bg-p1-hover'}`}>
+              <tr key={combatant._id} draggable={draggable} onDragStart={(event) => { if (draggable) writeCombatantDrag(event, { source: 'encounter', combatantId: combatant._id, characterId: combatant.character }); }} onDragEnd={() => setEncounterActive(false)} onContextMenu={(event) => { if (!canManageRoster || (combatant.type !== 'CREATURE' && combatant.type !== 'CHARACTER')) return; event.preventDefault(); setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY }); }} className={`border-b border-p1-border last:border-0 ${draggable ? 'cursor-grab' : ''} ${combatant._id === selectedId ? 'bg-p1-accent/[0.07]' : 'hover:bg-p1-hover'}`}>
                 <td className='px-3 py-3'><InitiativeCell key={`${combatant._id}:${combatant.initiative ?? ''}:${combatant.initiative_roll?.die ?? ''}`} combatant={combatant} canEdit={canManageRoster} onUpdate={(initiative) => onUpdateInitiative(combatant._id, initiative)} /></td>
                 <td className='px-3 py-3'><button className='flex w-full items-center gap-3 text-left' onClick={() => openCombatant(combatant, onSelect)}>{draggable && <GripVertical size={14} className='shrink-0 text-p1-faint' />}<EntityIcon type={combatant.type} /><span className='min-w-0'><span className='block truncate font-semibold'>{combatant.data.name}</span><span className='block text-xs text-p1-faint'>Level {combatant.data.level} | {combatant.ally ? 'Ally' : 'Enemy'}</span></span></button></td>
                 <td className='px-3 py-3'><CombatantConditionPills conditions={detailsVisible ? compiledConditions(combatant.data.details?.conditions ?? []) : []} onOpen={() => openCombatant(combatant, onSelect)} /></td>
@@ -1214,6 +1463,8 @@ function CombatantGrid({ combatants, selectedId, onSelect, statuses, calculating
           y={menu.y}
           onClose={() => setMenu(null)}
           onClone={() => { setMenu(null); onCloneCreature(menu.id); }}
+          onIncapacitate={() => { setMenu(null); onMarkOut(menu.id, 'incapacitated'); }}
+          onMarkDead={() => { setMenu(null); onMarkOut(menu.id, 'dead'); }}
           onDelete={() => { setMenu(null); onDeleteCreature(menu.id); }}
         />
       )}
@@ -1222,6 +1473,8 @@ function CombatantGrid({ combatants, selectedId, onSelect, statuses, calculating
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
+          onIncapacitate={() => { setMenu(null); onMarkOut(menu.id, 'incapacitated'); }}
+          onMarkDead={() => { setMenu(null); onMarkOut(menu.id, 'dead'); }}
           onRemove={() => { setMenu(null); onRemovePlayer(menu.id); }}
         />
       )}
@@ -1337,7 +1590,7 @@ function sortRoundLogEntries(entries: InitiativeRoundLog['entries']) {
   });
 }
 
-function InitiativeRoundLogPanel({ log, canClear, onClear }: { log: InitiativeRoundLog[]; canClear?: boolean; onClear?: () => void }) {
+function InitiativeRoundLogPanel({ log, canEdit, canClear, onClear, onUpdateNote }: { log: InitiativeRoundLog[]; canEdit?: boolean; canClear?: boolean; onClear?: () => void; onUpdateNote?: (round: InitiativeRoundLog, entry: InitiativeRoundLogEntry, note: string) => void }) {
   const [open, setOpen] = useState(true);
   const [confirmOpen, setConfirmOpen] = useState(false);
   function handleClear() {
@@ -1388,22 +1641,26 @@ function InitiativeRoundLogPanel({ log, canClear, onClear }: { log: InitiativeRo
         <div key={round.id ?? `${round.round}-${index}`} className='border-b border-p1-border px-4 py-3 last:border-0'>
           <h3 className='mb-2 text-[10px] font-semibold uppercase tracking-wide text-p1-accent'>Round {round.round}</h3>
           <div className='overflow-x-auto'>
-            <table className='w-full min-w-[640px] border-collapse text-xs'>
+            <table className='w-full min-w-[820px] border-collapse text-xs'>
               <thead className='text-[10px] uppercase text-p1-faint'>
                 <tr className='border-b border-p1-border'>
                   <th className='px-2 py-2 text-left font-semibold'>Combatant</th>
                   <th className='w-24 px-2 py-2 text-left font-semibold'>Side</th>
                   <th className='w-16 px-2 py-2 text-left font-semibold'>Init</th>
                   <th className='px-2 py-2 text-left font-semibold'>Calculation</th>
+                  <th className='px-2 py-2 text-left font-semibold'>What happened</th>
                 </tr>
               </thead>
               <tbody>
                 {sortRoundLogEntries(round.entries).map((entry, entryIndex) => (
-                  <tr key={`${round.id ?? round.round}-${entry.name}-${entryIndex}`} className='border-b border-p1-border last:border-0'>
+                  <tr key={`${round.id ?? round.round}-${entry.combatant_id ?? entry.name}-${entryIndex}`} className='border-b border-p1-border last:border-0'>
                     <td className='px-2 py-2 font-medium text-p1-text'>{entry.name}</td>
                     <td className='px-2 py-2 text-p1-muted'>{entry.ally ? 'Ally' : 'Enemy'}</td>
                     <td className='px-2 py-2 text-p1-text'>{entry.initiative ?? ''}</td>
                     <td className='px-2 py-2 text-p1-muted'>{entry.calculation}</td>
+                    <td className='px-2 py-2'>
+                      <RoundNoteField value={entry.note} disabled={!canEdit} onCommit={(note) => onUpdateNote?.(round, entry, note)} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1458,8 +1715,8 @@ function CombatantConditionPills({ conditions, onOpen }: { conditions: Condition
   );
 }
 
-function Inspector({ combatant, width, activeTab, onTab, hasMatchingCampaignNote, status, statusLoading, canManageSpells, spellActions, onChangeConditions, onSaveGmNotes, onPersistHpCurrent, onPersistTempHp }: {
-  combatant: PopulatedCombatant | null; width: number; activeTab: DetailTab; onTab: (tab: DetailTab) => void; hasMatchingCampaignNote?: boolean; status?: Phase1CreatureStatus | null; statusLoading: boolean; canManageSpells: boolean; spellActions?: Phase1SpellActions; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onSaveGmNotes?: (text: string) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void;
+function Inspector({ combatant, width, activeTab, onTab, hasMatchingCampaignNote, status, statusLoading, canManageSpells, spellActions, onChangeConditions, onSaveGmNotes, onPersistHpCurrent, onPersistTempHp, initiativeLog, canEditRoundNotes, onUpdateRoundNote, onLogAction, onDeleteLogEntry }: {
+  combatant: PopulatedCombatant | null; width: number; activeTab: DetailTab; onTab: (tab: DetailTab) => void; hasMatchingCampaignNote?: boolean; status?: Phase1CreatureStatus | null; statusLoading: boolean; canManageSpells: boolean; spellActions?: Phase1SpellActions; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onSaveGmNotes?: (text: string) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void; initiativeLog?: InitiativeRoundLog[]; canEditRoundNotes?: boolean; onUpdateRoundNote?: (round: InitiativeRoundLog, entry: InitiativeRoundLogEntry, note: string) => void; onLogAction?: (draft: ActionLogDraft) => void; onDeleteLogEntry?: (entryId: string) => void;
 }) {
   return (
     <aside className='min-h-0 overflow-hidden bg-p1-inset' style={{ width }}>
@@ -1471,7 +1728,7 @@ function Inspector({ combatant, width, activeTab, onTab, hasMatchingCampaignNote
           <div className='grid grid-cols-4 border-b border-p1-border bg-p1-inset'>
             {DETAIL_TABS.map((tab) => <button key={tab} className={`border-b-2 px-2 py-2.5 text-[11px] ${activeTab === tab ? 'border-p1-accent text-p1-accent-soft' : 'border-transparent text-p1-faint hover:text-p1-text'}`} onClick={() => onTab(tab)}>{tab}</button>)}
           </div>
-          <div className='min-h-0 flex-1 overflow-y-auto p-4'><InspectorContent combatant={combatant} tab={activeTab} hasMatchingCampaignNote={hasMatchingCampaignNote} status={status} statusLoading={statusLoading} spellActions={spellActions} onChangeConditions={onChangeConditions} onSaveGmNotes={onSaveGmNotes} onPersistHpCurrent={onPersistHpCurrent} onPersistTempHp={onPersistTempHp} /></div>
+          <div className='min-h-0 flex-1 overflow-y-auto p-4'><InspectorContent combatant={combatant} tab={activeTab} hasMatchingCampaignNote={hasMatchingCampaignNote} status={status} statusLoading={statusLoading} spellActions={spellActions} onChangeConditions={onChangeConditions} onSaveGmNotes={onSaveGmNotes} onPersistHpCurrent={onPersistHpCurrent} onPersistTempHp={onPersistTempHp} initiativeLog={initiativeLog} canEditRoundNotes={canEditRoundNotes} onUpdateRoundNote={onUpdateRoundNote} onLogAction={onLogAction} onDeleteLogEntry={onDeleteLogEntry} /></div>
           <CombatantChangeLogFooter entries={combatant.change_log ?? []} />
         </div>
       )}

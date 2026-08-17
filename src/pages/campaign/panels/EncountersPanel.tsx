@@ -24,7 +24,6 @@ import {
   NumberInput,
   TextInput,
   Badge,
-  MantineColor,
   LoadingOverlay,
   rem,
 } from '@mantine/core';
@@ -50,6 +49,7 @@ import {
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Campaign, Character, Combatant, Creature, Encounter, LivingEntity } from '@schemas/content';
+import { calculateDifficulty } from '@utils/encounter-difficulty';
 import { getEntityLevel } from '@utils/entity-utils';
 import { isPhoneSized, phoneQuery } from '@utils/mobile-responsive';
 import { sign } from '@utils/numbers';
@@ -1328,92 +1328,7 @@ async function computeCombatants(combatants: PopulatedCombatant[]) {
   return await Promise.all(combatants.map(computeCombatant));
 }
 
-export function calculateDifficulty(encounter: Encounter, combatants: PopulatedCombatant[]) {
-  const alliesInEncounter = combatants.filter((c) => c.ally);
-  const partyLevel = encounter.meta_data.party_level ?? mean(alliesInEncounter.map((p) => getEntityLevel(p.data)));
-  const partySize = encounter.meta_data.party_size ?? alliesInEncounter.length;
-
-  let xpBudget = 0;
-  for (const entity of combatants) {
-    if (entity.ally) {
-      continue;
-    }
-    switch (getEntityLevel(entity.data) - partyLevel) {
-      case -4:
-        xpBudget += 10;
-        break;
-      case -3:
-        xpBudget += 15;
-        break;
-      case -2:
-        xpBudget += 20;
-        break;
-      case -1:
-        xpBudget += 30;
-        break;
-      case 0:
-        xpBudget += 40;
-        break;
-      case 1:
-        xpBudget += 60;
-        break;
-      case 2:
-        xpBudget += 80;
-        break;
-      case 3:
-        xpBudget += 120;
-        break;
-      case 4:
-        xpBudget += 160;
-        break;
-      default:
-        if (getEntityLevel(entity.data) > partyLevel) {
-          // greater than +4
-          xpBudget += (getEntityLevel(entity.data) - partyLevel) * 40;
-        } else if (getEntityLevel(entity.data) < partyLevel) {
-          // less than -4
-          xpBudget += 0;
-        }
-        break;
-    }
-  }
-
-  let partySizeDiff = partySize - 4;
-
-  let difficulty;
-  let color: MantineColor = 'gray';
-  if (xpBudget >= 200 + partySizeDiff * 40) {
-    // 200+ is impossible
-    difficulty = 'IMPOSSIBLE';
-    color = 'dark';
-  } else if (xpBudget >= 140 + partySizeDiff * 40) {
-    // 140-199 is extreme
-    difficulty = 'Extreme';
-    color = 'red';
-  } else if (xpBudget >= 100 + partySizeDiff * 30) {
-    // 100-139 is severe
-    difficulty = 'Severe';
-    color = 'orange';
-  } else if (xpBudget >= 70 + partySizeDiff * 20) {
-    // 70-99 is moderate
-    difficulty = 'Moderate';
-    color = 'yellow';
-  } else if (xpBudget >= 50 + partySizeDiff * 15) {
-    // 50-69 is low
-    difficulty = 'Low';
-    color = 'green';
-  } else {
-    // 0-50 is trivial
-    difficulty = 'Trivial';
-    color = 'blue';
-  }
-
-  return {
-    status: difficulty,
-    color: color,
-    xp: Math.floor(xpBudget),
-  };
-}
+export { calculateDifficulty } from '@utils/encounter-difficulty';
 
 export function getCombatantStoreID(combatant: Combatant) {
   if (combatant.type === 'CHARACTER') {
