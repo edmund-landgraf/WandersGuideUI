@@ -94,6 +94,56 @@
   --p1-scrollbar-track: #efe6d0;
 }
 
+[data-css-theme='waitly'][data-theme='dark'] {
+  --p1-bg-page: oklch(0.145 0 0);
+  --p1-bg-header: oklch(0.145 0 0);
+  --p1-bg-surface: oklch(0.205 0 0);
+  --p1-bg-inset: oklch(0.18 0 0);
+  --p1-bg-raised: oklch(0.205 0 0);
+  --p1-text: oklch(0.985 0 0);
+  --p1-text-muted: oklch(0.708 0 0);
+  --p1-text-faint: oklch(0.556 0 0);
+  --p1-border: oklch(1 0 0 / 10%);
+  --p1-hover: oklch(1 0 0 / 6%);
+  --p1-accent: oklch(0.922 0 0);
+  --p1-accent-soft: oklch(0.85 0 0);
+  --p1-accent-ink: oklch(0.205 0 0);
+  --p1-scrollbar-thumb: oklch(0.35 0 0);
+  --p1-scrollbar-track: oklch(0.18 0 0);
+}
+
+[data-css-theme='waitly'][data-theme='grey'],
+[data-css-theme='waitly'][data-theme='parchment'] {
+  --p1-bg-page: oklch(0.97 0 0);
+  --p1-bg-header: oklch(0.95 0 0);
+  --p1-bg-surface: oklch(1 0 0);
+  --p1-bg-inset: oklch(0.94 0 0);
+  --p1-bg-raised: oklch(0.985 0 0);
+  --p1-text: oklch(0.145 0 0);
+  --p1-text-muted: oklch(0.45 0 0);
+  --p1-text-faint: oklch(0.556 0 0);
+  --p1-border: oklch(0.145 0 0 / 12%);
+  --p1-hover: oklch(0.145 0 0 / 6%);
+  --p1-accent: oklch(0.205 0 0);
+  --p1-accent-soft: oklch(0.269 0 0);
+  --p1-accent-ink: oklch(0.985 0 0);
+  --p1-scrollbar-thumb: oklch(0.75 0 0);
+  --p1-scrollbar-track: oklch(0.94 0 0);
+}
+
+:root,
+[data-css-theme='default'] {
+  --p1-font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --p1-font-heading: Inter, ui-sans-serif, system-ui, sans-serif;
+  --p1-radius: 0px;
+}
+
+[data-css-theme='waitly'] {
+  --p1-font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --p1-font-heading: 'Cal Sans', ui-sans-serif, system-ui, sans-serif;
+  --p1-radius: 0.75rem;
+}
+
 @theme {
   --color-p1-page: var(--p1-bg-page);
   --color-p1-header: var(--p1-bg-header);
@@ -122,10 +172,28 @@
   --color-p1-action-ink: var(--p1-action-ink);
 }
 
-:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: var(--p1-bg-page); color: var(--p1-text); }
+@theme inline {
+  --font-sans: var(--p1-font-sans);
+  --font-heading: var(--p1-font-heading);
+}
+
+:root {
+  background: var(--p1-bg-page);
+  color: var(--p1-text);
+}
 * { box-sizing: border-box; }
-html, body, #root { min-height: 100%; margin: 0; }
-button, input, select { font: inherit; }
+html, body, #root {
+  min-height: 100%;
+  margin: 0;
+  font-family: var(--p1-font-sans);
+}
+html *:not(code):not(pre):not(kbd):not(samp):not(h1):not(h2) {
+  font-family: inherit;
+}
+h1, h2 {
+  font-family: var(--p1-font-heading);
+}
+button, input, select, textarea { font: inherit; }
 button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--p1-accent); outline-offset: 2px; }
 * { scrollbar-color: var(--p1-scrollbar-thumb) var(--p1-scrollbar-track); scrollbar-width: thin; }
 .icon-button {
@@ -134,6 +202,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   height: 2.25rem;
   place-items: center;
   border: 1px solid var(--p1-border);
+  border-radius: var(--p1-radius);
   color: var(--p1-text-muted);
   background: var(--p1-bg-raised);
 }
@@ -144,6 +213,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   align-items: stretch;
   overflow: hidden;
   border: 1px solid var(--p1-border);
+  border-radius: var(--p1-radius);
   background: var(--p1-bg-raised);
 }
 .phase1-theme-switch button {
@@ -168,6 +238,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   align-items: center;
   gap: 0.5rem;
   border: 1px solid var(--p1-border);
+  border-radius: var(--p1-radius);
   padding: 0 0.75rem;
   color: var(--p1-text-muted);
   background: var(--p1-bg-inset);
@@ -204,6 +275,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .settings-input {
   width: 100%;
   border: 1px solid var(--p1-border);
+  border-radius: var(--p1-radius);
   background: var(--p1-bg-inset);
   padding: 0.55rem 0.75rem;
   color: var(--p1-text);

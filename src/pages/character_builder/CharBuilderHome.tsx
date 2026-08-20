@@ -24,6 +24,7 @@ import {
   HoverCard,
   List,
   Anchor,
+  Button,
 } from '@mantine/core';
 import { getHotkeyHandler, useElementSize, useMediaQuery } from '@mantine/hooks';
 import { modals, openContextModal } from '@mantine/modals';
@@ -93,6 +94,31 @@ export default function CharBuilderHome(props: { characterId: number; pageHeight
   const { character, setCharacter } = useCharacter(props.characterId, {
     type: 'SIMPLE',
   });
+
+  function openBackgroundGallery() {
+    openContextModal({
+      modal: 'selectImage',
+      title: <Title order={3}>Select Background</Title>,
+      size: '90%',
+      innerProps: {
+        options: getAllBackgroundImages(),
+        variant: 'gallery',
+        onSelect: (option: ImageOption) => {
+          setCharacter((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              details: {
+                ...prev.details,
+                background_image_url: option.url,
+              },
+            };
+          });
+        },
+        category: 'backgrounds',
+      },
+    });
+  }
 
   const [loadingGenerateName, setLoadingGenerateName] = useState(false);
   const [displayNameInput, refreshNameInput] = useRefresh();
@@ -699,23 +725,6 @@ export default function CharBuilderHome(props: { characterId: number; pageHeight
                       }}
                     /> */}
                 <LinkSwitch
-                  label='Dice Roller'
-                  info={`Roll your dice directly from the character sheet! Integrated with all your character's stats and abilities.`}
-                  enabled={character?.options?.dice_roller}
-                  onLinkChange={(enabled) => {
-                    setCharacter((prev) => {
-                      if (!prev) return prev;
-                      return {
-                        ...prev,
-                        options: {
-                          ...prev.options,
-                          dice_roller: enabled,
-                        },
-                      };
-                    });
-                  }}
-                />
-                <LinkSwitch
                   label='Ignore Bulk Limit'
                   info={`Disables the negative effects of carrying too much bulk, such as adding the encumbered condition.`}
                   enabled={character?.options?.ignore_bulk_limit}
@@ -971,24 +980,19 @@ export default function CharBuilderHome(props: { characterId: number; pageHeight
             <UnstyledButton
               w={'50%'}
               onClick={() => {
+                const url = character?.details?.background_image_url;
+                if (!url) {
+                  openBackgroundGallery();
+                  return;
+                }
+                const option = getAllBackgroundImages().find((image) => image.url === url) ?? { name: 'Custom', url };
                 openContextModal({
-                  modal: 'selectImage',
-                  title: <Title order={3}>Select Background</Title>,
+                  modal: 'previewBackgroundImage',
+                  title: option.name ?? 'Artwork',
+                  size: '100%',
                   innerProps: {
-                    options: getAllBackgroundImages(),
-                    onSelect: (option: ImageOption) => {
-                      setCharacter((prev) => {
-                        if (!prev) return prev;
-                        return {
-                          ...prev,
-                          details: {
-                            ...prev.details,
-                            background_image_url: option.url,
-                          },
-                        };
-                      });
-                    },
-                    category: 'backgrounds',
+                    option,
+                    viewOnly: true,
                   },
                 });
               }}
@@ -1001,6 +1005,32 @@ export default function CharBuilderHome(props: { characterId: number; pageHeight
                 fallbackSrc='/backgrounds/placeholder.jpeg'
               />
             </UnstyledButton>
+            <Group gap='xs' mt={6}>
+              <Button size='xs' variant='subtle' color='gray' onClick={() => openBackgroundGallery()}>
+                Select
+              </Button>
+              {character?.details?.background_image_url && (
+                <Button
+                  size='xs'
+                  variant='subtle'
+                  color='gray'
+                  onClick={() => {
+                    setCharacter((prev) => {
+                      if (!prev) return prev;
+                      return {
+                        ...prev,
+                        details: {
+                          ...prev.details,
+                          background_image_url: undefined,
+                        },
+                      };
+                    });
+                  }}
+                >
+                  Clear
+                </Button>
+              )}
+            </Group>
           </Box>
           {apiClients && apiClients.length > 0 && (
             <Stack gap={5}>

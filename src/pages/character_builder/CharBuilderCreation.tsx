@@ -351,7 +351,12 @@ export function CharBuilderCreationInner(props: {
             <Divider mt={5} />
           </>
         )}
-        <ScrollArea h={props.pageHeight + (isMobile ? -100 : 0)} type={isPhone ? 'never' : undefined} scrollbars='y'>
+        <ScrollArea
+          h={props.pageHeight + (isMobile ? -100 : 0)}
+          type='auto'
+          scrollbars='y'
+          offsetScrollbars
+        >
           <Accordion
             value={levelItemValue}
             onChange={setLevelItemValue}
@@ -532,7 +537,7 @@ function CharacterStatSidebar(props: { content: ContentPackage; pageHeight: numb
           }}
         />
       </Box>
-      <ScrollArea h={props.pageHeight - height - 20} pr={14} scrollbars='y'>
+      <ScrollArea h={Math.max(160, props.pageHeight - height - 20)} pr={14} type='auto' scrollbars='y' offsetScrollbars>
         <Stack gap={5}>
           <Box>
             <ImprintButton

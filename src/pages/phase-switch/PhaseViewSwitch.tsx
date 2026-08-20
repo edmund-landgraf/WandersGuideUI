@@ -1,3 +1,5 @@
+import { persistPreferredPhase, PHASE1_PREFERRED_PHASE_KEY } from '../phase1/display-prefs';
+import { useEffect } from 'react';
 import './phase-view-switch.css';
 
 export const OLD_UI_ORIGIN = import.meta.env.VITE_OLD_UI_ORIGIN || 'http://localhost:5193';
@@ -43,6 +45,13 @@ export function originalCampaignUrl(location: PhaseLocation = {}): string {
 }
 
 export function PhaseViewSwitch({ current, section, campaignId, encounterId, noteIndex, viewingSettings }: PhaseLocation & { current: PhaseView }) {
+  useEffect(() => {
+    try {
+      localStorage.setItem(PHASE1_PREFERRED_PHASE_KEY, current);
+    } catch {
+      /* ignore */
+    }
+  }, [current]);
   const location = { section, campaignId, encounterId, noteIndex, viewingSettings };
   const phase0Href = phaseWorkspacePath('phase0', location);
   const phase1Href = phaseWorkspacePath('phase1', location);
@@ -55,10 +64,20 @@ export function PhaseViewSwitch({ current, section, campaignId, encounterId, not
 
   return (
     <nav className='phase-view-switch' data-current={current} aria-label='Interface version'>
-      <a href={phase0Href} aria-current={current === 'phase0' ? 'page' : undefined} title='Switch to Phase 0 in this window'>
+      <a
+        href={phase0Href}
+        aria-current={current === 'phase0' ? 'page' : undefined}
+        title='Switch to Phase 0 in this window'
+        onClick={() => persistPreferredPhase('phase0')}
+      >
         Phase 0
       </a>
-      <a href={phase1Href} aria-current={current === 'phase1' ? 'page' : undefined} title='Switch to Phase 1 in this window'>
+      <a
+        href={phase1Href}
+        aria-current={current === 'phase1' ? 'page' : undefined}
+        title='Switch to Phase 1 in this window'
+        onClick={() => persistPreferredPhase('phase1')}
+      >
         Phase 1
       </a>
       <a className='phase-view-switch-original' href={originalHref} target='_blank' rel='noreferrer' title={originalTitle}>

@@ -8,7 +8,7 @@ import { usePhase1BuilderCharacter } from './phase1-builder-character';
 import { uniq } from 'lodash-es';
 import { Home, Hammer } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { OLD_UI_ORIGIN } from '../phase-switch/PhaseViewSwitch';
 import { Phase1BuilderLevels } from './phase1-builder-levels';
 import { Phase1BuilderPicks } from './phase1-builder-picks';
@@ -38,9 +38,26 @@ export function Phase1BuilderWorkspace({
 
 function Phase1BuilderInner({ characterId, embedded, seed }: { characterId: number; embedded?: boolean; seed?: Character | null }) {
   const navigate = useNavigate();
-  const [step, setStep] = useState<'home' | 'builder'>('home');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedStep = searchParams.get('step') === 'builder' ? 'builder' : 'home';
+  const [step, setStep] = useState<'home' | 'builder'>(requestedStep);
   const { character, setCharacter, flushSave, content, contentError, retryContent, results, isLoading } =
     usePhase1BuilderCharacter(characterId, seed);
+
+  useEffect(() => {
+    setStep(requestedStep);
+  }, [requestedStep]);
+
+  function goToStep(next: 'home' | 'builder') {
+    setStep(next);
+    if (embedded) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.set('view', 'builder');
+      if (next === 'builder') nextParams.set('step', 'builder');
+      else nextParams.delete('step');
+      setSearchParams(nextParams, { replace: true });
+    }
+  }
 
   useEffect(() => {
     if (!embedded && character?.name) document.title = `${character.name} | Builder`;
@@ -83,14 +100,14 @@ function Phase1BuilderInner({ characterId, embedded, seed }: { characterId: numb
         <button
           type='button'
           className={`flex items-center justify-center gap-2 border-b-2 py-3 text-sm ${step === 'home' ? 'border-p1-accent text-p1-text' : 'border-transparent text-p1-muted hover:text-p1-text'}`}
-          onClick={() => setStep('home')}
+          onClick={() => goToStep('home')}
         >
           <Home size={15} /> Home
         </button>
         <button
           type='button'
           className={`flex items-center justify-center gap-2 border-b-2 py-3 text-sm ${step === 'builder' ? 'border-p1-accent text-p1-text' : 'border-transparent text-p1-muted hover:text-p1-text'}`}
-          onClick={() => setStep('builder')}
+          onClick={() => goToStep('builder')}
         >
           <Hammer size={15} /> Builder
         </button>

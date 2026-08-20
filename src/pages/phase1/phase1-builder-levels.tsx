@@ -1,7 +1,7 @@
 import type { Character, OperationCharacterResultPackage } from '@schemas/content';
 import type { OperationResult } from '@schemas/operations';
 import type { SetterOrUpdater } from '@utils/type-fixing';
-import { addChoiceCounts, countChoices, hasAnySelection, heritageSection, resultPrefix, saveSelectionChange } from './phase1-builder-ops';
+import { addChoiceCounts, countChoices, foundationChoiceCounts, hasAnySelection, heritageSection, resultPrefix, saveSelectionChange } from './phase1-builder-ops';
 import { Phase1OperationResults } from './phase1-builder-select';
 import { useState } from 'react';
 
@@ -59,7 +59,7 @@ function LevelBlock({
 
   const counts =
     level === 0
-      ? foundationCounts(results)
+      ? foundationChoiceCounts(results)
       : addChoiceCounts(...ancestrySections.map((section) => countChoices(section.baseResults)), ...classFeatures.map((section) => countChoices(section.baseResults)));
 
   if (level > 0 && ancestrySections.length === 0 && classFeatures.length === 0) return null;
@@ -115,18 +115,6 @@ function LevelBlock({
         </div>
       )}
     </section>
-  );
-}
-
-function foundationCounts(results: OperationCharacterResultPackage) {
-  return addChoiceCounts(
-    countChoices(results.ancestryResults),
-    countChoices(results.backgroundResults),
-    countChoices(results.classResults),
-    countChoices(results.class2Results),
-    ...results.contentSourceResults.map((item) => countChoices(item.baseResults)),
-    ...results.itemResults.map((item) => countChoices(item.baseResults)),
-    countChoices(results.characterResults)
   );
 }
 

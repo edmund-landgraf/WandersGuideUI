@@ -22,6 +22,7 @@ export function Phase1PickerModal<T>({
   toolbar,
   footer,
   aside,
+  listClassName,
   maxWidthClass = 'max-w-md',
   maxHeightClass = 'max-h-[min(82vh,640px)]',
   batchSize = DEFAULT_BATCH,
@@ -41,6 +42,7 @@ export function Phase1PickerModal<T>({
   toolbar?: ReactNode;
   footer?: ReactNode;
   aside?: ReactNode;
+  listClassName?: string;
   maxWidthClass?: string;
   maxHeightClass?: string;
   batchSize?: number;
@@ -158,7 +160,13 @@ export function Phase1PickerModal<T>({
             {loading && <p className='px-4 py-8 text-center text-sm text-p1-muted'>Loading...</p>}
             {error && <p className='px-4 py-8 text-center text-sm text-p1-danger-soft'>{error}</p>}
             {!loading && !error && visible.length === 0 && <p className='px-4 py-8 text-center text-sm text-p1-muted'>{empty}</p>}
-            {!loading && !error && visible.map((item) => <div key={getKey(item)}>{renderItem(item)}</div>)}
+            {!loading && !error && visible.length > 0 && (
+              <div className={listClassName}>
+                {visible.map((item) => (
+                  <div key={getKey(item)}>{renderItem(item)}</div>
+                ))}
+              </div>
+            )}
             {hasMore && <div ref={sentinelRef} className='h-4' />}
           </div>
           {aside && <div className='min-h-0 min-w-0 flex-1 overflow-y-auto'>{aside}</div>}

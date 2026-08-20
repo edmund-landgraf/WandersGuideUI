@@ -9,13 +9,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getVariable } from '@variables/variable-manager';
 import { labelToVariable } from '@variables/variable-utils';
 import { cloneDeep } from 'lodash-es';
-import { ArrowLeft, ExternalLink, Flag, Hammer, HeartPulse, RotateCcw, Star, User } from 'lucide-react';
-import { Phase1DiceButton, Phase1DiceModal } from './phase1-dice';
+import exportToJSON from '@export/export-to-json';
+import exportToPDF from '@export/export-to-pdf';
+import { ArrowLeft, Brush, ChevronDown, Download, ExternalLink, Flag, Hammer, HeartPulse, RotateCcw, Star, User } from 'lucide-react';
+import { Phase1PortraitModal } from './phase1-portrait-modal';
+import { Phase1ArtworkPreview, Phase1BackgroundModal } from './phase1-background-modal';
+import { getAllBackgroundImages } from '@utils/background-images';
 import { OLD_UI_ORIGIN } from '../phase-switch/PhaseViewSwitch';
+import { Phase1CssThemeToggle } from './Phase1CssThemeToggle';
 import { Phase1ThemeToggle } from './Phase1ThemeToggle';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { parseTempHpInput } from './phase1-change-log';
+import { isPlayable } from '@utils/character';
 import { phase1Request } from './phase1-api';
 import {
   AbilitiesPanel,
@@ -31,7 +36,7 @@ import {
   type Phase1SpellActions,
   type PopulatedCombatant,
 } from './phase1-entity-panels';
-import { preparePhase1Entity, type Phase1EntityCombatant } from './phase1-entity';
+import { preparePhase1Entity, computePhase1BuilderChoiceCounts, type Phase1EntityCombatant } from './phase1-entity';
 import {
   addEntitySpellToList,
   applyEntityDivineFont,
@@ -60,7 +65,9 @@ export function Phase1SheetPage() {
   const view = searchParams.get('view') === 'builder' ? 'builder' : 'sheet';
   const [tab, setTab] = useState<SheetTab>('Skills');
   const [restOpen, setRestOpen] = useState(false);
-  const [diceOpen, setDiceOpen] = useState(false);
+  const [portraitOpen, setPortraitOpen] = useState(false);
+  const [backgroundOpen, setBackgroundOpen] = useState(false);
+  const [artworkPreviewOpen, setArtworkPreviewOpen] = useState(false);
   const [xpDraft, setXpDraft] = useState('');
   const saveTimer = useRef<number | null>(null);
   const characterKey = ['phase1-sheet', characterId, session?.user.id ?? null] as const;
@@ -91,6 +98,22 @@ export function Phase1SheetPage() {
     queryKey: ['phase1-sheet-status', characterId, JSON.stringify(character?.details?.conditions ?? []), character?.hp_current, character?.hp_temp],
     enabled: Boolean(combatant) && view === 'sheet',
     queryFn: () => calculateEntityStatus(combatant as Phase1EntityCombatant),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+
+  const choiceCountsQuery = useQuery({
+    queryKey: [
+      'phase1-sheet-builder-choices',
+      characterId,
+      character?.level,
+      JSON.stringify(character?.operation_data?.selections ?? {}),
+      character?.details?.ancestry?.id,
+      character?.details?.background?.id,
+      character?.details?.class?.id,
+      character?.details?.class_2?.id,
+    ],
+    enabled: Boolean(character) && canEdit && view === 'sheet',
+    queryFn: () => computePhase1BuilderChoiceCounts(character!),
     staleTime: Number.POSITIVE_INFINITY,
   });
 
@@ -179,6 +202,12 @@ export function Phase1SheetPage() {
     character.details?.class?.name,
     character.details?.class_2?.name,
   ].filter(Boolean).join(' · ');
+  const choiceCounts = choiceCountsQuery.data;
+  const remainingChoices = choiceCounts ? Math.max(0, choiceCounts.max - choiceCounts.current) : 0;
+  const showBuilderReminder =
+    canEdit &&
+    view === 'sheet' &&
+    (remainingChoices > 0 || (choiceCountsQuery.isSuccess && !isPlayable(character)));
 
   function persistHp(raw: string) {
     patchCharacter((current) => (confirmHealth(raw, maxHp, current)?.entity as Character) ?? current);
@@ -276,27 +305,45 @@ export function Phase1SheetPage() {
         <div className='ml-auto flex items-center gap-2'>
           {saveCharacter.isPending && <span className='text-[11px] text-p1-faint'>Saving...</span>}
           <Phase1ThemeToggle />
+          <Phase1CssThemeToggle />
         </div>
       </header>
       <main className={`mx-auto px-4 py-6 ${view === 'builder' ? 'max-w-6xl' : 'max-w-5xl'}`}>
         <section className='mb-4 flex flex-wrap items-start gap-4 border border-p1-border bg-p1-surface p-4'>
-          {character.details?.image_url && <img src={character.details.image_url} alt='' className='h-20 w-20 object-cover' />}
+          <button
+            type='button'
+            className='grid h-20 w-20 shrink-0 place-items-center overflow-hidden border border-p1-border bg-p1-inset text-p1-faint hover:border-p1-accent/60 disabled:hover:border-p1-border'
+            title={canEdit ? 'Change portrait' : character.details?.image_url ? character.name : undefined}
+            disabled={!canEdit}
+            onClick={() => {
+              if (canEdit) setPortraitOpen(true);
+            }}
+          >
+            {character.details?.image_url ? (
+              <img src={character.details.image_url} alt='' className='h-full w-full object-cover' />
+            ) : (
+              <User size={28} />
+            )}
+          </button>
           <div className='min-w-0 flex-1'>
             <Eyebrow>Player character</Eyebrow>
             <h1 className='mt-1 truncate text-2xl font-semibold'>{character.name}</h1>
             <p className='mt-1 text-sm text-p1-muted'>{identity || 'Ancestry, background, and class load with calculated details.'}</p>
             <p className='mt-1 text-xs text-p1-faint'>Level {character.level}{canEdit ? '' : ' · Read only'}</p>
           </div>
-          <div className='flex flex-wrap items-center gap-2'>
+          <div className='flex min-w-0 flex-col items-end gap-2'>
+            <div className='flex flex-wrap items-center justify-end gap-2'>
             {canEdit && (
               view === 'builder' ? (
                 <button type='button' className='toolbar-button' onClick={() => setSearchParams({}, { replace: true })}>
                   <User size={14} /> Sheet
                 </button>
               ) : (
-                <button type='button' className='toolbar-button' onClick={() => setSearchParams({ view: 'builder' }, { replace: true })}>
-                  <Hammer size={14} /> Builder
-                </button>
+                !showBuilderReminder && (
+                  <button type='button' className='toolbar-button' onClick={() => setSearchParams({ view: 'builder' }, { replace: true })}>
+                    <Hammer size={14} /> Builder
+                  </button>
+                )
               )
             )}
             {character.campaign_id && (
@@ -311,9 +358,7 @@ export function Phase1SheetPage() {
             >
               <ExternalLink size={14} /> Original
             </a>
-            {(character.options?.dice_roller || campaignQuery.data?.recommended_options?.dice_roller) && (
-              <Phase1DiceButton onOpen={() => setDiceOpen(true)} />
-            )}
+            <Phase1ExportMenu character={character} />
             {canEdit && <button className='toolbar-button' onClick={() => setRestOpen(true)}><RotateCcw size={14} /> Rest</button>}
             <label className='toolbar-button'>
               XP
@@ -339,6 +384,29 @@ export function Phase1SheetPage() {
                 </span>
               ) : <strong className='ml-2'>{character.hero_points ?? 0}</strong>}
             </div>
+            </div>
+            {showBuilderReminder && (
+              <button
+                type='button'
+                className='toolbar-button border-p1-accent/50 text-p1-accent-soft'
+                onClick={() =>
+                  setSearchParams(
+                    remainingChoices > 0 ? { view: 'builder', step: 'builder' } : { view: 'builder' },
+                    { replace: true }
+                  )
+                }
+              >
+                <Hammer size={14} />
+                {remainingChoices > 0
+                  ? `${remainingChoices} ${remainingChoices === 1 ? 'choice' : 'choices'} remaining`
+                  : 'Finish setup'}
+                {choiceCounts && remainingChoices > 0 && (
+                  <span className='text-p1-faint'>
+                    {choiceCounts.current}/{choiceCounts.max}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
         </section>
 
@@ -402,14 +470,53 @@ export function Phase1SheetPage() {
         )}
       </main>
 
-      {diceOpen && (
-        <Phase1DiceModal
-          character={character}
-          canEdit={canEdit}
-          onClose={() => setDiceOpen(false)}
-          onSaveHistory={(rolls) => persist({ ...(queryClient.getQueryData<Character | null>(characterKey) ?? character), roll_history: { rolls } })}
+      {portraitOpen && (
+        <Phase1PortraitModal
+          currentUrl={character.details?.image_url}
+          onSelect={(url) =>
+            patchCharacter((current) => ({
+              ...current,
+              details: { ...current.details, image_url: url },
+            }))
+          }
+          onClose={() => setPortraitOpen(false)}
         />
       )}
+      {backgroundOpen && (
+        <Phase1BackgroundModal
+          currentUrl={character.details?.background_image_url}
+          onSelect={(url) =>
+            patchCharacter((current) => ({
+              ...current,
+              details: { ...current.details, background_image_url: url },
+            }))
+          }
+          onClose={() => setBackgroundOpen(false)}
+        />
+      )}
+      {artworkPreviewOpen && character.details?.background_image_url && (
+        <Phase1ArtworkPreview
+          option={
+            getAllBackgroundImages().find((image) => image.url === character.details?.background_image_url) ?? {
+              name: 'Custom',
+              url: character.details.background_image_url,
+            }
+          }
+          onBack={() => setArtworkPreviewOpen(false)}
+        />
+      )}
+      <Phase1ArtworkPlate
+        url={character.details?.background_image_url}
+        canEdit={canEdit}
+        onPreview={() => setArtworkPreviewOpen(true)}
+        onSelect={() => setBackgroundOpen(true)}
+        onClear={() =>
+          patchCharacter((current) => ({
+            ...current,
+            details: { ...current.details, background_image_url: undefined },
+          }))
+        }
+      />
       {restOpen && (
         <div className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5' onMouseDown={(event) => { if (event.target === event.currentTarget) setRestOpen(false); }}>
           <section className='w-full max-w-md border border-p1-border bg-p1-surface p-5'>
@@ -534,6 +641,59 @@ function toCharacterNotes(text: string, notes: Character['notes']): Character['n
   return { pages: pages.map((item, itemIndex) => (itemIndex === index ? { ...item, contents: text } : item)) };
 }
 
+function Phase1ExportMenu({ character }: { character: Character }) {
+  const [open, setOpen] = useState(false);
+  const [exporting, setExporting] = useState<'pdf' | 'json' | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+
+  async function run(kind: 'pdf' | 'json') {
+    setOpen(false);
+    setExporting(kind);
+    try {
+      if (kind === 'pdf') await exportToPDF(character);
+      else await exportToJSON(character);
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  const label = exporting === 'pdf' ? 'Exporting PDF…' : exporting === 'json' ? 'Exporting JSON…' : 'Export';
+
+  return (
+    <div ref={menuRef} className='relative'>
+      <button
+        type='button'
+        className='toolbar-button'
+        disabled={Boolean(exporting)}
+        aria-haspopup='menu'
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Download size={14} /> {label} <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div role='menu' className='absolute right-0 z-20 mt-1 min-w-36 border border-p1-border bg-p1-surface py-1 shadow-2xl'>
+          <button type='button' role='menuitem' className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => void run('pdf')}>
+            to PDF
+          </button>
+          <button type='button' role='menuitem' className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => void run('json')}>
+            to JSON
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function firstRecord<T>(value: T | T[] | null | undefined): T | null {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
@@ -546,6 +706,62 @@ function UnauthorizedSheet() {
       title='Private character'
       body='This character sheet is private. To view it, the sheet must be public, you must own the character, or you must own a campaign the character is in.'
     />
+  );
+}
+
+function Phase1ArtworkPlate({
+  url,
+  canEdit,
+  onPreview,
+  onSelect,
+  onClear,
+}: {
+  url?: string;
+  canEdit: boolean;
+  onPreview: () => void;
+  onSelect: () => void;
+  onClear: () => void;
+}) {
+  const option = url ? getAllBackgroundImages().find((image) => image.url === url) ?? { name: 'Custom', url } : null;
+
+  return (
+    <div className='fixed bottom-3 right-3 z-20 hidden w-44 sm:block'>
+      {option ? (
+        <div className='overflow-hidden border border-p1-border bg-p1-surface shadow-md'>
+          <button type='button' className='block w-full' onClick={onPreview} title='View artwork'>
+            <img src={option.url} alt='' className='h-28 w-full object-cover' />
+          </button>
+          <div className='px-2 py-1.5'>
+            {option.name && <p className='truncate text-[11px] text-p1-text'>{option.name}</p>}
+            {option.source?.trim() && (
+              <a
+                href={option.source_url}
+                target='_blank'
+                rel='noreferrer'
+                className='mt-0.5 inline-flex items-center gap-1 truncate text-[10px] text-p1-muted hover:text-p1-text'
+              >
+                <Brush size={10} />
+                {option.source}
+              </a>
+            )}
+            {canEdit && (
+              <div className='mt-1 flex flex-wrap gap-x-2'>
+                <button type='button' className='text-[11px] text-p1-muted hover:text-p1-text' onClick={onSelect}>
+                  Select
+                </button>
+                <button type='button' className='text-[11px] text-p1-muted hover:text-p1-text' onClick={onClear}>
+                  Clear
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : canEdit ? (
+        <button type='button' className='toolbar-button w-full justify-center' onClick={onSelect}>
+          <Brush size={14} /> Select artwork
+        </button>
+      ) : null}
+    </div>
   );
 }
 

@@ -6,36 +6,26 @@ import { GUIDE_BLUE, IMPRINT_BG_COLOR, IMPRINT_BORDER_COLOR } from '@constants/d
 import { getCachedCustomization } from '@content/customization-cache';
 import DrawerBase from '@drawers/DrawerBase';
 import { convertContentLink } from '@drawers/drawer-utils';
-import {
-  Anchor,
-  BackgroundImage,
-  Box,
-  Button,
-  MantineProvider,
-  Text,
-  createTheme,
-  v8CssVariablesResolver,
-} from '@mantine/core';
-import { useMediaQuery, usePrevious } from '@mantine/hooks';
+import { Box, MantineProvider, createTheme, v8CssVariablesResolver } from '@mantine/core';
+import { usePrevious } from '@mantine/hooks';
 import { ModalsProvider } from '@mantine/modals';
 import { Notifications, showNotification } from '@mantine/notifications';
 import { clearUserData, getCachedPublicUser } from '@auth/user-manager';
 import SearchSpotlight from '@nav/SearchSpotlight';
-import { IconBrush } from '@tabler/icons-react';
-import { getBackgroundImageFromURL } from '@utils/background-images';
+import ArtworkPlate from '@common/ArtworkPlate';
 import { useEffect, useState } from 'react';
 import { Outlet, useLocation, useSearchParams } from 'react-router-dom';
 import { useAtom, useAtomValue } from 'jotai';
 import { supabase } from './main';
 import Layout from './nav/Layout';
 import AddNewLoreModal from '@modals/AddNewLoreModal';
-import { phoneQuery } from '@utils/mobile-responsive';
 import { resetContentStore } from '@content/content-store';
 import SelectContentModal from '@common/select/SelectContent';
 import ConditionModal from '@modals/ConditionModal';
 import CreateDicePresetModal from '@modals/CreateDicePresetModal';
 import SelectIconModal from '@modals/SelectIconModal';
 import SelectImageModal from '@modals/SelectImageModal';
+import PreviewBackgroundImageModal from '@modals/PreviewBackgroundImageModal';
 import UpdateCharacterPortraitModal from '@modals/UpdateCharacterPortraitModal';
 import UpdateNotePageModal from '@modals/UpdateNotePageModal';
 import AddItemsModal from '@modals/AddItemsModal';
@@ -46,10 +36,8 @@ import InitiativeRollModal from '@modals/InitiativeRollModal';
 import UpdateEncounterModal from '@modals/UpdateEncounterModal';
 import GenerateEncounterModal from '@modals/GenerateEncounterModal';
 import UpdateApiClientModal from '@modals/UpdateApiClientModal';
-import { getAnchorStyles } from '@utils/anchor';
 import BuyItemModal from '@modals/BuyItemModal';
 import { generateColors } from '@mantine/colors-generator';
-import { ImageOption } from '@schemas/index';
 
 // TODO, it would be great to dynamically import these modals, but it with Mantine v7.6.2 it doesn't work
 // const SelectContentModal = lazy(() => import('@common/select/SelectContent'));
@@ -64,6 +52,7 @@ import { ImageOption } from '@schemas/index';
 const modals = {
   selectContent: SelectContentModal,
   selectImage: SelectImageModal,
+  previewBackgroundImage: PreviewBackgroundImageModal,
   selectIcon: SelectIconModal,
   selectSpellSlot: SelectSpellSlotModal,
   selectStaffCasting: SelectStaffCastingModal,
@@ -88,7 +77,6 @@ const modals = {
 export default function App() {
   const [_drawer, openDrawer] = useAtom(drawerState);
   const [_creatureDrawer, openCreatureDrawer] = useAtom(creatureDrawerState);
-  const isPhone = useMediaQuery(phoneQuery());
   const location = useLocation();
   const hideSiteChrome = /^(?:\/phase1|\/sheet|\/builder)(?:\/|$)/.test(location.pathname);
 
@@ -117,7 +105,7 @@ export default function App() {
 
       if (event === 'SIGNED_OUT') {
         // The session ended. If the cached user data is still present, this was NOT an
-        // intentional logout (that path runs localStorage.clear() first) — the session
+        // intentional logout (that path clears storage but keeps display-bar prefs) — the session
         // expired or was revoked while the user was browsing. Guarded routes redirect to
         // login on their own, but public pages (sheet, builder, home) kept rendering a
         // logged-in-looking UI whose every write silently failed. Clear the stale cache
@@ -141,24 +129,6 @@ export default function App() {
 
   const activeCharacer = useAtomValue(characterState);
   const prevCharacer = usePrevious(activeCharacer);
-
-  // Update background image when background_image_url changes
-  const [background, setBackground] = useState<ImageOption>();
-  useEffect(() => {
-    (async () => {
-      if (prevCharacer?.details?.background_image_url === activeCharacer?.details?.background_image_url) {
-        if (!background?.url) {
-          // Use cached customization if available
-          const cache = getCachedCustomization();
-
-          setBackground(await getBackgroundImageFromURL(cache?.background_image_url ?? undefined));
-        }
-        return;
-      }
-      console.log('Updating background image...');
-      setBackground(await getBackgroundImageFromURL(activeCharacer?.details?.background_image_url));
-    })();
-  }, [activeCharacer]);
 
   const generateTheme = (theme?: { color?: string }) => {
     return createTheme({
@@ -342,29 +312,7 @@ export default function App() {
       }}
     >
       <ModalsProvider modals={modals}>
-        <BackgroundImage
-          src={background?.url ?? ''}
-          radius={0}
-          style={{ position: 'fixed', top: 0, left: 0, zIndex: -1000, backgroundPosition: 'top' }}
-          w='100dvw'
-          h='100dvh'
-        />
-        {background?.source?.trim() && !isPhone && (
-          <Anchor href={background.source_url} target='_blank' underline='hover'>
-            <Text
-              size='xs'
-              c='dimmed'
-              style={[
-                getAnchorStyles({ r: 10, b: 6 }),
-                {
-                  zIndex: 1,
-                },
-              ]}
-            >
-              <IconBrush size='0.55rem' /> {background.source}
-            </Text>
-          </Anchor>
-        )}
+        <ArtworkPlate />
         <SearchSpotlight />
         <Notifications position='top-right' zIndex={9400} containerWidth={350} />
         <DrawerBase />

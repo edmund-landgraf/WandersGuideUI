@@ -41,6 +41,7 @@ import { PublicUser } from '@schemas/content';
 import { useQueryClient } from '@tanstack/react-query';
 import { isTouchDevice, phoneQuery, tabletQuery } from '@utils/mobile-responsive';
 import { DISCORD_URL, DOCS_URL, LEGACY_URL, PATREON_URL } from '@constants/urls';
+import { clearStoragePreservingDisplayPrefs } from '@pages/phase1/display-prefs';
 
 export default function Layout(props: { children: React.ReactNode }) {
   const theme = useMantineTheme();
@@ -304,7 +305,7 @@ export default function Layout(props: { children: React.ReactNode }) {
                         leftSection={<IconLogout style={{ width: rem(16), height: rem(16) }} stroke={1.5} />}
                         onClick={async () => {
                           supabase.auth.signOut();
-                          localStorage.clear();
+                          clearStoragePreservingDisplayPrefs();
                           queryClient.clear();
                         }}
                       >
@@ -452,7 +453,7 @@ export default function Layout(props: { children: React.ReactNode }) {
               className={classes.control}
               onClick={async () => {
                 supabase.auth.signOut();
-                localStorage.clear();
+                clearStoragePreservingDisplayPrefs();
                 queryClient.clear();
                 close();
               }}

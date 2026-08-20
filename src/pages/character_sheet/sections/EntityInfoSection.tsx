@@ -12,11 +12,13 @@ import { SetterOrUpdater } from '@utils/type-fixing';
 import { confirmExperience, handleRest } from '../entity-handler';
 import tinyInputClasses from '@css/TinyBlurInput.module.css';
 import { Character, LivingEntity } from '@schemas/content';
+import { ImageOption } from '@schemas/index';
 import { isCharacter, isCreature } from '@utils/type-fixing';
 import { CreatureDetailedInfo } from '@common/CreatureInfo';
 import { IMPRINT_BG_COLOR } from '@constants/data';
-import { modals } from '@mantine/modals';
+import { modals, openContextModal } from '@mantine/modals';
 import { getEntityLevel } from '@utils/entity-utils';
+import { getAllPortraitImages } from '@utils/portrait-images';
 import ImprintButton from '@common/ImprintButton';
 
 export default function EntityInfoSection(props: {
@@ -86,6 +88,28 @@ export default function EntityInfoSection(props: {
                   type: 'class',
                   data: { id: (props.entity as Character)?.details?.class_2?.id },
                   extra: { addToHistory: true },
+                });
+              }}
+              onClickImage={() => {
+                openContextModal({
+                  modal: 'selectImage',
+                  title: <Title order={3}>Select Portrait</Title>,
+                  innerProps: {
+                    options: getAllPortraitImages(),
+                    onSelect: (option: ImageOption) => {
+                      props.setEntity((prev) => {
+                        if (!prev || !isCharacter(prev)) return prev;
+                        return {
+                          ...prev,
+                          details: {
+                            ...prev.details,
+                            image_url: prev.details?.image_url === option.url ? undefined : option.url,
+                          },
+                        };
+                      });
+                    },
+                    category: 'portraits',
+                  },
                 });
               }}
             />

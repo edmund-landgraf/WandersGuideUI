@@ -34,6 +34,7 @@ import { setPageTitle } from '@utils/document-change';
 import BlurBox from '@common/BlurBox';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getPublicUser } from '@auth/user-manager';
+import { clearStoragePreservingDisplayPrefs } from '@pages/phase1/display-prefs';
 import { getDefaultBackgroundImage } from '@utils/background-images';
 import { toLabel } from '@utils/strings';
 import { GUIDE_BLUE } from '@constants/data';
@@ -845,7 +846,7 @@ function ProfileSection() {
                             const result = await makeRequest('delete-user', {});
                             if (result) {
                               supabase.auth.signOut();
-                              localStorage.clear();
+                              clearStoragePreservingDisplayPrefs();
                               queryClient.clear();
                             } else {
                               showNotification({

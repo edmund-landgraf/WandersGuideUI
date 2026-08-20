@@ -1,5 +1,8 @@
 import { CloudFog, Moon, Sun } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { getPublicUser } from '@auth/user-manager';
+import { hydrateDisplayPrefsFromUser } from './display-prefs';
 import { applyPhase1Theme, persistPhase1Theme, readStoredPhase1Theme, type Phase1Theme } from './phase1-theme';
 
 const THEME_OPTIONS: { id: Phase1Theme; label: string; icon: typeof Moon }[] = [
@@ -10,6 +13,18 @@ const THEME_OPTIONS: { id: Phase1Theme; label: string; icon: typeof Moon }[] = [
 
 export function Phase1ThemeToggle() {
   const [theme, setTheme] = useState<Phase1Theme>(() => readStoredPhase1Theme());
+  const user = useQuery({
+    queryKey: ['phase1-public-user'],
+    queryFn: () => getPublicUser(),
+    staleTime: 60_000,
+  });
+
+  useEffect(() => {
+    hydrateDisplayPrefsFromUser(user.data);
+    const next = readStoredPhase1Theme();
+    applyPhase1Theme(next);
+    setTheme(next);
+  }, [user.data]);
 
   useEffect(() => {
     applyPhase1Theme(theme);

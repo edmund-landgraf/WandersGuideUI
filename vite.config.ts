@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
@@ -93,5 +94,9 @@ export default defineConfig(({ mode }) => ({
     // of esbuild - a redundant second transpile. esbuild lowers syntax to the same target
     // in a single pass; 'safari15' preserves the original iOS 15 support intent.
     target: ['es2020', 'safari15'],
+  },
+  test: {
+    environment: 'jsdom',
+    include: ['src/**/*.test.ts'],
   },
 }));

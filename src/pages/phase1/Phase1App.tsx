@@ -7,6 +7,9 @@ import { Phase1BuilderPage } from './Phase1BuilderPage';
 import { Phase1AuthCallback } from '@auth/Phase1AuthCallback';
 import { ContentLinkProvider } from './phase1-content-links';
 import { CloseStackOnNavigate, ContentStackModal } from './phase1-content-stack';
+import { getPublicUser } from '@auth/user-manager';
+import { applyDisplayPrefsFromUser } from './display-prefs';
+import { applyPhase1CssTheme, readStoredPhase1CssTheme } from './phase1-css-theme';
 import { applyPhase1Theme, readStoredPhase1Theme } from './phase1-theme';
 import './phase1.css';
 
@@ -17,6 +20,12 @@ const queryClient = new QueryClient({
 export function Phase1Shell() {
   useEffect(() => {
     applyPhase1Theme(readStoredPhase1Theme());
+    applyPhase1CssTheme(readStoredPhase1CssTheme());
+    void getPublicUser().then((user) => {
+      applyDisplayPrefsFromUser(user);
+      applyPhase1Theme(readStoredPhase1Theme());
+      applyPhase1CssTheme(readStoredPhase1CssTheme());
+    });
   }, []);
   return (
     <ContentLinkProvider>

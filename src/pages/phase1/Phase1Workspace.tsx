@@ -39,6 +39,7 @@ import { ActionSymbol } from '@common/Actions';
 import { abilityNameAndCost } from '@utils/actions';
 import { toStandard2eProse } from '@utils/foundry-text';
 import { GiDiceTwentyFacesTwenty } from '@common/game-icons-inline';
+import { Phase1CssThemeToggle } from './Phase1CssThemeToggle';
 import { Phase1ThemeToggle } from './Phase1ThemeToggle';
 import { rollDie } from '@utils/random';
 import { buildInitiativeRoundLog, formatInitiativeRoll, InitiativeRollModal, isCombatantOut, nextInitiativeRoundNumber, overlayInitiativeLogs, setRoundLogEntryNote, sortCombatantsByInitiative, type InitiativeRollChoice } from './phase1-initiative';
@@ -49,8 +50,9 @@ import { CombatantChangeLogFooter, EditableValueWithNote, GridHpEditPopover, Rou
 import { PhaseViewSwitch } from '../phase-switch/PhaseViewSwitch';
 import { ConfirmDialog, SettingsSurface } from './phase1-campaign-settings';
 import { Phase1DiceButton, Phase1DiceModal } from './phase1-dice';
-import { CHARACTER_SLOT_CAP } from '@constants/data';
-import { getCachedPublicUser } from '@auth/user-manager';
+import { CAMPAIGN_SLOT_CAP, CHARACTER_SLOT_CAP, GUIDE_BLUE } from '@constants/data';
+import { PATREON_URL } from '@constants/urls';
+import { getCachedPublicUser, getPublicUser } from '@auth/user-manager';
 import { hasPatreonAccess } from '@utils/patreon';
 import { getAllBackgroundImages } from '@utils/background-images';
 import { getFileContents } from '@import/json/import-from-json';
@@ -70,6 +72,10 @@ type PopulatedCombatant = Combatant & { data: LivingEntity; access?: { can_edit:
 export function Phase1IndexPage() {
   const session = useAuthSession();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [limitModalOpen, setLimitModalOpen] = useState(false);
   const campaigns = useQuery({
     queryKey: ['phase1-campaigns', session?.user.id],
     enabled: Boolean(session),
@@ -82,6 +88,59 @@ export function Phase1IndexPage() {
     },
   });
 
+  const ownedCampaigns = (campaigns.data ?? []).filter((campaign) => campaign.user_id === session?.user.id);
+
+  async function createCampaign() {
+    return phase1Request<Campaign>('create-campaign', {
+      name: 'My Campaign',
+      description: 'A new adventure begins...',
+      meta_data: {
+        settings: {
+          show_party_member_status: 'STATUS',
+        },
+      },
+    });
+  }
+
+  async function handleCreateCampaign() {
+    if (creating) return;
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const campaign = await createCampaign();
+      await queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] });
+      navigate(`/phase1/campaign/${campaign.id}`);
+    } catch (error) {
+      const atFreeCap = ownedCampaigns.length >= CAMPAIGN_SLOT_CAP && !hasPatreonAccess(getCachedPublicUser(), 2);
+      if (isCampaignLimitError(error) || atFreeCap) {
+        setLimitModalOpen(true);
+      } else {
+        setCreateError(error instanceof Error ? error.message : 'Could not create campaign.');
+      }
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function deleteExistingAndCreateNew() {
+    if (creating) return;
+    setCreating(true);
+    setCreateError(null);
+    try {
+      for (const campaign of ownedCampaigns) {
+        await phase1Request('delete-content', { id: campaign.id, type: 'campaign' });
+      }
+      await createCampaign();
+      setLimitModalOpen(false);
+      await queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] });
+      navigate('/phase1');
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : 'Could not replace campaign.');
+    } finally {
+      setCreating(false);
+    }
+  }
+
   if (session === undefined) return <LoadingScreen label='Loading session' />;
   if (!session) return <CampaignSignIn variant='phase1' />;
   return (
@@ -89,18 +148,51 @@ export function Phase1IndexPage() {
       <WorkspaceHeader section='campaigns' />
       <main className='mx-auto max-w-5xl px-6 py-10'>
         <div className='mb-8 flex items-end justify-between gap-6 border-b border-p1-border pb-6'>
-          <div><Eyebrow>Phase 1</Eyebrow><h1 className='mt-2 text-3xl font-semibold'>Campaign workspace</h1><p className='mt-2 text-sm text-p1-muted'>Choose an owned or joined campaign, or open Characters from the header.</p></div>
-          <button className='icon-button' title='Sign out' onClick={() => supabase.auth.signOut()}><LogOut size={17} /></button>
+          <div>
+            <Eyebrow>Phase 1</Eyebrow>
+            <h1 className='mt-2 text-3xl font-semibold'>Campaign workspace</h1>
+            <p className='mt-2 text-sm text-p1-muted'>Choose an owned or joined campaign, or open Characters from the header.</p>
+            {createError && <p className='mt-2 text-xs text-p1-danger-soft'>{createError}</p>}
+          </div>
+          <div className='flex items-center gap-2'>
+            <button type='button' className='toolbar-button' disabled={creating} title='Create campaign' onClick={() => void handleCreateCampaign()}>
+              <Plus size={15} />
+              {creating ? 'Creating…' : 'Create campaign'}
+            </button>
+            <button className='icon-button' title='Sign out' onClick={() => supabase.auth.signOut()}><LogOut size={17} /></button>
+          </div>
         </div>
         {campaigns.isLoading && <EmptyState>Loading campaigns...</EmptyState>}
         {campaigns.error && <ErrorState error={campaigns.error} />}
-        {campaigns.data?.length === 0 && <EmptyState>No campaigns are available.</EmptyState>}
+        {campaigns.data?.length === 0 && (
+          <EmptyState>
+            <div>No campaigns are available.</div>
+            <button type='button' className='toolbar-button mt-4 inline-flex' disabled={creating} onClick={() => void handleCreateCampaign()}>
+              <Plus size={15} />
+              {creating ? 'Creating…' : 'Create campaign'}
+            </button>
+          </EmptyState>
+        )}
         <div className='divide-y divide-p1-border border-y border-p1-border'>
           {campaigns.data?.map((campaign) => (
-            <CampaignWorkspaceRow key={campaign.id} campaign={campaign} onOpen={() => navigate(`/phase1/campaign/${campaign.id}`)} />
+            <CampaignWorkspaceRow
+              key={campaign.id}
+              campaign={campaign}
+              canDelete={campaign.user_id === session.user.id}
+              onOpen={() => navigate(`/phase1/campaign/${campaign.id}`)}
+              onDeleted={() => queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] })}
+            />
           ))}
         </div>
       </main>
+      {limitModalOpen && (
+        <CampaignLimitModal
+          busy={creating}
+          slotCap={CAMPAIGN_SLOT_CAP}
+          onClose={() => !creating && setLimitModalOpen(false)}
+          onDeleteAndCreate={() => void deleteExistingAndCreateNew()}
+        />
+      )}
     </div>
   );
 }
@@ -452,6 +544,26 @@ export function Phase1CampaignPage() {
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: playersKey }),
   });
+  const createEncounter = useMutation({
+    mutationFn: (name: string) =>
+      phase1Request<Encounter>('create-encounter', {
+        id: -1,
+        created_at: '',
+        user_id: '',
+        name,
+        icon: 'combat',
+        color: GUIDE_BLUE,
+        campaign_id: campaignId,
+        combatants: { list: [] },
+        meta_data: { description: '' },
+      }),
+    onSuccess: (encounter) => {
+      queryClient.invalidateQueries({ queryKey: encountersKey });
+      if (encounter?.id != null && encounter.id !== -1) {
+        navigate(`/phase1/campaign/${campaignId}/encounters/${encounter.id}`);
+      }
+    },
+  });
   const deleteEncounter = useMutation<unknown, Error, number, { previous?: Encounter[] }>({
     mutationFn: (id) => phase1Request('delete-content', { id, type: 'encounter' }),
     onMutate: async (id) => {
@@ -536,6 +648,17 @@ export function Phase1CampaignPage() {
       navigate(`/phase1/campaign/${campaignId}/notes/${noteIndex - 1}`);
     }
   }
+  function handleCreateNote(name: string) {
+    const pages = [
+      ...(campaignData.notes?.pages ?? []),
+      { name, icon: 'notebook', color: GUIDE_BLUE, contents: null, shared: false },
+    ];
+    updateCampaign.mutate({ ...campaignData, notes: { ...campaignData.notes, pages } });
+    navigate(`/phase1/campaign/${campaignId}/notes/${pages.length - 1}`);
+  }
+  function handleCreateEncounter(name: string) {
+    createEncounter.mutate(name);
+  }
   function handleDeleteEncounter(id: number) {
     const remaining = visible.filter((item) => item.id !== id);
     deleteEncounter.mutate(id);
@@ -567,6 +690,8 @@ export function Phase1CampaignPage() {
       onDeleteCampaign={() => deleteCampaign.mutateAsync()}
       onDeleteNote={handleDeleteNote}
       onDeleteEncounter={handleDeleteEncounter}
+      onCreateNote={handleCreateNote}
+      onCreateEncounter={handleCreateEncounter}
       rosterSaving={updateEncounter.isPending}
       campaignSaving={updateCampaign.isPending}
       rosterError={updateEncounter.error ?? updateCharacter.error ?? deleteEncounter.error ?? deleteNote.error}
@@ -576,8 +701,8 @@ export function Phase1CampaignPage() {
 }
 
 
-function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, viewingSettings, isGm, sessionUserId, onUpdateEncounter, onUpdateCharacter, onUpdateCampaign, onResetJoinKey, onKickPlayer, onDeleteCampaign, onDeleteNote, onDeleteEncounter, rosterSaving, campaignSaving, rosterError, campaignError }: {
-  campaign: Campaign; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; campaignError: Error | null;
+function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, viewingSettings, isGm, sessionUserId, onUpdateEncounter, onUpdateCharacter, onUpdateCampaign, onResetJoinKey, onKickPlayer, onDeleteCampaign, onDeleteNote, onDeleteEncounter, onCreateNote, onCreateEncounter, rosterSaving, campaignSaving, rosterError, campaignError }: {
+  campaign: Campaign; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; campaignError: Error | null;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailWidth, setDetailWidth] = useState(readDetailWidth);
@@ -991,7 +1116,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     <div className='flex h-screen min-h-[680px] flex-col overflow-hidden bg-p1-page text-p1-text'>
       <WorkspaceHeader label={campaign.name} campaignId={campaign.id} encounterId={selectedEncounter?.id ?? null} noteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} />
       <div className={`grid min-h-0 flex-1 ${viewingNotes || viewingSettings ? 'grid-cols-[248px_minmax(280px,1fr)]' : 'grid-cols-[248px_minmax(280px,1fr)_6px_auto]'}`}>
-        <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddAllPlayers={addAllPlayers} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onDeleteNote={onDeleteNote} onDeleteEncounter={onDeleteEncounter} />
+        <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddAllPlayers={addAllPlayers} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onDeleteNote={onDeleteNote} onDeleteEncounter={onDeleteEncounter} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} />
         <main className='min-w-0 overflow-auto bg-p1-surface'>
           {viewingSettings ? (
             <SettingsSurface
@@ -1119,6 +1244,12 @@ function useCombatantStatuses(encounterId: number | null, combatants: PopulatedC
 }
 function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, viewingSettings }: { label?: string; section?: 'campaigns' | 'characters'; campaignId?: number | null; encounterId?: number | null; noteIndex?: number | null; viewingSettings?: boolean }) {
   const navClass = (active: boolean) => `text-sm ${active ? 'text-p1-text' : 'text-p1-muted hover:text-p1-text'}`;
+  const user = useQuery({
+    queryKey: ['phase1-public-user'],
+    queryFn: () => getPublicUser(),
+    staleTime: 60_000,
+  });
+  const patreonTier = user.data?.patreon?.tier ?? null;
   return (
     <header className='flex h-14 shrink-0 items-center gap-4 border-b border-p1-border bg-p1-header px-5'>
       <a href='/' className='font-semibold'>Wanderer's Guide</a>
@@ -1126,23 +1257,40 @@ function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, v
       <Link to='/phase1' className={navClass(section === 'campaigns')}>Campaigns</Link>
       <Link to='/phase1/characters' className={navClass(section === 'characters')}>Characters</Link>
       {label && <><span className='text-p1-faint'>/</span><span className='truncate text-sm text-p1-muted'>{label}</span></>}
-      <div className='ml-auto flex items-center gap-2'><Phase1ThemeToggle /><PhaseViewSwitch current='phase1' section={section} campaignId={campaignId} encounterId={encounterId} noteIndex={noteIndex} viewingSettings={viewingSettings} /><button className='icon-button' title='Switch account' onClick={() => supabase.auth.signOut()}><LogOut size={15} /></button></div>
+      <div className='ml-auto flex items-center gap-2'>
+        <span className='hidden text-[11px] uppercase tracking-[0.14em] text-p1-faint sm:inline' title='patreon.tier from get-user'>
+          {user.isPending ? 'Patreon…' : patreonTier ?? 'no Patreon tier'}
+        </span>
+        <Phase1ThemeToggle />
+        <Phase1CssThemeToggle />
+        <PhaseViewSwitch current='phase1' section={section} campaignId={campaignId} encounterId={encounterId} noteIndex={noteIndex} viewingSettings={viewingSettings} />
+        <button className='icon-button' title='Switch account' onClick={() => supabase.auth.signOut()}><LogOut size={15} /></button>
+      </div>
     </header>
   );
 }
 
-function CampaignRail({ campaign, encounters, players, outCombatants, selectedEncounter, selectedId, notePages, selectedNoteIndex, viewingSettings, isGm, rosterSaving, onRemovePlayer, onAddAllPlayers, onSelectCombatant, onMarkOut, onDeleteNote, onDeleteEncounter }: {
-  campaign: Campaign; encounters: Encounter[]; players: Character[]; outCombatants: PopulatedCombatant[]; selectedEncounter: Encounter | null; selectedId: string | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; rosterSaving: boolean; onRemovePlayer: (combatantId: string) => void; onAddAllPlayers: () => void; onSelectCombatant: (id: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void;
+function CampaignRail({ campaign, encounters, players, outCombatants, selectedEncounter, selectedId, notePages, selectedNoteIndex, viewingSettings, isGm, rosterSaving, onRemovePlayer, onAddAllPlayers, onSelectCombatant, onMarkOut, onDeleteNote, onDeleteEncounter, onCreateNote, onCreateEncounter }: {
+  campaign: Campaign; encounters: Encounter[]; players: Character[]; outCombatants: PopulatedCombatant[]; selectedEncounter: Encounter | null; selectedId: string | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; rosterSaving: boolean; onRemovePlayer: (combatantId: string) => void; onAddAllPlayers: () => void; onSelectCombatant: (id: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void;
 }) {
   const [benchActive, setBenchActive] = useState(false);
   const [outActive, setOutActive] = useState(false);
   const [notesOpen, setNotesOpen] = useState(selectedNoteIndex != null);
   const [encountersOpen, setEncountersOpen] = useState(selectedEncounter != null);
   const [menu, setMenu] = useState<RailContextTarget | null>(null);
+  const [sectionMenu, setSectionMenu] = useState<{ kind: 'note' | 'encounter'; x: number; y: number } | null>(null);
+  const [createKind, setCreateKind] = useState<'note' | 'encounter' | null>(null);
   const [benchMenu, setBenchMenu] = useState<{ x: number; y: number } | null>(null);
   const [outMenu, setOutMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<RailContextTarget | null>(null);
   const canManageRoster = isGm && !rosterSaving && Boolean(selectedEncounter);
+
+  function openSectionMenu(event: ReactMouseEvent, kind: 'note' | 'encounter') {
+    if (!isGm) return;
+    event.preventDefault();
+    setMenu(null);
+    setSectionMenu({ kind, x: event.clientX, y: event.clientY });
+  }
 
   function dropOnBench(event: ReactDragEvent<HTMLDivElement>) {
     const payload = readCombatantDrag(event);
@@ -1163,6 +1311,8 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
   function openRailMenu(event: ReactMouseEvent, target: Omit<RailContextTarget, 'x' | 'y'>) {
     if (!isGm) return;
     event.preventDefault();
+    event.stopPropagation();
+    setSectionMenu(null);
     setMenu({ ...target, x: event.clientX, y: event.clientY });
   }
 
@@ -1178,9 +1328,9 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
         <Link to='/phase1' className='mb-5 flex items-center gap-2 text-xs text-p1-muted hover:text-p1-text'><ArrowLeft size={14} /> Campaigns</Link>
         <Eyebrow>{isGm ? 'Game master' : 'Player'}</Eyebrow><h1 className='mt-2 text-lg font-semibold leading-tight'>{campaign.name}</h1>
       </div>
-      <RailLabel icon={<BookOpen size={14} />} label='Notes' count={notePages.length} open={notesOpen} onToggle={() => setNotesOpen((value) => !value)} />
+      <RailLabel icon={<BookOpen size={14} />} label='Notes' count={notePages.length} open={notesOpen} onToggle={() => setNotesOpen((value) => !value)} onContextMenu={(event) => openSectionMenu(event, 'note')} />
       {notesOpen && (
-        <nav className='px-2 pb-4'>
+        <nav className='px-2 pb-4' onContextMenu={(event) => openSectionMenu(event, 'note')}>
           {notePages.map(({ page, index }) => (
             <Link
               key={`${page.name}-${index}`}
@@ -1195,9 +1345,9 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
           {notePages.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>{isGm ? 'No campaign notes yet.' : 'No shared campaign notes.'}</p>}
         </nav>
       )}
-      <RailLabel icon={<Swords size={14} />} label='Encounters' count={encounters.length} open={encountersOpen} onToggle={() => setEncountersOpen((value) => !value)} />
+      <RailLabel icon={<Swords size={14} />} label='Encounters' count={encounters.length} open={encountersOpen} onToggle={() => setEncountersOpen((value) => !value)} onContextMenu={(event) => openSectionMenu(event, 'encounter')} />
       {encountersOpen && (
-        <nav className='px-2 pb-4'>
+        <nav className='px-2 pb-4' onContextMenu={(event) => openSectionMenu(event, 'encounter')}>
           {encounters.map((encounter) => (
             <Link
               key={encounter.id}
@@ -1268,6 +1418,33 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
           onDelete={() => {
             setMenu(null);
             setPendingDelete(menu);
+          }}
+        />
+      )}
+      {sectionMenu && (
+        <SectionContextMenu
+          x={sectionMenu.x}
+          y={sectionMenu.y}
+          onClose={() => setSectionMenu(null)}
+          onNew={() => {
+            const kind = sectionMenu.kind;
+            setSectionMenu(null);
+            if (kind === 'note') setNotesOpen(true);
+            else setEncountersOpen(true);
+            setCreateKind(kind);
+          }}
+        />
+      )}
+      {createKind && (
+        <CreateNameModal
+          title={createKind === 'note' ? 'New note' : 'New encounter'}
+          label={createKind === 'note' ? 'Note name' : 'Encounter name'}
+          confirmLabel='Create'
+          onCancel={() => setCreateKind(null)}
+          onConfirm={(name) => {
+            if (createKind === 'note') onCreateNote(name);
+            else onCreateEncounter(name);
+            setCreateKind(null);
           }}
         />
       )}
@@ -1430,6 +1607,77 @@ function BenchContextMenu({ x, y, disabled, onClose, onAddAll }: { x: number; y:
         </button>
       </div>
     </>,
+    document.body
+  );
+}
+
+function SectionContextMenu({ x, y, onClose, onNew }: { x: number; y: number; onClose: () => void; onNew: () => void }) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+  const left = Math.min(x, window.innerWidth - 176);
+  const top = Math.min(y, window.innerHeight - 56);
+  return createPortal(
+    <>
+      <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
+      <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onNew}>
+          <Plus size={14} /> New
+        </button>
+      </div>
+    </>,
+    document.body
+  );
+}
+
+function CreateNameModal({ title, label, confirmLabel, onCancel, onConfirm }: { title: string; label: string; confirmLabel: string; onCancel: () => void; onConfirm: (name: string) => void }) {
+  const [name, setName] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    inputRef.current?.focus();
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onCancel();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onCancel]);
+  const trimmed = name.trim();
+  function submit() {
+    if (!trimmed) return;
+    onConfirm(trimmed);
+  }
+  return createPortal(
+    <div
+      className='fixed inset-0 z-[120] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]'
+      role='presentation'
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <section role='dialog' aria-modal='true' aria-labelledby='create-name-title' className='w-full max-w-sm border border-p1-border bg-p1-surface p-5 shadow-2xl'>
+        <h2 id='create-name-title' className='text-lg font-semibold'>{title}</h2>
+        <label className='mt-3 block text-xs text-p1-muted'>
+          {label}
+          <input
+            ref={inputRef}
+            className='settings-input mt-1 w-full'
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') submit();
+            }}
+          />
+        </label>
+        <div className='mt-5 flex justify-end gap-2'>
+          <button type='button' className='toolbar-button' onClick={onCancel}>Cancel</button>
+          <button type='button' className='toolbar-button' disabled={!trimmed} onClick={submit}>{confirmLabel}</button>
+        </div>
+      </section>
+    </div>,
     document.body
   );
 }
@@ -2034,9 +2282,13 @@ function populateCombatants(combatants: Combatant[], players: Character[]): Popu
     return data ? { ...combatant, data } : null;
   }).filter((combatant): combatant is PopulatedCombatant => Boolean(combatant));
 }
-function CampaignWorkspaceRow({ campaign, onOpen }: { campaign: Campaign; onOpen: () => void }) {
+function CampaignWorkspaceRow({ campaign, canDelete, onOpen, onDeleted }: { campaign: Campaign; canDelete: boolean; onOpen: () => void; onDeleted: () => void }) {
   const [visible, setVisible] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const hasKey = Boolean(campaign.join_key);
 
   async function revealAndCopy(event: ReactMouseEvent) {
@@ -2046,11 +2298,35 @@ function CampaignWorkspaceRow({ campaign, onOpen }: { campaign: Campaign; onOpen
     setCopyState((await copyJoinKey(campaign.join_key)) ? 'copied' : 'failed');
   }
 
+  function openMenu(event: ReactMouseEvent) {
+    if (!canDelete) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDeleteError(null);
+    setMenu({ x: event.clientX, y: event.clientY });
+  }
+
+  async function confirmDelete() {
+    if (deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await phase1Request('delete-content', { id: campaign.id, type: 'campaign' });
+      setPendingDelete(false);
+      onDeleted();
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Could not delete campaign.');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
-    <div className='group grid w-full grid-cols-[1fr_auto] items-center gap-6 px-2 py-5 hover:bg-p1-hover'>
-      <button type='button' className='min-w-0 text-left' onClick={onOpen}>
+    <div className='group grid w-full grid-cols-[1fr_auto] items-center gap-6 px-2 py-5 hover:bg-p1-hover' onContextMenu={openMenu}>
+      <button type='button' className='min-w-0 text-left' onClick={onOpen} onContextMenu={openMenu}>
         <div className='font-semibold'>{campaign.name}</div>
         <div className='mt-1 line-clamp-1 text-sm text-p1-muted'>{campaign.description || 'No campaign description'}</div>
+        {deleteError && <div className='mt-1 text-xs text-p1-danger-soft'>{deleteError}</div>}
       </button>
       <div className='flex items-center gap-2'>
         {hasKey && (
@@ -2063,6 +2339,28 @@ function CampaignWorkspaceRow({ campaign, onOpen }: { campaign: Campaign; onOpen
           <ChevronRight className='text-p1-faint group-hover:text-p1-accent' size={18} />
         </button>
       </div>
+      {menu && (
+        <RailContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          onDelete={() => {
+            setMenu(null);
+            setPendingDelete(true);
+          }}
+        />
+      )}
+      {pendingDelete && (
+        <ConfirmDialog
+          title='Delete campaign'
+          message={`Are you sure you want to delete "${campaign.name}"? This cannot be undone.`}
+          confirmLabel={deleting ? 'Deleting…' : 'Delete'}
+          onCancel={() => {
+            if (!deleting) setPendingDelete(false);
+          }}
+          onConfirm={() => void confirmDelete()}
+        />
+      )}
     </div>
   );
 }
@@ -2082,6 +2380,64 @@ async function copyJoinKey(value: string) {
     input.remove();
     return copied;
   }
+}
+
+function CampaignLimitModal({
+  busy,
+  slotCap,
+  onClose,
+  onDeleteAndCreate,
+}: {
+  busy: boolean;
+  slotCap: number;
+  onClose: () => void;
+  onDeleteAndCreate: () => void;
+}) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape' && !busy) onClose();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [busy, onClose]);
+
+  return createPortal(
+    <div
+      className='fixed inset-0 z-[120] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]'
+      role='presentation'
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onClose();
+      }}
+    >
+      <section role='dialog' aria-modal='true' aria-labelledby='campaign-limit-title' className='w-full max-w-sm border border-p1-border bg-p1-surface p-5 shadow-2xl'>
+        <h2 id='campaign-limit-title' className='text-lg font-semibold'>
+          Campaign limit
+        </h2>
+        <p className='mt-2 text-sm leading-6 text-p1-muted'>
+          Free Wanderer’s Guide accounts can own {slotCap} campaign{slotCap === 1 ? '' : 's'}. Delete your existing campaign to make a new one, or upgrade Wanderer’s Guide on Patreon for more slots.
+        </p>
+        <div className='mt-5 flex flex-col gap-2'>
+          <button
+            type='button'
+            className='toolbar-button border-p1-danger/50 text-p1-danger-soft'
+            disabled={busy}
+            onClick={onDeleteAndCreate}
+          >
+            {busy ? 'Replacing…' : 'Delete existing and create new'}
+          </button>
+          <a className='toolbar-button text-center' href={PATREON_URL} rel='noreferrer' target='_blank'>
+            Upgrade WG on Patreon
+          </a>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+function isCampaignLimitError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /patreon|patron|campaign slot|too many campaign|campaign limit/i.test(message);
 }
 
 function uniqueById(campaigns: Campaign[]) { return [...new Map(campaigns.map((campaign) => [campaign.id, campaign])).values()]; }

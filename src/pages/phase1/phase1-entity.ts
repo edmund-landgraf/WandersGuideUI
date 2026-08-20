@@ -9,12 +9,13 @@ import {
 } from '@content/content-store';
 import { isItemEquippable, isItemImplantable, isItemInvestable } from '@items/inv-utils';
 import { executeOperations } from '@operations/operations.main';
-import type { Character, Combatant, ContentPackage, Creature, InventoryItem, Item } from '@schemas/content';
+import type { Character, Combatant, ContentPackage, Creature, InventoryItem, Item, OperationCharacterResultPackage } from '@schemas/content';
 import type { VariableListStr } from '@schemas/variables';
 import { adjustCreature } from '@utils/creature';
 import { getFinalHealthValue } from '@variables/variable-helpers';
 import { exportVariableStore, getVariable, importVariableStore } from '@variables/variable-manager';
 import { cloneDeep, uniq, uniqBy } from 'lodash-es';
+import { countAllBuilderChoices, type ChoiceCounts } from './phase1-builder-ops';
 
 export type Phase1EntityCombatant = Combatant & { data: Character | Creature };
 export type PreparedPhase1Entity = {
@@ -41,6 +42,20 @@ function enqueuePrepare<T>(work: () => Promise<T>): Promise<T> {
  */
 export async function preparePhase1Entity(combatant: Phase1EntityCombatant): Promise<PreparedPhase1Entity> {
   return enqueuePrepare(() => preparePhase1EntityNow(combatant));
+}
+
+export async function computePhase1BuilderChoiceCounts(character: Character): Promise<ChoiceCounts> {
+  return enqueuePrepare(async () => {
+    const sources = uniq([COMMON_CORE_ID, ...(character.content_sources?.enabled ?? [])]);
+    await fetchContentSources(sources);
+    const content = await fetchContentPackage(sources, { fetchSources: true, fetchCreatures: false });
+    content.defaultSources = { PAGE: sources, INFO: sources };
+    const results = await executeOperations<OperationCharacterResultPackage>(
+      { type: 'CHARACTER', data: { character: cloneDeep(character), content, context: 'CHARACTER-BUILDER' } },
+      { directExecution: true }
+    );
+    return countAllBuilderChoices(character, results);
+  });
 }
 
 async function preparePhase1EntityNow(combatant: Phase1EntityCombatant): Promise<PreparedPhase1Entity> {

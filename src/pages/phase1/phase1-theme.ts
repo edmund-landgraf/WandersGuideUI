@@ -29,6 +29,9 @@ export function persistPhase1Theme(theme: Phase1Theme) {
   } catch {
     /* ignore */
   }
+  void import('./display-prefs').then(({ syncDisplayPrefsToUser }) => {
+    void syncDisplayPrefsToUser({ phase1_theme: theme });
+  });
 }
 
 export function nextPhase1Theme(theme: Phase1Theme): Phase1Theme {

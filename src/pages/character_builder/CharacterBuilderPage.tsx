@@ -24,13 +24,14 @@ import CharBuilderCreation from './CharBuilderCreation';
 import CharBuilderHome from './CharBuilderHome';
 import { useAtomValue } from 'jotai';
 import { characterState } from '@atoms/characterAtoms';
-import { useMediaQuery } from '@mantine/hooks';
+import { useMediaQuery, useViewportSize } from '@mantine/hooks';
 import { phoneQuery } from '@utils/mobile-responsive';
 
 export function Component() {
   setPageTitle(`Builder`);
 
   const isPhone = useMediaQuery(phoneQuery());
+  const { height: viewportHeight } = useViewportSize();
   const [active, setActive] = useState(0);
   const navigate = useNavigate();
 
@@ -53,7 +54,9 @@ export function Component() {
   }, [active]);
 
   const stepIconStyle = { width: rem(18), height: rem(18) };
-  const pageHeight = 550;
+  // Keep the builder card on-screen; inner lists scroll when they exceed this height.
+  const chrome = isPhone ? 240 : 210;
+  const pageHeight = Math.max(280, (viewportHeight || 800) - chrome);
 
   const globalCharacter = useAtomValue(characterState);
   const { data, isLoading } = useQuery({

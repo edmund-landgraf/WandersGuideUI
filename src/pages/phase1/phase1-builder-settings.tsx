@@ -22,8 +22,9 @@ import {
   Settings,
   X,
 } from 'lucide-react';
+import { getAllBackgroundImages } from '@utils/background-images';
 import { useMemo, useState, type ReactNode } from 'react';
-import { OLD_UI_ORIGIN } from '../phase-switch/PhaseViewSwitch';
+import { Phase1ArtworkPreview, Phase1BackgroundModal } from './phase1-background-modal';
 
 type HomeTab = 'books' | 'homebrew' | 'variants' | 'options';
 
@@ -101,11 +102,6 @@ const OPTION_TOGGLES: { key: keyof NonNullable<Character['options']>; label: str
     info: '[Beta] Automatically determine if a feat or feature has its prerequisites met. This may not always work correctly.',
   },
   {
-    key: 'dice_roller',
-    label: 'Dice Roller',
-    info: 'Roll dice directly from the character sheet, using your character’s stats and abilities.',
-  },
-  {
     key: 'ignore_bulk_limit',
     label: 'Ignore Bulk Limit',
     info: 'Disables the negative effects of carrying too much bulk, such as adding the encumbered condition.',
@@ -140,6 +136,12 @@ export function Phase1BuilderHomeFields({
   setCharacter: SetterOrUpdater<Character | null>;
 }) {
   const [tab, setTab] = useState<HomeTab>('books');
+  const [backgroundOpen, setBackgroundOpen] = useState(false);
+  const [artworkPreviewOpen, setArtworkPreviewOpen] = useState(false);
+  const backgroundUrl = character.details?.background_image_url;
+  const backgroundOption = backgroundUrl
+    ? getAllBackgroundImages().find((image) => image.url === backgroundUrl) ?? { name: 'Custom', url: backgroundUrl }
+    : null;
   const books = useQuery({
     queryKey: ['phase1-builder-books'],
     queryFn: async () => (await fetchContentSources('ALL-OFFICIAL-PUBLIC')).filter((book) => book.deprecated !== true),
@@ -165,6 +167,54 @@ export function Phase1BuilderHomeFields({
   }
 
   return (
+    <div className='space-y-4'>
+      <div className='border border-p1-border bg-p1-inset p-3'>
+        <p className='mb-2 text-xs font-semibold uppercase text-p1-muted'>Background artwork</p>
+        <div className='flex items-start gap-3'>
+          <button
+            type='button'
+            className='h-24 w-40 overflow-hidden border border-p1-border bg-p1-surface'
+            onClick={() => (backgroundOption ? setArtworkPreviewOpen(true) : setBackgroundOpen(true))}
+            title={backgroundOption ? 'View artwork' : 'Select artwork'}
+          >
+            {backgroundUrl ? (
+              <img src={backgroundUrl} alt='' className='h-full w-full object-cover' />
+            ) : (
+              <span className='grid h-full place-items-center text-xs text-p1-muted'>Choose artwork</span>
+            )}
+          </button>
+          <div className='space-y-2'>
+            <button type='button' className='toolbar-button' onClick={() => setBackgroundOpen(true)}>
+              Select artwork
+            </button>
+            {backgroundUrl && (
+              <button
+                type='button'
+                className='block text-xs text-p1-muted hover:text-p1-text'
+                onClick={() =>
+                  setCharacter((prev) =>
+                    prev ? { ...prev, details: { ...prev.details, background_image_url: undefined } } : prev
+                  )
+                }
+              >
+                Clear artwork
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+      {artworkPreviewOpen && backgroundOption && (
+        <Phase1ArtworkPreview option={backgroundOption} onBack={() => setArtworkPreviewOpen(false)} />
+      )}
+      {backgroundOpen && (
+        <Phase1BackgroundModal
+          currentUrl={backgroundUrl}
+          onSelect={(url) =>
+            setCharacter((prev) => (prev ? { ...prev, details: { ...prev.details, background_image_url: url } } : prev))
+          }
+          onClose={() => setBackgroundOpen(false)}
+        />
+      )}
     <div className='border border-p1-border bg-p1-inset'>
       <div className='flex flex-wrap gap-1 border-b border-p1-border px-2 py-2'>
         {HOME_TABS.map((item) => (
@@ -223,6 +273,7 @@ export function Phase1BuilderHomeFields({
           />
         )}
       </div>
+    </div>
     </div>
   );
 }
