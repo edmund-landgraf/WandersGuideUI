@@ -7,6 +7,7 @@ import type { Campaign, Character, Condition, Creature, Inventory, InventoryItem
 import type { VariableListStr } from '@schemas/variables';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getVariable } from '@variables/variable-manager';
+import { labelToVariable } from '@variables/variable-utils';
 import { cloneDeep } from 'lodash-es';
 import { ArrowLeft, ExternalLink, Flag, Hammer, HeartPulse, RotateCcw, Star, User } from 'lucide-react';
 import { Phase1DiceButton, Phase1DiceModal } from './phase1-dice';

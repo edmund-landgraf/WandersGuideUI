@@ -292,7 +292,6 @@ export default function App() {
   }, [activeCharacer]);
 
   // Handle query params
-  const location = useLocation();
   const [searchParams] = useSearchParams();
   useEffect(() => {
     (async () => {

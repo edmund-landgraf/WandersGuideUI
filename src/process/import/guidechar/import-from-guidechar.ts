@@ -19,7 +19,7 @@ export default async function importFromGUIDECHAR(file: File) {
     const obj = JSON.parse(contents);
     const ftc = convertGUIDECHARToFTC(obj);
     console.log('Converted FTC:', ftc);
-    const character = await importFromFTC(ftc);
+    character = await importFromFTC(ftc);
 
     if (character) {
       hideNotification(`importing-${file.name}`);
