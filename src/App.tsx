@@ -89,6 +89,8 @@ export default function App() {
   const [_drawer, openDrawer] = useAtom(drawerState);
   const [_creatureDrawer, openCreatureDrawer] = useAtom(creatureDrawerState);
   const isPhone = useMediaQuery(phoneQuery());
+  const location = useLocation();
+  const hideSiteChrome = /^(?:\/phase1|\/sheet|\/builder)(?:\/|$)/.test(location.pathname);
 
   const [session, setSession] = useAtom(sessionState);
   useEffect(() => {
@@ -368,10 +370,13 @@ export default function App() {
         <Notifications position='top-right' zIndex={9400} containerWidth={350} />
         <DrawerBase />
         <Box style={{ zoom: getCachedCustomization()?.sheet_theme?.zoom ?? 1 }}>
-          <Layout>
-            {/* Outlet is where react-router will render child routes */}
+          {hideSiteChrome ? (
             <Outlet />
-          </Layout>
+          ) : (
+            <Layout>
+              <Outlet />
+            </Layout>
+          )}
         </Box>
       </ModalsProvider>
     </MantineProvider>

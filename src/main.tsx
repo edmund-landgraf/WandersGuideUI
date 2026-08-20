@@ -96,7 +96,75 @@ const router = createBrowserRouter([
     loader: async ({ params }: { params: any }) => {
       return { campaignId: params.campaignId, encounterId: params.encounterId };
     },
-  },  {
+  },
+  {
+    path: '/phase1',
+    lazy: async () => {
+      const { Phase1Shell } = await import('@pages/phase1/Phase1App');
+      return { Component: Phase1Shell };
+    },
+    children: [
+      {
+        index: true,
+        lazy: async () => {
+          const { Phase1IndexPage } = await import('@pages/phase1/Phase1Workspace');
+          return { Component: Phase1IndexPage };
+        },
+      },
+      {
+        path: 'characters',
+        lazy: async () => {
+          const { Phase1CharactersPage } = await import('@pages/phase1/Phase1Workspace');
+          return { Component: Phase1CharactersPage };
+        },
+      },
+      {
+        path: 'campaign/:campaignId',
+        lazy: async () => {
+          const { Phase1CampaignPage } = await import('@pages/phase1/Phase1Workspace');
+          return { Component: Phase1CampaignPage };
+        },
+      },
+      {
+        path: 'campaign/:campaignId/encounters/:encounterId',
+        lazy: async () => {
+          const { Phase1CampaignPage } = await import('@pages/phase1/Phase1Workspace');
+          return { Component: Phase1CampaignPage };
+        },
+      },
+      {
+        path: 'campaign/:campaignId/notes/:noteIndex',
+        lazy: async () => {
+          const { Phase1CampaignPage } = await import('@pages/phase1/Phase1Workspace');
+          return { Component: Phase1CampaignPage };
+        },
+      },
+      {
+        path: 'campaign/:campaignId/settings',
+        lazy: async () => {
+          const { Phase1CampaignPage } = await import('@pages/phase1/Phase1Workspace');
+          return { Component: Phase1CampaignPage };
+        },
+      },
+    ],
+  },
+  {
+    path: '/sheet/:characterId',
+    lazy: async () => {
+      const { Phase1Shell } = await import('@pages/phase1/Phase1App');
+      return { Component: Phase1Shell };
+    },
+    children: [
+      {
+        index: true,
+        lazy: async () => {
+          const { Phase1SheetPage } = await import('@pages/phase1/Phase1SheetPage');
+          return { Component: Phase1SheetPage };
+        },
+      },
+    ],
+  },
+  {
     path: '/',
     element: <App />,
     errorElement: <ErrorPage />,
@@ -154,18 +222,11 @@ const router = createBrowserRouter([
               return { characterId: params.characterId };
             },
           },
-          {
-            path: 'homebrew',
-            lazy: () => import('@pages/homebrew/HomebrewPage.tsx'),
-          },
-        ],
-      },
       {
-        path: 'sheet/:characterId',
-        lazy: () => import('@pages/character_sheet/CharacterSheetPage.tsx'),
-        loader: async ({ params }: { params: any }) => {
-          return { characterId: params.characterId };
-        },
+        path: 'homebrew',
+        lazy: () => import('@pages/homebrew/HomebrewPage.tsx'),
+      },
+        ],
       },
       {
         path: 'sheet-unauthorized',

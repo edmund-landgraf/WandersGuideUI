@@ -635,7 +635,7 @@ export async function _executeCharacterOperations(data: {
                 }),
               },
             },
-          ], // TODO: Filter to only show skills you have the prev bonus in
+          ],
           name: `Skill Potency +${bonus}`,
           actions: null,
           level: level,

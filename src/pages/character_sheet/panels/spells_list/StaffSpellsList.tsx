@@ -23,6 +23,46 @@ import { StoreID } from '@schemas/variables';
 import { cloneDeep, groupBy } from 'lodash-es';
 import ImprintButton from '@common/ImprintButton';
 
+function withStaffCharges(
+  entity: LivingEntity,
+  staff: InventoryItem,
+  charges: { current?: number; max?: number }
+): LivingEntity {
+  if (!entity.inventory) return entity;
+  return {
+    ...entity,
+    inventory: {
+      ...entity.inventory,
+      items: entity.inventory.items.map((item) => {
+        if (item.id !== staff.id) return item;
+        return {
+          ...item,
+          item: {
+            ...item.item,
+            meta_data: {
+              ...item.item.meta_data!,
+              charges: {
+                ...item.item.meta_data?.charges,
+                current: charges.current ?? item.item.meta_data?.charges?.current,
+                max: charges.max ?? item.item.meta_data?.charges?.max,
+              },
+            },
+          },
+        };
+      }),
+    },
+  };
+}
+
+function emptySpells() {
+  return {
+    slots: [] as SpellSlot[],
+    list: [] as SpellListEntry[],
+    focus_point_current: 0,
+    innate_casts: [] as SpellInnateEntry[],
+  };
+}
+
 export default function StaffSpellsList(props: {
   id: StoreID;
   entity: LivingEntity;
@@ -103,44 +143,23 @@ export default function StaffSpellsList(props: {
                         text: 'Select a spell slot to expend it and add a number of charges equal to its rank to your staff.',
                         allSpells: props.allSpells,
                         onSelect: (slot: SpellSlotRecord) => {
-                          // Expend the selected slot
                           props.setEntity((c) => {
                             if (!c) return c;
                             const slots = collectEntitySpellcasting(props.id, c).slots;
-
-                            let newSlots = cloneDeep(slots ?? []);
-                            newSlots = newSlots.map((s) => {
-                              if (s.id === slot.id) {
-                                return {
-                                  ...s,
-                                  exhausted: true,
-                                };
-                              } else {
-                                return s;
-                              }
-                            });
-
-                            return {
+                            const newSlots = cloneDeep(slots ?? []).map((s) =>
+                              s.id === slot.id ? { ...s, exhausted: true } : s
+                            );
+                            const withSlots: LivingEntity = {
                               ...c,
                               spells: {
-                                ...(c.spells ?? {
-                                  slots: [],
-                                  list: [],
-                                  focus_point_current: 0,
-                                  innate_casts: [],
-                                }),
+                                ...(c.spells ?? emptySpells()),
                                 slots: newSlots,
                               },
                             };
-                          });
-
-                          // Update the staff charges, delay it prevent race condition with slot expending
-                          // TODO: Just combine into one update call
-                          setTimeout(() => {
-                            handleUpdateItemCharges(props.setEntity, props.staff, {
-                              max: props.staff.item.meta_data!.charges!.max! + slot.rank,
+                            return withStaffCharges(withSlots, props.staff, {
+                              max: (props.staff.item.meta_data?.charges?.max ?? 0) + slot.rank,
                             });
-                          }, 250);
+                          });
                         },
                       },
                     });
@@ -255,39 +274,31 @@ export default function StaffSpellsList(props: {
                                         if (option === 'NORMAL') {
                                           castWithCharges();
                                         } else if (option === 'SLOT-CONSUME') {
-                                          // Consume 1 charge
-                                          handleUpdateItemCharges(props.setEntity, props.staff, {
-                                            current: Math.min(currentCharges + 1, maxCharges),
-                                          });
-                                          // Consume slot
                                           props.setEntity((c) => {
                                             if (!c) return c;
                                             let added = false;
                                             const newUpdatedSlots = collectEntitySpellcasting(props.id, c).slots.map(
-                                              (slot) => {
-                                                if (!added && slot.rank === slotRank && slot.exhausted !== true) {
+                                              (spellSlot) => {
+                                                if (!added && spellSlot.rank === slotRank && spellSlot.exhausted !== true) {
                                                   added = true;
                                                   return {
-                                                    ...slot,
+                                                    ...spellSlot,
                                                     exhausted: true,
                                                   };
                                                 }
-                                                return slot;
+                                                return spellSlot;
                                               }
                                             );
-
-                                            return {
+                                            const withSlots: LivingEntity = {
                                               ...c,
                                               spells: {
-                                                ...(c.spells ?? {
-                                                  slots: [],
-                                                  list: [],
-                                                  focus_point_current: 0,
-                                                  innate_casts: [],
-                                                }),
+                                                ...(c.spells ?? emptySpells()),
                                                 slots: newUpdatedSlots,
                                               },
                                             };
+                                            return withStaffCharges(withSlots, props.staff, {
+                                              current: Math.min(currentCharges + 1, maxCharges),
+                                            });
                                           });
                                         }
                                       },

@@ -47,7 +47,7 @@ const manifestForPlugin: Partial<VitePWAOptions> = {
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
-  base: './',
+  base: mode === 'development' ? '/' : './',
   resolve: {
     alias: {
       '@assets': path.resolve(__dirname, './src/assets'),

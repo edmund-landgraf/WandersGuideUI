@@ -83,7 +83,7 @@ const VARIANT_RULES = [
 const CHARACTER_OPTIONS = [
   { key: 'alternate_ancestry_boosts' as const, label: 'Alternate Ancestry Boosts', info: 'Replace ancestry boosts and flaws with two free boosts.' },
   { key: 'auto_detect_prerequisites' as const, label: 'Auto Detect Prerequisites', info: 'Beta: automatically check feat prerequisites.' },
-  { key: 'dice_roller' as const, label: 'Dice Roller', info: 'Roll dice directly from the character sheet.' },
+  { key: 'dice_roller' as const, label: 'Dice Roller', info: 'Shows a dice roller on the character sheet (Phase 1 and original).' },
   { key: 'ignore_bulk_limit' as const, label: 'Ignore Bulk Limit', info: 'Disables encumbered effects from carrying too much bulk.' },
   { key: 'organized_play' as const, label: 'Organized Play', info: 'Paizo Organized Play campaign mode.' },
   { key: 'is_public' as const, label: 'Public Character', info: 'Characters are viewable by anyone with their sheet link.' },

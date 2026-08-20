@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, ArrowLeft, BookOpen, Calculator, Check, ChevronDown, ChevronRight, Copy, Crosshair, Eraser, Eye, ExternalLink, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Plus, RotateCcw, Search, Settings, Shield, Skull, Sparkles, Swords, Trash2, UserMinus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Eraser, Eye, ExternalLink, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Plus, RotateCcw, Search, Settings, Shield, Skull, Sparkles, Swords, Trash2, Upload, UserMinus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -48,6 +48,14 @@ import { maxCombatantStats, maxEntityStats, resetCombatant, resetEntityCombatSta
 import { CombatantChangeLogFooter, EditableValueWithNote, GridHpEditPopover, RoundNoteField } from './phase1-change-log-ui';
 import { PhaseViewSwitch } from '../phase-switch/PhaseViewSwitch';
 import { ConfirmDialog, SettingsSurface } from './phase1-campaign-settings';
+import { Phase1DiceButton, Phase1DiceModal } from './phase1-dice';
+import { CHARACTER_SLOT_CAP } from '@constants/data';
+import { getCachedPublicUser } from '@auth/user-manager';
+import { hasPatreonAccess } from '@utils/patreon';
+import { getAllBackgroundImages } from '@utils/background-images';
+import { getFileContents } from '@import/json/import-from-json';
+import importFromGUIDECHAR from '@import/guidechar/import-from-guidechar';
+import { importFromPathbuilder } from '@import/pathbuilder/import-from-pathbuilder';
 import { calculateDifficulty, formatLevelDelta, shouldDisplayEncounterDifficulty, type EncounterDifficulty } from '@utils/encounter-difficulty';
 import { InspectorContent, DETAIL_TABS, fallbackStatus, hasFullEntityDetails, normalizeDetailTab, signed, statsFor, type DetailTab, type Phase1SpellActions } from './phase1-entity-panels';
 type CampaignNotePage = NonNullable<Campaign['notes']>['pages'][number];
@@ -113,6 +121,13 @@ export function Phase1CharactersPage() {
   const [joinKey, setJoinKey] = useState('');
   const [reassign, setReassign] = useState(false);
   const [joinStatus, setJoinStatus] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [pathbuilderOpen, setPathbuilderOpen] = useState(false);
+  const [pathbuilderId, setPathbuilderId] = useState('');
+  const jsonInputRef = useRef<HTMLInputElement>(null);
+  const guidecharInputRef = useRef<HTMLInputElement>(null);
   const characters = useQuery({
     queryKey: ['phase1-characters', session?.user.id],
     enabled: Boolean(session),
@@ -177,6 +192,77 @@ export function Phase1CharactersPage() {
   });
 
   const canAddAll = Boolean(joinKey.trim()) && Boolean(characters.data?.length) && !addAllToJoinKey.isPending;
+  const reachedCharacterLimit =
+    (characters.data?.length ?? 0) >= CHARACTER_SLOT_CAP && !hasPatreonAccess(getCachedPublicUser(), 2);
+  const createDisabled = reachedCharacterLimit || creating || importing;
+
+  async function createCharacter() {
+    if (createDisabled) return;
+    setCreating(true);
+    setJoinStatus(null);
+    try {
+      const images = getAllBackgroundImages();
+      const randomImageUrl = images[Math.floor(Math.random() * images.length)]?.url;
+      const character = await phase1Request<Character>('create-character', {
+        meta_data: { reset_hp: true },
+        details: { background_image_url: randomImageUrl },
+      });
+      await queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] });
+      navigate(`/builder/${character.id}`);
+    } catch (error) {
+      setJoinStatus(error instanceof Error ? error.message : 'Could not create character.');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function importJsonFile(file: File | null) {
+    if (!file) return;
+    setImporting(true);
+    setJoinStatus(null);
+    try {
+      const obj = JSON.parse(await getFileContents(file));
+      if (obj.version !== 4 || !obj.character) throw new Error('Invalid JSON file');
+      const { id: _id, ...character } = obj.character as Character & { id?: number };
+      const created = await phase1Request<Character>('create-character', character);
+      await queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] });
+      setJoinStatus(`Imported “${created.name}”.`);
+    } catch (error) {
+      setJoinStatus(error instanceof Error ? error.message : 'JSON import failed.');
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function importGuidecharFile(file: File | null) {
+    if (!file) return;
+    setImporting(true);
+    setJoinStatus(null);
+    try {
+      const character = await importFromGUIDECHAR(file);
+      await queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] });
+      setJoinStatus(character ? `Imported “${character.name}”.` : 'GUIDECHAR import failed.');
+    } catch (error) {
+      setJoinStatus(error instanceof Error ? error.message : 'GUIDECHAR import failed.');
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function importPathbuilder(id: number) {
+    setPathbuilderOpen(false);
+    setImporting(true);
+    setJoinStatus(null);
+    try {
+      const character = await importFromPathbuilder(id);
+      await queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] });
+      setJoinStatus(character ? `Imported “${character.name}”.` : 'Pathbuilder import failed.');
+    } catch (error) {
+      setJoinStatus(error instanceof Error ? error.message : 'Pathbuilder import failed.');
+    } finally {
+      setImporting(false);
+    }
+  }
 
   if (session === undefined) return <LoadingScreen label='Loading session' />;
   if (!session) return <CampaignSignIn variant='phase1' />;
@@ -189,9 +275,27 @@ export function Phase1CharactersPage() {
             <Eyebrow>Phase 1</Eyebrow>
             <h1 className='mt-2 text-3xl font-semibold'>Character workspace</h1>
             <p className='mt-2 text-sm text-p1-muted'>Open a character sheet, or switch to Campaigns from the header.</p>
+            {reachedCharacterLimit && <p className='mt-2 text-xs text-p1-muted'>{characters.data?.length}/{CHARACTER_SLOT_CAP} character slots used.</p>}
           </div>
           <div className='flex min-w-0 flex-col items-stretch gap-2 sm:items-end'>
             <div className='flex flex-wrap items-center gap-2'>
+              <button type='button' className='toolbar-button' disabled={createDisabled} title={reachedCharacterLimit ? 'Character slot limit reached' : 'Create character'} onClick={() => void createCharacter()}>
+                <Plus size={15} />
+                {creating ? 'Creating…' : 'Create'}
+              </button>
+              <div className='relative'>
+                <button type='button' className='toolbar-button' disabled={createDisabled} title={reachedCharacterLimit ? 'Character slot limit reached' : 'Upload character'} onClick={() => setUploadOpen((open) => !open)}>
+                  <Upload size={15} />
+                  {importing ? 'Uploading…' : 'Upload'}
+                </button>
+                {uploadOpen && (
+                  <div className='absolute right-0 z-20 mt-1 min-w-[14rem] border border-p1-border bg-p1-surface py-1'>
+                    <button type='button' className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => { setUploadOpen(false); jsonInputRef.current?.click(); }}>Import from JSON</button>
+                    <button type='button' className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => { setUploadOpen(false); setPathbuilderOpen(true); }}>Import from Pathbuilder</button>
+                    <button type='button' className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => { setUploadOpen(false); guidecharInputRef.current?.click(); }}>Import from GUIDECHAR</button>
+                  </div>
+                )}
+              </div>
               <button type='button' className='toolbar-button' disabled={!canAddAll} onClick={() => addAllToJoinKey.mutate()}>
                 <Plus size={15} />
                 {addAllToJoinKey.isPending ? 'Adding…' : 'Add all'}
@@ -228,7 +332,15 @@ export function Phase1CharactersPage() {
         </div>
         {characters.isLoading && <EmptyState>Loading characters...</EmptyState>}
         {characters.error && <ErrorState error={characters.error} />}
-        {characters.data?.length === 0 && <EmptyState>No characters are available.</EmptyState>}
+        {characters.data?.length === 0 && (
+          <EmptyState>
+            <div>No characters are available.</div>
+            <button type='button' className='toolbar-button mt-4 inline-flex' disabled={createDisabled} onClick={() => void createCharacter()}>
+              <Plus size={15} />
+              {creating ? 'Creating…' : 'Create'}
+            </button>
+          </EmptyState>
+        )}
         <div className='divide-y divide-p1-border border-y border-p1-border'>
           {characters.data?.map((character) => {
             const identity = [character.details?.ancestry?.name, character.details?.class?.name].filter(Boolean).join(' · ');
@@ -243,7 +355,37 @@ export function Phase1CharactersPage() {
             );
           })}
         </div>
+        <input ref={jsonInputRef} type='file' accept='application/json,.json' className='hidden' onChange={(event) => { void importJsonFile(event.target.files?.[0] ?? null); event.target.value = ''; }} />
+        <input ref={guidecharInputRef} type='file' accept='.guidechar' className='hidden' onChange={(event) => { void importGuidecharFile(event.target.files?.[0] ?? null); event.target.value = ''; }} />
       </main>
+      {pathbuilderOpen && (
+        <div className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5' onMouseDown={(event) => { if (event.target === event.currentTarget) setPathbuilderOpen(false); }}>
+          <section className='w-full max-w-md border border-p1-border bg-p1-surface p-5'>
+            <h2 className='text-lg font-semibold'>Import from Pathbuilder 2e</h2>
+            <p className='mt-2 text-sm text-p1-muted'>Enter the Pathbuilder JSON ID. Some selections may be missing after import.</p>
+            <input
+              className='settings-input mt-4 h-9 w-full'
+              type='number'
+              min={1}
+              placeholder='123456'
+              value={pathbuilderId}
+              onChange={(event) => setPathbuilderId(event.target.value)}
+            />
+            <div className='mt-4 flex justify-end gap-2'>
+              <button type='button' className='toolbar-button' onClick={() => setPathbuilderOpen(false)}>Cancel</button>
+              <button
+                type='button'
+                className='toolbar-button'
+                disabled={!Number.parseInt(pathbuilderId, 10)}
+                style={{ background: 'var(--p1-accent)', color: 'var(--p1-accent-ink)', borderColor: 'var(--p1-accent)' }}
+                onClick={() => void importPathbuilder(Number.parseInt(pathbuilderId, 10))}
+              >
+                Import
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -441,8 +583,10 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const [detailWidth, setDetailWidth] = useState(readDetailWidth);
   const [activeTab, setActiveTab] = useState<DetailTab>('Health');
   const [initiativeOpen, setInitiativeOpen] = useState(false);
+  const [initiativeRollNonce, setInitiativeRollNonce] = useState(0);
   const [creaturePickerOpen, setCreaturePickerOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
+  const [diceOpen, setDiceOpen] = useState(false);
   const combatants = useMemo(() => populateCombatants(selectedEncounter?.combatants.list ?? [], players), [selectedEncounter, players]);
   const activeCombatants = useMemo(() => combatants.filter((combatant) => !isCombatantOut(combatant)), [combatants]);
   const outCombatants = useMemo(() => combatants.filter((combatant) => isCombatantOut(combatant)), [combatants]);
@@ -541,8 +685,18 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     copy.change_log = undefined;
     copy.action_log = undefined;
     copy.out = undefined;
-    updateRoster([...list.slice(0, index + 1), copy, ...list.slice(index + 1)]);
-    setSelectedId(copy._id);
+    const sourceName = creatureCombatantName(source) ?? 'Creature';
+    const { base, number: sourceNumber } = creatureNameParts(sourceName);
+    const sameType = list.filter((item) => {
+      const name = creatureCombatantName(item);
+      return Boolean(name && creatureNameParts(name).base === base);
+    });
+    const firstOfType = sameType.length === 1 && sourceNumber === null;
+    const copyName = firstOfType ? `${base} (2)` : nextCreatureCloneName(source, list);
+    const namedCopy = withCreatureName(copy, copyName);
+    const namedSource = firstOfType ? withCreatureName(source, `${base} (1)`) : source;
+    updateRoster([...list.slice(0, index), namedSource, namedCopy, ...list.slice(index + 1)]);
+    setSelectedId(namedCopy._id);
   }
 
   function deleteCreature(combatantId: string) {
@@ -582,6 +736,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     const roundEntry = buildInitiativeRoundLog(nextInitiativeRoundNumber(existingLog), populated, rolledIds);
     persistRoster(list, { initiative_log: [...existingLog, roundEntry] });
     setInitiativeOpen(false);
+    setInitiativeRollNonce((value) => value + 1);
   }
 
   function clearInitiative() {
@@ -853,10 +1008,10 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
             <NoteSurface note={selectedNote} isGm={isGm} encounterLink={noteEncounter ? { href: `/phase1/campaign/${campaign.id}/encounters/${noteEncounter.id}`, name: noteEncounter.name } : undefined} />
           ) : (
             <>
-              <EncounterHeader encounter={selectedEncounter} combatants={combatants} count={activeCombatants.length} isGm={isGm} noteLink={encounterNote ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} canRollInitiative={isGm && activeCombatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && activeCombatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} />
+              <EncounterHeader encounter={selectedEncounter} combatants={combatants} count={activeCombatants.length} isGm={isGm} noteLink={encounterNote ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} canRollInitiative={isGm && activeCombatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && activeCombatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} onOpenDice={() => setDiceOpen(true)} />
               {rosterError && <div className='border-b border-p1-danger/40 bg-p1-danger/10 px-5 py-2 text-xs text-p1-danger-soft'>Roster update failed: {rosterError.message}</div>}
               <div className='p-5'>
-                <CombatantGrid combatants={orderedCombatants} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} />
+                <CombatantGrid combatants={orderedCombatants} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={initiativeRollNonce} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} />
                 <InitiativeRoundLogPanel log={selectedEncounter?.meta_data.initiative_log ?? []} canEdit={isGm && !rosterSaving} canClear={isGm && !rosterSaving} onClear={clearInitiativeLog} onUpdateNote={updateRoundNote} />
               </div>
               {initiativeOpen && selectedEncounter && (
@@ -871,6 +1026,12 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
                   busy={rosterSaving}
                   onSelect={addCreature}
                   onClose={() => setCreaturePickerOpen(false)}
+                />
+              )}
+              {diceOpen && (
+                <Phase1DiceModal
+                  hint='Table rolls stay in this window until you close it. 3D dice remain on the original sheet.'
+                  onClose={() => setDiceOpen(false)}
                 />
               )}
               {resetOpen && (
@@ -894,6 +1055,44 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
       </div>
     </div>
   );
+}
+
+const NUMBERED_CREATURE_NAME = /^(.*) \((\d+)\)$/;
+
+function creatureCombatantName(combatant: Combatant): string | undefined {
+  if (combatant.type !== 'CREATURE') return undefined;
+  return combatant.creature?.name ?? combatant.data?.name;
+}
+
+function withCreatureName(combatant: Combatant, name: string): Combatant {
+  return {
+    ...combatant,
+    creature: combatant.creature ? { ...combatant.creature, name } : combatant.creature,
+    data: combatant.data ? { ...combatant.data, name } : combatant.data,
+  };
+}
+
+function creatureNameParts(name: string): { base: string; number: number | null } {
+  const match = name.match(NUMBERED_CREATURE_NAME);
+  if (!match) return { base: name, number: null };
+  return { base: match[1], number: Number.parseInt(match[2], 10) };
+}
+
+/** Next "(n)" for this creature type: fill gaps first, else max used + 1. Unnumbered names count as 1. */
+function nextCreatureCloneName(source: Combatant, roster: Combatant[]): string {
+  const sourceName = creatureCombatantName(source) ?? 'Creature';
+  const { base } = creatureNameParts(sourceName);
+  const used = new Set<number>();
+  for (const combatant of roster) {
+    const name = creatureCombatantName(combatant);
+    if (!name) continue;
+    const parts = creatureNameParts(name);
+    if (parts.base !== base) continue;
+    used.add(parts.number ?? 1);
+  }
+  let next = 1;
+  while (used.has(next)) next += 1;
+  return `${base} (${next})`;
 }
 
 type CombatantStatusMap = Record<string, Phase1CreatureStatus | null>;
@@ -1373,7 +1572,7 @@ function EncounterDifficultyModal({ difficulty, onClose }: { difficulty: Encount
   );
 }
 
-function EncounterHeader({ encounter, combatants, count, isGm, noteLink, canAddCreature, onAddCreature, canRollInitiative, onRollInitiative, canClearInitiative, onClearInitiative, canMaxStats, onMaxStats, canReset, onReset }: { encounter: Encounter | null; combatants: PopulatedCombatant[]; count: number; isGm: boolean; noteLink?: { href: string; name: string }; canAddCreature?: boolean; onAddCreature?: () => void; canRollInitiative?: boolean; onRollInitiative?: () => void; canClearInitiative?: boolean; onClearInitiative?: () => void; canMaxStats?: boolean; onMaxStats?: () => void; canReset?: boolean; onReset?: () => void }) {
+function EncounterHeader({ encounter, combatants, count, isGm, noteLink, canAddCreature, onAddCreature, canRollInitiative, onRollInitiative, canClearInitiative, onClearInitiative, canMaxStats, onMaxStats, canReset, onReset, onOpenDice }: { encounter: Encounter | null; combatants: PopulatedCombatant[]; count: number; isGm: boolean; noteLink?: { href: string; name: string }; canAddCreature?: boolean; onAddCreature?: () => void; canRollInitiative?: boolean; onRollInitiative?: () => void; canClearInitiative?: boolean; onClearInitiative?: () => void; canMaxStats?: boolean; onMaxStats?: () => void; canReset?: boolean; onReset?: () => void; onOpenDice?: () => void }) {
   const [xpOpen, setXpOpen] = useState(false);
   const difficulty = encounter && shouldDisplayEncounterDifficulty(combatants) ? calculateDifficulty(encounter, combatants) : null;
   return (
@@ -1387,6 +1586,7 @@ function EncounterHeader({ encounter, combatants, count, isGm, noteLink, canAddC
           </button>
         )}
         {xpOpen && difficulty && <EncounterDifficultyModal difficulty={difficulty} onClose={() => setXpOpen(false)} />}
+        <Phase1DiceButton onOpen={() => onOpenDice?.()} />
         {isGm && <button className='toolbar-button' disabled={!canAddCreature} title={canAddCreature ? 'Add a creature from the catalog' : 'Wait for the roster to finish saving'} onClick={onAddCreature}><Swords size={15} /> Add creature</button>}
         <button className='toolbar-button' disabled={!canRollInitiative} title={!isGm ? 'GM only' : count === 0 ? 'Add combatants first' : 'Roll initiative'} onClick={onRollInitiative}><GiDiceTwentyFacesTwenty size={15} /> Roll initiative</button>
         <button className='toolbar-button' disabled={!canClearInitiative} title={!isGm ? 'GM only' : canClearInitiative ? 'Clear initiative and restore roster order' : 'No initiative to clear'} onClick={onClearInitiative}><Eraser size={15} /> Clear init</button>
@@ -1398,10 +1598,60 @@ function EncounterHeader({ encounter, combatants, count, isGm, noteLink, canAddC
   );
 }
 
-function CombatantGrid({ combatants, selectedId, onSelect, statuses, calculating, canManageRoster, canManageCombatant, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature, onRestoreCombatant, onMarkOut, onUpdateInitiative, onUpdateHp }: { combatants: PopulatedCombatant[]; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; canManageCombatant: (combatant: PopulatedCombatant) => boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void; onRestoreCombatant: (combatantId: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onUpdateInitiative: (combatantId: string, initiative: number) => void; onUpdateHp: (combatantId: string, raw: string, note: string | null) => void }) {
+type GridSortKey = 'name' | 'init';
+type GridSort = { key: GridSortKey; dir: 'asc' | 'desc' } | null;
+
+function compareCombatantNames(a: PopulatedCombatant, b: PopulatedCombatant) {
+  return a.data.name.localeCompare(b.data.name, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function initiativeValue(combatant: PopulatedCombatant) {
+  return combatant.initiative == null || Number.isNaN(combatant.initiative) ? null : combatant.initiative;
+}
+
+function compareCombatantInitiative(a: PopulatedCombatant, b: PopulatedCombatant, dir: 'asc' | 'desc') {
+  const aInit = initiativeValue(a);
+  const bInit = initiativeValue(b);
+  if (aInit == null && bInit == null) return compareCombatantNames(a, b);
+  if (aInit == null) return 1;
+  if (bInit == null) return -1;
+  if (aInit === bInit) return compareCombatantNames(a, b);
+  return dir === 'asc' ? aInit - bInit : bInit - aInit;
+}
+
+function cycleGridSort(current: GridSort, key: GridSortKey): GridSort {
+  const firstDir: 'asc' | 'desc' = key === 'init' ? 'desc' : 'asc';
+  if (current?.key !== key) return { key, dir: firstDir };
+  if (current.dir === firstDir) return { key, dir: firstDir === 'asc' ? 'desc' : 'asc' };
+  return null;
+}
+
+function SortGlyph({ dir }: { dir: 'asc' | 'desc' | null }) {
+  if (dir === 'asc') return <ChevronUp size={12} />;
+  if (dir === 'desc') return <ChevronDown size={12} />;
+  return <ArrowUpDown size={12} className='opacity-50' />;
+}
+
+function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedId, onSelect, statuses, calculating, canManageRoster, canManageCombatant, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature, onRestoreCombatant, onMarkOut, onUpdateInitiative, onUpdateHp }: { combatants: PopulatedCombatant[]; encounterId: number | null; initiativeRollNonce: number; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; canManageCombatant: (combatant: PopulatedCombatant) => boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void; onRestoreCombatant: (combatantId: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onUpdateInitiative: (combatantId: string, initiative: number) => void; onUpdateHp: (combatantId: string, raw: string, note: string | null) => void }) {
   const [encounterActive, setEncounterActive] = useState(false);
+  const [gridSort, setGridSort] = useState<GridSort>(() => (
+    combatants.some((combatant) => initiativeValue(combatant) != null) ? { key: 'init', dir: 'desc' } : null
+  ));
   const [menu, setMenu] = useState<{ id: string; type: Combatant['type']; x: number; y: number } | null>(null);
   const [hpEditor, setHpEditor] = useState<{ combatantId: string; name: string; currentHp: number; maxHp: number; rect: DOMRect } | null>(null);
+  useEffect(() => {
+    setGridSort(combatants.some((combatant) => initiativeValue(combatant) != null) ? { key: 'init', dir: 'desc' } : null);
+  }, [encounterId]);
+  useEffect(() => {
+    if (initiativeRollNonce > 0) setGridSort({ key: 'init', dir: 'desc' });
+  }, [initiativeRollNonce]);
+  const rows = gridSort
+    ? [...combatants].sort((a, b) => (
+      gridSort.key === 'name'
+        ? (gridSort.dir === 'asc' ? compareCombatantNames(a, b) : compareCombatantNames(b, a))
+        : compareCombatantInitiative(a, b, gridSort.dir)
+    ))
+    : combatants;
   function dropOnEncounter(event: ReactDragEvent<HTMLDivElement>) {
     const payload = readCombatantDrag(event);
     setEncounterActive(false);
@@ -1419,9 +1669,9 @@ function CombatantGrid({ combatants, selectedId, onSelect, statuses, calculating
   return (
     <div className={`overflow-x-auto border bg-p1-inset transition-colors ${encounterActive ? 'border-p1-accent bg-p1-accent/[0.04]' : 'border-p1-border'}`} onDragOver={(event) => { if (canManageRoster && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setEncounterActive(true); } }} onDragLeave={() => setEncounterActive(false)} onDrop={dropOnEncounter}>
       <table className='w-full min-w-[920px] table-fixed border-collapse text-sm'>
-        <thead className='border-b border-p1-border bg-p1-header text-[10px] uppercase text-p1-faint'><tr><th className='w-20 px-3 py-3 text-left'>Init</th><th className='px-3 text-left'>Combatant</th><th className='w-44 px-3 text-left'>Conditions</th><th className='w-64 px-3 text-left'>Defenses</th><th className='w-32 px-3 text-left'>HP</th><th className='w-16 px-3 text-center'>Open</th></tr></thead>
+        <thead className='border-b border-p1-border bg-p1-header text-[10px] uppercase text-p1-faint'><tr><th className='w-20 px-0 text-left'><button type='button' className='inline-flex w-full items-center gap-1 px-3 py-3 uppercase hover:text-p1-muted' onClick={() => setGridSort((value) => cycleGridSort(value, 'init'))} aria-label='Cycle initiative sort' title={gridSort?.key === 'init' && gridSort.dir === 'desc' ? 'Sorted high to low. Click for low to high.' : gridSort?.key === 'init' && gridSort.dir === 'asc' ? 'Sorted low to high. Click to clear sort.' : 'Click to sort by initiative, high to low.'}>Init<SortGlyph dir={gridSort?.key === 'init' ? gridSort.dir : null} /></button></th><th className='px-0 text-left'><button type='button' className='inline-flex w-full items-center gap-1 px-3 py-3 uppercase hover:text-p1-muted' onClick={() => setGridSort((value) => cycleGridSort(value, 'name'))} aria-label='Cycle combatant name sort' title={gridSort?.key === 'name' && gridSort.dir === 'asc' ? 'Sorted A–Z. Click for Z–A.' : gridSort?.key === 'name' && gridSort.dir === 'desc' ? 'Sorted Z–A. Click to clear sort.' : 'Click to sort by name A–Z.'}>Combatant<SortGlyph dir={gridSort?.key === 'name' ? gridSort.dir : null} /></button></th><th className='w-44 px-3 text-left'>Conditions</th><th className='w-64 px-3 text-left'>Defenses</th><th className='w-32 px-3 text-left'>HP</th><th className='w-16 px-3 text-center'>Open</th></tr></thead>
         <tbody>
-          {combatants.map((combatant) => {
+          {rows.map((combatant) => {
             const detailsVisible = combatant.access?.details_revealed !== false;
             const calculable = detailsVisible && hasFullEntityDetails(combatant);
             const calculated = statuses?.[combatant._id];
@@ -1454,7 +1704,7 @@ function CombatantGrid({ combatants, selectedId, onSelect, statuses, calculating
               </tr>
             );
           })}
-          {combatants.length === 0 && <tr><td colSpan={6} className='p-12 text-center text-sm text-p1-faint'>No combatants in this encounter.</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={6} className='p-12 text-center text-sm text-p1-faint'>No combatants in this encounter.</td></tr>}
         </tbody>
       </table>
       {menu?.type === 'CREATURE' && (

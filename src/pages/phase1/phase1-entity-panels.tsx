@@ -49,6 +49,12 @@ export function normalizeDetailTab(tab: string): DetailTab {
 export type LogActionFn = (draft: ActionLogDraft, beforeLog?: () => void | Promise<void>) => void;
 export type PopulatedCombatant = Combatant & { data: LivingEntity; access?: { can_edit: boolean; details_revealed: boolean } };
 
+/** Shared across combatants and kept when leaving/returning to a tab. */
+let persistedSkillsInnerTab: 'skills' | 'actions' = 'skills';
+let persistedSkillsActionCost = 'ALL';
+let persistedNotesInnerTab: 'gm' | 'combat' = 'gm';
+let persistedDetailsInnerTab: 'details' | 'source' = 'details';
+
 export const CONDITION_PILL_CLASS = 'inline-flex max-w-[8.5rem] items-center truncate rounded-full border border-p1-border bg-p1-hover px-2 py-[3px] text-[10px] font-medium leading-none tracking-wide text-p1-text';
 export function conditionLabel(condition: Condition) {
   return condition.value != null ? `${condition.name} ${condition.value}` : condition.name;
@@ -129,7 +135,11 @@ export function InspectorContent({ combatant, tab, hasMatchingCampaignNote, stat
 }
 
 function CombatantNotesPanel({ combatant, hasMatchingCampaignNote, onSaveGmNotes, initiativeLog, canEditRoundNotes, onUpdateRoundNote }: { combatant: PopulatedCombatant; hasMatchingCampaignNote?: boolean; onSaveGmNotes?: (text: string) => void; initiativeLog: InitiativeRoundLog[]; canEditRoundNotes?: boolean; onUpdateRoundNote?: (round: InitiativeRoundLog, entry: InitiativeRoundLogEntry, note: string) => void }) {
-  const [innerTab, setInnerTab] = useState<'gm' | 'combat'>('gm');
+  const [innerTab, setInnerTabState] = useState<'gm' | 'combat'>(persistedNotesInnerTab);
+  const setInnerTab = (tab: 'gm' | 'combat') => {
+    persistedNotesInnerTab = tab;
+    setInnerTabState(tab);
+  };
   const rounds = [...initiativeLog].reverse().flatMap((round) => {
     const entry = round.entries.find((item) => roundLogEntryMatchesCombatant(item, combatant));
     return entry ? [{ round, entry }] : [];
@@ -188,10 +198,18 @@ function CombatantNotesPanel({ combatant, hasMatchingCampaignNote, onSaveGmNotes
 
 export function SkillsActionsPanel({ combatant, onLogAction }: { combatant: PopulatedCombatant; onLogAction?: LogActionFn }) {
   const detailsAvailable = hasFullEntityDetails(combatant);
-  const [innerTab, setInnerTab] = useState<'skills' | 'actions'>('skills');
+  const [innerTab, setInnerTabState] = useState<'skills' | 'actions'>(persistedSkillsInnerTab);
   const [skillQuery, setSkillQuery] = useState('');
   const [actionQuery, setActionQuery] = useState('');
-  const [actionCost, setActionCost] = useState<string>('ALL');
+  const [actionCost, setActionCostState] = useState<string>(persistedSkillsActionCost);
+  const setInnerTab = (tab: 'skills' | 'actions') => {
+    persistedSkillsInnerTab = tab;
+    setInnerTabState(tab);
+  };
+  const setActionCost = (cost: string) => {
+    persistedSkillsActionCost = cost;
+    setActionCostState(cost);
+  };
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [selected, setSelected] = useState<Phase1Ability | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<Phase1Skill | null>(null);
@@ -232,7 +250,11 @@ function InnerTab({ active, onClick, children }: { active: boolean; onClick: () 
 }
 
 function DetailsAndSourcePanel({ combatant }: { combatant: PopulatedCombatant }) {
-  const [innerTab, setInnerTab] = useState<'details' | 'source'>('details');
+  const [innerTab, setInnerTabState] = useState<'details' | 'source'>(persistedDetailsInnerTab);
+  const setInnerTab = (tab: 'details' | 'source') => {
+    persistedDetailsInnerTab = tab;
+    setInnerTabState(tab);
+  };
   return (
     <>
       <div className='mb-2.5 grid grid-cols-2 border-b border-p1-border'>

@@ -27,13 +27,7 @@ import {
 } from '@common/game-icons-inline';
 
 type ItemIconType =
-  | 'GENERAL'
-  | 'ARMOR'
-  | 'WEAPON'
-  | 'SHIELD'
-  | 'RUNE'
-  | 'UPGRADE'
-  | 'MATERIAL'
+  | ItemGroup
   | 'UNARMED'
   | 'BOMB'
   | 'CONTAINER'
@@ -46,6 +40,14 @@ type ItemIconType =
   | 'LIGHT_BARDING'
   | 'HEAVY_BARDING'
   | 'HIGH_TECH_GUN';
+
+/** Extra `group` values that appear on older / malformed items. */
+type LegacyItemGroup = 'BACKPACK' | 'KIT';
+
+function iconTypeFromGroup(group: ItemGroup | LegacyItemGroup | string): ItemIconType {
+  if (group === 'BACKPACK' || group === 'KIT') return 'CONTAINER';
+  return group as ItemIconType;
+}
 
 export const getIconMap = (size: string, color: string): Record<ItemIconType, React.JSX.Element> => ({
   GENERAL: <GiSwapBag color={color} size={size} />,
@@ -70,7 +72,7 @@ export const getIconMap = (size: string, color: string): Record<ItemIconType, Re
 });
 
 export function ItemIcon(props: { item: Item; size: string; color: string; useDefaultIcon?: boolean }) {
-  let type: ItemIconType = props.item.group;
+  let type: ItemIconType = iconTypeFromGroup(props.item.group);
   if (props.item.meta_data?.category === 'unarmed_attack') {
     type = 'UNARMED';
   }
@@ -85,11 +87,6 @@ export function ItemIcon(props: { item: Item; size: string; color: string; useDe
 
   if (hasTraitType('WAND', props.item.traits ?? undefined)) {
     type = 'WAND';
-  }
-
-  // @ts-ignore, TODO, fix items with incorrect types
-  if (type === 'BACKPACK' || type === 'KIT') {
-    type = 'CONTAINER';
   }
 
   if (type === 'GENERAL' && props.item.meta_data?.bulk.capacity) {

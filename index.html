@@ -55,7 +55,10 @@
       );
       const application = location.pathname.startsWith('/phase0')
         ? import('/src/pages/phase0/main.tsx')
-        : location.pathname.startsWith('/phase1') || location.pathname.startsWith('/sheet') || isAuthCallback
+        : location.pathname.startsWith('/phase1') ||
+            location.pathname.startsWith('/sheet') ||
+            location.pathname.startsWith('/builder') ||
+            isAuthCallback
           ? import('/src/pages/phase1/main.tsx')
           : import('/src/pages/launcher/main.tsx');
 

@@ -56,6 +56,7 @@ import {
   getAllSkillVariables,
   getAllWeaponGroupVariables,
   getVariable,
+  getVariableBonuses,
 } from '@variables/variable-manager';
 import {
   compileProficiencyType,
@@ -729,7 +730,9 @@ async function getCustomPredefinedList(id: StoreID, operationId: string, options
     .filter((v) => v && v?.opId === operationId)
     .map((v) => v!.option);
 
-  return [...options, ...injectedOptions].map((option) => {
+  return [...options, ...injectedOptions]
+    .filter((option) => hasRequiredPriorPotency(id, option.operations))
+    .map((option) => {
     return {
       _select_uuid: option.id,
       _content_type: 'ability-block' as ContentType,
@@ -745,6 +748,24 @@ async function getCustomPredefinedList(id: StoreID, operationId: string, options
       operations: option.operations,
     };
   });
+}
+
+/** ABP skill potency +2/+3 may only target a skill that already has the previous potency bonus. */
+function hasRequiredPriorPotency(id: StoreID, operations: Operation[] | undefined): boolean {
+  const potencyOp = operations?.find(
+    (operation): operation is OperationAddBonusToValue =>
+      operation.type === 'addBonusToValue' && (operation.data.type ?? '').trim().toLowerCase() === 'potency'
+  );
+  if (!potencyOp?.data.variable) return true;
+  const bonus = Number.parseInt(String(potencyOp.data.value).replace(/^\+/, ''), 10);
+  if (!Number.isFinite(bonus) || bonus <= 1) return true;
+  const prior = Math.max(
+    0,
+    ...getVariableBonuses(id, potencyOp.data.variable)
+      .filter((entry) => (entry.type ?? '').trim().toLowerCase() === 'potency')
+      .map((entry) => entry.value ?? 0)
+  );
+  return prior >= bonus - 1;
 }
 
 export async function extendOperations(

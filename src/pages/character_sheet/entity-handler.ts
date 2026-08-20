@@ -3,6 +3,7 @@ import { collectEntitySpellcasting, getFocusPoints } from '@content/collect-cont
 import { filterByTraitType } from '@items/inv-utils';
 import { LivingEntity } from '@schemas/content';
 import { StoreID, VariableAttr, VariableNum, VariableProf } from '@schemas/variables';
+import { getEntityLevel } from '@utils/entity-utils';
 import { getFinalHealthValue } from '@variables/variable-helpers';
 import { getVariable } from '@variables/variable-manager';
 import { cloneDeep } from 'lodash-es';
@@ -107,8 +108,7 @@ export function handleRest(id: StoreID, entity: LivingEntity, setEntity?: Setter
 
   // Regen Health
   const conMod = getVariable<VariableAttr>(id, 'ATTRIBUTE_CON')?.value.value ?? 0;
-  const level = getVariable<VariableNum>(id, 'LEVEL')!.value;
-  // TODO: Might be bug here, need to maybe use `getEntityLevel(entity)`
+  const level = getEntityLevel(entity);
   let regenAmount = level * (1 > conMod ? 1 : conMod);
   if (regenAmount < 1) regenAmount = 1;
 

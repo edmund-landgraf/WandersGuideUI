@@ -43,8 +43,9 @@ const XP_BY_DELTA: Record<number, number> = {
 };
 
 export function xpForLevelDelta(delta: number) {
-  if (delta in XP_BY_DELTA) return XP_BY_DELTA[delta];
-  return delta > 4 ? delta * 40 : 0;
+  const rounded = Math.round(delta);
+  if (rounded in XP_BY_DELTA) return XP_BY_DELTA[rounded];
+  return rounded > 4 ? rounded * 40 : 0;
 }
 
 export function shouldDisplayEncounterDifficulty(combatants: EncounterDifficultyCombatant[]) {

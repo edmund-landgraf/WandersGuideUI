@@ -8,11 +8,12 @@ import type { VariableListStr } from '@schemas/variables';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getVariable } from '@variables/variable-manager';
 import { cloneDeep } from 'lodash-es';
-import { ArrowLeft, ExternalLink, Flag, HeartPulse, RotateCcw, Star } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Flag, Hammer, HeartPulse, RotateCcw, Star, User } from 'lucide-react';
+import { Phase1DiceButton, Phase1DiceModal } from './phase1-dice';
 import { OLD_UI_ORIGIN } from '../phase-switch/PhaseViewSwitch';
 import { Phase1ThemeToggle } from './Phase1ThemeToggle';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { parseTempHpInput } from './phase1-change-log';
 import { phase1Request } from './phase1-api';
 import {
@@ -42,7 +43,7 @@ import {
   setEntitySpellRankSpent,
 } from './phase1-spells';
 import { calculateEntityStatus } from './phase1-stats';
-import { labelToVariable } from '@variables/variable-utils';
+import { Phase1BuilderWorkspace } from './Phase1BuilderPage';
 
 const SHEET_TABS = ['Skills', 'Inventory', 'Spells', 'Feats', 'Companions', 'Details', 'Notes', 'Extras'] as const;
 type SheetTab = (typeof SHEET_TABS)[number];
@@ -54,8 +55,11 @@ export function Phase1SheetPage() {
   const { characterId: rawId } = useParams();
   const characterId = Number(rawId);
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view = searchParams.get('view') === 'builder' ? 'builder' : 'sheet';
   const [tab, setTab] = useState<SheetTab>('Skills');
   const [restOpen, setRestOpen] = useState(false);
+  const [diceOpen, setDiceOpen] = useState(false);
   const [xpDraft, setXpDraft] = useState('');
   const saveTimer = useRef<number | null>(null);
   const characterKey = ['phase1-sheet', characterId, session?.user.id ?? null] as const;
@@ -84,14 +88,14 @@ export function Phase1SheetPage() {
 
   const statusQuery = useQuery({
     queryKey: ['phase1-sheet-status', characterId, JSON.stringify(character?.details?.conditions ?? []), character?.hp_current, character?.hp_temp],
-    enabled: Boolean(combatant),
+    enabled: Boolean(combatant) && view === 'sheet',
     queryFn: () => calculateEntityStatus(combatant as Phase1EntityCombatant),
     staleTime: Number.POSITIVE_INFINITY,
   });
 
   const modesQuery = useQuery({
     queryKey: ['phase1-sheet-modes', characterId, JSON.stringify(character?.meta_data?.active_modes ?? [])],
-    enabled: Boolean(combatant),
+    enabled: Boolean(combatant) && view === 'sheet',
     queryFn: async () => {
       const prepared = await preparePhase1Entity(combatant as Phase1EntityCombatant);
       const ids = getVariable<VariableListStr>(prepared.storeId, 'MODE_IDS')?.value ?? [];
@@ -134,6 +138,7 @@ export function Phase1SheetPage() {
         stamina_current: next.stamina_current,
         resolve_current: next.resolve_current,
         meta_data: next.meta_data,
+        roll_history: next.roll_history,
       });
     }, 400);
   }
@@ -148,8 +153,8 @@ export function Phase1SheetPage() {
   }, [character?.id, character?.experience]);
 
   useEffect(() => {
-    if (character?.name) document.title = `${character.name} | Sheet`;
-  }, [character?.name]);
+    if (character?.name) document.title = `${character.name} | ${view === 'builder' ? 'Builder' : 'Sheet'}`;
+  }, [character?.name, view]);
 
   if (session === undefined) return <div className='grid min-h-screen place-items-center bg-p1-page text-sm text-p1-muted'>Loading session...</div>;
   if (!Number.isFinite(characterId)) return <SheetError title='Invalid sheet' body='This character id is not valid.' />;
@@ -266,13 +271,13 @@ export function Phase1SheetPage() {
         <button type='button' className='icon-button' title='Back' onClick={() => (location.key === 'default' ? navigate('/phase1/characters') : navigate(-1))}><ArrowLeft size={16} /></button>
         <span className='font-semibold'>Wanderer's Guide</span>
         <span className='h-4 w-px bg-p1-hover' />
-        <span className='truncate text-sm text-p1-muted'>Character sheet</span>
+        <span className='truncate text-sm text-p1-muted'>{view === 'builder' ? 'Character builder' : 'Character sheet'}</span>
         <div className='ml-auto flex items-center gap-2'>
           {saveCharacter.isPending && <span className='text-[11px] text-p1-faint'>Saving...</span>}
           <Phase1ThemeToggle />
         </div>
       </header>
-      <main className='mx-auto max-w-5xl px-4 py-6'>
+      <main className={`mx-auto px-4 py-6 ${view === 'builder' ? 'max-w-6xl' : 'max-w-5xl'}`}>
         <section className='mb-4 flex flex-wrap items-start gap-4 border border-p1-border bg-p1-surface p-4'>
           {character.details?.image_url && <img src={character.details.image_url} alt='' className='h-20 w-20 object-cover' />}
           <div className='min-w-0 flex-1'>
@@ -282,6 +287,17 @@ export function Phase1SheetPage() {
             <p className='mt-1 text-xs text-p1-faint'>Level {character.level}{canEdit ? '' : ' · Read only'}</p>
           </div>
           <div className='flex flex-wrap items-center gap-2'>
+            {canEdit && (
+              view === 'builder' ? (
+                <button type='button' className='toolbar-button' onClick={() => setSearchParams({}, { replace: true })}>
+                  <User size={14} /> Sheet
+                </button>
+              ) : (
+                <button type='button' className='toolbar-button' onClick={() => setSearchParams({ view: 'builder' }, { replace: true })}>
+                  <Hammer size={14} /> Builder
+                </button>
+              )
+            )}
             {character.campaign_id && (
               <Link className='toolbar-button' to={`/phase1/campaign/${character.campaign_id}`}><Flag size={14} /> Campaign</Link>
             )}
@@ -294,6 +310,9 @@ export function Phase1SheetPage() {
             >
               <ExternalLink size={14} /> Original
             </a>
+            {(character.options?.dice_roller || campaignQuery.data?.recommended_options?.dice_roller) && (
+              <Phase1DiceButton onOpen={() => setDiceOpen(true)} />
+            )}
             {canEdit && <button className='toolbar-button' onClick={() => setRestOpen(true)}><RotateCcw size={14} /> Rest</button>}
             <label className='toolbar-button'>
               XP
@@ -322,6 +341,10 @@ export function Phase1SheetPage() {
           </div>
         </section>
 
+        {view === 'builder' ? (
+          <Phase1BuilderWorkspace characterId={character.id} embedded seed={character} />
+        ) : (
+          <>
         {(modesQuery.data?.modes.length ?? 0) > 0 && (
           <section className='mb-4 border border-p1-border bg-p1-surface p-3'>
             <h2 className='mb-2 text-xs font-semibold uppercase text-p1-muted'>Modes</h2>
@@ -374,8 +397,18 @@ export function Phase1SheetPage() {
           {tab === 'Notes' && <CharacterNotesPanel notes={character.notes} canEdit={canEdit} onSave={(text) => patchCharacter((current) => ({ ...current, notes: toCharacterNotes(text, current.notes) }))} />}
           {tab === 'Extras' && <EmptyState>This miscellaneous section will be updated with more features in the future. You can expect to see support for vehicles, snares, and other extra rules.</EmptyState>}
         </div>
+          </>
+        )}
       </main>
 
+      {diceOpen && (
+        <Phase1DiceModal
+          character={character}
+          canEdit={canEdit}
+          onClose={() => setDiceOpen(false)}
+          onSaveHistory={(rolls) => persist({ ...(queryClient.getQueryData<Character | null>(characterKey) ?? character), roll_history: { rolls } })}
+        />
+      )}
       {restOpen && (
         <div className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5' onMouseDown={(event) => { if (event.target === event.currentTarget) setRestOpen(false); }}>
           <section className='w-full max-w-md border border-p1-border bg-p1-surface p-5'>
