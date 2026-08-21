@@ -5,9 +5,9 @@ import { countAllBuilderChoices } from './phase1-builder-ops';
 
 function selection(filled: boolean): OperationResult {
   return {
-    selection: { option: 'a' },
-    result: filled ? { source: { id: 1 }, results: [] } : undefined,
-  } as OperationResult;
+    selection: { id: 'test', options: [] },
+    result: filled ? { source: { _select_uuid: '1', _content_type: 'ability-block', id: 1 }, results: [] } : undefined,
+  };
 }
 
 function packageOf(partial: Partial<OperationCharacterResultPackage>): OperationCharacterResultPackage {
