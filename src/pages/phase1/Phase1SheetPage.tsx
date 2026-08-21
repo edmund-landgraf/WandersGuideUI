@@ -15,6 +15,7 @@ import { ArrowLeft, Brush, ChevronDown, Download, ExternalLink, Flag, Hammer, He
 import { Phase1PortraitModal } from './phase1-portrait-modal';
 import { Phase1ArtworkPreview, Phase1BackgroundModal } from './phase1-background-modal';
 import { getAllBackgroundImages } from '@utils/background-images';
+import { parseTempHpInput } from './phase1-change-log';
 import { OLD_UI_ORIGIN } from '../phase-switch/PhaseViewSwitch';
 import { Phase1CssThemeToggle } from './Phase1CssThemeToggle';
 import { Phase1ThemeToggle } from './Phase1ThemeToggle';

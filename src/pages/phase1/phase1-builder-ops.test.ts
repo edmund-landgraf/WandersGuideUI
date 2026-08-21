@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { AbilityBlock, OperationCharacterResultPackage, OperationResult } from '@schemas/content';
+import type { AbilityBlock, OperationCharacterResultPackage } from '@schemas/content';
+import type { OperationResult } from '@schemas/operations';
 import { countAllBuilderChoices } from './phase1-builder-ops';
 
 function selection(filled: boolean): OperationResult {

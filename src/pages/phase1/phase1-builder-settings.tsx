@@ -25,6 +25,7 @@ import {
 import { getAllBackgroundImages } from '@utils/background-images';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Phase1ArtworkPreview, Phase1BackgroundModal } from './phase1-background-modal';
+import { OLD_UI_ORIGIN } from '../phase-switch/PhaseViewSwitch';
 
 type HomeTab = 'books' | 'homebrew' | 'variants' | 'options';
 
