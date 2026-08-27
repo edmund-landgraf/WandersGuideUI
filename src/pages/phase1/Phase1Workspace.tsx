@@ -2070,7 +2070,7 @@ function CharacterGridContextMenu({ x, y, onClose, onExportJson, onExportPdf, on
   );
 }
 
-function RailContextMenu({ x, y, onClose, onRename, onDelete }: { x: number; y: number; onClose: () => void; onRename: () => void; onDelete: () => void }) {
+function RailContextMenu({ x, y, onClose, onRename, onDelete }: { x: number; y: number; onClose: () => void; onRename?: () => void; onDelete: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -2084,9 +2084,11 @@ function RailContextMenu({ x, y, onClose, onRename, onDelete }: { x: number; y: 
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
       <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
-        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onRename}>
-          <Pencil size={14} /> Rename
-        </button>
+        {onRename && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onRename}>
+            <Pencil size={14} /> Rename
+          </button>
+        )}
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onDelete}>
           <Trash2 size={14} /> Delete
         </button>

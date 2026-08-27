@@ -61,6 +61,10 @@ let persistedInventoryTab: 'equipped' | 'carried' | 'formulas' = 'equipped';
 let persistedActionGroup = 'ALL';
 let persistedSheetDetailsTab: 'info' | 'languages' | 'proficiencies' = 'info';
 const ABILITY_TAB_ORDER = ['Feat', 'Character', 'Weapon', 'Base', 'Added'] as const;
+type AbilityTab = (typeof ABILITY_TAB_ORDER)[number];
+function isAbilityTab(source: Phase1Ability['source']): source is AbilityTab {
+  return (ABILITY_TAB_ORDER as readonly string[]).includes(source);
+}
 const ACTION_GROUP_TAB_LABELS: Record<string, string> = {
   'weapon-attacks': 'Attacks',
   feats: 'Feats',
@@ -443,7 +447,7 @@ function proficiencyName(rank: string) { return ({ U: 'Untrained', T: 'Trained',
 export function AbilitiesPanel({ combatant, onLogAction }: { combatant: PopulatedCombatant; onLogAction?: LogActionFn }) {
   const detailsAvailable = hasFullEntityDetails(combatant);
   const [query, setQuery] = useState('');
-  const [innerTab, setInnerTabState] = useState<Phase1Ability['source']>(persistedAbilitiesInnerTab);
+  const [innerTab, setInnerTabState] = useState<AbilityTab>(isAbilityTab(persistedAbilitiesInnerTab) ? persistedAbilitiesInnerTab : 'Feat');
   const [levelFilter, setLevelFilter] = useState<number | 'ALL'>('ALL');
   const [selected, setSelected] = useState<Phase1Ability | null>(null);
   const abilities = useQuery({
@@ -455,7 +459,7 @@ export function AbilitiesPanel({ combatant, onLogAction }: { combatant: Populate
   const all = abilities.data ?? [];
   const tabSources = ABILITY_TAB_ORDER.filter((source) => all.some((ability) => ability.source === source));
   const activeTab = tabSources.includes(innerTab) ? innerTab : (tabSources[0] ?? 'Feat');
-  const setInnerTab = (source: Phase1Ability['source']) => {
+  const setInnerTab = (source: AbilityTab) => {
     persistedAbilitiesInnerTab = source;
     setInnerTabState(source);
   };
