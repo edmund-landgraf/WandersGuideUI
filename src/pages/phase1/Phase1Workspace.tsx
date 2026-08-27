@@ -3,7 +3,7 @@ import { Activity, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronD
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
-import type { Campaign, Character, Combatant, Condition, Creature, DiceCheckResult, DiceRollLog, DiceRollSide, DiceRollState, Encounter, InitiativeRoundLog, InitiativeRoundLogEntry, LivingEntity } from '@schemas/content';
+import type { Campaign, Character, Combatant, Condition, Creature, DiceCheckResult, DiceRollLog, DiceRollLogEntry, DiceRollSide, DiceRollState, Encounter, InitiativeRoundLog, InitiativeRoundLogEntry, LivingEntity } from '@schemas/content';
 import { CampaignSignIn } from '@auth/CampaignSignIn';
 import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
@@ -43,7 +43,8 @@ import { Phase1CssThemeToggle } from './Phase1CssThemeToggle';
 import { Phase1ThemeToggle } from './Phase1ThemeToggle';
 import { rollDie } from '@utils/random';
 import { buildInitiativeRoundLog, formatInitiativeRoll, InitiativeRollModal, isCombatantOut, nextInitiativeRoundNumber, overlayInitiativeLogs, setRoundLogEntryNote, sortCombatantsByInitiative, type InitiativeRollChoice } from './phase1-initiative';
-import { buildDiceRollLog, checkStatLabel, DICE_CHECK_OPTIONS, DiceCheckRollModal, DiceRollColorKey, DiceRollLogPanel, degreeOfSuccess, filterCombatantsBySide, formatCheckRoll, outcomeLabel, outcomeRowClass, overlayDiceRollMeta } from './phase1-dice-rolls';
+import { toLabel } from '@utils/strings';
+import { buildDiceRollLog, checkStatLabel, DICE_CHECK_OPTIONS, DiceCheckResultToast, DiceCheckRollModal, DiceRollColorKey, DiceRollLogPanel, defaultStatForCombatant, degreeOfSuccess, filterCombatantsBySide, formatCheckRoll, loadCheckOptions, outcomeLabel, outcomeRowClass, overlayDiceRollMeta, setDiceRollLogEntryNote } from './phase1-dice-rolls';
 import { appendChangeLog, characterCombatFieldsFromEntity, createChangeLogEntry, parseTempHpInput } from './phase1-change-log';
 import { appendActionLog, createActionLogEntry, currentActionRound, removeActionLogEntry, type ActionLogDraft } from './phase1-action-log';
 import { maxCombatantStats, maxEntityStats, resetCombatant, resetEntityCombatState, resolveResetMaxHp } from './phase1-encounter-reset';
@@ -904,6 +905,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const [diceOpen, setDiceOpen] = useState(false);
   const [encounterTab, setEncounterTab] = useState<'combat' | 'dice'>('combat');
   const [checkOpen, setCheckOpen] = useState(false);
+  const [checkToast, setCheckToast] = useState<{ log: DiceRollLog; x: number; y: number } | null>(null);
   const [titleDraft, setTitleDraft] = useState(selectedEncounter?.meta_data.dice_roll_state?.title ?? '');
   const [dcDraft, setDcDraft] = useState(selectedEncounter?.meta_data.dice_roll_state?.dc != null ? String(selectedEncounter.meta_data.dice_roll_state.dc) : '');
   const combatants = useMemo(() => populateCombatants(selectedEncounter?.combatants.list ?? [], players), [selectedEncounter, players]);
@@ -941,7 +943,9 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const diceStat = diceState?.stat;
   const diceDc = diceState?.dc ?? null;
   const diceRows = !diceSide || !diceStat ? [] : filterCombatantsBySide(activeCombatants, diceSide);
+  const diceGridRows = diceSide ? filterCombatantsBySide(activeCombatants, diceSide) : activeCombatants;
   const canRollCheck = Boolean(isGm && !rosterSaving && diceSide && diceStat && diceDc != null && Number.isFinite(diceDc) && diceRows.length > 0);
+  const canSingleCheck = Boolean(isGm && !rosterSaving && diceDc != null && Number.isFinite(diceDc));
 
   function persistRoster(list: Combatant[], metaPatch?: Partial<Encounter['meta_data']>) {
     const encounter = selectedEncounterRef.current;
@@ -1157,6 +1161,35 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     setCheckOpen(false);
   }
 
+  async function rollSingleCheck(combatantId: string, preferredStat: string, x: number, y: number) {
+    const encounter = selectedEncounterRef.current;
+    if (!encounter || !isGm || rosterSaving) return;
+    const state = encounter.meta_data.dice_roll_state ?? diceStateRef.current;
+    const dc = state?.dc;
+    if (dc == null || !Number.isFinite(dc)) return;
+    const combatant = activeCombatants.find((item) => item._id === combatantId);
+    if (!combatant) return;
+    const options = await loadCheckOptions(combatant);
+    const resolvedStat = defaultStatForCombatant(options, preferredStat);
+    if (!resolvedStat) return;
+    const option = options.find((item) => item.value === resolvedStat);
+    const bonus = option?.num ?? 0;
+    const source = option ? toLabel(option.value) : checkStatLabel(resolvedStat);
+    const die = rollDie('D20');
+    const total = die + bonus;
+    const result: DiceCheckResult = {
+      die,
+      bonus,
+      source,
+      total,
+      outcome: degreeOfSuccess(die, total, dc),
+    };
+    const log = buildDiceRollLog(titleDraft || state?.title || '', dc, resolvedStat, [combatant], { [combatant._id]: result });
+    const existingLog = diceLogRef.current.length ? diceLogRef.current : encounter.meta_data.dice_roll_log ?? [];
+    persistRoster(encounter.combatants.list, { dice_roll_log: [...existingLog, log] });
+    setCheckToast({ log, x, y });
+  }
+
   function resetEncounterState() {
     if (!selectedEncounter || !isGm || rosterSaving) return;
     const populatedById = new Map(combatants.map((combatant) => [combatant._id, combatant]));
@@ -1221,6 +1254,15 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     persistRoster(selectedEncounter.combatants.list.map((combatant) => (
       combatant._id === combatantId ? { ...combatant, out } : combatant
     )));
+  }
+
+  function updateDiceRollNote(round: DiceRollLog, entry: DiceRollLogEntry, note: string) {
+    const encounter = selectedEncounterRef.current;
+    if (!encounter || !isGm || rosterSaving) return;
+    const existing = diceLogRef.current.length ? diceLogRef.current : encounter.meta_data.dice_roll_log ?? [];
+    persistRoster(encounter.combatants.list, {
+      dice_roll_log: setDiceRollLogEntryNote(existing, round, entry, note),
+    });
   }
 
   function updateRoundNote(round: InitiativeRoundLog, entry: InitiativeRoundLogEntry, note: string) {
@@ -1461,8 +1503,8 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
                   </>
                 ) : (
                   <>
-                    <CombatantGrid combatants={diceRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} dice={{ columnLabel: checkStatLabel(diceStat), dc: diceDc, results: diceState?.results ?? {}, emptyMessage: !diceSide || !diceStat ? 'Pick who to include and which check to roll. The grid stays empty until both are set.' : 'No matching combatants for this filter.' }} />
-                    <DiceRollLogPanel log={selectedEncounter?.meta_data.dice_roll_log ?? []} canClear={isGm && !rosterSaving} onClear={clearDiceRollLog} onRemove={removeDiceRollLog} />
+                    <CombatantGrid combatants={diceGridRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onSingleCheck={canSingleCheck ? rollSingleCheck : undefined} dice={{ columnLabel: checkStatLabel(diceStat), dc: diceDc, results: diceState?.results ?? {}, emptyMessage: diceGridRows.length === 0 ? 'No matching combatants for this filter.' : 'Right-click a combatant to roll a check. Group rolls still use the toolbar.' }} />
+                    <DiceRollLogPanel log={selectedEncounter?.meta_data.dice_roll_log ?? []} canClear={isGm && !rosterSaving} canEdit={isGm && !rosterSaving} onClear={clearDiceRollLog} onRemove={removeDiceRollLog} onUpdateNote={updateDiceRollNote} />
                   </>
                 )}
               </div>
@@ -1472,6 +1514,9 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
                   onConfirm={rollInitiative}
                   onClose={() => setInitiativeOpen(false)}
                 />
+              )}
+              {checkToast && (
+                <DiceCheckResultToast log={checkToast.log} x={checkToast.x} y={checkToast.y} onClose={() => setCheckToast(null)} />
               )}
               {checkOpen && selectedEncounter && diceStat && diceDc != null && (
                 <DiceCheckRollModal
@@ -1882,6 +1927,76 @@ function PlayerContextMenu({ x, y, onClose, onRemove, onIncapacitate, onMarkDead
           <UserMinus size={14} /> Remove
         </button>
       </div>
+    </>,
+    document.body
+  );
+}
+
+const CHECK_MENU_GROUPS = ['Senses', 'Saves', 'Ability', 'Skill'] as const;
+
+function DiceCombatantContextMenu({ x, y, canCheck, onClose, onCheck }: { x: number; y: number; canCheck: boolean; onClose: () => void; onCheck: (stat: string) => void }) {
+  const [openCheck, setOpenCheck] = useState(false);
+  const [openGroup, setOpenGroup] = useState<(typeof CHECK_MENU_GROUPS)[number] | null>(null);
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+  const left = Math.min(x, window.innerWidth - 176);
+  const top = Math.min(y, window.innerHeight - 56);
+  const groupLeft = Math.min(left + 168, window.innerWidth - 160);
+  const statLeft = Math.min(groupLeft + 152, window.innerWidth - 176);
+  return createPortal(
+    <>
+      <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
+      <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        <button
+          type='button'
+          role='menuitem'
+          disabled={!canCheck}
+          className='flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint'
+          title={canCheck ? 'Roll this combatant against a check' : 'Set a DC in the toolbar first'}
+          onMouseEnter={() => { if (canCheck) setOpenCheck(true); }}
+          onClick={() => { if (canCheck) setOpenCheck(true); }}
+        >
+          Check
+          <ChevronRight size={14} className='text-p1-faint' />
+        </button>
+      </div>
+      {openCheck && canCheck && (
+        <div role='menu' className='fixed z-[110] min-w-36 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left: groupLeft, top }}>
+          {CHECK_MENU_GROUPS.map((group) => (
+            <button
+              key={group}
+              type='button'
+              role='menuitem'
+              className='flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover'
+              onMouseEnter={() => setOpenGroup(group)}
+              onClick={() => setOpenGroup(group)}
+            >
+              {group}
+              <ChevronRight size={14} className='text-p1-faint' />
+            </button>
+          ))}
+        </div>
+      )}
+      {openCheck && canCheck && openGroup && (
+        <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left: statLeft, top }}>
+          {DICE_CHECK_OPTIONS.filter((option) => option.group === openGroup).map((option) => (
+            <button
+              key={option.value}
+              type='button'
+              role='menuitem'
+              className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover'
+              onClick={() => onCheck(option.value)}
+            >
+              {checkStatLabel(option.value)}
+            </button>
+          ))}
+        </div>
+      )}
     </>,
     document.body
   );
@@ -2415,7 +2530,7 @@ function SortGlyph({ dir }: { dir: 'asc' | 'desc' | null }) {
   return <ArrowUpDown size={12} className='opacity-50' />;
 }
 
-function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedId, onSelect, statuses, calculating, canManageRoster, canManageCombatant, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature, onRestoreCombatant, onMarkOut, onUpdateInitiative, onUpdateHp, dice }: { combatants: PopulatedCombatant[]; encounterId: number | null; initiativeRollNonce: number; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; canManageCombatant: (combatant: PopulatedCombatant) => boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void; onRestoreCombatant: (combatantId: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onUpdateInitiative: (combatantId: string, initiative: number) => void; onUpdateHp: (combatantId: string, raw: string, note: string | null) => void; dice?: { columnLabel: string; dc: number | null; results: Record<string, DiceCheckResult>; emptyMessage: string } }) {
+function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedId, onSelect, statuses, calculating, canManageRoster, canManageCombatant, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature, onRestoreCombatant, onMarkOut, onUpdateInitiative, onUpdateHp, onSingleCheck, dice }: { combatants: PopulatedCombatant[]; encounterId: number | null; initiativeRollNonce: number; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; canManageCombatant: (combatant: PopulatedCombatant) => boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void; onRestoreCombatant: (combatantId: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onUpdateInitiative: (combatantId: string, initiative: number) => void; onUpdateHp: (combatantId: string, raw: string, note: string | null) => void; onSingleCheck?: (combatantId: string, stat: string, x: number, y: number) => void; dice?: { columnLabel: string; dc: number | null; results: Record<string, DiceCheckResult>; emptyMessage: string } }) {
   const [encounterActive, setEncounterActive] = useState(false);
   const [gridSort, setGridSort] = useState<GridSort>(() => (
     dice ? null : combatants.some((combatant) => initiativeValue(combatant) != null) ? { key: 'init', dir: 'desc' } : null
@@ -2514,7 +2629,20 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
           {rows.length === 0 && <tr><td colSpan={dice ? 6 : 6} className='p-12 text-center text-sm text-p1-faint'>{dice?.emptyMessage ?? 'No combatants in this encounter.'}</td></tr>}
         </tbody>
       </table>
-      {menu?.type === 'CREATURE' && (
+      {menu && dice && (
+        <DiceCombatantContextMenu
+          x={menu.x}
+          y={menu.y}
+          canCheck={Boolean(onSingleCheck)}
+          onClose={() => setMenu(null)}
+          onCheck={(stat) => {
+            const { id, x, y } = menu;
+            setMenu(null);
+            onSingleCheck?.(id, stat, x, y);
+          }}
+        />
+      )}
+      {menu?.type === 'CREATURE' && !dice && (
         <CombatantContextMenu
           x={menu.x}
           y={menu.y}
@@ -2525,7 +2653,7 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
           onDelete={() => { setMenu(null); onDeleteCreature(menu.id); }}
         />
       )}
-      {menu?.type === 'CHARACTER' && (
+      {menu?.type === 'CHARACTER' && !dice && (
         <PlayerContextMenu
           x={menu.x}
           y={menu.y}
@@ -2652,11 +2780,7 @@ function InitiativeRoundLogPanel({ log, canEdit, canClear, onClear, onUpdateNote
   const [confirmOpen, setConfirmOpen] = useState(false);
   function handleClear() {
     if (!canClear || !onClear) return;
-    if (log.length > 2) {
-      setConfirmOpen(true);
-      return;
-    }
-    onClear();
+    setConfirmOpen(true);
   }
   if (log.length === 0) {
     return <p className='mt-5 text-center text-xs text-p1-faint'>No rounds logged yet.</p>;

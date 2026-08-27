@@ -17,7 +17,7 @@ import { isCharacter, isCreature, isTruthy } from '@utils/type-fixing';
 import { getFinalProfValue, getFinalVariableValue } from '@variables/variable-helpers';
 import { getAllSkillVariables } from '@variables/variable-manager';
 import { ChevronsUpDown, Eraser, History, ChevronDown, Trash2, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { ConfirmDialog } from './phase1-campaign-settings';
 import { preparePhase1Entity, type Phase1EntityCombatant } from './phase1-entity';
@@ -258,7 +258,7 @@ function compareCheckOptions(a: InitiativeSkillOption, b: InitiativeSkillOption)
   return b.num - a.num;
 }
 
-async function loadCheckOptions(combatant: Combatant & { data: LivingEntity }): Promise<InitiativeSkillOption[]> {
+export async function loadCheckOptions(combatant: Combatant & { data: LivingEntity }): Promise<InitiativeSkillOption[]> {
   if (combatant.type === 'CHARACTER' && isCharacter(combatant.data)) {
     const fromStats = optionsFromCharacterProfs(combatant.data.meta_data?.calculated_stats?.profs);
     if (fromStats.length) return fromStats;
@@ -290,7 +290,7 @@ async function loadAllCheckOptions(combatants: Array<Combatant & { data: LivingE
   return optionsById;
 }
 
-function defaultStatForCombatant(options: InitiativeSkillOption[], preferred: string) {
+export function defaultStatForCombatant(options: InitiativeSkillOption[], preferred: string) {
   if (options.some((option) => option.value === preferred)) return preferred;
   if (preferred.startsWith('SAVE_') && options.some((option) => option.value === 'SAVE_REFLEX')) return 'SAVE_REFLEX';
   if (options.some((option) => option.value === 'PERCEPTION')) return 'PERCEPTION';
@@ -480,17 +480,64 @@ function CheckSelect({
   );
 }
 
-export function DiceRollLogPanel({ log, canClear, onClear, onRemove }: { log: DiceRollLog[]; canClear?: boolean; onClear?: () => void; onRemove?: (entry: DiceRollLog) => void }) {
+function roundKey(round: DiceRollLog, index: number) {
+  return round.id ?? `${round.title}-${index}`;
+}
+
+function sameDiceRollLog(a: DiceRollLog, b: DiceRollLog) {
+  if (a.id && b.id) return a.id === b.id;
+  return a.title === b.title && a.dc === b.dc && a.defaultStat === b.defaultStat;
+}
+
+function sameDiceRollLogEntry(a: DiceRollLogEntry, b: DiceRollLogEntry) {
+  if (a.combatant_id && b.combatant_id) return a.combatant_id === b.combatant_id;
+  return a.name === b.name && a.ally === b.ally && a.calculation === b.calculation;
+}
+
+export function diceEntryWasRolled(entry: DiceRollLogEntry) {
+  return entry.total != null && Boolean(entry.outcome);
+}
+
+export function setDiceRollLogEntryNote(
+  log: DiceRollLog[],
+  round: DiceRollLog,
+  entry: DiceRollLogEntry,
+  note: string,
+): DiceRollLog[] {
+  const nextNote = note.trim() || undefined;
+  return log.map((item) => {
+    if (!sameDiceRollLog(item, round)) return item;
+    return {
+      ...item,
+      entries: item.entries.map((current) => (
+        sameDiceRollLogEntry(current, entry) ? { ...current, note: nextNote } : current
+      )),
+    };
+  });
+}
+
+export function DiceRollLogPanel({ log, canClear, canEdit, onClear, onRemove, onUpdateNote }: {
+  log: DiceRollLog[];
+  canClear?: boolean;
+  canEdit?: boolean;
+  onClear?: () => void;
+  onRemove?: (entry: DiceRollLog) => void;
+  onUpdateNote?: (round: DiceRollLog, entry: DiceRollLogEntry, note: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [noteTarget, setNoteTarget] = useState<{ round: DiceRollLog; entry: DiceRollLogEntry } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; entry: DiceRollLog } | null>(null);
+  const newestKey = log.length ? roundKey(log[log.length - 1], log.length - 1) : null;
+  const [expandedKey, setExpandedKey] = useState<string | null>(newestKey);
+  const lastNewestKey = useRef(newestKey);
+  if (newestKey && newestKey !== lastNewestKey.current) {
+    lastNewestKey.current = newestKey;
+    setExpandedKey(newestKey);
+  }
   function handleClear() {
     if (!canClear || !onClear) return;
-    if (log.length > 2) {
-      setConfirmOpen(true);
-      return;
-    }
-    onClear();
+    setConfirmOpen(true);
   }
   if (log.length === 0) {
     return <p className='mt-5 text-center text-xs text-p1-faint'>No dice rolls logged yet.</p>;
@@ -529,43 +576,38 @@ export function DiceRollLogPanel({ log, canClear, onClear, onRemove }: { log: Di
         />
       )}
       {open && rounds.map((round, index) => (
-        <div
-          key={round.id ?? `${round.title}-${index}`}
-          className='border-b border-p1-border px-4 py-3 last:border-0'
+        <DiceRollLogRound
+          key={roundKey(round, index)}
+          round={round}
+          expanded={expandedKey === roundKey(round, log.length - 1 - index)}
+          onToggle={() => {
+            const key = roundKey(round, log.length - 1 - index);
+            setExpandedKey((current) => (current === key ? null : key));
+          }}
+          canRemove={Boolean(canClear && onRemove)}
           onContextMenu={(event) => {
             if (!canClear || !onRemove) return;
             event.preventDefault();
             setMenu({ x: event.clientX, y: event.clientY, entry: round });
           }}
-        >
-          {round.title ? <p className='mb-1 text-sm font-semibold text-p1-text'>{round.title}</p> : null}
-          <h3 className='mb-2 text-[10px] font-semibold uppercase tracking-wide text-p1-accent'>
-            {checkStatLabel(round.defaultStat)} · DC {round.dc}
-          </h3>
-          <div className='overflow-x-auto'>
-            <table className='w-full min-w-[640px] border-collapse text-xs'>
-              <thead className='text-[10px] uppercase text-p1-faint'>
-                <tr className='border-b border-p1-border'>
-                  <th className='px-2 py-2 text-left font-semibold'>Combatant</th>
-                  <th className='w-24 px-2 py-2 text-left font-semibold'>Side</th>
-                  <th className='px-2 py-2 text-left font-semibold'>Calculation</th>
-                  <th className='w-32 px-2 py-2 text-left font-semibold'>Result</th>
-                </tr>
-              </thead>
-              <tbody>
-                {round.entries.map((entry, entryIndex) => (
-                  <tr key={`${round.id ?? round.title}-${entry.combatant_id ?? entry.name}-${entryIndex}`} className={`border-b border-p1-border last:border-0 ${outcomeRowClass(entry.outcome)}`}>
-                    <td className='px-2 py-2 font-medium text-p1-text'>{entry.name}</td>
-                    <td className='px-2 py-2 text-p1-muted'>{entry.ally ? 'Ally' : 'Enemy'}</td>
-                    <td className='px-2 py-2 text-p1-muted'>{entry.calculation}</td>
-                    <td className='px-2 py-2 text-p1-text'>{outcomeLabel(entry.outcome) || 'Skipped'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+          canEdit={Boolean(canEdit && onUpdateNote)}
+          onEditNote={(entry) => {
+            if (!canEdit || !onUpdateNote || !diceEntryWasRolled(entry)) return;
+            setNoteTarget({ round, entry });
+          }}
+        />
       ))}
+      {noteTarget && (
+        <DiceRollNoteModal
+          round={noteTarget.round}
+          entry={noteTarget.entry}
+          onCancel={() => setNoteTarget(null)}
+          onSave={(note) => {
+            onUpdateNote?.(noteTarget.round, noteTarget.entry, note);
+            setNoteTarget(null);
+          }}
+        />
+      )}
       {menu && (
         <LogEntryContextMenu
           x={menu.x}
@@ -578,6 +620,204 @@ export function DiceRollLogPanel({ log, canClear, onClear, onRemove }: { log: Di
         />
       )}
     </section>
+  );
+}
+
+function DiceRollLogRound({
+  round,
+  expanded,
+  onToggle,
+  canRemove,
+  onContextMenu,
+  canEdit,
+  onEditNote,
+}: {
+  round: DiceRollLog;
+  expanded: boolean;
+  onToggle: () => void;
+  canRemove: boolean;
+  onContextMenu: (event: ReactMouseEvent) => void;
+  canEdit: boolean;
+  onEditNote: (entry: DiceRollLogEntry) => void;
+}) {
+  const count = round.entries.length;
+  return (
+    <div
+      className='border-b border-p1-border last:border-0'
+      onContextMenu={canRemove ? onContextMenu : undefined}
+    >
+      <button
+        type='button'
+        className='flex w-full items-start gap-2 px-4 py-3 text-left hover:bg-p1-hover'
+        aria-expanded={expanded}
+        onClick={onToggle}
+      >
+        <div className='min-w-0 flex-1'>
+          {round.title ? <p className='text-sm font-semibold text-p1-text'>{round.title}</p> : null}
+          <h3 className={`${round.title ? 'mt-0.5' : ''} text-[10px] font-semibold uppercase tracking-wide text-p1-accent`}>
+            {checkStatLabel(round.defaultStat)} · DC {round.dc}
+          </h3>
+          <p className='mt-0.5 text-[11px] text-p1-faint'>
+            {count} combatant{count === 1 ? '' : 's'}
+          </p>
+        </div>
+        <ChevronDown size={14} className={`mt-1 shrink-0 text-p1-faint transition-transform ${expanded ? 'rotate-180' : ''}`} />
+      </button>
+      {expanded && (
+        <div className='overflow-x-auto px-4 pb-3'>
+          <table className='w-full min-w-[760px] border-collapse text-xs'>
+            <thead className='text-[10px] uppercase text-p1-faint'>
+              <tr className='border-b border-p1-border'>
+                <th className='px-2 py-2 text-left font-semibold'>Combatant</th>
+                <th className='w-24 px-2 py-2 text-left font-semibold'>Side</th>
+                <th className='px-2 py-2 text-left font-semibold'>Calculation</th>
+                <th className='w-32 px-2 py-2 text-left font-semibold'>Result</th>
+                <th className='px-2 py-2 text-left font-semibold'>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {round.entries.map((entry, entryIndex) => {
+                const rolled = diceEntryWasRolled(entry);
+                const clickable = canEdit && rolled;
+                return (
+                  <tr
+                    key={`${round.id ?? round.title}-${entry.combatant_id ?? entry.name}-${entryIndex}`}
+                    className={`border-b border-p1-border last:border-0 ${outcomeRowClass(entry.outcome)} ${clickable ? 'cursor-pointer hover:bg-p1-hover' : ''}`}
+                    title={clickable ? 'Edit notes' : rolled ? undefined : 'Notes can be added after a roll'}
+                    onClick={clickable ? () => onEditNote(entry) : undefined}
+                  >
+                    <td className='px-2 py-2 font-medium text-p1-text'>{entry.name}</td>
+                    <td className='px-2 py-2 text-p1-muted'>{entry.ally ? 'Ally' : 'Enemy'}</td>
+                    <td className='px-2 py-2 text-p1-muted'>{entry.calculation}</td>
+                    <td className='px-2 py-2 text-p1-text'>{outcomeLabel(entry.outcome) || 'Skipped'}</td>
+                    <td className='max-w-[14rem] truncate px-2 py-2 text-p1-muted'>{entry.note || (clickable ? 'Add note' : '')}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiceRollNoteModal({
+  round,
+  entry,
+  onCancel,
+  onSave,
+}: {
+  round: DiceRollLog;
+  entry: DiceRollLogEntry;
+  onCancel: () => void;
+  onSave: (note: string) => void;
+}) {
+  const [draft, setDraft] = useState(entry.note ?? '');
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onCancel();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      document.body.style.overflow = overflow;
+    };
+  }, [onCancel]);
+  return createPortal(
+    <div
+      data-entity-modal
+      className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]'
+      role='presentation'
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <section
+        role='dialog'
+        aria-modal='true'
+        aria-labelledby='dice-roll-note-title'
+        className='flex w-full max-w-md flex-col border border-p1-border bg-p1-surface shadow-2xl'
+      >
+        <header className='flex items-start gap-3 border-b border-p1-border px-4 py-3'>
+          <div className='min-w-0 flex-1'>
+            <h2 id='dice-roll-note-title' className='text-lg font-semibold'>
+              Notes
+            </h2>
+            <p className='mt-1 text-sm text-p1-muted'>
+              {entry.name} · {checkStatLabel(round.defaultStat)} vs DC {round.dc}
+            </p>
+          </div>
+          <button type='button' className='icon-button shrink-0' onClick={onCancel} title='Close'>
+            <X size={18} />
+          </button>
+        </header>
+        <div className='px-4 py-3'>
+          <textarea
+            autoFocus
+            className='h-32 w-full resize-y border border-p1-border bg-p1-inset px-3 py-2 text-sm text-p1-text outline-none focus:border-p1-accent/60'
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder='What happened on this check'
+          />
+        </div>
+        <div className='flex justify-end gap-2 border-t border-p1-border p-4'>
+          <button type='button' className='toolbar-button' onClick={onCancel}>Cancel</button>
+          <button type='button' className='toolbar-button' onClick={() => onSave(draft)}>Save</button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+export function DiceCheckResultToast({
+  log,
+  x,
+  y,
+  onClose,
+}: {
+  log: DiceRollLog;
+  x: number;
+  y: number;
+  onClose: () => void;
+}) {
+  const entry = log.entries[0];
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onCloseRef.current();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, []);
+  const left = Math.min(x + 12, window.innerWidth - 320);
+  const top = Math.min(y + 12, window.innerHeight - 160);
+  return createPortal(
+    <>
+      <div className='fixed inset-0 z-[111]' onMouseDown={onClose} />
+      <div
+        role='status'
+        className={`fixed z-[112] w-72 border border-p1-border bg-p1-surface p-3 shadow-2xl ${outcomeRowClass(entry?.outcome)}`}
+        style={{ left, top }}
+      >
+        {log.title ? <p className='mb-1 text-sm font-semibold text-p1-text'>{log.title}</p> : null}
+        <p className='text-[10px] font-semibold uppercase tracking-wide text-p1-accent'>
+          {checkStatLabel(log.defaultStat)} · DC {log.dc}
+        </p>
+        {entry && (
+          <div className='mt-2 text-xs'>
+            <p className='font-medium text-p1-text'>{entry.name}</p>
+            <p className='mt-0.5 text-p1-muted'>{entry.calculation}</p>
+            <p className='mt-1 font-semibold text-p1-text'>{outcomeLabel(entry.outcome) || 'Skipped'}</p>
+          </div>
+        )}
+      </div>
+    </>,
+    document.body
   );
 }
 

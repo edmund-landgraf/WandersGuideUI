@@ -998,6 +998,7 @@ export const DiceRollLogEntrySchema = z.object({
   calculation: z.string(),
   total: z.number().nullable(),
   outcome: DiceRollOutcomeSchema.optional(),
+  note: z.string().optional(),
 });
 export type DiceRollLogEntry = z.infer<typeof DiceRollLogEntrySchema>;
 

@@ -329,7 +329,17 @@ export function InitiativeRollModal({
             </div>
           )}
         </div>
-        <div className='border-t border-p1-border p-4'>
+        <div className='flex flex-col gap-2 border-t border-p1-border p-4'>
+          <button
+            type='button'
+            className='inline-flex h-10 w-full items-center justify-center border border-p1-border text-sm font-semibold text-p1-text hover:bg-p1-inset disabled:opacity-50'
+            disabled={loading}
+            onClick={() =>
+              setSelected(Object.fromEntries(combatants.map((combatant) => [combatant._id, null])))
+            }
+          >
+            Skip all
+          </button>
           <button
             type='button'
             className='inline-flex h-11 w-full items-center justify-center gap-2 bg-p1-action text-sm font-bold italic text-p1-action-ink hover:bg-p1-action-hover disabled:opacity-50'
