@@ -3,7 +3,7 @@ import { Activity, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronD
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
-import type { Campaign, Character, Combatant, Condition, Creature, DiceCheckResult, DiceRollLog, DiceRollLogEntry, DiceRollSide, DiceRollState, Encounter, InitiativeRoundLog, InitiativeRoundLogEntry, LivingEntity } from '@schemas/content';
+import type { AmbaChallengeTable, Campaign, Character, Combatant, Condition, Creature, DiceCheckResult, DiceRollLog, DiceRollLogEntry, DiceRollSide, DiceRollState, Encounter, InitiativeRoundLog, InitiativeRoundLogEntry, LivingEntity } from '@schemas/content';
 import { CampaignSignIn } from '@auth/CampaignSignIn';
 import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
@@ -44,7 +44,9 @@ import { Phase1ThemeToggle } from './Phase1ThemeToggle';
 import { rollDie } from '@utils/random';
 import { buildInitiativeRoundLog, formatInitiativeRoll, InitiativeRollModal, isCombatantOut, nextInitiativeRoundNumber, overlayInitiativeLogs, setRoundLogEntryNote, sortCombatantsByInitiative, type InitiativeRollChoice } from './phase1-initiative';
 import { toLabel } from '@utils/strings';
-import { buildDiceRollLog, checkStatLabel, DICE_CHECK_OPTIONS, DiceCheckResultToast, DiceCheckRollModal, DiceRollColorKey, DiceRollLogPanel, defaultStatForCombatant, degreeOfSuccess, filterCombatantsBySide, formatCheckRoll, loadCheckOptions, outcomeLabel, outcomeRowClass, overlayDiceRollMeta, setDiceRollLogEntryNote } from './phase1-dice-rolls';
+import { sign } from '@utils/numbers';
+import { buildDiceRollLog, checkStatLabel, DICE_CHECK_OPTIONS, DICE_CHECK_VALUES, DiceCheckResultToast, DiceCheckRollModal, DiceRollColorKey, DiceRollLogPanel, defaultStatForCombatant, degreeOfSuccess, filterCombatantsBySide, formatCheckRoll, loadAllCheckOptions, loadCheckOptions, outcomeLabel, outcomeRowClass, overlayDiceRollMeta, setDiceRollLogEntryNote } from './phase1-dice-rolls';
+import { findAmbaChallenge, challengeCheckEntries, mapAmbaChallengeStat, mergeEncounterMeta, readAmbaChallenges } from './phase1-amba-challenges';
 import { appendChangeLog, characterCombatFieldsFromEntity, createChangeLogEntry, parseTempHpInput } from './phase1-change-log';
 import { appendActionLog, createActionLogEntry, currentActionRound, removeActionLogEntry, type ActionLogDraft } from './phase1-action-log';
 import { maxCombatantStats, maxEntityStats, resetCombatant, resetEntityCombatState, resolveResetMaxHp } from './phase1-encounter-reset';
@@ -939,6 +941,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const activeCharacterIds = new Set((selectedEncounter?.combatants.list ?? []).filter((combatant) => combatant.type === 'CHARACTER').map((combatant) => combatant.character));
   const benchPlayers = players.filter((player) => !activeCharacterIds.has(player.id));
   const diceState = selectedEncounter?.meta_data.dice_roll_state;
+  const ambaChallenges = useMemo(() => readAmbaChallenges(selectedEncounter?.meta_data), [selectedEncounter?.meta_data]);
   const diceSide = diceState?.side;
   const diceStat = diceState?.stat;
   const diceDc = diceState?.dc ?? null;
@@ -967,15 +970,14 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     onUpdateEncounter({
       ...encounter,
       combatants: { list },
-      meta_data: {
-        ...encounter.meta_data,
-        ...metaPatch,
-        initiative_log,
-        dice_roll_log,
-        dice_roll_state,
-        party_size: allies.length,
-        party_level: levels.length ? levels.reduce((sum, level) => sum + level, 0) / levels.length : 0,
-      },
+      meta_data: mergeEncounterMeta(
+        encounter.meta_data,
+        { ...metaPatch, initiative_log, dice_roll_log, dice_roll_state },
+        {
+          party_size: allies.length,
+          party_level: levels.length ? levels.reduce((sum, level) => sum + level, 0) / levels.length : 0,
+        },
+      ),
     });
   }
 
@@ -1154,19 +1156,18 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     }
     const rows = filterCombatantsBySide(activeCombatants, state.side);
     const existingLog = diceLogRef.current.length ? diceLogRef.current : encounter.meta_data.dice_roll_log ?? [];
+    const challenge = findAmbaChallenge(readAmbaChallenges(encounter.meta_data), state.challenge_id);
     persistRoster(encounter.combatants.list, {
       dice_roll_state: { ...state, results },
-      dice_roll_log: [...existingLog, buildDiceRollLog(titleDraft || state.title || '', dc, stat, rows, results)],
+      dice_roll_log: [...existingLog, buildDiceRollLog(titleDraft || state.title || '', dc, stat, rows, results, challenge)],
     });
     setCheckOpen(false);
   }
 
-  async function rollSingleCheck(combatantId: string, preferredStat: string, x: number, y: number) {
+  async function rollSingleAgainst(combatantId: string, preferredStat: string, dc: number, title: string, challenge: AmbaChallengeTable | undefined, x: number, y: number) {
     const encounter = selectedEncounterRef.current;
     if (!encounter || !isGm || rosterSaving) return;
-    const state = encounter.meta_data.dice_roll_state ?? diceStateRef.current;
-    const dc = state?.dc;
-    if (dc == null || !Number.isFinite(dc)) return;
+    if (!Number.isFinite(dc)) return;
     const combatant = activeCombatants.find((item) => item._id === combatantId);
     if (!combatant) return;
     const options = await loadCheckOptions(combatant);
@@ -1184,10 +1185,27 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
       total,
       outcome: degreeOfSuccess(die, total, dc),
     };
-    const log = buildDiceRollLog(titleDraft || state?.title || '', dc, resolvedStat, [combatant], { [combatant._id]: result });
+    const log = buildDiceRollLog(title, dc, resolvedStat, [combatant], { [combatant._id]: result }, challenge);
     const existingLog = diceLogRef.current.length ? diceLogRef.current : encounter.meta_data.dice_roll_log ?? [];
     persistRoster(encounter.combatants.list, { dice_roll_log: [...existingLog, log] });
     setCheckToast({ log, x, y });
+  }
+
+  async function rollSingleCheck(combatantId: string, preferredStat: string, x: number, y: number) {
+    const encounter = selectedEncounterRef.current;
+    if (!encounter) return;
+    const state = encounter.meta_data.dice_roll_state ?? diceStateRef.current;
+    const dc = state?.dc;
+    if (dc == null || !Number.isFinite(dc)) return;
+    const challenge = findAmbaChallenge(readAmbaChallenges(encounter.meta_data), state?.challenge_id);
+    await rollSingleAgainst(combatantId, preferredStat, dc, titleDraft || state?.title || '', challenge, x, y);
+  }
+
+  async function rollSingleChallenge(combatantId: string, challengeId: string, x: number, y: number, preferredStat?: string) {
+    const challenge = findAmbaChallenge(ambaChallenges, challengeId);
+    if (!challenge) return;
+    const mapped = preferredStat || mapAmbaChallengeStat(challenge, DICE_CHECK_VALUES) || '';
+    await rollSingleAgainst(combatantId, mapped, challenge.check.dc, challenge.title, challenge, x, y);
   }
 
   function resetEncounterState() {
@@ -1482,14 +1500,35 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
                   title={titleDraft}
                   dc={dcDraft}
                   stat={diceStat ?? ''}
+                  challenges={ambaChallenges}
+                  challengeId={diceState?.challenge_id ?? ''}
                   canRoll={canRollCheck}
                   canClear={isGm && !rosterSaving && Object.keys(diceState?.results ?? {}).length > 0}
                   onSide={(side) => persistDiceState({ side, results: {} })}
                   onTitle={setTitleDraft}
-                  onTitleCommit={(title) => persistDiceState({ title })}
+                  onTitleCommit={(title) => persistDiceState({ title, challenge_id: undefined })}
                   onDc={setDcDraft}
-                  onDcCommit={(dc) => persistDiceState({ dc, results: {} })}
-                  onStat={(stat) => persistDiceState({ stat: stat || undefined, results: {} })}
+                  onDcCommit={(dc) => persistDiceState({ dc, results: {}, challenge_id: undefined })}
+                  onStat={(stat) => persistDiceState({ stat: stat || undefined, results: {}, challenge_id: undefined })}
+                  onChallenge={(id) => {
+                    if (!id) {
+                      setTitleDraft('');
+                      persistDiceState({ challenge_id: undefined, title: '' });
+                      return;
+                    }
+                    const challenge = findAmbaChallenge(ambaChallenges, id);
+                    if (!challenge) return;
+                    const mapped = mapAmbaChallengeStat(challenge, DICE_CHECK_VALUES);
+                    setTitleDraft(challenge.title);
+                    setDcDraft(String(challenge.check.dc));
+                    persistDiceState({
+                      challenge_id: id,
+                      title: challenge.title,
+                      dc: challenge.check.dc,
+                      ...(mapped ? { stat: mapped } : {}),
+                      results: {},
+                    });
+                  }}
                   onRoll={() => setCheckOpen(true)}
                   onClear={() => persistDiceState({ results: {} })}
                 />
@@ -1503,7 +1542,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
                   </>
                 ) : (
                   <>
-                    <CombatantGrid combatants={diceGridRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onSingleCheck={canSingleCheck ? rollSingleCheck : undefined} dice={{ columnLabel: checkStatLabel(diceStat), dc: diceDc, results: diceState?.results ?? {}, emptyMessage: diceGridRows.length === 0 ? 'No matching combatants for this filter.' : 'Right-click a combatant to roll a check. Group rolls still use the toolbar.' }} />
+                    <CombatantGrid combatants={diceGridRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onSingleCheck={canSingleCheck ? rollSingleCheck : undefined} onSingleChallenge={isGm && !rosterSaving && ambaChallenges.length > 0 ? rollSingleChallenge : undefined} challenges={ambaChallenges} dice={{ challengeId: diceState?.challenge_id, checkStat: diceStat, columnLabel: checkStatLabel(diceStat), dc: diceDc, results: diceState?.results ?? {}, emptyMessage: diceGridRows.length === 0 ? 'No matching combatants for this filter.' : 'Right-click a combatant to roll a check. Group rolls still use the toolbar.' }} />
                     <DiceRollLogPanel log={selectedEncounter?.meta_data.dice_roll_log ?? []} canClear={isGm && !rosterSaving} canEdit={isGm && !rosterSaving} onClear={clearDiceRollLog} onRemove={removeDiceRollLog} onUpdateNote={updateDiceRollNote} />
                   </>
                 )}
@@ -1934,9 +1973,39 @@ function PlayerContextMenu({ x, y, onClose, onRemove, onIncapacitate, onMarkDead
 
 const CHECK_MENU_GROUPS = ['Senses', 'Saves', 'Ability', 'Skill'] as const;
 
-function DiceCombatantContextMenu({ x, y, canCheck, onClose, onCheck }: { x: number; y: number; canCheck: boolean; onClose: () => void; onCheck: (stat: string) => void }) {
-  const [openCheck, setOpenCheck] = useState(false);
+function challengeMenuItems(challenges: Array<{ id: string; title: string; check?: AmbaChallengeTable['check']; effect?: AmbaChallengeTable['effect'] }>) {
+  return challenges.flatMap((challenge) => {
+    const entries = challengeCheckEntries(challenge as AmbaChallengeTable, DICE_CHECK_VALUES);
+    return entries.map((entry, index) => {
+      const showSkill = entries.length > 1 && entry.skill && !challenge.title.toLowerCase().includes(entry.skill.toLowerCase());
+      return {
+        key: `${challenge.id}:${entry.stat ?? entry.skill}:${index}`,
+        challengeId: challenge.id,
+        title: showSkill ? `${challenge.title} (${entry.skill})` : challenge.title,
+        stat: entry.stat,
+        skill: entry.skill,
+      };
+    });
+  });
+}
+
+function DiceCombatantContextMenu({ x, y, combatant, canCheck, challenges, canChallenge, selectedChallengeId, selectedStat, onClose, onCheck, onChallenge }: {
+  x: number;
+  y: number;
+  combatant: PopulatedCombatant;
+  canCheck: boolean;
+  challenges: Array<{ id: string; title: string; check?: AmbaChallengeTable['check']; effect?: AmbaChallengeTable['effect'] }>;
+  canChallenge: boolean;
+  selectedChallengeId?: string;
+  selectedStat?: string;
+  onClose: () => void;
+  onCheck: (stat: string) => void;
+  onChallenge: (id: string, stat?: string) => void;
+}) {
+  const [openMenu, setOpenMenu] = useState<'check' | 'challenge' | null>(null);
   const [openGroup, setOpenGroup] = useState<(typeof CHECK_MENU_GROUPS)[number] | null>(null);
+  const [checkOptions, setCheckOptions] = useState<Array<{ value: string; num: number }> | null>(null);
+  const [hoverTip, setHoverTip] = useState<{ text: string; left: number; top: number } | null>(null);
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -1944,28 +2013,73 @@ function DiceCombatantContextMenu({ x, y, canCheck, onClose, onCheck }: { x: num
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
-  const left = Math.min(x, window.innerWidth - 176);
-  const top = Math.min(y, window.innerHeight - 56);
-  const groupLeft = Math.min(left + 168, window.innerWidth - 160);
+  useEffect(() => {
+    let cancelled = false;
+    void loadCheckOptions(combatant).then((options) => {
+      if (!cancelled) setCheckOptions(options.map((option) => ({ value: option.value, num: option.num })));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [combatant]);
+  const left = Math.min(x, window.innerWidth - 220);
+  const top = Math.min(y, window.innerHeight - 120);
+  const groupLeft = Math.min(left + 200, window.innerWidth - 160);
   const statLeft = Math.min(groupLeft + 152, window.innerWidth - 176);
+  const challengeTop = top + 72;
+  const items = useMemo(() => challengeMenuItems(challenges), [challenges]);
+  const selectedChallenge = selectedChallengeId ? challenges.find((challenge) => challenge.id === selectedChallengeId) : undefined;
+  const canRollSelected = Boolean(canChallenge && selectedChallenge);
+
+  function modifierTip(stat: string | undefined, skill: string) {
+    const label = stat ? checkStatLabel(stat) : skill || 'check';
+    if (!checkOptions) return `Loading ${label}…`;
+    const option = stat ? checkOptions.find((item) => item.value === stat) : undefined;
+    if (option) return `${sign(option.num)} ${label}`;
+    return `${label} modifier unavailable`;
+  }
+
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
-      <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+      <div role='menu' className='fixed z-[110] min-w-48 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        <button
+          type='button'
+          role='menuitem'
+          disabled={!canRollSelected}
+          className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint'
+          title={canRollSelected ? `Roll ${selectedChallenge?.title} for this combatant` : 'Select a challenge in the toolbar first'}
+          onMouseEnter={() => { setOpenMenu(null); setOpenGroup(null); setHoverTip(null); }}
+          onClick={() => { if (canRollSelected && selectedChallengeId) onChallenge(selectedChallengeId, selectedStat); }}
+        >
+          Roll this challenge
+        </button>
         <button
           type='button'
           role='menuitem'
           disabled={!canCheck}
           className='flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint'
           title={canCheck ? 'Roll this combatant against a check' : 'Set a DC in the toolbar first'}
-          onMouseEnter={() => { if (canCheck) setOpenCheck(true); }}
-          onClick={() => { if (canCheck) setOpenCheck(true); }}
+          onMouseEnter={() => { if (canCheck) { setOpenMenu('check'); setOpenGroup(null); setHoverTip(null); } }}
+          onClick={() => { if (canCheck) { setOpenMenu('check'); setOpenGroup(null); } }}
         >
           Check
           <ChevronRight size={14} className='text-p1-faint' />
         </button>
+        <button
+          type='button'
+          role='menuitem'
+          disabled={!canChallenge}
+          className='flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint'
+          title={canChallenge ? 'Roll this combatant against a challenge' : 'No challenges on this encounter'}
+          onMouseEnter={() => { if (canChallenge) setOpenMenu('challenge'); setHoverTip(null); }}
+          onClick={() => { if (canChallenge) setOpenMenu('challenge'); }}
+        >
+          Challenge
+          <ChevronRight size={14} className='text-p1-faint' />
+        </button>
       </div>
-      {openCheck && canCheck && (
+      {openMenu === 'check' && canCheck && (
         <div role='menu' className='fixed z-[110] min-w-36 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left: groupLeft, top }}>
           {CHECK_MENU_GROUPS.map((group) => (
             <button
@@ -1982,7 +2096,7 @@ function DiceCombatantContextMenu({ x, y, canCheck, onClose, onCheck }: { x: num
           ))}
         </div>
       )}
-      {openCheck && canCheck && openGroup && (
+      {openMenu === 'check' && canCheck && openGroup && (
         <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left: statLeft, top }}>
           {DICE_CHECK_OPTIONS.filter((option) => option.group === openGroup).map((option) => (
             <button
@@ -1995,6 +2109,43 @@ function DiceCombatantContextMenu({ x, y, canCheck, onClose, onCheck }: { x: num
               {checkStatLabel(option.value)}
             </button>
           ))}
+        </div>
+      )}
+      {openMenu === 'challenge' && canChallenge && (
+        <div role='menu' className='fixed z-[110] min-w-44 max-w-64 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left: groupLeft, top: challengeTop }}>
+          {items.map((item) => {
+            const tip = modifierTip(item.stat, item.skill);
+            return (
+              <button
+                key={item.key}
+                type='button'
+                role='menuitem'
+                title={tip}
+                className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover'
+                onMouseEnter={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setHoverTip({ text: tip, left: rect.right + 8, top: rect.top });
+                }}
+                onMouseMove={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setHoverTip({ text: tip, left: rect.right + 8, top: rect.top });
+                }}
+                onMouseLeave={() => setHoverTip(null)}
+                onClick={() => onChallenge(item.challengeId, item.stat)}
+              >
+                <span className='truncate'>{item.title}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {hoverTip && (
+        <div
+          role='tooltip'
+          className='pointer-events-none fixed z-[111] max-w-xs border border-p1-border bg-p1-raised px-2 py-1 text-xs text-p1-text shadow-2xl'
+          style={{ left: Math.min(hoverTip.left, window.innerWidth - 180), top: hoverTip.top }}
+        >
+          {hoverTip.text}
         </div>
       )}
     </>,
@@ -2414,12 +2565,14 @@ function EncounterHeader({ encounter, combatants, count, isGm, noteLink, tab, on
   );
 }
 
-function DiceRollToolbar({ isGm, side, title, dc, stat, canRoll, canClear, onSide, onTitle, onTitleCommit, onDc, onDcCommit, onStat, onRoll, onClear }: {
+function DiceRollToolbar({ isGm, side, title, dc, stat, challenges, challengeId, canRoll, canClear, onSide, onTitle, onTitleCommit, onDc, onDcCommit, onStat, onChallenge, onRoll, onClear }: {
   isGm: boolean;
   side: DiceRollSide | undefined;
   title: string;
   dc: string;
   stat: string;
+  challenges: Array<{ id: string; title: string }>;
+  challengeId: string;
   canRoll: boolean;
   canClear: boolean;
   onSide: (side: DiceRollSide) => void;
@@ -2428,10 +2581,12 @@ function DiceRollToolbar({ isGm, side, title, dc, stat, canRoll, canClear, onSid
   onDc: (dc: string) => void;
   onDcCommit: (dc: number | null) => void;
   onStat: (stat: string) => void;
+  onChallenge: (id: string) => void;
   onRoll: () => void;
   onClear: () => void;
 }) {
   const groups = ['Senses', 'Saves', 'Ability', 'Skill'] as const;
+  const challengesEmpty = challenges.length === 0;
   return (
     <div className='flex flex-wrap items-end gap-3 border-b border-p1-border bg-p1-surface px-5 py-3'>
       <fieldset className='flex items-center gap-3'>
@@ -2443,6 +2598,26 @@ function DiceRollToolbar({ isGm, side, title, dc, stat, canRoll, canClear, onSid
           </label>
         ))}
       </fieldset>
+      <label className='min-w-[12rem]'>
+        <span className='text-[10px] uppercase text-p1-faint'>Challenge</span>
+        <select
+          className='mt-1 h-9 w-full border border-p1-border bg-p1-inset px-2 text-sm text-p1-text disabled:cursor-not-allowed disabled:opacity-50'
+          value={challengesEmpty ? '' : challengeId}
+          disabled={!isGm || challengesEmpty}
+          onChange={(event) => onChallenge(event.target.value)}
+        >
+          {challengesEmpty ? (
+            <option value=''>No challenges</option>
+          ) : (
+            <>
+              <option value=''>Ad hoc</option>
+              {challenges.map((challenge) => (
+                <option key={challenge.id} value={challenge.id}>{challenge.title}</option>
+              ))}
+            </>
+          )}
+        </select>
+      </label>
       <label className='min-w-[12rem] flex-1'>
         <span className='text-[10px] uppercase text-p1-faint'>Title</span>
         <input
@@ -2530,19 +2705,47 @@ function SortGlyph({ dir }: { dir: 'asc' | 'desc' | null }) {
   return <ArrowUpDown size={12} className='opacity-50' />;
 }
 
-function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedId, onSelect, statuses, calculating, canManageRoster, canManageCombatant, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature, onRestoreCombatant, onMarkOut, onUpdateInitiative, onUpdateHp, onSingleCheck, dice }: { combatants: PopulatedCombatant[]; encounterId: number | null; initiativeRollNonce: number; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; canManageCombatant: (combatant: PopulatedCombatant) => boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void; onRestoreCombatant: (combatantId: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onUpdateInitiative: (combatantId: string, initiative: number) => void; onUpdateHp: (combatantId: string, raw: string, note: string | null) => void; onSingleCheck?: (combatantId: string, stat: string, x: number, y: number) => void; dice?: { columnLabel: string; dc: number | null; results: Record<string, DiceCheckResult>; emptyMessage: string } }) {
+function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedId, onSelect, statuses, calculating, canManageRoster, canManageCombatant, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature, onRestoreCombatant, onMarkOut, onUpdateInitiative, onUpdateHp, onSingleCheck, onSingleChallenge, challenges, dice }: { combatants: PopulatedCombatant[]; encounterId: number | null; initiativeRollNonce: number; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; canManageCombatant: (combatant: PopulatedCombatant) => boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void; onRestoreCombatant: (combatantId: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onUpdateInitiative: (combatantId: string, initiative: number) => void; onUpdateHp: (combatantId: string, raw: string, note: string | null) => void; onSingleCheck?: (combatantId: string, stat: string, x: number, y: number) => void; onSingleChallenge?: (combatantId: string, challengeId: string, x: number, y: number, preferredStat?: string) => void; challenges?: Array<{ id: string; title: string }>; dice?: { challengeId?: string; checkStat?: string; columnLabel: string; dc: number | null; results: Record<string, DiceCheckResult>; emptyMessage: string } }) {
   const [encounterActive, setEncounterActive] = useState(false);
   const [gridSort, setGridSort] = useState<GridSort>(() => (
     dice ? null : combatants.some((combatant) => initiativeValue(combatant) != null) ? { key: 'init', dir: 'desc' } : null
   ));
   const [menu, setMenu] = useState<{ id: string; type: Combatant['type']; x: number; y: number } | null>(null);
   const [hpEditor, setHpEditor] = useState<{ combatantId: string; name: string; currentHp: number; maxHp: number; rect: DOMRect } | null>(null);
+  const [checkMods, setCheckMods] = useState<Record<string, number | null>>({});
+  const [checkModsLoading, setCheckModsLoading] = useState(false);
+  const checkStat = dice?.checkStat;
+  const combatantIds = combatants.map((combatant) => combatant._id).join(',');
   useEffect(() => {
     setGridSort(dice ? null : combatants.some((combatant) => initiativeValue(combatant) != null) ? { key: 'init', dir: 'desc' } : null);
   }, [encounterId]);
   useEffect(() => {
     if (initiativeRollNonce > 0) setGridSort({ key: 'init', dir: 'desc' });
   }, [initiativeRollNonce]);
+  useEffect(() => {
+    if (!dice || !checkStat) {
+      setCheckMods({});
+      setCheckModsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setCheckModsLoading(true);
+    void loadAllCheckOptions(combatants).then((optionsById) => {
+      if (cancelled) return;
+      const next: Record<string, number | null> = {};
+      for (const combatant of combatants) {
+        const options = optionsById[combatant._id] ?? [];
+        const resolved = defaultStatForCombatant(options, checkStat);
+        const option = resolved ? options.find((item) => item.value === resolved) : undefined;
+        next[combatant._id] = option == null ? null : option.num;
+      }
+      setCheckMods(next);
+      setCheckModsLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [dice ? 'dice' : 'combat', checkStat, combatantIds, encounterId]);
   const rows = gridSort
     ? [...combatants].sort((a, b) => (
       gridSort.key === 'name'
@@ -2566,8 +2769,8 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
   }
   return (
     <div className={`overflow-x-auto border bg-p1-inset transition-colors ${encounterActive ? 'border-p1-accent bg-p1-accent/[0.04]' : 'border-p1-border'}`} onDragOver={(event) => { if (canManageRoster && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setEncounterActive(true); } }} onDragLeave={() => setEncounterActive(false)} onDrop={dropOnEncounter}>
-      <table className='w-full min-w-[920px] table-fixed border-collapse text-sm'>
-        <thead className='border-b border-p1-border bg-p1-header text-[10px] uppercase text-p1-faint'><tr>{!dice && <th className='w-20 px-0 text-left'><button type='button' className='inline-flex w-full items-center gap-1 px-3 py-3 uppercase hover:text-p1-muted' onClick={() => setGridSort((value) => cycleGridSort(value, 'init'))} aria-label='Cycle initiative sort' title={gridSort?.key === 'init' && gridSort.dir === 'desc' ? 'Sorted high to low. Click for low to high.' : gridSort?.key === 'init' && gridSort.dir === 'asc' ? 'Sorted low to high. Click to clear sort.' : 'Click to sort by initiative, high to low.'}>Init<SortGlyph dir={gridSort?.key === 'init' ? gridSort.dir : null} /></button></th>}<th className='px-0 text-left'><button type='button' className='inline-flex w-full items-center gap-1 px-3 py-3 uppercase hover:text-p1-muted' onClick={() => setGridSort((value) => cycleGridSort(value, 'name'))} aria-label='Cycle combatant name sort' title={gridSort?.key === 'name' && gridSort.dir === 'asc' ? 'Sorted A–Z. Click for Z–A.' : gridSort?.key === 'name' && gridSort.dir === 'desc' ? 'Sorted Z–A. Click to clear sort.' : 'Click to sort by name A–Z.'}>Combatant<SortGlyph dir={gridSort?.key === 'name' ? gridSort.dir : null} /></button></th><th className='w-44 px-3 text-left'>Conditions</th><th className='w-64 px-3 text-left'>Defenses</th><th className='w-32 px-3 text-left'>{dice ? 'Roll / DC' : 'HP'}</th>{dice && <th className='w-72 px-3 text-left'>{dice.columnLabel}{dice.dc != null ? ` vs DC ${dice.dc}` : ''}</th>}<th className='w-16 px-3 text-center'>Open</th></tr></thead>
+      <table className='w-full min-w-[1020px] table-fixed border-collapse text-sm'>
+        <thead className='border-b border-p1-border bg-p1-header text-[10px] uppercase text-p1-faint'><tr>{!dice && <th className='w-20 px-0 text-left'><button type='button' className='inline-flex w-full items-center gap-1 px-3 py-3 uppercase hover:text-p1-muted' onClick={() => setGridSort((value) => cycleGridSort(value, 'init'))} aria-label='Cycle initiative sort' title={gridSort?.key === 'init' && gridSort.dir === 'desc' ? 'Sorted high to low. Click for low to high.' : gridSort?.key === 'init' && gridSort.dir === 'asc' ? 'Sorted low to high. Click to clear sort.' : 'Click to sort by initiative, high to low.'}>Init<SortGlyph dir={gridSort?.key === 'init' ? gridSort.dir : null} /></button></th>}<th className='px-0 text-left'><button type='button' className='inline-flex w-full items-center gap-1 px-3 py-3 uppercase hover:text-p1-muted' onClick={() => setGridSort((value) => cycleGridSort(value, 'name'))} aria-label='Cycle combatant name sort' title={gridSort?.key === 'name' && gridSort.dir === 'asc' ? 'Sorted A–Z. Click for Z–A.' : gridSort?.key === 'name' && gridSort.dir === 'desc' ? 'Sorted Z–A. Click to clear sort.' : 'Click to sort by name A–Z.'}>Combatant<SortGlyph dir={gridSort?.key === 'name' ? gridSort.dir : null} /></button></th><th className='w-44 px-3 text-left'>Conditions</th><th className='w-64 px-3 text-left'>Defenses</th>{dice && <th className='w-24 px-3 text-left'>Check</th>}<th className='w-32 px-3 text-left'>{dice ? 'Roll / DC' : 'HP'}</th>{dice && <th className='w-72 px-3 text-left'>{dice.columnLabel}{dice.dc != null ? ` vs DC ${dice.dc}` : ''}</th>}<th className='w-16 px-3 text-center'>Open</th></tr></thead>
         <tbody>
           {rows.map((combatant) => {
             const detailsVisible = combatant.access?.details_revealed !== false;
@@ -2594,6 +2797,19 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                   </div>
                 </td>
                 <td className={`px-3 py-3 text-xs ${critInk ? 'text-[#234028]' : 'text-p1-muted'}`}>{!detailsVisible ? <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>Not revealed</span> : stats ? <>{stats.ac} AC <span className={`px-1 ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}>|</span> Fort {signed(stats.fortitude)}, Ref {signed(stats.reflex)}, Will {signed(stats.will)}</> : calculating ? <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>Calculating...</span> : <span className='text-p1-danger-soft'>Unavailable</span>}</td>
+                {dice && (
+                  <td className={`px-3 py-3 text-sm ${critInk ? 'text-[#234028]' : 'text-p1-text'}`}>
+                    {!checkStat ? (
+                      <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>—</span>
+                    ) : checkModsLoading && !(combatant._id in checkMods) ? (
+                      <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>…</span>
+                    ) : checkMods[combatant._id] == null ? (
+                      <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>—</span>
+                    ) : (
+                      <span title={`${checkStatLabel(checkStat)} modifier`}>{sign(checkMods[combatant._id]!)}</span>
+                    )}
+                  </td>
+                )}
                 <td className='px-3 py-3'>
                   {dice ? (
                     <span className='inline-flex h-9 min-w-24 items-center justify-center border border-p1-border bg-p1-raised'>
@@ -2626,22 +2842,36 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
               </tr>
             );
           })}
-          {rows.length === 0 && <tr><td colSpan={dice ? 6 : 6} className='p-12 text-center text-sm text-p1-faint'>{dice?.emptyMessage ?? 'No combatants in this encounter.'}</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={dice ? 7 : 6} className='p-12 text-center text-sm text-p1-faint'>{dice?.emptyMessage ?? 'No combatants in this encounter.'}</td></tr>}
         </tbody>
       </table>
-      {menu && dice && (
+      {menu && dice && (() => {
+        const menuCombatant = combatants.find((combatant) => combatant._id === menu.id);
+        if (!menuCombatant) return null;
+        return (
         <DiceCombatantContextMenu
           x={menu.x}
           y={menu.y}
+          combatant={menuCombatant}
           canCheck={Boolean(onSingleCheck)}
+          canChallenge={Boolean(onSingleChallenge)}
+          selectedChallengeId={dice.challengeId}
+          selectedStat={dice.checkStat}
+          challenges={challenges ?? []}
           onClose={() => setMenu(null)}
           onCheck={(stat) => {
             const { id, x, y } = menu;
             setMenu(null);
             onSingleCheck?.(id, stat, x, y);
           }}
+          onChallenge={(challengeId, preferredStat) => {
+            const { id, x, y } = menu;
+            setMenu(null);
+            onSingleChallenge?.(id, challengeId, x, y, preferredStat);
+          }}
         />
-      )}
+        );
+      })()}
       {menu?.type === 'CREATURE' && !dice && (
         <CombatantContextMenu
           x={menu.x}

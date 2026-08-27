@@ -444,6 +444,12 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .dice-roll-crit-success button {
   color: #152214;
 }
+.dice-roll-crit-success .text-p1-muted,
+.dice-roll-crit-success .text-p1-faint,
+.dice-roll-crit-success .text-p1-text,
+.dice-roll-crit-success .text-p1-accent {
+  color: #152214 !important;
+}
 .dice-roll-crit-success .bg-p1-raised {
   color: var(--p1-text);
 }
@@ -457,4 +463,24 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .dice-roll-crit-failure {
   background: color-mix(in srgb, #6b1c18 72%, var(--p1-bg-inset));
   box-shadow: inset 4px 0 0 #3a0d0b;
+  color: #f6ecea;
+}
+.dice-roll-crit-failure,
+.dice-roll-crit-failure td,
+.dice-roll-crit-failure span,
+.dice-roll-crit-failure p,
+.dice-roll-crit-failure button {
+  color: #f6ecea;
+}
+.dice-roll-crit-failure .text-p1-muted,
+.dice-roll-crit-failure .text-p1-faint,
+.dice-roll-crit-failure .text-p1-text,
+.dice-roll-crit-failure .text-p1-accent {
+  color: #f6ecea !important;
+}
+.dice-roll-crit-failure .bg-p1-raised {
+  color: var(--p1-text);
+}
+.dice-roll-crit-failure .bg-p1-raised .text-p1-faint {
+  color: var(--p1-text-faint) !important;
 }

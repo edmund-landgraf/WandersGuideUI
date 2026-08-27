@@ -987,6 +987,7 @@ export const DiceRollStateSchema = z.object({
   title: z.string().optional(),
   dc: z.number().nullable().optional(),
   stat: z.string().optional(),
+  challenge_id: z.string().optional(),
   results: z.record(z.string(), DiceCheckResultSchema).optional(),
 });
 export type DiceRollState = z.infer<typeof DiceRollStateSchema>;
@@ -1011,6 +1012,52 @@ export const DiceRollLogSchema = z.object({
 });
 export type DiceRollLog = z.infer<typeof DiceRollLogSchema>;
 
+export const AmbaChallengeFlavorSchema = z.enum(['social', 'trap', 'puzzle', 'haunt', 'combat', 'story', 'treasure']);
+export type AmbaChallengeFlavor = z.infer<typeof AmbaChallengeFlavorSchema>;
+
+export const AmbaChallengeEffectKindSchema = z.enum(['story', 'damage']);
+export type AmbaChallengeEffectKind = z.infer<typeof AmbaChallengeEffectKindSchema>;
+
+export const AmbaChallengeSaveSchema = z.enum(['reflex', 'fortitude', 'will']);
+export type AmbaChallengeSave = z.infer<typeof AmbaChallengeSaveSchema>;
+
+export const AmbaChallengeTableSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  source: z
+    .object({
+      containerId: z.string().optional(),
+      containerTitle: z.string().optional(),
+      flavor: AmbaChallengeFlavorSchema.optional(),
+    })
+    .optional(),
+  check: z.object({
+    dc: z.number(),
+    dcLabel: z.string().optional(),
+    skills: z.array(z.string()).optional(),
+  }),
+  effect: z
+    .object({
+      kind: AmbaChallengeEffectKindSchema.optional(),
+      save: AmbaChallengeSaveSchema.optional(),
+      damage: z.string().optional(),
+      halfOnSuccess: z.boolean().optional(),
+    })
+    .optional(),
+  degrees: z.object({
+    criticalSuccess: z.string(),
+    success: z.string(),
+    failure: z.string(),
+    criticalFailure: z.string(),
+  }),
+});
+export type AmbaChallengeTable = z.infer<typeof AmbaChallengeTableSchema>;
+
+export const EncounterAmbaMetaSchema = z.object({
+  challenges: z.array(AmbaChallengeTableSchema).optional().nullable(),
+});
+export type EncounterAmbaMeta = z.infer<typeof EncounterAmbaMetaSchema>;
+
 export const EncounterSchema = z.object({
   id: z.number(),
   created_at: z.string(),
@@ -1020,14 +1067,17 @@ export const EncounterSchema = z.object({
   color: z.string(),
   campaign_id: z.number().nullable(),
   combatants: z.object({ list: z.array(CombatantSchema) }),
-  meta_data: z.object({
-    description: z.string().optional(),
-    party_level: z.number().optional(),
-    party_size: z.number().optional(),
-    initiative_log: z.array(InitiativeRoundLogSchema).optional(),
-    dice_roll_state: DiceRollStateSchema.optional(),
-    dice_roll_log: z.array(DiceRollLogSchema).optional(),
-  }),
+  meta_data: z
+    .object({
+      description: z.string().optional(),
+      party_level: z.number().optional(),
+      party_size: z.number().optional(),
+      initiative_log: z.array(InitiativeRoundLogSchema).optional(),
+      dice_roll_state: DiceRollStateSchema.optional(),
+      dice_roll_log: z.array(DiceRollLogSchema).optional(),
+      amba: EncounterAmbaMetaSchema.optional(),
+    })
+    .passthrough(),
 });
 export type Encounter = z.infer<typeof EncounterSchema>;
 

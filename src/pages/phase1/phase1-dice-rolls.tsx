@@ -1,5 +1,6 @@
 import { GiDiceTwentyFacesTwenty } from '@common/game-icons-inline';
 import type {
+  AmbaChallengeTable,
   Character,
   Combatant,
   DiceCheckResult,
@@ -11,6 +12,7 @@ import type {
   Encounter,
   LivingEntity,
 } from '@schemas/content';
+import { noteForAmbaOutcome } from './phase1-amba-challenges';
 import { sign } from '@utils/numbers';
 import { toLabel } from '@utils/strings';
 import { isCharacter, isCreature, isTruthy } from '@utils/type-fixing';
@@ -52,6 +54,8 @@ export const DICE_CHECK_OPTIONS: { value: string; group: string }[] = [
   { value: 'SKILL_THIEVERY', group: 'Skill' },
 ];
 
+export const DICE_CHECK_VALUES = new Set(DICE_CHECK_OPTIONS.map((option) => option.value));
+
 export function checkStatLabel(stat: string | undefined) {
   if (!stat) return 'Check';
   return toLabel(stat);
@@ -92,6 +96,14 @@ export function outcomeLabel(outcome: DiceRollOutcome | undefined) {
   if (outcome === 'failure') return 'Failure';
   if (outcome === 'critical-failure') return 'Critical failure';
   return '';
+}
+
+const DICE_NOTE_PREVIEW_LIMIT = 255;
+
+export function previewDiceNote(note: string | undefined, clickable: boolean) {
+  if (!note) return clickable ? 'Add note' : '';
+  if (note.length <= DICE_NOTE_PREVIEW_LIMIT) return note;
+  return `${note.slice(0, DICE_NOTE_PREVIEW_LIMIT)}…`;
 }
 
 export const DICE_OUTCOME_LEGEND: { outcome: DiceRollOutcome | 'unrolled'; label: string; detail: string; className: string }[] = [
@@ -169,6 +181,7 @@ export function buildDiceRollLog(
   defaultStat: string,
   combatants: Array<Combatant & { data: LivingEntity }>,
   results: Record<string, DiceCheckResult>,
+  challenge?: AmbaChallengeTable,
 ): DiceRollLog {
   const entries: DiceRollLogEntry[] = combatants.map((combatant) => {
     const result = results[combatant._id];
@@ -188,6 +201,7 @@ export function buildDiceRollLog(
       calculation: formatCheckRoll(result, result.total, dc),
       total: result.total,
       outcome: result.outcome,
+      note: noteForAmbaOutcome(challenge, result.outcome),
     };
   });
   return { id: crypto.randomUUID(), title: title.trim(), dc, defaultStat, entries };
@@ -275,7 +289,7 @@ export async function loadCheckOptions(combatant: Combatant & { data: LivingEnti
   }
 }
 
-async function loadAllCheckOptions(combatants: Array<Combatant & { data: LivingEntity }>) {
+export async function loadAllCheckOptions(combatants: Array<Combatant & { data: LivingEntity }>) {
   const optionsById: Record<string, InitiativeSkillOption[]> = {};
   for (const combatant of combatants) {
     if (combatant.type === 'CHARACTER' && isCharacter(combatant.data)) {
@@ -690,7 +704,12 @@ function DiceRollLogRound({
                     <td className='px-2 py-2 text-p1-muted'>{entry.ally ? 'Ally' : 'Enemy'}</td>
                     <td className='px-2 py-2 text-p1-muted'>{entry.calculation}</td>
                     <td className='px-2 py-2 text-p1-text'>{outcomeLabel(entry.outcome) || 'Skipped'}</td>
-                    <td className='max-w-[14rem] truncate px-2 py-2 text-p1-muted'>{entry.note || (clickable ? 'Add note' : '')}</td>
+                    <td
+                      className='min-w-[12rem] max-w-[28rem] whitespace-pre-wrap break-words px-2 py-2 align-top text-p1-muted'
+                      title={entry.note && entry.note.length > DICE_NOTE_PREVIEW_LIMIT ? entry.note : undefined}
+                    >
+                      {previewDiceNote(entry.note, clickable)}
+                    </td>
                   </tr>
                 );
               })}
