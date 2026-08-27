@@ -1,39 +1,60 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
-import { BookOpen, Calculator, ChevronDown, Eye, History, X } from 'lucide-react';
+import { BookOpen, Calculator, ChevronDown, History, ListChecks, X } from 'lucide-react';
 import { isContentStackOpen, useContentLinks } from './phase1-content-links';
 import { ProseMarkdown } from './phase1-markdown';
 import type { Phase1EntityCombatant } from './phase1-entity';
+import type { Character, ContentPackage, Creature } from '@schemas/content';
 import {
+  loadStatFromStore,
   loadStatTarget,
+  statCalculationPreview,
   type Phase1ActiveGroup,
   type Phase1AttributeTable,
   type Phase1Breakdown,
   type Phase1StatDetail,
   type Phase1StatItem,
   type Phase1StatKey,
-  type Phase1StatSection,
   type Phase1StatTarget,
 } from './phase1-stat-details';
 import type { Phase1SkillTimelineItem } from './phase1-skills';
 import { toLabel } from '@utils/strings';
 
 export type { Phase1StatKey, Phase1StatTarget };
+export { statCalculationPreview };
 
 export function StatDetailModal({
   combatant,
+  storeId,
+  entity,
+  content,
   stat,
   onClose,
 }: {
-  combatant: Phase1EntityCombatant;
+  combatant?: Phase1EntityCombatant;
+  storeId?: string;
+  entity?: Character | Creature;
+  content?: ContentPackage;
   stat: Phase1StatTarget;
   onClose: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const details = useQuery({
-    queryKey: ['phase1-stat-target', 'isolated-store', combatant.type, combatant._id, JSON.stringify(stat), JSON.stringify(combatant.data.details?.conditions ?? []), JSON.stringify(combatant.data.inventory ?? null)],
-    queryFn: () => loadStatTarget(combatant, stat),
+    queryKey: [
+      'phase1-stat-target',
+      storeId ?? 'isolated-store',
+      combatant?.type,
+      combatant?._id,
+      JSON.stringify(stat),
+      JSON.stringify(combatant?.data.details?.conditions ?? []),
+      JSON.stringify(combatant?.data.inventory ?? entity?.inventory ?? null),
+    ],
+    queryFn: () => {
+      if (storeId && entity && content) return Promise.resolve(loadStatFromStore(storeId, stat, entity, content));
+      if (combatant) return loadStatTarget(combatant, stat);
+      throw new Error('Missing character details for this statistic.');
+    },
     staleTime: Number.POSITIVE_INFINITY,
   });
 
@@ -66,7 +87,7 @@ export function StatDetailModal({
         role='dialog'
         aria-modal='true'
         aria-labelledby='stat-detail-title'
-        className='flex max-h-[min(82vh,720px)] w-full max-w-xl flex-col border border-p1-border bg-p1-surface shadow-2xl'
+        className='flex h-[min(82vh,720px)] w-full max-w-4xl flex-col border border-p1-border bg-p1-surface shadow-2xl'
       >
         <header className='flex items-start gap-4 border-b border-p1-border px-5 py-4'>
           <div className='min-w-0 flex-1'>
@@ -85,71 +106,141 @@ export function StatDetailModal({
             <X size={18} />
           </button>
         </header>
-        <div className='min-h-0 flex-1 overflow-y-auto px-5 py-4'>
-          {details.isLoading && <p className='text-sm text-p1-muted'>Loading details...</p>}
-          {details.isError && <p className='text-sm text-p1-danger-soft'>{details.error instanceof Error ? details.error.message : 'Could not load these details.'}</p>}
-          {detail && <StatDetailBody detail={detail} />}
-        </div>
+        {details.isLoading && <p className='px-5 py-4 text-sm text-p1-muted'>Loading details...</p>}
+        {details.isError && <p className='px-5 py-4 text-sm text-p1-danger-soft'>{details.error instanceof Error ? details.error.message : 'Could not load these details.'}</p>}
+        {detail && <StatDetailBody detail={detail} />}
       </section>
     </div>,
     document.body
   );
 }
 
+type StatModalTab = 'description' | 'breakdown' | 'timeline' | 'details';
+const STAT_MODAL_TABS: Array<{ id: StatModalTab; label: string; icon: ReactNode }> = [
+  { id: 'description', label: 'Description', icon: <BookOpen size={15} /> },
+  { id: 'breakdown', label: 'Breakdown', icon: <Calculator size={15} /> },
+  { id: 'timeline', label: 'Timeline', icon: <History size={15} /> },
+  { id: 'details', label: 'Details', icon: <ListChecks size={15} /> },
+];
+
 function StatDetailBody({ detail }: { detail: Phase1StatDetail }) {
-  const [openId, setOpenId] = useState<string | null>(detail.defaultOpen ?? detail.sections[0]?.id ?? null);
+  const breakdowns = detail.sections.filter((section) => section.breakdown);
+  const timelines = detail.sections.filter((section) => section.timeline?.length);
+  const extraSections = detail.sections.filter((section) => section.groups || section.items || (section.description && section.id !== 'description' && !section.breakdown && !section.timeline));
+  const hasDetails = Boolean(detail.table || detail.groups?.length || extraSections.length);
+  const description = detail.sections.find((section) => section.id === 'description')?.description ?? detail.description;
+  const defaultTab: StatModalTab = breakdowns.length ? 'breakdown' : timelines.length ? 'timeline' : hasDetails ? 'details' : 'description';
+  const [tab, setTab] = useState<StatModalTab>(defaultTab);
+
   return (
-    <div className='space-y-3'>
-      {detail.table && <AttributeTable table={detail.table} />}
-      {detail.description && !detail.accordionDescription && <ProseMarkdown>{detail.description}</ProseMarkdown>}
-      {detail.groups?.map((group) => <ActiveGroupCard key={group.id} group={group} />)}
-      {detail.sections.length === 0 && !detail.groups && !detail.table && <p className='border border-p1-border p-6 text-center text-sm italic text-p1-muted'>No recorded values.</p>}
-      <div className='space-y-2'>
-        {detail.sections.map((section) => (
-          <StatSectionCard
-            key={section.id}
-            section={section}
-            open={openId === section.id}
-            onToggle={() => setOpenId(openId === section.id ? null : section.id)}
-          />
+    <>
+      <div className='grid grid-cols-4 border-b border-p1-border bg-p1-inset' role='tablist' aria-label='Statistic details'>
+        {STAT_MODAL_TABS.map((item) => (
+          <button
+            key={item.id}
+            type='button'
+            role='tab'
+            aria-selected={tab === item.id}
+            className={`flex h-11 items-center justify-center gap-2 border-b-2 px-3 text-xs ${tab === item.id ? 'border-p1-accent bg-p1-hover text-p1-accent-soft' : 'border-transparent text-p1-muted hover:text-p1-text'}`}
+            onClick={() => setTab(item.id)}
+          >
+            {item.icon}
+            {item.label}
+          </button>
         ))}
       </div>
-    </div>
+      <div className='min-h-0 flex-1 overflow-y-auto p-5'>
+        {tab === 'description' && (
+          description ? <div className='mx-auto max-w-3xl'><ProseMarkdown>{description}</ProseMarkdown></div> : <p className='text-center text-sm italic text-p1-muted'>No description found.</p>
+        )}
+        {tab === 'breakdown' && (
+          breakdowns.length
+            ? <div className='mx-auto max-w-3xl space-y-6'>{breakdowns.map((section) => <BreakdownView key={section.id} breakdown={section.breakdown!} />)}</div>
+            : <p className='text-center text-sm italic text-p1-muted'>No recorded breakdown for this value.</p>
+        )}
+        {tab === 'timeline' && (
+          timelines.length
+            ? <div className='mx-auto max-w-2xl space-y-6'>{timelines.map((section) => (
+              <div key={section.id}>
+                {timelines.length > 1 && <h3 className='mb-3 text-sm font-semibold text-p1-text'>{section.label}</h3>}
+                <TimelineView timeline={section.timeline!} />
+              </div>
+            ))}</div>
+            : <p className='text-center text-sm italic text-p1-muted'>No recorded history found for this value.</p>
+        )}
+        {tab === 'details' && (
+          hasDetails
+            ? <div className='space-y-3'>
+                {detail.table && <AttributeTable table={detail.table} />}
+                {detail.groups?.map((group) => <ActiveGroupCard key={group.id} group={group} />)}
+                {extraSections.map((section) => (
+                  <section key={section.id} className='border border-p1-border bg-p1-inset p-3'>
+                    <h3 className='mb-2 text-sm font-semibold text-p1-text'>{section.label}{section.value ? <span className='ml-2 font-medium text-p1-muted'>{section.value}</span> : null}</h3>
+                    {section.groups?.map((group) => <ActiveGroupCard key={group.id} group={group} />)}
+                    {section.items && <ItemList items={section.items} empty={`No ${section.label.toLowerCase()} found.`} />}
+                    {section.description && <ProseMarkdown className='text-[13px] leading-6'>{section.description}</ProseMarkdown>}
+                  </section>
+                ))}
+              </div>
+            : <p className='text-center text-sm italic text-p1-muted'>No extra details for this value.</p>
+        )}
+      </div>
+    </>
   );
 }
 
-function StatSectionCard({ section, open, onToggle }: { section: Phase1StatSection; open: boolean; onToggle: () => void }) {
-  const icon = section.id === 'senses' ? <Eye size={15} /> : section.id === 'description' ? <BookOpen size={15} /> : section.id === 'breakdown' ? <Calculator size={15} /> : section.id === 'timeline' ? <History size={15} /> : null;
+const HOVER_CARD_CLASS = 'pointer-events-none invisible absolute z-40 hidden border border-p1-border bg-p1-surface p-3 opacity-0 shadow-xl transition-opacity delay-300 group-hover:visible group-hover:opacity-100 md:block';
+
+export function StatHoverCard({
+  breakdown,
+  timeline,
+  placement = 'end',
+}: {
+  breakdown?: Phase1Breakdown;
+  timeline?: Phase1SkillTimelineItem[];
+  placement?: 'end' | 'below';
+}) {
+  const events = (timeline ?? []).slice(0, 6);
+  if (!breakdown && !events.length) return null;
   return (
-    <section className='border border-p1-border bg-p1-inset'>
-      <button
-        type='button'
-        aria-expanded={open}
-        className='flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-p1-hover'
-        onClick={onToggle}
-      >
-        {icon && <span className='text-p1-muted'>{icon}</span>}
-        <span className='min-w-0 flex-1 truncate text-sm font-semibold text-p1-text'>{section.label}</span>
-        {section.value ? <span className='shrink-0 text-sm font-semibold text-p1-text'>{section.value}</span> : null}
-        <ChevronDown size={16} className={`shrink-0 text-p1-muted transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && (
-        <div className='space-y-2 border-t border-p1-border px-3 py-3'>
-          {section.groups?.map((group) => <ActiveGroupCard key={group.id} group={group} />)}
-          {section.description && !section.groups && !section.items && <ProseMarkdown className='text-[13px] leading-6'>{section.description}</ProseMarkdown>}
-          {section.description && !section.groups && section.items && (
-            <NestedCard label='Description'><ProseMarkdown className='text-[13px] leading-6'>{section.description}</ProseMarkdown></NestedCard>
+    <span className={`${HOVER_CARD_CLASS} ${placement === 'below' ? 'left-1/2 top-full mt-1 w-72 -translate-x-1/2' : 'left-full top-0 ml-2 w-72'}`}>
+      {breakdown && (
+        <span className='mb-2 flex flex-wrap items-center gap-1 text-[11px]'>
+          {breakdown.infix ? (
+            breakdown.infix.map((part, index) =>
+              part.kind === 'text' ? (
+                <span key={index} className='text-p1-text'>{part.text}</span>
+              ) : (
+                <span key={index} className='border border-p1-border bg-p1-hover px-1.5 py-0.5 font-mono text-p1-text' title={breakdown.terms[part.index]?.label}>
+                  {breakdown.terms[part.index]?.value}
+                </span>
+              )
+            )
+          ) : (
+            <>
+              <strong className='mr-1 text-p1-text'>{breakdown.finalLabel} =</strong>
+              {breakdown.prefix && <span className='text-p1-muted'>{breakdown.prefix}</span>}
+              {breakdown.terms.map((term, index) => (
+                <span key={`${term.label}-${index}`} className='inline-flex items-center gap-1'>
+                  {index > 0 && <span className='text-p1-faint'>{term.value >= 0 ? '+' : '-'}</span>}
+                  <span className='border border-p1-border bg-p1-hover px-1.5 py-0.5 font-mono text-p1-text' title={term.label}>{Math.abs(term.value)}</span>
+                </span>
+              ))}
+            </>
           )}
-          {section.items && !section.groups && (
-            <NestedCard label='Active' badge={section.items.length} defaultOpen>
-              <ItemList items={section.items} empty={`No ${section.label.toLowerCase()} found.`} />
-            </NestedCard>
-          )}
-          {section.breakdown && (section.inlineDetails ? <BreakdownView breakdown={section.breakdown} /> : <NestedCard icon={<Calculator size={15} />} label='Breakdown' defaultOpen><BreakdownView breakdown={section.breakdown} /></NestedCard>)}
-          {section.timeline && (section.inlineDetails ? <TimelineView timeline={section.timeline} /> : <NestedCard icon={<History size={15} />} label='Timeline'><TimelineView timeline={section.timeline} /></NestedCard>)}
-        </div>
+        </span>
       )}
-    </section>
+      {events.length > 0 && (
+        <ol className='space-y-1.5'>
+          {events.map((item, index) => (
+            <li key={`${item.timestamp}-${index}`}>
+              <strong className='block text-[11px] text-p1-text'>{item.title}</strong>
+              <span className='block text-[10px] italic text-p1-muted'>{item.description}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </span>
   );
 }
 

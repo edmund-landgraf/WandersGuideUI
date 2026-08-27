@@ -8,14 +8,15 @@ import type { VariableListStr } from '@schemas/variables';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getVariable } from '@variables/variable-manager';
 import { labelToVariable } from '@variables/variable-utils';
-import { cloneDeep } from 'lodash-es';
 import exportToJSON from '@export/export-to-json';
 import exportToPDF from '@export/export-to-pdf';
-import { ArrowLeft, Brush, ChevronDown, Download, ExternalLink, Flag, Hammer, HeartPulse, RotateCcw, Star, User } from 'lucide-react';
+import { cloneDeep } from 'lodash-es';
+import { ArrowLeft, Brush, ChevronDown, Download, ExternalLink, Flag, Hammer, HeartPulse, Plus, RotateCcw, Star, User } from 'lucide-react';
 import { Phase1PortraitModal } from './phase1-portrait-modal';
 import { Phase1ArtworkPreview, Phase1BackgroundModal } from './phase1-background-modal';
 import { getAllBackgroundImages } from '@utils/background-images';
 import { parseTempHpInput } from './phase1-change-log';
+import { Phase1DiceButton, Phase1DiceModal } from './phase1-dice';
 import { OLD_UI_ORIGIN } from '../phase-switch/PhaseViewSwitch';
 import { Phase1CssThemeToggle } from './Phase1CssThemeToggle';
 import { Phase1ThemeToggle } from './Phase1ThemeToggle';
@@ -33,6 +34,7 @@ import {
   SkillsActionsPanel,
   SpellsPanel,
   statsFor,
+  InnerTab,
   type InventoryItemActions,
   type Phase1SpellActions,
   type PopulatedCombatant,
@@ -51,6 +53,7 @@ import {
 } from './phase1-spells';
 import { calculateEntityStatus } from './phase1-stats';
 import { Phase1BuilderWorkspace } from './Phase1BuilderPage';
+import { SelectCompanionModal } from './phase1-creatures';
 
 const SHEET_TABS = ['Skills', 'Inventory', 'Spells', 'Feats', 'Companions', 'Details', 'Notes', 'Extras'] as const;
 type SheetTab = (typeof SHEET_TABS)[number];
@@ -69,6 +72,7 @@ export function Phase1SheetPage() {
   const [portraitOpen, setPortraitOpen] = useState(false);
   const [backgroundOpen, setBackgroundOpen] = useState(false);
   const [artworkPreviewOpen, setArtworkPreviewOpen] = useState(false);
+  const [diceOpen, setDiceOpen] = useState(false);
   const [xpDraft, setXpDraft] = useState('');
   const saveTimer = useRef<number | null>(null);
   const characterKey = ['phase1-sheet', characterId, session?.user.id ?? null] as const;
@@ -297,8 +301,8 @@ export function Phase1SheetPage() {
   }
 
   return (
-    <div className='min-h-screen bg-p1-page text-p1-text'>
-      <header className='flex h-14 items-center gap-4 border-b border-p1-border bg-p1-header px-5'>
+    <div className='flex h-dvh min-h-0 flex-col overflow-hidden bg-p1-page text-p1-text'>
+      <header className='flex h-14 shrink-0 items-center gap-4 border-b border-p1-border bg-p1-header px-5'>
         <button type='button' className='icon-button' title='Back' onClick={() => (location.key === 'default' ? navigate('/phase1/characters') : navigate(-1))}><ArrowLeft size={16} /></button>
         <span className='font-semibold'>Wanderer's Guide</span>
         <span className='h-4 w-px bg-p1-hover' />
@@ -309,7 +313,7 @@ export function Phase1SheetPage() {
           <Phase1CssThemeToggle />
         </div>
       </header>
-      <main className={`mx-auto px-4 py-6 ${view === 'builder' ? 'max-w-6xl' : 'max-w-5xl'}`}>
+      <main className={`mx-auto min-h-0 w-full flex-1 overflow-y-scroll px-4 py-6 pb-10 ${view === 'builder' ? 'max-w-6xl' : 'max-w-5xl'}`}>
         <section className='mb-4 flex flex-wrap items-start gap-4 border border-p1-border bg-p1-surface p-4'>
           <button
             type='button'
@@ -360,6 +364,9 @@ export function Phase1SheetPage() {
               <ExternalLink size={14} /> Original
             </a>
             <Phase1ExportMenu character={character} />
+            {(character.options?.dice_roller || campaignQuery.data?.recommended_options?.dice_roller) && (
+              <Phase1DiceButton onOpen={() => setDiceOpen(true)} />
+            )}
             {canEdit && <button className='toolbar-button' onClick={() => setRestOpen(true)}><RotateCcw size={14} /> Rest</button>}
             <label className='toolbar-button'>
               XP
@@ -464,7 +471,7 @@ export function Phase1SheetPage() {
             />
           )}
           {tab === 'Details' && <DetailsPanel combatant={combatant} />}
-          {tab === 'Notes' && <CharacterNotesPanel notes={character.notes} canEdit={canEdit} onSave={(text) => patchCharacter((current) => ({ ...current, notes: toCharacterNotes(text, current.notes) }))} />}
+          {tab === 'Notes' && <CharacterNotesPanel notes={character.notes} canEdit={canEdit} onChange={(notes) => patchCharacter((current) => ({ ...current, notes }))} />}
           {tab === 'Extras' && <EmptyState>This miscellaneous section will be updated with more features in the future. You can expect to see support for vehicles, snares, and other extra rules.</EmptyState>}
         </div>
           </>
@@ -518,6 +525,7 @@ export function Phase1SheetPage() {
           }))
         }
       />
+      {diceOpen && <Phase1DiceModal character={character} onClose={() => setDiceOpen(false)} />}
       {restOpen && (
         <div className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5' onMouseDown={(event) => { if (event.target === event.currentTarget) setRestOpen(false); }}>
           <section className='w-full max-w-md border border-p1-border bg-p1-surface p-5'>
@@ -535,10 +543,24 @@ export function Phase1SheetPage() {
 }
 
 function CompanionsSection({ character, canEdit, onChange }: { character: Character; canEdit: boolean; onChange: (companions: Creature[]) => void }) {
+  const [creating, setCreating] = useState(false);
   const companions = character.companions?.list ?? [];
-  if (!companions.length) return <EmptyState>No companions on this character.</EmptyState>;
+
+  function addCompanion(creature: Creature) {
+    onChange([...companions, cloneDeep(creature)]);
+    setCreating(false);
+  }
+
   return (
     <div className='space-y-4'>
+      {canEdit && (
+        <div className='flex justify-end'>
+          <button type='button' className='toolbar-button' onClick={() => setCreating(true)}>
+            <Plus size={14} /> Create companion
+          </button>
+        </div>
+      )}
+      {!companions.length && <EmptyState>No companions found, want to add one?</EmptyState>}
       {companions.map((companion, index) => {
         const combatant = creatureAsCombatant(companion, index, canEdit);
         return (
@@ -548,6 +570,7 @@ function CompanionsSection({ character, canEdit, onChange }: { character: Charac
           </section>
         );
       })}
+      {creating && <SelectCompanionModal onSelect={addCompanion} onClose={() => setCreating(false)} />}
     </div>
   );
 }
@@ -606,27 +629,50 @@ function mapInvItems(items: InventoryItem[], key: string, patch: (item: Inventor
   });
 }
 
-function CharacterNotesPanel({ notes, canEdit, onSave }: { notes: Character['notes']; canEdit: boolean; onSave: (text: string) => void }) {
-  const saved = characterNotesText(notes);
+function CharacterNotesPanel({ notes, canEdit, onChange }: { notes: Character['notes']; canEdit: boolean; onChange: (notes: Character['notes']) => void }) {
+  const pages = (notes?.pages ?? []).filter((page) => page.name.trim().toLowerCase() !== 'gm notes');
+  const [pageIndex, setPageIndex] = useState(0);
+  const active = pages[Math.min(pageIndex, Math.max(pages.length - 1, 0))];
+  const saved = active ? notePageToMarkdown(active.contents) : '';
   const [draft, setDraft] = useState(saved);
   useEffect(() => setDraft(saved), [saved]);
-  if (!canEdit) {
-    return saved ? <pre className='whitespace-pre-wrap border border-p1-border bg-p1-surface p-4 text-sm leading-6 text-p1-text'>{saved}</pre> : <EmptyState>No notes yet.</EmptyState>;
+
+  function saveDraft(text: string) {
+    if (!active) {
+      onChange(toCharacterNotes(text, notes));
+      return;
+    }
+    const all = notes?.pages ?? [];
+    const realIndex = all.findIndex((page) => page === active);
+    const nextPages = realIndex < 0
+      ? [...all, { name: active.name, icon: active.icon, color: active.color, contents: text }]
+      : all.map((page, index) => (index === realIndex ? { ...page, contents: text } : page));
+    onChange({ pages: nextPages });
   }
+
+  if (!pages.length && !canEdit) return <EmptyState>No notes yet.</EmptyState>;
+
   return (
     <div className='flex min-h-[280px] flex-col gap-3'>
-      <textarea className='min-h-[220px] flex-1 resize-y border border-p1-border bg-p1-surface p-3 text-sm leading-6 text-p1-text outline-none focus:border-p1-accent/60' value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => { if (draft !== saved) onSave(draft); }} />
-      <button type='button' className='h-8 self-end bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink' onClick={() => onSave(draft)}>Save notes</button>
+      {pages.length > 1 && (
+        <div className='flex overflow-x-auto border-b border-p1-border'>
+          {pages.map((page, index) => (
+            <InnerTab key={`${page.name}-${index}`} active={Math.min(pageIndex, pages.length - 1) === index} onClick={() => setPageIndex(index)}>
+              {page.name || `Page ${index + 1}`}
+            </InnerTab>
+          ))}
+        </div>
+      )}
+      {!canEdit ? (
+        saved ? <pre className='whitespace-pre-wrap border border-p1-border bg-p1-surface p-4 text-sm leading-6 text-p1-text'>{saved}</pre> : <EmptyState>No notes yet.</EmptyState>
+      ) : (
+        <>
+          <textarea className='min-h-[220px] flex-1 resize-y border border-p1-border bg-p1-surface p-3 text-sm leading-6 text-p1-text outline-none focus:border-p1-accent/60' value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => { if (draft !== saved) saveDraft(draft); }} />
+          <button type='button' className='h-8 self-end bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink' onClick={() => saveDraft(draft)}>Save notes</button>
+        </>
+      )}
     </div>
   );
-}
-
-function characterNotesText(notes: Character['notes']) {
-  return (notes?.pages ?? [])
-    .filter((page) => page.name.trim().toLowerCase() !== 'gm notes')
-    .map((page) => notePageToMarkdown(page.contents).trim())
-    .filter(Boolean)
-    .join('\n\n');
 }
 
 function toCharacterNotes(text: string, notes: Character['notes']): Character['notes'] {

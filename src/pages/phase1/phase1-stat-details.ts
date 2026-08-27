@@ -1,7 +1,7 @@
 import { collectEntitySenses } from '@content/collect-content';
 import { getAcParts } from '@items/armor-handler';
 import { getBestArmor } from '@items/inv-utils';
-import type { AbilityBlock, SenseWithRange } from '@schemas/content';
+import type { AbilityBlock, Character, ContentPackage, Creature, SenseWithRange } from '@schemas/content';
 import type { AttributeValue, VariableAttr, VariableBool, VariableListStr, VariableNum, VariableProf } from '@schemas/variables';
 import { displayResistWeak, getResistWeaks } from '@utils/resist-weaks';
 import { displaySense } from '@utils/senses';
@@ -100,6 +100,7 @@ export type Phase1StatDetail = {
 };
 
 export type Phase1StatDetails = Record<Phase1StatKey, Phase1StatDetail>;
+export type Phase1StatTarget = Phase1StatKey | { variableName: string; isDC?: boolean };
 
 const ATTR_KEYS = [
   ['strength', 'ATTRIBUTE_STR', 'Strength'],
@@ -117,7 +118,48 @@ const SAVE_KEYS = [
 ] as const;
 
 export async function loadEntityStatDetails(combatant: Phase1EntityCombatant): Promise<Phase1StatDetails> {
-  const { entity, content, storeId } = await preparePhase1Entity(combatant);
+  const prepared = await preparePhase1Entity(combatant);
+  return buildEntityStatDetails(prepared.storeId, prepared.entity, prepared.content);
+}
+
+export function loadStatFromStore(
+  storeId: string,
+  stat: Phase1StatTarget,
+  entity: Character | Creature,
+  content: ContentPackage
+): Phase1StatDetail {
+  if (typeof stat === 'object') return buildProfDetail(storeId, stat.variableName, stat.isDC);
+  return buildEntityStatDetails(storeId, entity, content)[stat];
+}
+
+export function statCalculationPreview(storeId: string, stat: Phase1StatTarget): { breakdown?: Phase1Breakdown; timeline?: Phase1SkillTimelineItem[] } {
+  if (typeof stat === 'object') {
+    const section = buildProfSection(storeId, stat.variableName, '', stat.isDC);
+    return { breakdown: section.breakdown, timeline: section.timeline };
+  }
+  if (stat === 'hp') return { breakdown: buildHealthSection(storeId).breakdown };
+  if (stat === 'classDc') {
+    const section = buildProfSection(storeId, 'CLASS_DC', 'Class DC', true);
+    return { breakdown: section.breakdown, timeline: section.timeline };
+  }
+  if (stat === 'perception') {
+    const section = buildProfSection(storeId, 'PERCEPTION', 'Perception');
+    return { breakdown: section.breakdown, timeline: section.timeline };
+  }
+  const save = SAVE_KEYS.find(([id]) => id === stat);
+  if (save) {
+    const section = buildProfSection(storeId, save[1], save[2]);
+    return { breakdown: section.breakdown, timeline: section.timeline };
+  }
+  const attr = ATTR_KEYS.find(([id]) => id === stat);
+  if (attr) {
+    const section = buildAttributeSection(storeId, attr[0], attr[1], attr[2]);
+    return { timeline: section.timeline };
+  }
+  return {};
+}
+
+export function buildEntityStatDetails(storeId: string, entity: Character | Creature, content: ContentPackage): Phase1StatDetails {
   const armor = getBestArmor(storeId, entity.inventory);
   const armorName = armor?.item.name ?? 'Unarmored';
   const senses = collectEntitySenses(storeId, content.abilityBlocks as AbilityBlock[]);
@@ -216,8 +258,6 @@ export async function loadEntityStatDetails(combatant: Phase1EntityCombatant): P
 
   return details;
 }
-
-export type Phase1StatTarget = Phase1StatKey | { variableName: string; isDC?: boolean };
 
 export async function loadStatTarget(combatant: Phase1EntityCombatant, stat: Phase1StatTarget): Promise<Phase1StatDetail> {
   if (typeof stat === 'object') return loadProfDetail(combatant, stat.variableName, stat.isDC);

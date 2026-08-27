@@ -8,7 +8,10 @@ import './phase1.css';
 applyPhase1Theme(readStoredPhase1Theme());
 applyPhase1CssTheme(readStoredPhase1CssTheme());
 
-createRoot(document.getElementById('root') as HTMLElement).render(
+const root = document.getElementById('root') as HTMLElement;
+root.removeAttribute('style');
+
+createRoot(root).render(
   <StrictMode>
     <Phase1App />
   </StrictMode>

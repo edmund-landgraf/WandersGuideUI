@@ -1,5 +1,5 @@
 import { collectEntityAbilityBlocks } from '@content/collect-content';
-import type { AbilityBlock, Creature } from '@schemas/content';
+import type { AbilityBlock, ContentPackage, Creature } from '@schemas/content';
 import type { VariableProf } from '@schemas/variables';
 import { getBonusText, getFinalProfValue, getProfValueParts } from '@variables/variable-helpers';
 import { getAllSkillVariables, getVariableBonuses, getVariableHistory } from '@variables/variable-manager';
@@ -27,10 +27,7 @@ export type Phase1SkillsActions = { skills: Phase1Skill[]; groups: Phase1ActionG
 export async function loadEntitySkillsActions(combatant: Phase1EntityCombatant): Promise<Phase1SkillsActions> {
   const { entity, content, storeId, kind } = await preparePhase1Entity(combatant);
   const traitNames = new Map(content.traits.map((trait) => [trait.id, trait.name]));
-  const catalog = content.abilityBlocks
-    .filter((ability) => ability.type === 'action')
-    .map((ability) => enrich(ability, 'Catalog', traitNames))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const catalog = skillCatalogFromContent(content);
   const collected = flattenDeep(
     Object.values(collectEntityAbilityBlocks(storeId, entity, content.abilityBlocks, { filterBasicClassFeatures: true }))
   ) as AbilityBlock[];
@@ -56,7 +53,15 @@ export async function loadEntitySkillsActions(combatant: Phase1EntityCombatant):
   };
 }
 
-function buildSkill(variable: VariableProf, storeId: string, catalog: Phase1Ability[]): Phase1Skill {
+export function skillCatalogFromContent(content: ContentPackage): Phase1Ability[] {
+  const traitNames = new Map(content.traits.map((trait) => [trait.id, trait.name]));
+  return content.abilityBlocks
+    .filter((ability) => ability.type === 'action')
+    .map((ability) => enrich(ability, 'Catalog', traitNames))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function buildSkill(variable: VariableProf, storeId: string, catalog: Phase1Ability[]): Phase1Skill {
   const rank = compileProficiencyType(variable.value);
   const rankLabel = proficiencyTypeToLabel(rank);
   const parts = getProfValueParts(storeId, variable.name);

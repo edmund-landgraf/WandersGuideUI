@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Eraser, Eye, ExternalLink, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Plus, RotateCcw, Search, Settings, Shield, Skull, Sparkles, Swords, Trash2, Upload, UserMinus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, ExternalLink, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Pencil, Plus, RotateCcw, Search, Settings, Shield, Skull, Sparkles, Swords, Trash2, Upload, UserMinus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
-import type { Campaign, Character, Combatant, Condition, Creature, Encounter, InitiativeRoundLog, InitiativeRoundLogEntry, LivingEntity } from '@schemas/content';
+import type { Campaign, Character, Combatant, Condition, Creature, DiceCheckResult, DiceRollLog, DiceRollSide, DiceRollState, Encounter, InitiativeRoundLog, InitiativeRoundLogEntry, LivingEntity } from '@schemas/content';
 import { CampaignSignIn } from '@auth/CampaignSignIn';
 import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
@@ -43,6 +43,7 @@ import { Phase1CssThemeToggle } from './Phase1CssThemeToggle';
 import { Phase1ThemeToggle } from './Phase1ThemeToggle';
 import { rollDie } from '@utils/random';
 import { buildInitiativeRoundLog, formatInitiativeRoll, InitiativeRollModal, isCombatantOut, nextInitiativeRoundNumber, overlayInitiativeLogs, setRoundLogEntryNote, sortCombatantsByInitiative, type InitiativeRollChoice } from './phase1-initiative';
+import { buildDiceRollLog, checkStatLabel, DICE_CHECK_OPTIONS, DiceCheckRollModal, DiceRollColorKey, DiceRollLogPanel, degreeOfSuccess, filterCombatantsBySide, formatCheckRoll, outcomeLabel, outcomeRowClass, overlayDiceRollMeta } from './phase1-dice-rolls';
 import { appendChangeLog, characterCombatFieldsFromEntity, createChangeLogEntry, parseTempHpInput } from './phase1-change-log';
 import { appendActionLog, createActionLogEntry, currentActionRound, removeActionLogEntry, type ActionLogDraft } from './phase1-action-log';
 import { maxCombatantStats, maxEntityStats, resetCombatant, resetEntityCombatState, resolveResetMaxHp } from './phase1-encounter-reset';
@@ -56,8 +57,12 @@ import { getCachedPublicUser, getPublicUser } from '@auth/user-manager';
 import { hasPatreonAccess } from '@utils/patreon';
 import { getAllBackgroundImages } from '@utils/background-images';
 import { getFileContents } from '@import/json/import-from-json';
+import exportToJSON, { downloadObjectAsJson } from '@export/export-to-json';
+import exportToPDF from '@export/export-to-pdf';
 import importFromGUIDECHAR from '@import/guidechar/import-from-guidechar';
+import { importFromFTC } from '@import/ftc/import-from-ftc';
 import { importFromPathbuilder } from '@import/pathbuilder/import-from-pathbuilder';
+import { Phase1RandomCharacterModal } from './phase1-random-character-modal';
 import { calculateDifficulty, formatLevelDelta, shouldDisplayEncounterDifficulty, type EncounterDifficulty } from '@utils/encounter-difficulty';
 import { InspectorContent, DETAIL_TABS, fallbackStatus, hasFullEntityDetails, normalizeDetailTab, signed, statsFor, type DetailTab, type Phase1SpellActions } from './phase1-entity-panels';
 type CampaignNotePage = NonNullable<Campaign['notes']>['pages'][number];
@@ -216,8 +221,13 @@ export function Phase1CharactersPage() {
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [randomOpen, setRandomOpen] = useState(false);
   const [pathbuilderOpen, setPathbuilderOpen] = useState(false);
   const [pathbuilderId, setPathbuilderId] = useState('');
+  const [characterMenu, setCharacterMenu] = useState<{ character: Character; x: number; y: number } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ id: number; name: string } | null>(null);
+  const [exporting, setExporting] = useState(false);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const guidecharInputRef = useRef<HTMLInputElement>(null);
   const characters = useQuery({
@@ -283,6 +293,52 @@ export function Phase1CharactersPage() {
     },
   });
 
+  const deleteCharacter = useMutation({
+    mutationFn: (id: number) => phase1Request('delete-content', { id, type: 'character' }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] });
+      void queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] });
+    },
+    onError: (error) => {
+      setJoinStatus(error instanceof Error ? error.message : 'Could not delete character.');
+    },
+  });
+
+  async function loadCharacterForExport(id: number): Promise<Character> {
+    const result = await phase1Request<Character | Character[]>('find-character', { id });
+    const character = Array.isArray(result) ? result[0] : result;
+    if (!character) throw new Error('Could not load character for export.');
+    return character;
+  }
+
+  async function exportCharacter(kind: 'json' | 'pdf', source: Character) {
+    if (exporting) return;
+    setExporting(true);
+    setJoinStatus(kind === 'json' ? `Exporting “${source.name}” to JSON…` : `Exporting “${source.name}” to PDF…`);
+    try {
+      const character = await loadCharacterForExport(source.id);
+      if (kind === 'json') {
+        try {
+          await exportToJSON(character);
+        } catch (error) {
+          console.error(error);
+          const fileName = character.name.trim().toLowerCase().replace(/([^a-z0-9]+)/gi, '-') || 'character';
+          downloadObjectAsJson({ version: 4, character }, fileName);
+          setJoinStatus(`Exported “${character.name}” as JSON (stats snapshot unavailable).`);
+          return;
+        }
+        setJoinStatus(`Exported “${character.name}” as JSON.`);
+        return;
+      }
+      await exportToPDF(character);
+      setJoinStatus(`Exported “${character.name}” as PDF.`);
+    } catch (error) {
+      setJoinStatus(error instanceof Error ? error.message : kind === 'json' ? 'JSON export failed.' : 'PDF export failed.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const canAddAll = Boolean(joinKey.trim()) && Boolean(characters.data?.length) && !addAllToJoinKey.isPending;
   const reachedCharacterLimit =
     (characters.data?.length ?? 0) >= CHARACTER_SLOT_CAP && !hasPatreonAccess(getCachedPublicUser(), 2);
@@ -306,6 +362,82 @@ export function Phase1CharactersPage() {
     } finally {
       setCreating(false);
     }
+  }
+
+  async function createRandomCharacter(picks: { class?: string; ancestry?: string; level: number }) {
+    if (createDisabled) return;
+    setCreating(true);
+    setJoinStatus('Creating random character. This may take a minute…');
+    try {
+      const character = await importFromFTC({
+        version: '1.0',
+        data: {
+          name: 'RANDOM',
+          class: picks.class ?? 'RANDOM',
+          background: 'RANDOM',
+          ancestry: picks.ancestry ?? 'RANDOM',
+          level: picks.level,
+          content_sources: 'ALL',
+          selections: 'RANDOM',
+          items: [],
+          spells: [],
+          conditions: [],
+        },
+      });
+      await queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] });
+      setRandomOpen(false);
+      if (character) navigate(`/builder/${character.id}`);
+      else setJoinStatus('Random character creation failed.');
+    } catch (error) {
+      setJoinStatus(error instanceof Error ? error.message : 'Could not create random character.');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  function CreateMenu({ className }: { className?: string }) {
+    return (
+      <div className={`relative ${className ?? ''}`}>
+        <button
+          type='button'
+          className='toolbar-button'
+          disabled={createDisabled}
+          title={reachedCharacterLimit ? 'Character slot limit reached' : 'Create character'}
+          onClick={() => {
+            setUploadOpen(false);
+            setCreateOpen((open) => !open);
+          }}
+        >
+          <Plus size={15} />
+          {creating ? 'Creating…' : 'Create'}
+          <ChevronDown size={14} />
+        </button>
+        {createOpen && (
+          <div className='absolute left-0 z-20 mt-1 min-w-[14rem] border border-p1-border bg-p1-surface py-1'>
+            <button
+              type='button'
+              className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover'
+              onClick={() => {
+                setCreateOpen(false);
+                void createCharacter();
+              }}
+            >
+              Normal create
+            </button>
+            <button
+              type='button'
+              className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover'
+              onClick={() => {
+                setCreateOpen(false);
+                setRandomOpen(true);
+              }}
+            >
+              Random create
+            </button>
+          </div>
+        )}
+      </div>
+    );
   }
 
   async function importJsonFile(file: File | null) {
@@ -371,12 +503,9 @@ export function Phase1CharactersPage() {
           </div>
           <div className='flex min-w-0 flex-col items-stretch gap-2 sm:items-end'>
             <div className='flex flex-wrap items-center gap-2'>
-              <button type='button' className='toolbar-button' disabled={createDisabled} title={reachedCharacterLimit ? 'Character slot limit reached' : 'Create character'} onClick={() => void createCharacter()}>
-                <Plus size={15} />
-                {creating ? 'Creating…' : 'Create'}
-              </button>
+              <CreateMenu />
               <div className='relative'>
-                <button type='button' className='toolbar-button' disabled={createDisabled} title={reachedCharacterLimit ? 'Character slot limit reached' : 'Upload character'} onClick={() => setUploadOpen((open) => !open)}>
+                <button type='button' className='toolbar-button' disabled={createDisabled} title={reachedCharacterLimit ? 'Character slot limit reached' : 'Upload character'} onClick={() => { setCreateOpen(false); setUploadOpen((open) => !open); }}>
                   <Upload size={15} />
                   {importing ? 'Uploading…' : 'Upload'}
                 </button>
@@ -427,17 +556,23 @@ export function Phase1CharactersPage() {
         {characters.data?.length === 0 && (
           <EmptyState>
             <div>No characters are available.</div>
-            <button type='button' className='toolbar-button mt-4 inline-flex' disabled={createDisabled} onClick={() => void createCharacter()}>
-              <Plus size={15} />
-              {creating ? 'Creating…' : 'Create'}
-            </button>
+            <CreateMenu className='mt-4 inline-flex' />
           </EmptyState>
         )}
         <div className='divide-y divide-p1-border border-y border-p1-border'>
           {characters.data?.map((character) => {
             const identity = [character.details?.ancestry?.name, character.details?.class?.name].filter(Boolean).join(' · ');
             return (
-              <button key={character.id} className='group grid w-full grid-cols-[1fr_auto] items-center gap-6 px-2 py-5 text-left hover:bg-p1-hover' onClick={() => navigate(`/sheet/${character.id}`)}>
+              <button
+                key={character.id}
+                className='group grid w-full grid-cols-[1fr_auto] items-center gap-6 px-2 py-5 text-left hover:bg-p1-hover'
+                onClick={() => navigate(`/sheet/${character.id}`)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setCharacterMenu({ character, x: event.clientX, y: event.clientY });
+                }}
+              >
                 <div>
                   <div className='font-semibold'>{character.name}</div>
                   <div className='mt-1 line-clamp-1 text-sm text-p1-muted'>Level {character.level}{identity ? ` · ${identity}` : ''}</div>
@@ -447,9 +582,52 @@ export function Phase1CharactersPage() {
             );
           })}
         </div>
+        {characterMenu && (
+          <CharacterGridContextMenu
+            x={characterMenu.x}
+            y={characterMenu.y}
+            onClose={() => setCharacterMenu(null)}
+            onExportJson={() => {
+              const target = characterMenu.character;
+              setCharacterMenu(null);
+              void exportCharacter('json', target);
+            }}
+            onExportPdf={() => {
+              const target = characterMenu.character;
+              setCharacterMenu(null);
+              void exportCharacter('pdf', target);
+            }}
+            onDelete={() => {
+              setPendingDelete({ id: characterMenu.character.id, name: characterMenu.character.name });
+              setCharacterMenu(null);
+            }}
+          />
+        )}
+        {pendingDelete && (
+          <ConfirmDialog
+            title='Delete character'
+            message={`Are you sure you want to delete "${pendingDelete.name}"? They'll be gone for a very, very long time.`}
+            confirmLabel={deleteCharacter.isPending ? 'Deleting…' : 'Delete'}
+            onCancel={() => setPendingDelete(null)}
+            onConfirm={() => {
+              const id = pendingDelete.id;
+              setPendingDelete(null);
+              deleteCharacter.mutate(id);
+            }}
+          />
+        )}
         <input ref={jsonInputRef} type='file' accept='application/json,.json' className='hidden' onChange={(event) => { void importJsonFile(event.target.files?.[0] ?? null); event.target.value = ''; }} />
         <input ref={guidecharInputRef} type='file' accept='.guidechar' className='hidden' onChange={(event) => { void importGuidecharFile(event.target.files?.[0] ?? null); event.target.value = ''; }} />
       </main>
+      {randomOpen && (
+        <Phase1RandomCharacterModal
+          generating={creating}
+          onClose={() => {
+            if (!creating) setRandomOpen(false);
+          }}
+          onConfirm={(picks) => void createRandomCharacter(picks)}
+        />
+      )}
       {pathbuilderOpen && (
         <div className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5' onMouseDown={(event) => { if (event.target === event.currentTarget) setPathbuilderOpen(false); }}>
           <section className='w-full max-w-md border border-p1-border bg-p1-surface p-5'>
@@ -496,6 +674,8 @@ export function Phase1CampaignPage() {
   const queryClient = useQueryClient();
   const encounterSaveChain = useRef(Promise.resolve<void>(undefined));
   const initiativeLogsRef = useRef(new Map<number, InitiativeRoundLog[]>());
+  const diceLogsRef = useRef(new Map<number, DiceRollLog[]>());
+  const diceStatesRef = useRef(new Map<number, DiceRollState | undefined>());
   const campaignKey = ['phase1-campaign', campaignId, session?.user.id] as const;
   const encountersKey = ['phase1-encounters', campaignId, session?.user.id] as const;
   const playersKey = ['phase1-players', campaignId, session?.user.id] as const;
@@ -504,7 +684,11 @@ export function Phase1CampaignPage() {
   const encounters = useQuery({
     queryKey: encountersKey,
     enabled,
-    queryFn: async () => overlayInitiativeLogs(await phase1Request<Encounter[]>('find-encounter', { campaign_id: campaignId }), initiativeLogsRef.current),
+    queryFn: async () => overlayDiceRollMeta(
+      overlayInitiativeLogs(await phase1Request<Encounter[]>('find-encounter', { campaign_id: campaignId }), initiativeLogsRef.current),
+      diceLogsRef.current,
+      diceStatesRef.current,
+    ),
   });
   const updateEncounter = useMutation<boolean, Error, Encounter, { previous?: Encounter[] }>({
     mutationKey: ['phase1-update-encounter', campaignId],
@@ -518,6 +702,12 @@ export function Phase1CampaignPage() {
       const previous = queryClient.getQueryData<Encounter[]>(encountersKey);
       if (encounter.meta_data.initiative_log !== undefined) {
         initiativeLogsRef.current.set(encounter.id, encounter.meta_data.initiative_log);
+      }
+      if (encounter.meta_data.dice_roll_log !== undefined) {
+        diceLogsRef.current.set(encounter.id, encounter.meta_data.dice_roll_log);
+      }
+      if ('dice_roll_state' in encounter.meta_data) {
+        diceStatesRef.current.set(encounter.id, encounter.meta_data.dice_roll_state);
       }
       queryClient.setQueryData<Encounter[]>(encountersKey, (current = []) => current.map((item) => item.id === encounter.id ? encounter : item));
       return { previous };
@@ -712,6 +902,10 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const [creaturePickerOpen, setCreaturePickerOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [diceOpen, setDiceOpen] = useState(false);
+  const [encounterTab, setEncounterTab] = useState<'combat' | 'dice'>('combat');
+  const [checkOpen, setCheckOpen] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(selectedEncounter?.meta_data.dice_roll_state?.title ?? '');
+  const [dcDraft, setDcDraft] = useState(selectedEncounter?.meta_data.dice_roll_state?.dc != null ? String(selectedEncounter.meta_data.dice_roll_state.dc) : '');
   const combatants = useMemo(() => populateCombatants(selectedEncounter?.combatants.list ?? [], players), [selectedEncounter, players]);
   const activeCombatants = useMemo(() => combatants.filter((combatant) => !isCombatantOut(combatant)), [combatants]);
   const outCombatants = useMemo(() => combatants.filter((combatant) => isCombatantOut(combatant)), [combatants]);
@@ -719,12 +913,22 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const selectedEncounterRef = useRef(selectedEncounter);
   const initiativeLogRef = useRef<InitiativeRoundLog[]>(selectedEncounter?.meta_data.initiative_log ?? []);
   const initiativeLogEncounterIdRef = useRef(selectedEncounter?.id ?? null);
+  const diceLogRef = useRef<DiceRollLog[]>(selectedEncounter?.meta_data.dice_roll_log ?? []);
+  const diceStateRef = useRef<DiceRollState | undefined>(selectedEncounter?.meta_data.dice_roll_state);
   selectedEncounterRef.current = selectedEncounter;
   if (selectedEncounter && selectedEncounter.id !== initiativeLogEncounterIdRef.current) {
     initiativeLogEncounterIdRef.current = selectedEncounter.id;
     initiativeLogRef.current = selectedEncounter.meta_data.initiative_log ?? [];
+    diceLogRef.current = selectedEncounter.meta_data.dice_roll_log ?? [];
+    diceStateRef.current = selectedEncounter.meta_data.dice_roll_state;
   } else if (selectedEncounter?.meta_data.initiative_log && selectedEncounter.meta_data.initiative_log.length >= initiativeLogRef.current.length) {
     initiativeLogRef.current = selectedEncounter.meta_data.initiative_log;
+  }
+  if (selectedEncounter?.meta_data.dice_roll_log && selectedEncounter.meta_data.dice_roll_log.length >= diceLogRef.current.length) {
+    diceLogRef.current = selectedEncounter.meta_data.dice_roll_log;
+  }
+  if (selectedEncounter?.meta_data.dice_roll_state) {
+    diceStateRef.current = selectedEncounter.meta_data.dice_roll_state;
   }
   const selected = combatants.find((item) => item._id === selectedId) ?? null;
   const statuses = useCombatantStatuses(selectedEncounter?.id ?? null, combatants);
@@ -732,6 +936,12 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const noteEncounter = encounters.find((item) => item.name.trim().toLowerCase() === selectedNote?.page.name.trim().toLowerCase());
   const activeCharacterIds = new Set((selectedEncounter?.combatants.list ?? []).filter((combatant) => combatant.type === 'CHARACTER').map((combatant) => combatant.character));
   const benchPlayers = players.filter((player) => !activeCharacterIds.has(player.id));
+  const diceState = selectedEncounter?.meta_data.dice_roll_state;
+  const diceSide = diceState?.side;
+  const diceStat = diceState?.stat;
+  const diceDc = diceState?.dc ?? null;
+  const diceRows = !diceSide || !diceStat ? [] : filterCombatantsBySide(activeCombatants, diceSide);
+  const canRollCheck = Boolean(isGm && !rosterSaving && diceSide && diceStat && diceDc != null && Number.isFinite(diceDc) && diceRows.length > 0);
 
   function persistRoster(list: Combatant[], metaPatch?: Partial<Encounter['meta_data']>) {
     const encounter = selectedEncounterRef.current;
@@ -742,6 +952,14 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
       ? metaPatch.initiative_log ?? []
       : encounter.meta_data.initiative_log ?? initiativeLogRef.current;
     initiativeLogRef.current = initiative_log;
+    const dice_roll_log = metaPatch && 'dice_roll_log' in metaPatch
+      ? metaPatch.dice_roll_log ?? []
+      : encounter.meta_data.dice_roll_log ?? diceLogRef.current;
+    diceLogRef.current = dice_roll_log;
+    const dice_roll_state = metaPatch && 'dice_roll_state' in metaPatch
+      ? metaPatch.dice_roll_state
+      : encounter.meta_data.dice_roll_state ?? diceStateRef.current;
+    diceStateRef.current = dice_roll_state;
     onUpdateEncounter({
       ...encounter,
       combatants: { list },
@@ -749,6 +967,8 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
         ...encounter.meta_data,
         ...metaPatch,
         initiative_log,
+        dice_roll_log,
+        dice_roll_state,
         party_size: allies.length,
         party_level: levels.length ? levels.reduce((sum, level) => sum + level, 0) / levels.length : 0,
       },
@@ -879,6 +1099,64 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     persistRoster(encounter.combatants.list, { initiative_log: [] });
   }
 
+  function persistDiceState(patch: Partial<DiceRollState>) {
+    const encounter = selectedEncounterRef.current;
+    if (!encounter || !isGm) return;
+    const current = encounter.meta_data.dice_roll_state ?? diceStateRef.current ?? {};
+    persistRoster(encounter.combatants.list, { dice_roll_state: { ...current, ...patch } });
+  }
+
+  function clearDiceRollLog() {
+    const encounter = selectedEncounterRef.current;
+    if (!encounter || !isGm || rosterSaving) return;
+    persistRoster(encounter.combatants.list, { dice_roll_log: [] });
+  }
+
+  function removeDiceRollLog(entry: DiceRollLog) {
+    const encounter = selectedEncounterRef.current;
+    if (!encounter || !isGm || rosterSaving) return;
+    const existing = diceLogRef.current.length ? diceLogRef.current : encounter.meta_data.dice_roll_log ?? [];
+    persistRoster(encounter.combatants.list, {
+      dice_roll_log: existing.filter((item) => (entry.id && item.id ? item.id !== entry.id : item !== entry)),
+    });
+  }
+
+  function rollGroupCheck(rollBonuses: Map<string, InitiativeRollChoice>) {
+    const encounter = selectedEncounterRef.current;
+    if (!encounter) return;
+    const state = encounter.meta_data.dice_roll_state ?? diceStateRef.current;
+    const dc = state?.dc;
+    const stat = state?.stat;
+    if (dc == null || !Number.isFinite(dc) || !stat) {
+      setCheckOpen(false);
+      return;
+    }
+    const results: Record<string, DiceCheckResult> = {};
+    for (const [id, choice] of rollBonuses) {
+      if (!choice) continue;
+      const die = rollDie('D20');
+      const total = die + choice.bonus;
+      results[id] = {
+        die,
+        bonus: choice.bonus,
+        source: choice.source,
+        total,
+        outcome: degreeOfSuccess(die, total, dc),
+      };
+    }
+    if (Object.keys(results).length === 0) {
+      setCheckOpen(false);
+      return;
+    }
+    const rows = filterCombatantsBySide(activeCombatants, state.side);
+    const existingLog = diceLogRef.current.length ? diceLogRef.current : encounter.meta_data.dice_roll_log ?? [];
+    persistRoster(encounter.combatants.list, {
+      dice_roll_state: { ...state, results },
+      dice_roll_log: [...existingLog, buildDiceRollLog(titleDraft || state.title || '', dc, stat, rows, results)],
+    });
+    setCheckOpen(false);
+  }
+
   function resetEncounterState() {
     if (!selectedEncounter || !isGm || rosterSaving) return;
     const populatedById = new Map(combatants.map((combatant) => [combatant._id, combatant]));
@@ -904,7 +1182,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
         }
         return resetCombatant(combatant, maxHp);
       }),
-      { initiative_log: [] },
+      { initiative_log: [], dice_roll_log: [], dice_roll_state: undefined },
     );
     setResetOpen(false);
   }
@@ -1051,6 +1329,22 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     persistCombatantRecord(appendActionLog(raw, createActionLogEntry(draft, currentActionRound(encounter.meta_data.initiative_log))));
   }
 
+  function renameNote(index: number, name: string) {
+    const trimmed = name.trim();
+    const pages = [...(campaign.notes?.pages ?? [])];
+    const page = pages[index];
+    if (!page || !trimmed || page.name === trimmed) return;
+    pages[index] = { ...page, name: trimmed };
+    onUpdateCampaign({ ...campaign, notes: { ...campaign.notes, pages } });
+  }
+
+  function renameEncounter(id: number, name: string) {
+    const trimmed = name.trim();
+    const encounter = encounters.find((item) => item.id === id);
+    if (!encounter || !trimmed || encounter.name === trimmed) return;
+    onUpdateEncounter({ ...encounter, name: trimmed });
+  }
+
   function persistDeleteLogEntry(entryId: string) {
     const encounter = selectedEncounterRef.current;
     if (!selected || !encounter) return;
@@ -1109,6 +1403,10 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     setInitiativeOpen(false);
     setCreaturePickerOpen(false);
     setResetOpen(false);
+    setCheckOpen(false);
+    setEncounterTab('combat');
+    setTitleDraft(selectedEncounter?.meta_data.dice_roll_state?.title ?? '');
+    setDcDraft(selectedEncounter?.meta_data.dice_roll_state?.dc != null ? String(selectedEncounter.meta_data.dice_roll_state.dc) : '');
   }, [selectedEncounter?.id]);
   useEffect(() => window.localStorage.setItem(DETAIL_WIDTH_KEY, String(detailWidth)), [detailWidth]);
 
@@ -1116,7 +1414,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     <div className='flex h-screen min-h-[680px] flex-col overflow-hidden bg-p1-page text-p1-text'>
       <WorkspaceHeader label={campaign.name} campaignId={campaign.id} encounterId={selectedEncounter?.id ?? null} noteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} />
       <div className={`grid min-h-0 flex-1 ${viewingNotes || viewingSettings ? 'grid-cols-[248px_minmax(280px,1fr)]' : 'grid-cols-[248px_minmax(280px,1fr)_6px_auto]'}`}>
-        <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddAllPlayers={addAllPlayers} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onDeleteNote={onDeleteNote} onDeleteEncounter={onDeleteEncounter} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} />
+        <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddAllPlayers={addAllPlayers} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onDeleteNote={onDeleteNote} onDeleteEncounter={onDeleteEncounter} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} onRenameNote={renameNote} onRenameEncounter={renameEncounter} />
         <main className='min-w-0 overflow-auto bg-p1-surface'>
           {viewingSettings ? (
             <SettingsSurface
@@ -1133,17 +1431,56 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
             <NoteSurface note={selectedNote} isGm={isGm} encounterLink={noteEncounter ? { href: `/phase1/campaign/${campaign.id}/encounters/${noteEncounter.id}`, name: noteEncounter.name } : undefined} />
           ) : (
             <>
-              <EncounterHeader encounter={selectedEncounter} combatants={combatants} count={activeCombatants.length} isGm={isGm} noteLink={encounterNote ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} canRollInitiative={isGm && activeCombatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && activeCombatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} onOpenDice={() => setDiceOpen(true)} />
+              <EncounterHeader encounter={selectedEncounter} combatants={combatants} count={activeCombatants.length} isGm={isGm} noteLink={encounterNote ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} tab={encounterTab} onTab={setEncounterTab} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} canRollInitiative={isGm && activeCombatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && activeCombatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} onOpenDice={() => setDiceOpen(true)} />
               {rosterError && <div className='border-b border-p1-danger/40 bg-p1-danger/10 px-5 py-2 text-xs text-p1-danger-soft'>Roster update failed: {rosterError.message}</div>}
+              {encounterTab === 'dice' && (
+                <DiceRollToolbar
+                  isGm={isGm}
+                  side={diceSide}
+                  title={titleDraft}
+                  dc={dcDraft}
+                  stat={diceStat ?? ''}
+                  canRoll={canRollCheck}
+                  canClear={isGm && !rosterSaving && Object.keys(diceState?.results ?? {}).length > 0}
+                  onSide={(side) => persistDiceState({ side, results: {} })}
+                  onTitle={setTitleDraft}
+                  onTitleCommit={(title) => persistDiceState({ title })}
+                  onDc={setDcDraft}
+                  onDcCommit={(dc) => persistDiceState({ dc, results: {} })}
+                  onStat={(stat) => persistDiceState({ stat: stat || undefined, results: {} })}
+                  onRoll={() => setCheckOpen(true)}
+                  onClear={() => persistDiceState({ results: {} })}
+                />
+              )}
+              {encounterTab === 'dice' && <DiceRollColorKey />}
               <div className='p-5'>
-                <CombatantGrid combatants={orderedCombatants} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={initiativeRollNonce} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} />
-                <InitiativeRoundLogPanel log={selectedEncounter?.meta_data.initiative_log ?? []} canEdit={isGm && !rosterSaving} canClear={isGm && !rosterSaving} onClear={clearInitiativeLog} onUpdateNote={updateRoundNote} />
+                {encounterTab === 'combat' ? (
+                  <>
+                    <CombatantGrid combatants={orderedCombatants} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={initiativeRollNonce} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} />
+                    <InitiativeRoundLogPanel log={selectedEncounter?.meta_data.initiative_log ?? []} canEdit={isGm && !rosterSaving} canClear={isGm && !rosterSaving} onClear={clearInitiativeLog} onUpdateNote={updateRoundNote} />
+                  </>
+                ) : (
+                  <>
+                    <CombatantGrid combatants={diceRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} dice={{ columnLabel: checkStatLabel(diceStat), dc: diceDc, results: diceState?.results ?? {}, emptyMessage: !diceSide || !diceStat ? 'Pick who to include and which check to roll. The grid stays empty until both are set.' : 'No matching combatants for this filter.' }} />
+                    <DiceRollLogPanel log={selectedEncounter?.meta_data.dice_roll_log ?? []} canClear={isGm && !rosterSaving} onClear={clearDiceRollLog} onRemove={removeDiceRollLog} />
+                  </>
+                )}
               </div>
               {initiativeOpen && selectedEncounter && (
                 <InitiativeRollModal
                   combatants={activeCombatants}
                   onConfirm={rollInitiative}
                   onClose={() => setInitiativeOpen(false)}
+                />
+              )}
+              {checkOpen && selectedEncounter && diceStat && diceDc != null && (
+                <DiceCheckRollModal
+                  combatants={diceRows}
+                  defaultStat={diceStat}
+                  title={titleDraft || diceState?.title || ''}
+                  dc={diceDc}
+                  onConfirm={rollGroupCheck}
+                  onClose={() => setCheckOpen(false)}
                 />
               )}
               {creaturePickerOpen && (
@@ -1270,8 +1607,8 @@ function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, v
   );
 }
 
-function CampaignRail({ campaign, encounters, players, outCombatants, selectedEncounter, selectedId, notePages, selectedNoteIndex, viewingSettings, isGm, rosterSaving, onRemovePlayer, onAddAllPlayers, onSelectCombatant, onMarkOut, onDeleteNote, onDeleteEncounter, onCreateNote, onCreateEncounter }: {
-  campaign: Campaign; encounters: Encounter[]; players: Character[]; outCombatants: PopulatedCombatant[]; selectedEncounter: Encounter | null; selectedId: string | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; rosterSaving: boolean; onRemovePlayer: (combatantId: string) => void; onAddAllPlayers: () => void; onSelectCombatant: (id: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void;
+function CampaignRail({ campaign, encounters, players, outCombatants, selectedEncounter, selectedId, notePages, selectedNoteIndex, viewingSettings, isGm, rosterSaving, onRemovePlayer, onAddAllPlayers, onSelectCombatant, onMarkOut, onDeleteNote, onDeleteEncounter, onCreateNote, onCreateEncounter, onRenameNote, onRenameEncounter }: {
+  campaign: Campaign; encounters: Encounter[]; players: Character[]; outCombatants: PopulatedCombatant[]; selectedEncounter: Encounter | null; selectedId: string | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; rosterSaving: boolean; onRemovePlayer: (combatantId: string) => void; onAddAllPlayers: () => void; onSelectCombatant: (id: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; onRenameNote: (index: number, name: string) => void; onRenameEncounter: (id: number, name: string) => void;
 }) {
   const [benchActive, setBenchActive] = useState(false);
   const [outActive, setOutActive] = useState(false);
@@ -1283,6 +1620,7 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
   const [benchMenu, setBenchMenu] = useState<{ x: number; y: number } | null>(null);
   const [outMenu, setOutMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<RailContextTarget | null>(null);
+  const [pendingRename, setPendingRename] = useState<RailContextTarget | null>(null);
   const canManageRoster = isGm && !rosterSaving && Boolean(selectedEncounter);
 
   function openSectionMenu(event: ReactMouseEvent, kind: 'note' | 'encounter') {
@@ -1415,6 +1753,10 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
+          onRename={() => {
+            setMenu(null);
+            setPendingRename(menu);
+          }}
           onDelete={() => {
             setMenu(null);
             setPendingDelete(menu);
@@ -1468,6 +1810,18 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
           onReturn={() => {
             setOutMenu(null);
             onMarkOut(outMenu.id, undefined);
+          }}
+        />
+      )}
+      {pendingRename && (
+        <RenameDialog
+          title={pendingRename.kind === 'note' ? 'Rename note' : 'Rename encounter'}
+          initialName={pendingRename.name}
+          onCancel={() => setPendingRename(null)}
+          onConfirm={(name) => {
+            if (pendingRename.kind === 'note') onRenameNote(pendingRename.id, name);
+            else onRenameEncounter(pendingRename.id, name);
+            setPendingRename(null);
           }}
         />
       )}
@@ -1682,7 +2036,7 @@ function CreateNameModal({ title, label, confirmLabel, onCancel, onConfirm }: { 
   );
 }
 
-function RailContextMenu({ x, y, onClose, onDelete }: { x: number; y: number; onClose: () => void; onDelete: () => void }) {
+function CharacterGridContextMenu({ x, y, onClose, onExportJson, onExportPdf, onDelete }: { x: number; y: number; onClose: () => void; onExportJson: () => void; onExportPdf: () => void; onDelete: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -1691,16 +2045,96 @@ function RailContextMenu({ x, y, onClose, onDelete }: { x: number; y: number; on
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
   const left = Math.min(x, window.innerWidth - 176);
-  const top = Math.min(y, window.innerHeight - 56);
+  const top = Math.min(y, window.innerHeight - 120);
+  return createPortal(
+    <>
+      <div className='fixed inset-0 z-[109]' onPointerDown={onClose} />
+      <div
+        role='menu'
+        className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl'
+        style={{ left, top }}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onExportJson(); }}>
+          <Download size={14} /> Export to JSON
+        </button>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onExportPdf(); }}>
+          <Download size={14} /> Export to PDF
+        </button>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onDelete(); }}>
+          <Trash2 size={14} /> Delete
+        </button>
+      </div>
+    </>,
+    document.body
+  );
+}
+
+function RailContextMenu({ x, y, onClose, onRename, onDelete }: { x: number; y: number; onClose: () => void; onRename: () => void; onDelete: () => void }) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+  const left = Math.min(x, window.innerWidth - 176);
+  const top = Math.min(y, window.innerHeight - 88);
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
       <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onRename}>
+          <Pencil size={14} /> Rename
+        </button>
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onDelete}>
           <Trash2 size={14} /> Delete
         </button>
       </div>
     </>,
+    document.body
+  );
+}
+
+function RenameDialog({ title, initialName, onCancel, onConfirm }: { title: string; initialName: string; onCancel: () => void; onConfirm: (name: string) => void }) {
+  const [name, setName] = useState(initialName);
+  const trimmed = name.trim();
+  const canSave = trimmed.length > 0 && trimmed !== initialName;
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onCancel();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onCancel]);
+  return createPortal(
+    <div
+      className='fixed inset-0 z-[120] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]'
+      role='presentation'
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <section role='dialog' aria-modal='true' aria-labelledby='rename-title' className='w-full max-w-sm border border-p1-border bg-p1-surface p-5 shadow-2xl'>
+        <h2 id='rename-title' className='text-lg font-semibold'>{title}</h2>
+        <label className='mt-3 block'>
+          <span className='text-[10px] uppercase text-p1-faint'>Name</span>
+          <input
+            className='mt-1 h-10 w-full border border-p1-border bg-p1-inset px-3 text-base text-p1-text outline-none focus:border-p1-accent/60'
+            value={name}
+            autoFocus
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && canSave) onConfirm(trimmed);
+            }}
+          />
+        </label>
+        <div className='mt-5 flex justify-end gap-2'>
+          <button type='button' className='toolbar-button' onClick={onCancel}>Cancel</button>
+          <button type='button' className='toolbar-button' disabled={!canSave} onClick={() => onConfirm(trimmed)}>Rename</button>
+        </div>
+      </section>
+    </div>,
     document.body
   );
 }
@@ -1820,13 +2254,26 @@ function EncounterDifficultyModal({ difficulty, onClose }: { difficulty: Encount
   );
 }
 
-function EncounterHeader({ encounter, combatants, count, isGm, noteLink, canAddCreature, onAddCreature, canRollInitiative, onRollInitiative, canClearInitiative, onClearInitiative, canMaxStats, onMaxStats, canReset, onReset, onOpenDice }: { encounter: Encounter | null; combatants: PopulatedCombatant[]; count: number; isGm: boolean; noteLink?: { href: string; name: string }; canAddCreature?: boolean; onAddCreature?: () => void; canRollInitiative?: boolean; onRollInitiative?: () => void; canClearInitiative?: boolean; onClearInitiative?: () => void; canMaxStats?: boolean; onMaxStats?: () => void; canReset?: boolean; onReset?: () => void; onOpenDice?: () => void }) {
+function EncounterHeader({ encounter, combatants, count, isGm, noteLink, tab, onTab, canAddCreature, onAddCreature, canRollInitiative, onRollInitiative, canClearInitiative, onClearInitiative, canMaxStats, onMaxStats, canReset, onReset, onOpenDice }: { encounter: Encounter | null; combatants: PopulatedCombatant[]; count: number; isGm: boolean; noteLink?: { href: string; name: string }; tab: 'combat' | 'dice'; onTab: (tab: 'combat' | 'dice') => void; canAddCreature?: boolean; onAddCreature?: () => void; canRollInitiative?: boolean; onRollInitiative?: () => void; canClearInitiative?: boolean; onClearInitiative?: () => void; canMaxStats?: boolean; onMaxStats?: () => void; canReset?: boolean; onReset?: () => void; onOpenDice?: () => void }) {
   const [xpOpen, setXpOpen] = useState(false);
   const difficulty = encounter && shouldDisplayEncounterDifficulty(combatants) ? calculateDifficulty(encounter, combatants) : null;
   return (
     <div className='sticky top-0 z-10 border-b border-p1-border bg-p1-surface/95 px-5 py-4 backdrop-blur'>
       <div className='flex items-center gap-5'>
-        <div className='min-w-0 flex-1'><Eyebrow>{isGm ? 'GM encounter' : 'Assigned encounter'}</Eyebrow><h2 className='mt-1 truncate text-xl font-semibold'>{encounter?.name ?? 'No encounter selected'}</h2>{noteLink ? <Link to={noteLink.href} className='mt-1 block truncate text-xs text-p1-accent hover:underline'>See campaign Notes page: {noteLink.name}</Link> : <p className='mt-1 truncate text-xs text-p1-faint'>{encounter?.meta_data.description || `${count} combatants`}</p>}</div>
+        <div className='min-w-0 flex-1'><Eyebrow>{isGm ? 'GM encounter' : 'Assigned encounter'}</Eyebrow><h2 className='mt-1 truncate text-xl font-semibold'>{encounter?.name ?? 'No encounter selected'}</h2>{noteLink ? <Link to={noteLink.href} className='mt-1 block truncate text-xs text-p1-accent hover:underline'>See campaign Notes page: {noteLink.name}</Link> : <p className='mt-1 truncate text-xs text-p1-faint'>{encounter?.meta_data.description || `${count} combatants`}</p>}
+          <div className='mt-3 flex gap-1'>
+            {(['combat', 'dice'] as const).map((item) => (
+              <button
+                key={item}
+                type='button'
+                className={`border-b-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide ${tab === item ? 'border-p1-accent text-p1-accent-soft' : 'border-transparent text-p1-faint hover:text-p1-text'}`}
+                onClick={() => onTab(item)}
+              >
+                {item === 'combat' ? 'Combat' : 'Dice Rolls'}
+              </button>
+            ))}
+          </div>
+        </div>
         {difficulty && (
           <button type='button' className='xp-challenge' title='Open XP budget math' onClick={() => setXpOpen(true)}>
             <span className={`xp-challenge-dot xp-challenge-dot-${difficulty.color}`} />
@@ -1834,14 +2281,100 @@ function EncounterHeader({ encounter, combatants, count, isGm, noteLink, canAddC
           </button>
         )}
         {xpOpen && difficulty && <EncounterDifficultyModal difficulty={difficulty} onClose={() => setXpOpen(false)} />}
-        <Phase1DiceButton onOpen={() => onOpenDice?.()} />
-        {isGm && <button className='toolbar-button' disabled={!canAddCreature} title={canAddCreature ? 'Add a creature from the catalog' : 'Wait for the roster to finish saving'} onClick={onAddCreature}><Swords size={15} /> Add creature</button>}
-        <button className='toolbar-button' disabled={!canRollInitiative} title={!isGm ? 'GM only' : count === 0 ? 'Add combatants first' : 'Roll initiative'} onClick={onRollInitiative}><GiDiceTwentyFacesTwenty size={15} /> Roll initiative</button>
-        <button className='toolbar-button' disabled={!canClearInitiative} title={!isGm ? 'GM only' : canClearInitiative ? 'Clear initiative and restore roster order' : 'No initiative to clear'} onClick={onClearInitiative}><Eraser size={15} /> Clear init</button>
-        <button className='toolbar-button' disabled={!canMaxStats} title={!isGm ? 'GM only' : canMaxStats ? 'Restore HP, spells, focus, wands/staves, and other encounter consumables' : count === 0 ? 'Add combatants first' : 'Wait for the roster to finish saving'} onClick={onMaxStats}><HeartPulse size={15} /> Max stats</button>
-        <button className='toolbar-button' disabled={!canReset} title={!isGm ? 'GM only' : canReset ? 'Reset HP, temp HP, conditions, spells, initiative, and logs' : 'Wait for the roster to finish saving'} onClick={onReset}><RotateCcw size={15} /> Reset</button>
-        <button className='toolbar-button' disabled title='Available after read-only parity'><Shield size={15} /> Group check</button>
+        {tab === 'combat' && (
+          <>
+            <Phase1DiceButton onOpen={() => onOpenDice?.()} />
+            {isGm && <button className='toolbar-button' disabled={!canAddCreature} title={canAddCreature ? 'Add a creature from the catalog' : 'Wait for the roster to finish saving'} onClick={onAddCreature}><Swords size={15} /> Add creature</button>}
+            <button className='toolbar-button' disabled={!canRollInitiative} title={!isGm ? 'GM only' : count === 0 ? 'Add combatants first' : 'Roll initiative'} onClick={onRollInitiative}><GiDiceTwentyFacesTwenty size={15} /> Roll initiative</button>
+            <button className='toolbar-button' disabled={!canClearInitiative} title={!isGm ? 'GM only' : canClearInitiative ? 'Clear initiative and restore roster order' : 'No initiative to clear'} onClick={onClearInitiative}><Eraser size={15} /> Clear init</button>
+            <button className='toolbar-button' disabled={!canMaxStats} title={!isGm ? 'GM only' : canMaxStats ? 'Restore HP, spells, focus, wands/staves, and other encounter consumables' : count === 0 ? 'Add combatants first' : 'Wait for the roster to finish saving'} onClick={onMaxStats}><HeartPulse size={15} /> Max stats</button>
+            <button className='toolbar-button' disabled={!canReset} title={!isGm ? 'GM only' : canReset ? 'Reset HP, temp HP, conditions, spells, initiative, and logs' : 'Wait for the roster to finish saving'} onClick={onReset}><RotateCcw size={15} /> Reset</button>
+            <button className='toolbar-button' disabled title='Available after read-only parity'><Shield size={15} /> Group check</button>
+          </>
+        )}
       </div>
+    </div>
+  );
+}
+
+function DiceRollToolbar({ isGm, side, title, dc, stat, canRoll, canClear, onSide, onTitle, onTitleCommit, onDc, onDcCommit, onStat, onRoll, onClear }: {
+  isGm: boolean;
+  side: DiceRollSide | undefined;
+  title: string;
+  dc: string;
+  stat: string;
+  canRoll: boolean;
+  canClear: boolean;
+  onSide: (side: DiceRollSide) => void;
+  onTitle: (title: string) => void;
+  onTitleCommit: (title: string) => void;
+  onDc: (dc: string) => void;
+  onDcCommit: (dc: number | null) => void;
+  onStat: (stat: string) => void;
+  onRoll: () => void;
+  onClear: () => void;
+}) {
+  const groups = ['Senses', 'Saves', 'Ability', 'Skill'] as const;
+  return (
+    <div className='flex flex-wrap items-end gap-3 border-b border-p1-border bg-p1-surface px-5 py-3'>
+      <fieldset className='flex items-center gap-3'>
+        <legend className='sr-only'>Who to include</legend>
+        {(['enemies', 'allies', 'both'] as const).map((value) => (
+          <label key={value} className='flex items-center gap-1.5 text-xs text-p1-muted'>
+            <input type='radio' name='dice-roll-side' checked={side === value} disabled={!isGm} onChange={() => onSide(value)} />
+            {value === 'enemies' ? 'Enemies' : value === 'allies' ? 'Allies' : 'Both'}
+          </label>
+        ))}
+      </fieldset>
+      <label className='min-w-[12rem] flex-1'>
+        <span className='text-[10px] uppercase text-p1-faint'>Title</span>
+        <input
+          className='mt-1 h-9 w-full border border-p1-border bg-p1-inset px-2 text-sm text-p1-text'
+          value={title}
+          disabled={!isGm}
+          placeholder='Party against flying blade trap'
+          onChange={(event) => onTitle(event.target.value)}
+          onBlur={() => onTitleCommit(title)}
+        />
+      </label>
+      <label className='w-20'>
+        <span className='text-[10px] uppercase text-p1-faint'>DC</span>
+        <input
+          className='mt-1 h-9 w-full border border-p1-border bg-p1-inset px-2 text-center text-sm text-p1-text'
+          type='number'
+          value={dc}
+          disabled={!isGm}
+          onChange={(event) => onDc(event.target.value)}
+          onBlur={() => {
+            const parsed = Number.parseInt(dc, 10);
+            onDcCommit(Number.isFinite(parsed) ? parsed : null);
+          }}
+        />
+      </label>
+      <label className='min-w-[14rem]'>
+        <span className='text-[10px] uppercase text-p1-faint'>Check</span>
+        <select
+          className='mt-1 h-9 w-full border border-p1-border bg-p1-inset px-2 text-base text-p1-text'
+          value={stat}
+          disabled={!isGm}
+          onChange={(event) => onStat(event.target.value)}
+        >
+          <option value=''>Select a check</option>
+          {groups.map((group) => (
+            <optgroup key={group} label={group}>
+              {DICE_CHECK_OPTIONS.filter((option) => option.group === group).map((option) => (
+                <option key={option.value} value={option.value}>{checkStatLabel(option.value)}</option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </label>
+      <button type='button' className='toolbar-button' disabled={!canRoll} title={!isGm ? 'GM only' : !canRoll ? 'Pick a side, check, and DC first' : 'Choose per-combatant bonuses, then roll'} onClick={onRoll}>
+        <GiDiceTwentyFacesTwenty size={15} /> Roll
+      </button>
+      <button type='button' className='toolbar-button' disabled={!canClear} title={!isGm ? 'GM only' : canClear ? 'Clear current roll results from the grid. The roll log is not changed.' : 'No results to clear'} onClick={onClear}>
+        <Eraser size={14} /> Clear
+      </button>
     </div>
   );
 }
@@ -1880,15 +2413,15 @@ function SortGlyph({ dir }: { dir: 'asc' | 'desc' | null }) {
   return <ArrowUpDown size={12} className='opacity-50' />;
 }
 
-function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedId, onSelect, statuses, calculating, canManageRoster, canManageCombatant, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature, onRestoreCombatant, onMarkOut, onUpdateInitiative, onUpdateHp }: { combatants: PopulatedCombatant[]; encounterId: number | null; initiativeRollNonce: number; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; canManageCombatant: (combatant: PopulatedCombatant) => boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void; onRestoreCombatant: (combatantId: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onUpdateInitiative: (combatantId: string, initiative: number) => void; onUpdateHp: (combatantId: string, raw: string, note: string | null) => void }) {
+function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedId, onSelect, statuses, calculating, canManageRoster, canManageCombatant, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature, onRestoreCombatant, onMarkOut, onUpdateInitiative, onUpdateHp, dice }: { combatants: PopulatedCombatant[]; encounterId: number | null; initiativeRollNonce: number; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; canManageCombatant: (combatant: PopulatedCombatant) => boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void; onRestoreCombatant: (combatantId: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onUpdateInitiative: (combatantId: string, initiative: number) => void; onUpdateHp: (combatantId: string, raw: string, note: string | null) => void; dice?: { columnLabel: string; dc: number | null; results: Record<string, DiceCheckResult>; emptyMessage: string } }) {
   const [encounterActive, setEncounterActive] = useState(false);
   const [gridSort, setGridSort] = useState<GridSort>(() => (
-    combatants.some((combatant) => initiativeValue(combatant) != null) ? { key: 'init', dir: 'desc' } : null
+    dice ? null : combatants.some((combatant) => initiativeValue(combatant) != null) ? { key: 'init', dir: 'desc' } : null
   ));
   const [menu, setMenu] = useState<{ id: string; type: Combatant['type']; x: number; y: number } | null>(null);
   const [hpEditor, setHpEditor] = useState<{ combatantId: string; name: string; currentHp: number; maxHp: number; rect: DOMRect } | null>(null);
   useEffect(() => {
-    setGridSort(combatants.some((combatant) => initiativeValue(combatant) != null) ? { key: 'init', dir: 'desc' } : null);
+    setGridSort(dice ? null : combatants.some((combatant) => initiativeValue(combatant) != null) ? { key: 'init', dir: 'desc' } : null);
   }, [encounterId]);
   useEffect(() => {
     if (initiativeRollNonce > 0) setGridSort({ key: 'init', dir: 'desc' });
@@ -1917,7 +2450,7 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
   return (
     <div className={`overflow-x-auto border bg-p1-inset transition-colors ${encounterActive ? 'border-p1-accent bg-p1-accent/[0.04]' : 'border-p1-border'}`} onDragOver={(event) => { if (canManageRoster && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setEncounterActive(true); } }} onDragLeave={() => setEncounterActive(false)} onDrop={dropOnEncounter}>
       <table className='w-full min-w-[920px] table-fixed border-collapse text-sm'>
-        <thead className='border-b border-p1-border bg-p1-header text-[10px] uppercase text-p1-faint'><tr><th className='w-20 px-0 text-left'><button type='button' className='inline-flex w-full items-center gap-1 px-3 py-3 uppercase hover:text-p1-muted' onClick={() => setGridSort((value) => cycleGridSort(value, 'init'))} aria-label='Cycle initiative sort' title={gridSort?.key === 'init' && gridSort.dir === 'desc' ? 'Sorted high to low. Click for low to high.' : gridSort?.key === 'init' && gridSort.dir === 'asc' ? 'Sorted low to high. Click to clear sort.' : 'Click to sort by initiative, high to low.'}>Init<SortGlyph dir={gridSort?.key === 'init' ? gridSort.dir : null} /></button></th><th className='px-0 text-left'><button type='button' className='inline-flex w-full items-center gap-1 px-3 py-3 uppercase hover:text-p1-muted' onClick={() => setGridSort((value) => cycleGridSort(value, 'name'))} aria-label='Cycle combatant name sort' title={gridSort?.key === 'name' && gridSort.dir === 'asc' ? 'Sorted A–Z. Click for Z–A.' : gridSort?.key === 'name' && gridSort.dir === 'desc' ? 'Sorted Z–A. Click to clear sort.' : 'Click to sort by name A–Z.'}>Combatant<SortGlyph dir={gridSort?.key === 'name' ? gridSort.dir : null} /></button></th><th className='w-44 px-3 text-left'>Conditions</th><th className='w-64 px-3 text-left'>Defenses</th><th className='w-32 px-3 text-left'>HP</th><th className='w-16 px-3 text-center'>Open</th></tr></thead>
+        <thead className='border-b border-p1-border bg-p1-header text-[10px] uppercase text-p1-faint'><tr>{!dice && <th className='w-20 px-0 text-left'><button type='button' className='inline-flex w-full items-center gap-1 px-3 py-3 uppercase hover:text-p1-muted' onClick={() => setGridSort((value) => cycleGridSort(value, 'init'))} aria-label='Cycle initiative sort' title={gridSort?.key === 'init' && gridSort.dir === 'desc' ? 'Sorted high to low. Click for low to high.' : gridSort?.key === 'init' && gridSort.dir === 'asc' ? 'Sorted low to high. Click to clear sort.' : 'Click to sort by initiative, high to low.'}>Init<SortGlyph dir={gridSort?.key === 'init' ? gridSort.dir : null} /></button></th>}<th className='px-0 text-left'><button type='button' className='inline-flex w-full items-center gap-1 px-3 py-3 uppercase hover:text-p1-muted' onClick={() => setGridSort((value) => cycleGridSort(value, 'name'))} aria-label='Cycle combatant name sort' title={gridSort?.key === 'name' && gridSort.dir === 'asc' ? 'Sorted A–Z. Click for Z–A.' : gridSort?.key === 'name' && gridSort.dir === 'desc' ? 'Sorted Z–A. Click to clear sort.' : 'Click to sort by name A–Z.'}>Combatant<SortGlyph dir={gridSort?.key === 'name' ? gridSort.dir : null} /></button></th><th className='w-44 px-3 text-left'>Conditions</th><th className='w-64 px-3 text-left'>Defenses</th><th className='w-32 px-3 text-left'>{dice ? 'Roll / DC' : 'HP'}</th>{dice && <th className='w-72 px-3 text-left'>{dice.columnLabel}{dice.dc != null ? ` vs DC ${dice.dc}` : ''}</th>}<th className='w-16 px-3 text-center'>Open</th></tr></thead>
         <tbody>
           {rows.map((combatant) => {
             const detailsVisible = combatant.access?.details_revealed !== false;
@@ -1925,14 +2458,33 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
             const calculated = statuses?.[combatant._id];
             const stats = calculated ?? (!calculable ? fallbackStatus(combatant.data) : null);
             const draggable = canManageRoster;
+            const result = dice?.results[combatant._id];
+            const outcomeTone = dice ? outcomeRowClass(result?.outcome) : '';
+            const rowTone = outcomeTone || (combatant._id === selectedId ? 'bg-p1-accent/[0.07]' : 'hover:bg-p1-hover');
+            const critInk = result?.outcome === 'critical-success';
             return (
-              <tr key={combatant._id} draggable={draggable} onDragStart={(event) => { if (draggable) writeCombatantDrag(event, { source: 'encounter', combatantId: combatant._id, characterId: combatant.character }); }} onDragEnd={() => setEncounterActive(false)} onContextMenu={(event) => { if (!canManageRoster || (combatant.type !== 'CREATURE' && combatant.type !== 'CHARACTER')) return; event.preventDefault(); setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY }); }} className={`border-b border-p1-border last:border-0 ${draggable ? 'cursor-grab' : ''} ${combatant._id === selectedId ? 'bg-p1-accent/[0.07]' : 'hover:bg-p1-hover'}`}>
-                <td className='px-3 py-3'><InitiativeCell key={`${combatant._id}:${combatant.initiative ?? ''}:${combatant.initiative_roll?.die ?? ''}`} combatant={combatant} canEdit={canManageRoster} onUpdate={(initiative) => onUpdateInitiative(combatant._id, initiative)} /></td>
-                <td className='px-3 py-3'><button className='flex w-full items-center gap-3 text-left' onClick={() => openCombatant(combatant, onSelect)}>{draggable && <GripVertical size={14} className='shrink-0 text-p1-faint' />}<EntityIcon type={combatant.type} /><span className='min-w-0'><span className='block truncate font-semibold'>{combatant.data.name}</span><span className='block text-xs text-p1-faint'>Level {combatant.data.level} | {combatant.ally ? 'Ally' : 'Enemy'}</span></span></button></td>
-                <td className='px-3 py-3'><CombatantConditionPills conditions={detailsVisible ? compiledConditions(combatant.data.details?.conditions ?? []) : []} onOpen={() => openCombatant(combatant, onSelect)} /></td>
-                <td className='px-3 py-3 text-xs text-p1-muted'>{!detailsVisible ? <span className='text-p1-faint'>Not revealed</span> : stats ? <>{stats.ac} AC <span className='px-1 text-p1-faint'>|</span> Fort {signed(stats.fortitude)}, Ref {signed(stats.reflex)}, Will {signed(stats.will)}</> : calculating ? <span className='text-p1-faint'>Calculating...</span> : <span className='text-p1-danger-soft'>Unavailable</span>}</td>
+              <tr key={combatant._id} draggable={draggable} onDragStart={(event) => { if (draggable) writeCombatantDrag(event, { source: 'encounter', combatantId: combatant._id, characterId: combatant.character }); }} onDragEnd={() => setEncounterActive(false)} onContextMenu={(event) => { if (!canManageRoster || (combatant.type !== 'CREATURE' && combatant.type !== 'CHARACTER')) return; event.preventDefault(); setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY }); }} className={`border-b border-p1-border last:border-0 ${draggable ? 'cursor-grab' : ''} ${rowTone}`}>
+                {!dice && <td className='px-3 py-3'><InitiativeCell key={`${combatant._id}:${combatant.initiative ?? ''}:${combatant.initiative_roll?.die ?? ''}`} combatant={combatant} canEdit={canManageRoster} onUpdate={(initiative) => onUpdateInitiative(combatant._id, initiative)} /></td>}
+                <td className='px-3 py-3'><button className={`flex w-full items-center gap-3 text-left ${critInk ? 'text-[#152214]' : ''}`} onClick={() => openCombatant(combatant, onSelect)}>{draggable && <GripVertical size={14} className={`shrink-0 ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`} />}<EntityIcon type={combatant.type} /><span className='min-w-0'><span className='block truncate font-semibold'>{combatant.data.name}</span><span className={`block text-xs ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}>Level {combatant.data.level} | {combatant.ally ? 'Ally' : 'Enemy'}</span></span></button></td>
                 <td className='px-3 py-3'>
-                  {!detailsVisible ? (
+                  <div className='flex flex-wrap items-center gap-1'>
+                    {dice && (
+                      <span className={`inline-flex items-center truncate rounded-full border border-p1-border px-2 py-[3px] text-[10px] font-medium leading-none tracking-wide ${result ? outcomeRowClass(result.outcome) : 'text-p1-faint'} ${critInk ? 'text-[#234028]' : ''}`}>
+                        {result ? outcomeLabel(result.outcome) : 'Not rolled'}
+                      </span>
+                    )}
+                    <CombatantConditionPills conditions={detailsVisible ? compiledConditions(combatant.data.details?.conditions ?? []) : []} onOpen={() => openCombatant(combatant, onSelect)} maxVisible={dice ? 5 : 2} />
+                  </div>
+                </td>
+                <td className={`px-3 py-3 text-xs ${critInk ? 'text-[#234028]' : 'text-p1-muted'}`}>{!detailsVisible ? <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>Not revealed</span> : stats ? <>{stats.ac} AC <span className={`px-1 ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}>|</span> Fort {signed(stats.fortitude)}, Ref {signed(stats.reflex)}, Will {signed(stats.will)}</> : calculating ? <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>Calculating...</span> : <span className='text-p1-danger-soft'>Unavailable</span>}</td>
+                <td className='px-3 py-3'>
+                  {dice ? (
+                    <span className='inline-flex h-9 min-w-24 items-center justify-center border border-p1-border bg-p1-raised'>
+                      {result ? result.total : '—'}
+                      <span className='px-2 text-p1-faint'>/</span>
+                      {dice.dc ?? '—'}
+                    </span>
+                  ) : !detailsVisible ? (
                     <span className='inline-flex h-9 min-w-24 items-center justify-center border border-p1-border bg-p1-raised text-p1-faint'>Hidden</span>
                   ) : (
                     <GridHpCell
@@ -1948,11 +2500,16 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                     />
                   )}
                 </td>
+                {dice && (
+                  <td className={`px-3 py-3 text-xs ${critInk ? 'text-[#234028]' : 'text-p1-muted'}`}>
+                    {result ? formatCheckRoll(result, result.total, dice.dc ?? undefined) : <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>Not rolled</span>}
+                  </td>
+                )}
                 <td className='px-3 text-center'><button className='icon-button mx-auto' title={`Open ${combatant.data.name}`} onClick={() => openCombatant(combatant, onSelect)}><PanelRight size={16} /></button></td>
               </tr>
             );
           })}
-          {rows.length === 0 && <tr><td colSpan={6} className='p-12 text-center text-sm text-p1-faint'>No combatants in this encounter.</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={dice ? 6 : 6} className='p-12 text-center text-sm text-p1-faint'>{dice?.emptyMessage ?? 'No combatants in this encounter.'}</td></tr>}
         </tbody>
       </table>
       {menu?.type === 'CREATURE' && (
@@ -2182,10 +2739,10 @@ function conditionLabel(condition: Condition) {
   return condition.value != null ? `${condition.name} ${condition.value}` : condition.name;
 }
 
-function CombatantConditionPills({ conditions, onOpen }: { conditions: Condition[]; onOpen: () => void }) {
+function CombatantConditionPills({ conditions, onOpen, maxVisible = CONDITION_PILL_MAX }: { conditions: Condition[]; onOpen: () => void; maxVisible?: number }) {
   if (conditions.length === 0) return null;
-  const visible = conditions.slice(0, CONDITION_PILL_MAX);
-  const extra = conditions.slice(CONDITION_PILL_MAX);
+  const visible = conditions.slice(0, maxVisible);
+  const extra = conditions.slice(maxVisible);
   return (
     <div className='flex flex-wrap items-center gap-1'>
       {visible.map((condition) => (

@@ -1,15 +1,115 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchContentAll, getDefaultSources, getDefaultSourcesKey } from '@content/content-store';
-import type { Creature } from '@schemas/content';
+import type { Creature, Trait } from '@schemas/content';
+import { findCreatureTraits } from '@utils/creature';
 import { getEntityLevel } from '@utils/entity-utils';
 import { ChevronDown, Swords } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { hydrateCreatureForCombat } from './phase1-entity';
 import { lookupMonsterArt } from './phase1-monster-image';
 import { ProseMarkdown } from './phase1-markdown';
 import { Phase1PickerModal } from './phase1-picker-modal';
 
 const EMPTY_CREATURES: Creature[] = [];
+const ANY_CREATURE_TYPE = -10;
+
+type CompanionTypeOption = { id: number; name: string };
+
+export function SelectCompanionModal({
+  onSelect,
+  onClose,
+}: {
+  onSelect: (creature: Creature) => void;
+  onClose: () => void;
+}) {
+  const [typeId, setTypeId] = useState<number | null>(null);
+  const catalog = useQuery({
+    queryKey: ['get-companions-data', { sources: getDefaultSourcesKey('PAGE') }],
+    queryFn: async () => {
+      const traits = await fetchContentAll<Trait>('trait', getDefaultSources('PAGE'));
+      const creatures = await fetchContentAll<Creature>('creature', getDefaultSources('PAGE'));
+      return { traits: traits ?? [], creatures: creatures ?? [] };
+    },
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const types = useMemo<CompanionTypeOption[]>(() => {
+    const companionTypes = (catalog.data?.traits ?? [])
+      .filter((trait) => trait.meta_data?.companion_type_trait)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((trait) => ({ id: trait.id, name: trait.name }));
+    return [...companionTypes, { id: ANY_CREATURE_TYPE, name: 'Any creature' }];
+  }, [catalog.data]);
+  const creatures = useMemo(() => {
+    const all = (catalog.data?.creatures ?? [])
+      .filter((creature) => creature.level !== -100)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (typeId == null || typeId === ANY_CREATURE_TYPE) return all;
+    return all.filter((creature) => findCreatureTraits(creature).includes(typeId));
+  }, [catalog.data, typeId]);
+
+  if (typeId == null) {
+    return (
+      <Phase1PickerModal
+        title='Create companion'
+        titleId='select-companion-type-title'
+        searchPlaceholder='Search companion types'
+        items={types}
+        getName={(item) => item.name}
+        getKey={(item) => String(item.id)}
+        loading={catalog.isLoading}
+        error={catalog.isError ? (catalog.error instanceof Error ? catalog.error.message : 'Could not load companions.') : null}
+        empty='No companion types found.'
+        onClose={onClose}
+        renderItem={(item) => (
+          <button
+            type='button'
+            className='flex w-full items-center border-b border-p1-border px-4 py-3 text-left text-sm text-p1-text hover:bg-p1-hover'
+            onClick={() => setTypeId(item.id)}
+          >
+            {item.name}
+          </button>
+        )}
+      />
+    );
+  }
+
+  const typeName = types.find((item) => item.id === typeId)?.name ?? 'Companion';
+  return (
+    <Phase1PickerModal
+      title={typeName}
+      titleId='select-companion-creature-title'
+      searchPlaceholder='Search companions'
+      items={creatures}
+      getName={(creature) => creature.name}
+      getKey={(creature) => String(creature.id)}
+      matchesSearch={(creature, needle) =>
+        creature.name.toLowerCase().includes(needle) || creature.details.description.toLowerCase().includes(needle)
+      }
+      loading={catalog.isLoading}
+      error={catalog.isError ? (catalog.error instanceof Error ? catalog.error.message : 'Could not load companions.') : null}
+      empty='No matching companions.'
+      onClose={onClose}
+      toolbar={
+        <button type='button' className='mt-2 text-xs text-p1-accent-soft hover:underline' onClick={() => setTypeId(null)}>
+          Back to types
+        </button>
+      }
+      renderItem={(creature) => (
+        <button
+          type='button'
+          className='flex w-full items-center gap-3 border-b border-p1-border px-3 py-2.5 text-left hover:bg-p1-hover'
+          onClick={() => onSelect(creature)}
+        >
+          <CreatureThumb src={creature.details.image_url} name={creature.name} />
+          <span className='min-w-0 flex-1'>
+            <span className='block truncate text-sm text-p1-text'>{creature.name}</span>
+            <span className='block text-[11px] uppercase tracking-wide text-p1-faint'>Level {getEntityLevel(creature)}</span>
+          </span>
+        </button>
+      )}
+    />
+  );
+}
 
 export function SelectCreatureModal({
   busy,

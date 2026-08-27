@@ -207,6 +207,9 @@ export async function importFromFTC(d: FTC) {
     const _class = content.classes.find((c) => labelToVariable(c.name) === labelToVariable(data.class));
     if (_class) {
       character.details!.class = _class;
+    } else {
+      console.warn(`FTC import: class "${data.class}" not found, using random`);
+      character.details!.class = selectRandom(content.classes);
     }
   }
 
@@ -217,6 +220,9 @@ export async function importFromFTC(d: FTC) {
     const background = content.backgrounds.find((b) => labelToVariable(b.name) === labelToVariable(data.background));
     if (background) {
       character.details!.background = background;
+    } else {
+      console.warn(`FTC import: background "${data.background}" not found, using random`);
+      character.details!.background = selectRandom(content.backgrounds);
     }
   }
 
@@ -227,6 +233,9 @@ export async function importFromFTC(d: FTC) {
     const ancestry = content.ancestries.find((a) => labelToVariable(a.name) === labelToVariable(data.ancestry));
     if (ancestry) {
       character.details!.ancestry = ancestry;
+    } else {
+      console.warn(`FTC import: ancestry "${data.ancestry}" not found, using random`);
+      character.details!.ancestry = selectRandom(content.ancestries);
     }
   }
 
@@ -346,16 +355,27 @@ export async function importFromFTC(d: FTC) {
 
   // Random name
   if (data.name === 'RANDOM') {
-    const names = await generateNames(cloneDeep(character), 1);
-    if (names.length > 0) {
-      const name = names[0].replace(/\*/g, '');
-      character.name = name;
+    try {
+      const names = await generateNames(cloneDeep(character), 1);
+      if (names.length > 0) {
+        const name = names[0].replace(/\*/g, '');
+        character.name = name;
+      }
+    } catch (e) {
+      console.warn('FTC import: random name generation failed', e);
+      if (!character.name || character.name === 'RANDOM') {
+        character.name = 'Unknown Wanderer';
+      }
     }
 
     // If we have a random name and no info, let's also get some random info
     if (!data.info) {
-      const charWithInfo = await randomCharacterInfo(character);
-      character.details = charWithInfo.details;
+      try {
+        const charWithInfo = await randomCharacterInfo(character);
+        character.details = charWithInfo.details;
+      } catch (e) {
+        console.warn('FTC import: random character info failed', e);
+      }
     }
   }
 

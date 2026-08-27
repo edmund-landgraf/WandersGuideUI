@@ -4,7 +4,23 @@ import type { CastingSource, LivingEntity, Spell } from '@schemas/content';
 import { cloneDeep } from 'lodash-es';
 import { preparePhase1Entity, type Phase1EntityCombatant } from './phase1-entity';
 
-export type Phase1SpellMode = 'PREPARED' | 'SPONTANEOUS' | 'FOCUS' | 'INNATE';
+export type Phase1SpellMode = 'PREPARED' | 'SPONTANEOUS' | 'FOCUS' | 'INNATE' | 'RITUAL';
+export type Phase1SpellManageMode = 'LIST-ONLY' | 'SLOTS-AND-LIST' | 'SLOTS-ONLY';
+
+export function spellManageMode(sourceType?: string, sourceName?: string, sectionMode?: Phase1SpellMode): Phase1SpellManageMode | null {
+  if (sectionMode === 'FOCUS' || sectionMode === 'INNATE') return null;
+  if (sourceName === 'RITUALS' || sectionMode === 'RITUAL') return 'LIST-ONLY';
+  if (sourceType?.startsWith('SPONTANEOUS-')) return 'LIST-ONLY';
+  if (sourceType === 'PREPARED-LIST') return 'SLOTS-AND-LIST';
+  if (sourceType?.startsWith('PREPARED-')) return 'SLOTS-ONLY';
+  return null;
+}
+
+export function isWitchFamiliarSource(source?: { name?: string; type?: string }) {
+  if (source?.type !== 'PREPARED-LIST') return false;
+  const name = (source.name ?? '').toLowerCase();
+  return name.includes('witch') || name.includes('familiar');
+}
 
 export type Phase1SpellEntry = {
   key: string;
@@ -77,7 +93,9 @@ export async function loadEntitySpells(combatant: Phase1EntityCombatant): Promis
             const available = cantrip || rankSlots.some((slot) => !slot.exhausted);
             return [makeEntry(spell, record.rank, traitNames, source.name, mode, cantrip, available, exhausted, index)];
           });
-      if (entries.length || sourceSlots.length) {
+      const hasFamiliarList = mode === 'PREPARED' && source.type === 'PREPARED-LIST'
+        && data.list.some((entry) => entry.source === source.name);
+      if (entries.length || sourceSlots.length || hasFamiliarList) {
         sections.push({
           key: `${mode}-${source.name}`,
           label: source.name,
@@ -126,6 +144,23 @@ export async function loadEntitySpells(combatant: Phase1EntityCombatant): Promis
     });
     sections.push({ key: 'INNATE', label: 'Innate Spells', mode: 'INNATE', attack, dc, entries, slots: [] });
   }
+
+  const ritualRecords = data.list.filter((entry) => entry.source === 'RITUALS');
+  const ritualEntries = ritualRecords.flatMap((record, index) => {
+    const spell = spellById.get(record.spell_id);
+    if (!spell) return [];
+    const traitNames = namesFor(spell, traitById);
+    const cantrip = isCantrip(traitNames, record.rank);
+    return [makeEntry(spell, record.rank, traitNames, 'RITUALS', 'RITUAL', cantrip, true, false, index)];
+  });
+  sections.push({
+    key: 'RITUALS',
+    label: 'Rituals',
+    mode: 'RITUAL',
+    source: { name: 'RITUALS', type: 'RITUAL', tradition: '', attribute: '' },
+    entries: ritualEntries,
+    slots: [],
+  });
 
   return sections;
 }

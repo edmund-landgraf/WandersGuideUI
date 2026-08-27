@@ -16,6 +16,7 @@ import { getFinalHealthValue } from '@variables/variable-helpers';
 import { exportVariableStore, getVariable, importVariableStore } from '@variables/variable-manager';
 import { cloneDeep, uniq, uniqBy } from 'lodash-es';
 import { countAllBuilderChoices, type ChoiceCounts } from './phase1-builder-ops';
+import { creatureDefenseScore, fillMissingDefenses, hasUsefulCalculatedStats } from './phase1-creature-defenses';
 
 export type Phase1EntityCombatant = Combatant & { data: Character | Creature };
 export type PreparedPhase1Entity = {
@@ -109,30 +110,41 @@ export async function hydrateCreatureForCombat(creature: Creature, adjustment?: 
   const { creature: base, replacedFromCatalog } = await hydrateCreatureRecord(creature);
   const applyAdjustment = adjustment ?? (replacedFromCatalog ? creature.details.adjustment : undefined);
   const next = applyAdjustment ? adjustCreature(structuredClone(base), applyAdjustment) : base;
-  return fillCurrentHp(next);
+  return fillCurrentHp(await fillMissingDefenses(next));
 }
 
 async function hydrateCreatureRecord(creature: Creature): Promise<{ creature: Creature; replacedFromCatalog: boolean }> {
   if (!creature.id || creature.id <= 0) {
-    return { creature: fillCurrentHp(creature), replacedFromCatalog: false };
+    return { creature: fillCurrentHp(await fillMissingDefenses(creature)), replacedFromCatalog: false };
   }
 
   const catalog = await fetchContentById<Creature>('creature', creature.id, { skipCache: true });
-  if (!catalog) return { creature: fillCurrentHp(creature), replacedFromCatalog: false };
+  if (!catalog) return { creature: fillCurrentHp(await fillMissingDefenses(creature)), replacedFromCatalog: false };
+
+  const preferEncounter = creatureDefenseScore(creature) > creatureDefenseScore(catalog);
+  const primary = preferEncounter ? creature : catalog;
+  const secondary = preferEncounter ? catalog : creature;
 
   return {
-    replacedFromCatalog: true,
-    creature: fillCurrentHp({
-      ...catalog,
+    replacedFromCatalog: !preferEncounter,
+    creature: fillCurrentHp(await fillMissingDefenses({
+      ...primary,
       hp_current: creature.hp_current || catalog.hp_current,
       hp_temp: creature.hp_temp,
       details: {
-        ...catalog.details,
+        ...primary.details,
+        description: primary.details?.description || secondary.details?.description || '',
         conditions: creature.details?.conditions ?? catalog.details.conditions,
         image_url: creature.details?.image_url ?? catalog.details.image_url,
         adjustment: creature.details.adjustment,
       },
       notes: creature.notes ?? catalog.notes,
+      abilities_base: (primary.abilities_base?.length ?? 0) >= (secondary.abilities_base?.length ?? 0)
+        ? primary.abilities_base
+        : secondary.abilities_base,
+      operations: (primary.operations?.length ?? 0) >= (secondary.operations?.length ?? 0)
+        ? primary.operations
+        : secondary.operations,
       meta_data: {
         ...catalog.meta_data,
         ...creature.meta_data,
@@ -140,16 +152,11 @@ async function hydrateCreatureRecord(creature: Creature): Promise<{ creature: Cr
           ? creature.meta_data?.calculated_stats
           : catalog.meta_data?.calculated_stats,
       },
-    }),
+    })),
   };
 }
 
-function hasUsefulCalculatedStats(stats?: { hp_max?: number; ac?: number } | null) {
-  return Boolean(stats && ((typeof stats.hp_max === 'number' && stats.hp_max > 0) || (typeof stats.ac === 'number' && stats.ac > 10)));
-}
-
 function fillCurrentHp(creature: Creature, computedMax?: number) {
-  if (creature.hp_current) return creature;
   const stored = creature.meta_data?.calculated_stats?.hp_max;
   const maxHp = typeof computedMax === 'number' && computedMax > 0
     ? computedMax
@@ -157,6 +164,9 @@ function fillCurrentHp(creature: Creature, computedMax?: number) {
       ? stored
       : 0;
   if (maxHp <= 0) return creature;
+  const current = creature.hp_current;
+  if (typeof current === 'number' && current > 1 && current <= maxHp) return creature;
+  if (typeof current === 'number' && current > 1) return creature;
   return { ...creature, hp_current: maxHp };
 }
 

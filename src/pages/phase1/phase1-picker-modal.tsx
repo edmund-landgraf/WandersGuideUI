@@ -25,6 +25,7 @@ export function Phase1PickerModal<T>({
   listClassName,
   maxWidthClass = 'max-w-md',
   maxHeightClass = 'max-h-[min(82vh,640px)]',
+  overlayClass = 'z-[100]',
   batchSize = DEFAULT_BATCH,
 }: {
   title: string;
@@ -45,6 +46,7 @@ export function Phase1PickerModal<T>({
   listClassName?: string;
   maxWidthClass?: string;
   maxHeightClass?: string;
+  overlayClass?: string;
   batchSize?: number;
 }) {
   const [query, setQuery] = useState('');
@@ -107,7 +109,7 @@ export function Phase1PickerModal<T>({
   return createPortal(
     <div
       data-entity-modal
-      className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]'
+      className={`fixed inset-0 ${overlayClass} grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]`}
       role='presentation'
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !isContentStackOpen()) onClose();

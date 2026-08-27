@@ -9,7 +9,7 @@ import type { Phase1EntityCombatant } from './phase1-entity';
 import { StatDetailModal, type Phase1StatKey, type Phase1StatTarget } from './phase1-stat-modal';
 import { loadEntityDetails, type Phase1ProfRow } from './phase1-details';
 import { loadEntitySkillsActions, type Phase1ActionGroup, type Phase1Skill } from './phase1-skills';
-import { isDivinePreparedSource, loadEntitySpells, spellFitsSlot, type Phase1SpellEntry, type Phase1SpellSection } from './phase1-spells';
+import { isDivinePreparedSource, isWitchFamiliarSource, loadEntitySpells, spellFitsSlot, spellManageMode, type Phase1SpellEntry, type Phase1SpellSection } from './phase1-spells';
 import { Phase1SpellbookModal, type SpellbookAssign } from './phase1-spellbook';
 import { flattenInvItems, inventoryItemToPhase1, loadEntityInventory, matchesInvItem, type Phase1InvItem } from './phase1-inventory';
 import { ConfirmDialog } from './phase1-campaign-settings';
@@ -54,6 +54,22 @@ let persistedSkillsInnerTab: 'skills' | 'actions' = 'skills';
 let persistedSkillsActionCost = 'ALL';
 let persistedNotesInnerTab: 'gm' | 'combat' = 'gm';
 let persistedDetailsInnerTab: 'details' | 'source' = 'details';
+let persistedAbilitiesInnerTab: Phase1Ability['source'] = 'Feat';
+let persistedSpellsRankFilter: number | 'ALL' = 'ALL';
+let persistedSpellsSourceKey = 'ALL';
+let persistedInventoryTab: 'equipped' | 'carried' | 'formulas' = 'equipped';
+let persistedActionGroup = 'ALL';
+let persistedSheetDetailsTab: 'info' | 'languages' | 'proficiencies' = 'info';
+const ABILITY_TAB_ORDER = ['Feat', 'Character', 'Weapon', 'Base', 'Added'] as const;
+const ACTION_GROUP_TAB_LABELS: Record<string, string> = {
+  'weapon-attacks': 'Attacks',
+  feats: 'Feats',
+  'basic-actions': 'Basic',
+  'skill-actions': 'Skill',
+  'speciality-basics': 'Speciality',
+  'exploration-activities': 'Exploration',
+  'downtime-activities': 'Downtime',
+};
 
 export const CONDITION_PILL_CLASS = 'inline-flex max-w-[8.5rem] items-center truncate rounded-full border border-p1-border bg-p1-hover px-2 py-[3px] text-[10px] font-medium leading-none tracking-wide text-p1-text';
 export function conditionLabel(condition: Condition) {
@@ -210,6 +226,11 @@ export function SkillsActionsPanel({ combatant, onLogAction }: { combatant: Popu
     persistedSkillsActionCost = cost;
     setActionCostState(cost);
   };
+  const [actionGroup, setActionGroupState] = useState(persistedActionGroup);
+  const setActionGroup = (group: string) => {
+    persistedActionGroup = group;
+    setActionGroupState(group);
+  };
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [selected, setSelected] = useState<Phase1Ability | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<Phase1Skill | null>(null);
@@ -239,15 +260,16 @@ export function SkillsActionsPanel({ combatant, onLogAction }: { combatant: Popu
     {data.isLoading && <EmptyState>Calculating skills and actions...</EmptyState>}
     {data.isError && <ErrorState error={data.error} />}
     {data.data && innerTab === 'skills' && <SkillsList skills={skills} query={skillQuery} onQuery={setSkillQuery} onOpen={setSelectedSkill} />}
-    {data.data && innerTab === 'actions' && <ActionsCatalog groups={groups} query={actionQuery} onQuery={setActionQuery} cost={actionCost} onCost={setActionCost} openGroup={openGroup} onOpenGroup={setOpenGroup} filtering={filtering} onOpen={setSelected} onExecute={onLogAction} />}
+    {data.data && innerTab === 'actions' && <ActionsCatalog groups={groups} allGroupIds={(data.data.groups ?? []).map((group) => group.id)} query={actionQuery} onQuery={setActionQuery} cost={actionCost} onCost={setActionCost} groupFilter={actionGroup} onGroupFilter={setActionGroup} openGroup={openGroup} onOpenGroup={setOpenGroup} filtering={filtering} onOpen={setSelected} onExecute={onLogAction} />}
     {selected && <AbilityModal ability={selected} onClose={() => setSelected(null)} />}
     {selectedSkill && <SkillModal skill={selectedSkill} onClose={() => setSelectedSkill(null)} onLogAction={onLogAction} />}
   </>;
 }
 
 function InnerTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
-  return <button className={`border-b-2 px-2 py-2 text-xs ${active ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:text-p1-text'}`} onClick={onClick}>{children}</button>;
+  return <button className={`shrink-0 border-b-2 px-2 py-2 text-xs ${active ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:text-p1-text'}`} onClick={onClick}>{children}</button>;
 }
+export { InnerTab };
 
 function DetailsAndSourcePanel({ combatant }: { combatant: PopulatedCombatant }) {
   const [innerTab, setInnerTabState] = useState<'details' | 'source'>(persistedDetailsInnerTab);
@@ -322,7 +344,7 @@ const SKILL_MODAL_TABS: Array<{ id: SkillModalTab; label: string; icon: ReactNod
   { id: 'timeline', label: 'Timeline', icon: <History size={15} /> },
 ];
 
-function SkillModal({ skill, onClose, onLogAction }: { skill: Phase1Skill; onClose: () => void; onLogAction?: LogActionFn }) {
+export function SkillModal({ skill, onClose, onLogAction }: { skill: Phase1Skill; onClose: () => void; onLogAction?: LogActionFn }) {
   const [tab, setTab] = useState<SkillModalTab>('description');
   const [selectedAction, setSelectedAction] = useState<Phase1Ability | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -372,28 +394,44 @@ function SkillTimeline({ skill }: { skill: Phase1Skill }) {
   if (!skill.timeline.length) return <EmptyState>No recorded history found for this proficiency.</EmptyState>;
   return <ol className='mx-auto max-w-2xl'>{skill.timeline.map((item, index) => <li key={`${item.timestamp}-${index}`} className='grid grid-cols-[28px_minmax(0,1fr)]'><span className='relative flex justify-center'><span className={`z-10 mt-1.5 h-3 w-3 border ${item.type === 'ADJUSTMENT' ? 'border-p1-accent bg-p1-accent' : 'border-p1-pc bg-p1-pc'}`} />{index < skill.timeline.length - 1 && <span className='absolute bottom-0 top-4 w-px bg-p1-hover' />}</span><div className='pb-6'><strong className='text-sm text-p1-text'>{item.title}</strong><p className='mt-1 text-xs italic text-p1-muted'>{item.description}</p></div></li>)}</ol>;
 }
-function ActionsCatalog({ groups, query, onQuery, cost, onCost, openGroup, onOpenGroup, filtering, onOpen, onExecute }: {
-  groups: Phase1ActionGroup[]; query: string; onQuery: (value: string) => void; cost: string; onCost: (value: string) => void;
+function ActionsCatalog({ groups, allGroupIds, query, onQuery, cost, onCost, groupFilter, onGroupFilter, openGroup, onOpenGroup, filtering, onOpen, onExecute }: {
+  groups: Phase1ActionGroup[]; allGroupIds: string[]; query: string; onQuery: (value: string) => void; cost: string; onCost: (value: string) => void;
+  groupFilter: string; onGroupFilter: (value: string) => void;
   openGroup: string | null; onOpenGroup: (value: string | null) => void; filtering: boolean; onOpen: (ability: Phase1Ability) => void;
   onExecute?: (draft: ActionLogDraft) => void;
 }) {
   const costs = ['ALL', 'ONE-ACTION', 'TWO-ACTIONS', 'THREE-ACTIONS', 'FREE-ACTION', 'REACTION'];
+  const groupTabs = allGroupIds;
+  const activeGroup = groupFilter === 'ALL' || groupTabs.includes(groupFilter) ? groupFilter : 'ALL';
+  const visibleGroups = activeGroup === 'ALL' ? groups : groups.filter((group) => group.id === activeGroup);
   return <div>
+    {groupTabs.length > 1 && (
+      <div className='mb-2.5 flex overflow-x-auto border-b border-p1-border'>
+        <InnerTab active={activeGroup === 'ALL'} onClick={() => onGroupFilter('ALL')}>All</InnerTab>
+        {groupTabs.map((id) => (
+          <InnerTab key={id} active={activeGroup === id} onClick={() => onGroupFilter(id)}>
+            {ACTION_GROUP_TAB_LABELS[id] ?? groups.find((group) => group.id === id)?.label ?? id}
+          </InnerTab>
+        ))}
+      </div>
+    )}
     <SearchField value={query} onChange={onQuery} placeholder='Search actions & activities' />
     <div className='my-2 flex items-center gap-1 border-b border-p1-border pb-2'>
       {costs.map((value) => <button key={value} className={`grid h-8 min-w-8 place-items-center px-2 text-[10px] ${cost === value ? 'bg-p1-accent text-p1-accent-ink' : 'bg-p1-hover text-p1-muted hover:text-p1-text'}`} title={value === 'ALL' ? 'All action costs' : value.toLowerCase().replaceAll('-', ' ')} onClick={() => onCost(value)}>{value === 'ALL' ? 'All' : <ActionSymbol cost={value as Phase1Ability['actions']} />}</button>)}
     </div>
     <div className='space-y-1'>
-      {groups.map((group) => {
-        const open = filtering || openGroup === group.id;
+      {visibleGroups.map((group) => {
+        const open = activeGroup !== 'ALL' || filtering || openGroup === group.id;
         return <section key={group.id} className='border-b border-p1-border'>
-          <button className='flex h-9 w-full items-center px-1 text-left text-sm font-semibold hover:bg-p1-hover' onClick={() => onOpenGroup(openGroup === group.id ? null : group.id)}>
-            <span className='truncate'>{group.label}</span><span className='ml-auto mr-2 border border-p1-border px-2 py-0.5 text-[10px] font-normal text-p1-muted'>{group.actions.length}</span><ChevronDown size={14} className={`text-p1-muted transition-transform ${open ? 'rotate-180' : ''}`} />
-          </button>
+          {activeGroup === 'ALL' && (
+            <button className='flex h-9 w-full items-center px-1 text-left text-sm font-semibold hover:bg-p1-hover' onClick={() => onOpenGroup(openGroup === group.id ? null : group.id)}>
+              <span className='truncate'>{group.label}</span><span className='ml-auto mr-2 border border-p1-border px-2 py-0.5 text-[10px] font-normal text-p1-muted'>{group.actions.length}</span><ChevronDown size={14} className={`text-p1-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+          )}
           {open && <div className='space-y-1 pb-2 pt-1'>{group.actions.map((ability, index) => <AbilityRow key={`${group.id}-${ability.id}-${index}`} ability={ability} onOpen={onOpen} onExecute={onExecute} compact />)}</div>}
         </section>;
       })}
-      {!groups.length && <EmptyState>No actions match these filters.</EmptyState>}
+      {!visibleGroups.length && <EmptyState>No actions match these filters.</EmptyState>}
     </div>
   </div>;
 }
@@ -405,6 +443,8 @@ function proficiencyName(rank: string) { return ({ U: 'Untrained', T: 'Trained',
 export function AbilitiesPanel({ combatant, onLogAction }: { combatant: PopulatedCombatant; onLogAction?: LogActionFn }) {
   const detailsAvailable = hasFullEntityDetails(combatant);
   const [query, setQuery] = useState('');
+  const [innerTab, setInnerTabState] = useState<Phase1Ability['source']>(persistedAbilitiesInnerTab);
+  const [levelFilter, setLevelFilter] = useState<number | 'ALL'>('ALL');
   const [selected, setSelected] = useState<Phase1Ability | null>(null);
   const abilities = useQuery({
     queryKey: ['phase1-entity-abilities', 'isolated-store', combatant.type, combatant._id],
@@ -412,12 +452,56 @@ export function AbilitiesPanel({ combatant, onLogAction }: { combatant: Populate
     queryFn: () => loadEntityAbilities(combatant as Phase1EntityCombatant),
     staleTime: Number.POSITIVE_INFINITY,
   });
-  const visible = (abilities.data ?? []).filter((ability) => {
-    const needle = query.trim().toLowerCase();
+  const all = abilities.data ?? [];
+  const tabSources = ABILITY_TAB_ORDER.filter((source) => all.some((ability) => ability.source === source));
+  const activeTab = tabSources.includes(innerTab) ? innerTab : (tabSources[0] ?? 'Feat');
+  const setInnerTab = (source: Phase1Ability['source']) => {
+    persistedAbilitiesInnerTab = source;
+    setInnerTabState(source);
+  };
+  const needle = query.trim().toLowerCase();
+  const tabAbilities = all.filter((ability) => ability.source === activeTab);
+  const presentLevels = new Set(tabAbilities.map((ability) => ability.level).filter((level): level is number => level != null));
+  const minLevel = presentLevels.size ? Math.min(...presentLevels) : 0;
+  const maxLevel = presentLevels.size ? Math.max(...presentLevels) : 0;
+  const levelRange = presentLevels.size && maxLevel > minLevel ? Array.from({ length: maxLevel - minLevel + 1 }, (_, i) => minLevel + i) : [];
+  const activeLevel = levelFilter !== 'ALL' && presentLevels.has(levelFilter) ? levelFilter : 'ALL';
+  const visible = tabAbilities.filter((ability) => {
+    if (activeLevel !== 'ALL' && ability.level !== activeLevel) return false;
     return !needle || [ability.name, ability.description, ability.source, ...ability.traitNames].join(' ').toLowerCase().includes(needle);
   });
 
   return <>
+    {tabSources.length > 1 && (
+      <div className='mb-2.5 grid border-b border-p1-border' style={{ gridTemplateColumns: `repeat(${tabSources.length}, minmax(0, 1fr))` }}>
+        {tabSources.map((source) => (
+          <InnerTab key={source} active={activeTab === source} onClick={() => { setInnerTab(source); setLevelFilter('ALL'); }}>
+            {abilityGroupLabel(source)}
+          </InnerTab>
+        ))}
+      </div>
+    )}
+    {levelRange.length > 0 && (
+      <div className='mb-2.5 flex overflow-x-auto border-b border-p1-border' role='tablist' aria-label='Filter by level'>
+        <button type='button' className={`shrink-0 border-b-2 px-3 py-1.5 text-xs ${activeLevel === 'ALL' ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:text-p1-text'}`} onClick={() => setLevelFilter('ALL')}>All</button>
+        {levelRange.map((level) => {
+          const enabled = presentLevels.has(level);
+          return (
+            <button
+              key={level}
+              type='button'
+              disabled={!enabled}
+              aria-disabled={!enabled}
+              title={enabled ? `Level ${level}` : `No level ${level} abilities`}
+              className={`shrink-0 border-b-2 px-3 py-1.5 text-xs ${!enabled ? 'cursor-not-allowed border-transparent text-p1-faint/50' : activeLevel === level ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:text-p1-text'}`}
+              onClick={() => setLevelFilter(activeLevel === level ? 'ALL' : level)}
+            >
+              {level}
+            </button>
+          );
+        })}
+      </div>
+    )}
     <div className='relative mb-2.5'>
       <Search className='absolute left-3 top-1/2 -translate-y-1/2 text-p1-faint' size={14} />
       <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder='Search abilities' className='h-9 w-full border border-p1-border bg-p1-surface pl-9 pr-3 text-sm outline-none placeholder:text-p1-faint focus:border-p1-accent/60' />
@@ -426,16 +510,13 @@ export function AbilitiesPanel({ combatant, onLogAction }: { combatant: Populate
     {abilities.isLoading && <EmptyState>Loading abilities...</EmptyState>}
     {abilities.isError && <ErrorState error={abilities.error} />}
     {!abilities.isLoading && !visible.length && <EmptyState>No abilities found.</EmptyState>}
-    {(['Weapon', 'Base', 'Added', 'Character', 'Feat'] as const).map((source) => {
-      const group = visible.filter((ability) => ability.source === source);
-      if (!group.length) return null;
-      return <section key={source} className='mb-2.5 border border-p1-border bg-p1-surface'>
-        <h3 className='border-b border-p1-border px-3 py-2 text-xs font-semibold'>{abilityGroupLabel(source)}</h3>
+    {visible.length > 0 && (
+      <section className='mb-2.5 border border-p1-border bg-p1-surface'>
         <div className='divide-y divide-white/[0.07]'>
-          {group.map((ability, index) => <AbilityRow key={`${ability.id}-${index}`} ability={ability} onOpen={setSelected} onExecute={onLogAction} />)}
+          {visible.map((ability, index) => <AbilityRow key={`${ability.id}-${index}`} ability={ability} onOpen={setSelected} onExecute={onLogAction} />)}
         </div>
-      </section>;
-    })}
+      </section>
+    )}
     {selected && <AbilityModal ability={selected} onClose={() => setSelected(null)} />}
   </>;
 }
@@ -513,6 +594,7 @@ export type InventoryItemActions = {
 export function InventoryPanel({ combatant, itemActions }: { combatant: PopulatedCombatant; itemActions?: InventoryItemActions }) {
   const detailsAvailable = hasFullEntityDetails(combatant);
   const [query, setQuery] = useState('');
+  const [invTab, setInvTabState] = useState(persistedInventoryTab);
   const [selected, setSelected] = useState<Phase1InvItem | null>(null);
   const data = useQuery({
     queryKey: ['phase1-entity-inventory', 'isolated-store', combatant.type, combatant._id, JSON.stringify(combatant.data.inventory ?? null)],
@@ -520,6 +602,10 @@ export function InventoryPanel({ combatant, itemActions }: { combatant: Populate
     queryFn: () => loadEntityInventory(combatant as Phase1EntityCombatant),
     staleTime: Number.POSITIVE_INFINITY,
   });
+  const setInvTab = (tab: typeof persistedInventoryTab) => {
+    persistedInventoryTab = tab;
+    setInvTabState(tab);
+  };
   const needle = query.trim().toLowerCase();
   const inventory = data.data;
   const extras = inventory?.extras ?? {};
@@ -529,12 +615,32 @@ export function InventoryPanel({ combatant, itemActions }: { combatant: Populate
   const equipped = visibleItems.filter((item) => item.isEquipped && !item.isFormula);
   const carried = visibleItems.filter((item) => !item.isEquipped && !item.isFormula);
   const formulas = visibleItems.filter((item) => item.isFormula);
-  const hasItemSections = !needle;
+  const buckets: Array<{ id: typeof persistedInventoryTab; label: string; items: typeof equipped }> = [
+    { id: 'equipped', label: 'Equipped', items: equipped },
+    { id: 'carried', label: 'Carried', items: carried },
+    { id: 'formulas', label: 'Formulas', items: formulas },
+  ];
+  const allItems = flattenInvItems(topLevelItems);
+  const tabBuckets = buckets.filter((bucket) => {
+    if (needle) return bucket.items.length > 0;
+    if (bucket.id === 'formulas') return allItems.some((item) => item.isFormula);
+    if (bucket.id === 'equipped') return allItems.some((item) => item.isEquipped && !item.isFormula);
+    return allItems.some((item) => !item.isEquipped && !item.isFormula);
+  });
+  const activeInv = tabBuckets.some((bucket) => bucket.id === invTab) ? invTab : (tabBuckets[0]?.id ?? 'equipped');
+  const activeItems = buckets.find((bucket) => bucket.id === activeInv)?.items ?? [];
 
   return <>
     {inventory?.coins && <CoinBar coins={inventory.coins} />}
     {extraKeys.map((key) => <DataSection key={key} title={toInventoryExtraLabel(key)} data={extras[key]} />)}
-    <div className='relative mb-2.5 mt-3'>
+    {tabBuckets.length > 1 && (
+      <div className='mb-2.5 mt-3 flex overflow-x-auto border-b border-p1-border'>
+        {tabBuckets.map((bucket) => (
+          <InnerTab key={bucket.id} active={activeInv === bucket.id} onClick={() => setInvTab(bucket.id)}>{bucket.label}</InnerTab>
+        ))}
+      </div>
+    )}
+    <div className={`relative mb-2.5 ${tabBuckets.length > 1 ? '' : 'mt-3'}`}>
       <Search className='absolute left-3 top-1/2 -translate-y-1/2 text-p1-faint' size={14} />
       <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder='Search items' className='h-9 w-full border border-p1-border bg-p1-surface pl-9 pr-3 text-sm outline-none placeholder:text-p1-faint focus:border-p1-accent/60' />
     </div>
@@ -543,12 +649,8 @@ export function InventoryPanel({ combatant, itemActions }: { combatant: Populate
     {data.isError && <ErrorState error={data.error} />}
     {!data.isLoading && inventory && topLevelItems.length === 0 && <EmptyState>No items in inventory.</EmptyState>}
     {!data.isLoading && needle && !visibleItems.length && topLevelItems.length > 0 && <EmptyState>No items match this search.</EmptyState>}
-    {hasItemSections ? <>
-      <InventoryItemSection title='Equipped' items={equipped} onOpen={setSelected} />
-      <InventoryItemSection title='Carried' items={carried} onOpen={setSelected} />
-      <InventoryItemSection title='Formulas' items={formulas} onOpen={setSelected} />
-    </> : (
-      visibleItems.length > 0 && <InventoryItemSection title='Results' items={visibleItems} onOpen={setSelected} flat />
+    {!data.isLoading && activeItems.length > 0 && (
+      <InventoryItemSection title={buckets.find((bucket) => bucket.id === activeInv)?.label ?? 'Items'} items={activeItems} onOpen={setSelected} flat={Boolean(needle)} hideTitle={tabBuckets.length > 1} />
     )}
     {selected && <ItemModal item={selected} actions={itemActions} onClose={() => setSelected(null)} />}
   </>;
@@ -576,11 +678,11 @@ function CoinBar({ coins }: { coins: { cp: number; sp: number; gp: number; pp: n
   );
 }
 
-function InventoryItemSection({ title, items, onOpen, flat = false }: { title: string; items: Phase1InvItem[]; onOpen: (item: Phase1InvItem) => void; flat?: boolean }) {
+function InventoryItemSection({ title, items, onOpen, flat = false, hideTitle = false }: { title: string; items: Phase1InvItem[]; onOpen: (item: Phase1InvItem) => void; flat?: boolean; hideTitle?: boolean }) {
   if (!items.length) return null;
   return (
     <section className='mb-2.5 border border-p1-border bg-p1-surface'>
-      <h3 className='border-b border-p1-border px-3 py-2 text-xs font-semibold'>{title}</h3>
+      {!hideTitle && <h3 className='border-b border-p1-border px-3 py-2 text-xs font-semibold'>{title}</h3>}
       <div className='divide-y divide-white/[0.07]'>
         {items.map((item) => <ItemRow key={item.key} item={item} onOpen={onOpen} depth={flat ? 0 : 0} showContents={!flat} />)}
       </div>
@@ -952,6 +1054,11 @@ export function DetailsPanel({ combatant }: { combatant: PopulatedCombatant }) {
   const { open } = useContentLinks();
   const [openGroup, setOpenGroup] = useState<string | null>('attacks');
   const [openProf, setOpenProf] = useState<Phase1StatTarget | null>(null);
+  const [detailTab, setDetailTabState] = useState(persistedSheetDetailsTab);
+  const setDetailTab = (tab: typeof persistedSheetDetailsTab) => {
+    persistedSheetDetailsTab = tab;
+    setDetailTabState(tab);
+  };
   const detailsAvailable = hasFullEntityDetails(combatant) && combatant.access?.details_revealed !== false;
   const data = useQuery({
     queryKey: ['phase1-entity-details', 'isolated-store', combatant.type, combatant._id, JSON.stringify(combatant.data.details ?? null)],
@@ -964,18 +1071,27 @@ export function DetailsPanel({ combatant }: { combatant: PopulatedCombatant }) {
 
   return (
     <div className='space-y-2.5'>
-      <section className='border border-p1-border bg-p1-surface p-4'>
-        {details?.description || fallback ? <ProseMarkdown>{details?.description || fallback}</ProseMarkdown> : <p className='text-sm italic text-p1-muted'>No description given.</p>}
-      </section>
+      <div className='flex overflow-x-auto border-b border-p1-border'>
+        <InnerTab active={detailTab === 'info'} onClick={() => setDetailTab('info')}>Info</InnerTab>
+        <InnerTab active={detailTab === 'languages'} onClick={() => setDetailTab('languages')}>Languages</InnerTab>
+        <InnerTab active={detailTab === 'proficiencies'} onClick={() => setDetailTab('proficiencies')}>Proficiencies</InnerTab>
+      </div>
       {data.isLoading && <p className='text-center text-[10px] text-p1-faint'>Loading details...</p>}
       {data.isError && <p className='text-center text-[10px] text-p1-danger-soft'>{data.error instanceof Error ? data.error.message : 'Could not load extra details.'}</p>}
-      {details?.info.map((field) => (
-        <section key={field.label} className='border border-p1-border bg-p1-surface px-3 py-2.5'>
-          <h3 className='text-[10px] font-semibold uppercase text-p1-muted'>{field.label}</h3>
-          <p className='mt-1 text-sm leading-6 text-p1-text'>{field.value}</p>
-        </section>
-      ))}
-      {details && (
+      {detailTab === 'info' && (
+        <>
+          <section className='border border-p1-border bg-p1-surface p-4'>
+            {details?.description || fallback ? <ProseMarkdown>{details?.description || fallback}</ProseMarkdown> : <p className='text-sm italic text-p1-muted'>No description given.</p>}
+          </section>
+          {details?.info.map((field) => (
+            <section key={field.label} className='border border-p1-border bg-p1-surface px-3 py-2.5'>
+              <h3 className='text-[10px] font-semibold uppercase text-p1-muted'>{field.label}</h3>
+              <p className='mt-1 text-sm leading-6 text-p1-text'>{field.value}</p>
+            </section>
+          ))}
+        </>
+      )}
+      {detailTab === 'languages' && details && (
         <>
           <LinkedNameSection title='Languages' items={details.languages} empty='No languages found.' onOpen={open} />
           <LinkedNameSection title='Traits' items={details.rarity ? [{ name: details.rarity }, ...details.traits] : details.traits} empty='No traits found.' onOpen={open} />
@@ -983,27 +1099,29 @@ export function DetailsPanel({ combatant }: { combatant: PopulatedCombatant }) {
             <h3 className='text-[10px] font-semibold uppercase text-p1-muted'>Size</h3>
             <div className='mt-2'><Tag>{details.size}</Tag></div>
           </section>
-          <section className='border border-p1-border bg-p1-surface'>
-            <h3 className='border-b border-p1-border px-3 py-2 text-[10px] font-semibold uppercase text-p1-muted'>Proficiencies</h3>
-            <div className='space-y-1 p-2'>
-              {details.profGroups.map((group) => (
-                <section key={group.id} className='border border-p1-border bg-p1-inset'>
-                  <button type='button' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-p1-hover' onClick={() => setOpenGroup(openGroup === group.id ? null : group.id)}>
-                    <span className='min-w-0 flex-1 font-semibold text-p1-text'>{group.label}</span>
-                    <ChevronDown size={14} className={`text-p1-muted transition-transform ${openGroup === group.id ? 'rotate-180' : ''}`} />
-                  </button>
-                  {openGroup === group.id && (
-                    <div className='space-y-1 border-t border-p1-border p-2'>
-                      {group.items.map((item) => (
-                        <ProficiencyRow key={item.variableName} item={item} onOpen={() => setOpenProf({ variableName: item.variableName, isDC: item.isDC })} />
-                      ))}
-                    </div>
-                  )}
-                </section>
-              ))}
-            </div>
-          </section>
         </>
+      )}
+      {detailTab === 'languages' && !details && !data.isLoading && <EmptyState>No languages found.</EmptyState>}
+      {detailTab === 'proficiencies' && details && (
+        <section className='border border-p1-border bg-p1-surface'>
+          <div className='space-y-1 p-2'>
+            {details.profGroups.map((group) => (
+              <section key={group.id} className='border border-p1-border bg-p1-inset'>
+                <button type='button' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-p1-hover' onClick={() => setOpenGroup(openGroup === group.id ? null : group.id)}>
+                  <span className='min-w-0 flex-1 font-semibold text-p1-text'>{group.label}</span>
+                  <ChevronDown size={14} className={`text-p1-muted transition-transform ${openGroup === group.id ? 'rotate-180' : ''}`} />
+                </button>
+                {openGroup === group.id && (
+                  <div className='space-y-1 border-t border-p1-border p-2'>
+                    {group.items.map((item) => (
+                      <ProficiencyRow key={item.variableName} item={item} onOpen={() => setOpenProf({ variableName: item.variableName, isDC: item.isDC })} />
+                    ))}
+                  </div>
+                )}
+              </section>
+            ))}
+          </div>
+        </section>
       )}
       {openProf && <StatDetailModal combatant={combatant as Phase1EntityCombatant} stat={openProf} onClose={() => setOpenProf(null)} />}
     </div>
@@ -1106,11 +1224,13 @@ export function fallbackStatus(entity: LivingEntity): Phase1CreatureStatus {
 }
 export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatant: PopulatedCombatant; spellActions?: Phase1SpellActions; onLogAction?: LogActionFn }) {
   const [query, setQuery] = useState('');
+  const [rankFilter, setRankFilterState] = useState<number | 'ALL'>(persistedSpellsRankFilter);
+  const [sourceKey, setSourceKeyState] = useState(persistedSpellsSourceKey);
   const [selected, setSelected] = useState<Phase1SpellEntry | null>(null);
   const [openProf, setOpenProf] = useState<Phase1StatTarget | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [spellError, setSpellError] = useState('');
-  const [book, setBook] = useState<{ sourceName: string; assign?: SpellbookAssign | null } | null>(null);
+  const [book, setBook] = useState<{ sourceName: string; sourceType?: string; manageMode?: ReturnType<typeof spellManageMode>; assign?: SpellbookAssign | null; adding?: boolean } | null>(null);
   const detailsAvailable = hasFullEntityDetails(combatant);
   const data = useQuery({
     queryKey: ['phase1-entity-spells', 'isolated-store', combatant.type, combatant._id, JSON.stringify(combatant.data.spells ?? null)],
@@ -1118,15 +1238,60 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
     queryFn: () => loadEntitySpells(combatant as Phase1EntityCombatant),
     staleTime: Number.POSITIVE_INFINITY,
   });
+  const setRankFilter = (rank: number | 'ALL') => {
+    persistedSpellsRankFilter = rank;
+    setRankFilterState(rank);
+  };
+  const setSourceKey = (key: string) => {
+    persistedSpellsSourceKey = key;
+    setSourceKeyState(key);
+  };
+  const allSections = data.data ?? [];
+  const sourceTabs = allSections.map((section) => ({ key: section.key, label: section.label }));
+  const activeSource = sourceKey === 'ALL' || sourceTabs.some((tab) => tab.key === sourceKey) ? sourceKey : 'ALL';
+  const availableRanks = [...new Set((data.data ?? []).flatMap((section) => [
+    ...section.entries.map(spellRankKey),
+    ...section.slots.map((slot) => (slot.rank === 0 ? -1 : slot.rank)),
+  ]))].sort((a, b) => a - b);
+  const activeRank = rankFilter === 'ALL' || availableRanks.includes(rankFilter) ? rankFilter : 'ALL';
   const needle = query.trim().toLowerCase();
-  const sections = (data.data ?? []).map((section) => ({
+  const sections = allSections.map((section) => ({
     ...section,
     entries: section.entries.filter((entry) => {
+      if (activeRank !== 'ALL' && spellRankKey(entry) !== activeRank) return false;
       if (!needle) return true;
       if (entry.empty || !entry.spell) return false;
       return [entry.spell.name, entry.spell.description, ...entry.traitNames].join(' ').toLowerCase().includes(needle);
     }),
-  })).filter((section) => section.entries.length > 0 || (!needle && (section.mode === 'PREPARED' || section.mode === 'SPONTANEOUS')));
+  })).filter((section) => {
+    if (activeSource !== 'ALL' && section.key !== activeSource) return false;
+    if (section.entries.length > 0) return true;
+    if (needle) return false;
+    const hasSlotsAtRank = activeRank === 'ALL'
+      ? section.slots.length > 0
+      : section.slots.some((slot) => (slot.rank === 0 ? -1 : slot.rank) === activeRank);
+    if (hasSlotsAtRank && (section.mode === 'PREPARED' || section.mode === 'SPONTANEOUS')) return true;
+    return section.mode === 'RITUAL' && !needle && activeRank === 'ALL';
+  });
+  const addTarget = (() => {
+    const manageable = (section: Phase1SpellSection) => Boolean(spellManageMode(section.source?.type, section.source?.name, section.mode));
+    const tabSection = activeSource !== 'ALL' ? allSections.find((section) => section.key === activeSource) : undefined;
+    if (tabSection && manageable(tabSection)) return tabSection;
+    return sections.find(manageable) ?? allSections.find(manageable);
+  })();
+
+  function openBook(section: Phase1SpellSection, opts?: { assign?: SpellbookAssign | null; adding?: boolean }) {
+    const sourceName = section.source?.name ?? (section.mode === 'RITUAL' ? 'RITUALS' : section.label);
+    const manageMode = spellManageMode(section.source?.type, sourceName, section.mode) ?? undefined;
+    const slotsOnly = manageMode === 'SLOTS-ONLY';
+    setBook({
+      sourceName,
+      sourceType: section.source?.type,
+      manageMode,
+      assign: opts?.assign,
+      adding: opts?.adding || slotsOnly,
+    });
+  }
 
   async function runSpellAction(key: string, action: () => Promise<void>, closeModal = false) {
     if (!spellActions || busyKey) return;
@@ -1169,13 +1334,45 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
   }
 
   return <>
-    <SearchField value={query} onChange={setQuery} placeholder='Search spells' />
+    {sourceTabs.length > 1 && (
+      <div className='mb-2.5 flex overflow-x-auto border-b border-p1-border'>
+        <InnerTab active={activeSource === 'ALL'} onClick={() => setSourceKey('ALL')}>All</InnerTab>
+        {sourceTabs.map((tab) => (
+          <InnerTab key={tab.key} active={activeSource === tab.key} onClick={() => setSourceKey(tab.key)}>{tab.label.replace(/ Spells$/i, '')}</InnerTab>
+        ))}
+      </div>
+    )}
+    {availableRanks.length > 1 && (
+      <div className='mb-2.5 flex overflow-x-auto border-b border-p1-border'>
+        <InnerTab active={activeRank === 'ALL'} onClick={() => setRankFilter('ALL')}>All</InnerTab>
+        {availableRanks.map((rank) => (
+          <InnerTab key={rank} active={activeRank === rank} onClick={() => setRankFilter(rank)}>
+            {rank < 0 ? 'Cantrip' : String(rank)}
+          </InnerTab>
+        ))}
+      </div>
+    )}
+    <div className='flex items-center gap-2'>
+      <div className='min-w-0 flex-1'>
+        <SearchField value={query} onChange={setQuery} placeholder='Search spells' />
+      </div>
+      {spellActions && addTarget && (
+        <button
+          type='button'
+          className='inline-flex h-9 shrink-0 items-center gap-1 border border-p1-border bg-p1-surface px-3 text-xs font-semibold text-p1-text hover:bg-p1-hover'
+          onClick={() => openBook(addTarget, { adding: true })}
+        >
+          <Plus size={14} />
+          Add spells
+        </button>
+      )}
+    </div>
     {spellError && <div className='mt-2 border border-p1-danger/40 bg-p1-danger/10 px-3 py-2 text-xs text-p1-danger-soft'>{spellError}</div>}
     {!detailsAvailable && <EmptyState>Private character details are unavailable in this account context.</EmptyState>}
     {data.isLoading && <EmptyState>Loading spellcasting...</EmptyState>}
     {data.isError && <ErrorState error={data.error} />}
     <div className='mt-3 space-y-3'>
-      {sections.map((section) => <SpellSection key={section.key} section={section} spellActions={spellActions} busyKey={busyKey} canOpenStats={detailsAvailable && combatant.access?.details_revealed !== false} onOpen={setSelected} onOpenBook={(assign) => section.source && setBook({ sourceName: section.source.name, assign })} onOpenProf={setOpenProf} onCast={(entry) => castAndLog(entry, `cast-${entry.key}`)} onUncast={(entry) => runSpellAction(`uncast-${entry.key}`, () => spellActions!.setCast(entry, false))} onRankSpent={(rank, spent) => runSpellAction(`rank-${section.key}-${rank}`, () => spellActions!.setRankSpent(section, rank, spent))} onFocusSpent={(spent) => runSpellAction(`focus-${section.key}`, () => spellActions!.setFocusSpent(section, spent))} onPreparedSpent={(entry, spent) => runSpellAction(`prepared-${entry.key}`, () => spellActions!.setPreparedSpent(entry, spent))} onInnateSpent={(entry, castsCurrent) => runSpellAction(`innate-${entry.key}`, () => spellActions!.setInnateSpent(entry, castsCurrent))} onRemoveFromList={(entry) => entry.spell && runSpellAction(`remove-${entry.key}`, () => spellActions!.removeFromList(entry.sourceName, entry.spell!.id, entry.rank))} onApplyFont={spellActions && section.mode === 'PREPARED' && isDivinePreparedSource(section.source) ? (choice) => runSpellAction(`font-${section.key}-${choice}`, () => spellActions.applyDivineFont(section.source!.name, choice)) : undefined} onLogCantrip={onLogAction ? logSpell : undefined} />)}
+      {sections.map((section) => <SpellSection key={section.key} section={section} rankFilter={activeRank} spellActions={spellActions} busyKey={busyKey} canOpenStats={detailsAvailable && combatant.access?.details_revealed !== false} onOpen={setSelected} onOpenBook={(opts) => openBook(section, opts)} onOpenProf={setOpenProf} onCast={(entry) => castAndLog(entry, `cast-${entry.key}`)} onUncast={(entry) => runSpellAction(`uncast-${entry.key}`, () => spellActions!.setCast(entry, false))} onRankSpent={(rank, spent) => runSpellAction(`rank-${section.key}-${rank}`, () => spellActions!.setRankSpent(section, rank, spent))} onFocusSpent={(spent) => runSpellAction(`focus-${section.key}`, () => spellActions!.setFocusSpent(section, spent))} onPreparedSpent={(entry, spent) => runSpellAction(`prepared-${entry.key}`, () => spellActions!.setPreparedSpent(entry, spent))} onInnateSpent={(entry, castsCurrent) => runSpellAction(`innate-${entry.key}`, () => spellActions!.setInnateSpent(entry, castsCurrent))} onRemoveFromList={(entry) => entry.spell && runSpellAction(`remove-${entry.key}`, () => spellActions!.removeFromList(entry.sourceName, entry.spell!.id, entry.rank))} onApplyFont={spellActions && section.mode === 'PREPARED' && isDivinePreparedSource(section.source) ? (choice) => runSpellAction(`font-${section.key}-${choice}`, () => spellActions.applyDivineFont(section.source!.name, choice)) : undefined} onLogCantrip={onLogAction ? logSpell : undefined} />)}
       {data.data && !sections.length && <EmptyState>{needle ? 'No spells match this search.' : 'No spells found.'}</EmptyState>}
     </div>
     {selected && selected.spell && <SpellModal entry={selected} spellActions={spellActions} busy={Boolean(busyKey)} onCast={() => castAndLog(selected, `modal-cast-${selected.key}`, true)} onUncast={() => runSpellAction(`modal-uncast-${selected.key}`, () => spellActions!.setCast(selected, false), true)} onClose={() => setSelected(null)} />}
@@ -1183,18 +1380,29 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
     {book && spellActions && (
       <Phase1SpellbookModal
         sourceName={book.sourceName}
+        sourceType={book.sourceType}
+        manageMode={book.manageMode || undefined}
         tradition={data.data?.find((section) => section.source?.name === book.sourceName)?.source?.tradition}
         list={combatant.data.spells?.list ?? []}
         assign={book.assign}
+        initialAdding={book.adding}
         busy={Boolean(busyKey)}
         onClose={() => setBook(null)}
-        onAdd={(spell, rank) => runSpellAction(`book-add-${spell.id}-${rank}`, () => spellActions.addToList(book.sourceName, spell, rank))}
+        onAdd={(spell, rank) => runSpellAction(`book-add-${spell.id}-${rank}`, async () => {
+          if (book.manageMode === 'SLOTS-ONLY') {
+            const preferId = book.assign && spellFitsSlot(spell, book.assign.rank, rank) ? book.assign.slotId : undefined;
+            await spellActions.prepareSlot(book.sourceName, preferId, spell, rank);
+            if (book.assign) setBook(null);
+            return;
+          }
+          await spellActions.addToList(book.sourceName, spell, rank);
+        })}
         onRemove={(spellId, rank) => runSpellAction(`book-remove-${spellId}-${rank}`, () => spellActions.removeFromList(book.sourceName, spellId, rank))}
-        onPick={(entry) => runSpellAction(`book-prep-${entry.spell.id}-${entry.rank}`, async () => {
+        onPick={book.manageMode === 'SLOTS-AND-LIST' ? (entry) => runSpellAction(`book-prep-${entry.spell.id}-${entry.rank}`, async () => {
           const preferId = book.assign && spellFitsSlot(entry.spell, book.assign.rank, entry.rank) ? book.assign.slotId : undefined;
           await spellActions.prepareSlot(book.sourceName, preferId, entry.spell, entry.rank);
           if (book.assign) setBook(null);
-        })}
+        }) : undefined}
         onApplyFont={isDivinePreparedSource({ name: book.sourceName, tradition: data.data?.find((section) => section.source?.name === book.sourceName)?.source?.tradition })
           ? (choice) => runSpellAction(`font-${book.sourceName}-${choice}`, () => spellActions.applyDivineFont(book.sourceName, choice))
           : undefined}
@@ -1203,13 +1411,14 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
   </>;
 }
 
-function SpellSection({ section, spellActions, busyKey, canOpenStats, onOpen, onOpenBook, onOpenProf, onCast, onUncast, onRankSpent, onFocusSpent, onPreparedSpent, onInnateSpent, onRemoveFromList, onApplyFont, onLogCantrip }: {
+function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats, onOpen, onOpenBook, onOpenProf, onCast, onUncast, onRankSpent, onFocusSpent, onPreparedSpent, onInnateSpent, onRemoveFromList, onApplyFont, onLogCantrip }: {
   section: Phase1SpellSection;
+  rankFilter: number | 'ALL';
   spellActions?: Phase1SpellActions;
   busyKey: string | null;
   canOpenStats: boolean;
   onOpen: (entry: Phase1SpellEntry) => void;
-  onOpenBook: (assign?: SpellbookAssign | null) => void;
+  onOpenBook: (opts?: { assign?: SpellbookAssign | null; adding?: boolean }) => void;
   onOpenProf: (stat: Phase1StatTarget) => void;
   onCast: (entry: Phase1SpellEntry) => void;
   onUncast: (entry: Phase1SpellEntry) => void;
@@ -1222,9 +1431,13 @@ function SpellSection({ section, spellActions, busyKey, canOpenStats, onOpen, on
   onLogCantrip?: (entry: Phase1SpellEntry) => void;
 }) {
   const slotRanks = section.slots.map((slot) => (slot.rank === 0 ? -1 : slot.rank));
-  const ranks = [...new Set([...section.entries.map((entry) => entry.cantrip ? -1 : entry.rank), ...slotRanks])].sort((a, b) => a - b);
-  const canManageBook = Boolean(spellActions) && (section.mode === 'PREPARED' || section.mode === 'SPONTANEOUS');
+  const ranks = [...new Set([...section.entries.map(spellRankKey), ...slotRanks])]
+    .filter((rank) => rankFilter === 'ALL' || rank === rankFilter)
+    .sort((a, b) => a - b);
+  const canManageBook = Boolean(spellActions) && Boolean(spellManageMode(section.source?.type, section.source?.name, section.mode));
+  const manageMode = spellManageMode(section.source?.type, section.source?.name, section.mode);
   const focusSpent = section.focusPoints ? section.focusPoints.max - section.focusPoints.current : 0;
+  const bookLabel = manageMode === 'SLOTS-ONLY' ? 'Prepare' : isWitchFamiliarSource(section.source) ? 'Familiar' : 'Spellbook';
   return <section className='border border-p1-border bg-p1-surface'>
     <header className='border-b border-p1-border px-3 py-2.5'>
       <div className='flex items-center gap-2'>
@@ -1232,9 +1445,9 @@ function SpellSection({ section, spellActions, busyKey, canOpenStats, onOpen, on
         <h3 className='truncate text-sm font-semibold'>{section.label}</h3>
         <Tag>{section.mode.toLowerCase()}</Tag>
         {canManageBook && (
-          <button type='button' className='ml-auto inline-flex h-7 items-center gap-1 border border-p1-border px-2 text-[10px] font-semibold text-p1-muted hover:bg-p1-hover hover:text-p1-text' onClick={() => onOpenBook(null)}>
+          <button type='button' className='ml-auto inline-flex h-7 items-center gap-1 border border-p1-border px-2 text-[10px] font-semibold text-p1-muted hover:bg-p1-hover hover:text-p1-text' onClick={() => onOpenBook({ adding: manageMode === 'SLOTS-ONLY' })}>
             <BookOpen size={12} />
-            Spellbook
+            {bookLabel}
           </button>
         )}
         {section.mode === 'FOCUS' && section.focusPoints && section.focusPoints.max > 0 && (
@@ -1286,7 +1499,7 @@ function SpellSection({ section, spellActions, busyKey, canOpenStats, onOpen, on
                 spellActions={spellActions}
                 busy={Boolean(busyKey)}
                 onOpen={onOpen}
-                onOpenEmpty={() => entry.slotId && onOpenBook({ slotId: entry.slotId, rank: entry.rank })}
+                onOpenEmpty={() => entry.slotId && onOpenBook({ assign: { slotId: entry.slotId, rank: entry.rank }, adding: manageMode === 'SLOTS-ONLY' })}
                 onCast={() => onCast(entry)}
                 onUncast={() => onUncast(entry)}
                 onPreparedSpent={(spent) => onPreparedSpent(entry, spent)}
@@ -1298,10 +1511,10 @@ function SpellSection({ section, spellActions, busyKey, canOpenStats, onOpen, on
           </div>
         </div>;
       })}
-      {section.mode === 'SPONTANEOUS' && spellActions && (
-        <button type='button' className='flex min-h-10 w-full items-center gap-2 px-3 py-1.5 text-left text-sm italic text-p1-muted hover:bg-p1-hover' onClick={() => onOpenBook(null)}>
+      {manageMode && spellActions && (
+        <button type='button' className='flex min-h-10 w-full items-center gap-2 px-3 py-1.5 text-left text-sm italic text-p1-muted hover:bg-p1-hover' onClick={() => onOpenBook({ adding: true })}>
           <Plus size={14} />
-          Add to spellbook
+          {manageMode === 'SLOTS-ONLY' ? 'Prepare from tradition' : 'Add spells'}
         </button>
       )}
     </div>
@@ -1337,7 +1550,7 @@ function SpellRow({ entry, spellActions, busy, onOpen, onOpenEmpty, onCast, onUn
       </button>
     );
   }
-  const canRemove = Boolean(spellActions) && (entry.mode === 'PREPARED' || entry.mode === 'SPONTANEOUS');
+  const canRemove = Boolean(spellActions) && (entry.mode === 'PREPARED' || entry.mode === 'SPONTANEOUS' || entry.mode === 'RITUAL');
   return <div className='flex min-h-10 items-center gap-2 px-3 py-1.5 hover:bg-p1-hover' onContextMenu={(event) => {
     if (!canRemove) return;
     event.preventDefault();
@@ -1354,7 +1567,7 @@ function SpellRow({ entry, spellActions, busy, onOpen, onOpenEmpty, onCast, onUn
       <span className='min-w-0 flex-1'><span className='block truncate text-sm font-medium'>{entry.spell.name}</span><span className='mt-0.5 block truncate text-[9px] uppercase text-p1-faint'>{entry.traitNames.join(' | ') || entry.spell.traditions.join(' | ')}</span></span>
       {entry.mode !== 'INNATE' && entry.usesMax != null && <span className='text-[10px] text-p1-muted'>{entry.usesCurrent}/{entry.usesMax}</span>}
     </button>
-    {spellActions && !entry.cantrip && (
+    {spellActions && !entry.cantrip && entry.mode !== 'RITUAL' && (
       <div className='flex shrink-0 items-center gap-1.5'>
         <button className='h-7 border border-p1-accent/40 px-2.5 text-[10px] font-semibold text-p1-accent-soft hover:bg-p1-accent/10 disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onCast}>{busy ? 'Saving...' : 'Cast'}</button>
         {entry.exhausted && <button className='h-7 border border-p1-border px-2.5 text-[10px] font-semibold text-p1-muted hover:bg-p1-hover disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onUncast}>Uncast</button>}
@@ -1383,7 +1596,7 @@ function SpellModal({ entry, spellActions, busy, onCast, onUncast, onClose }: { 
             <div className='flex items-center gap-2'><ActionSymbol cost={spell.cast} size='1.75rem' /><h2 id={`spell-${spell.id}-title`} className='text-xl font-semibold leading-tight'>{spell.name}</h2></div>
             <div className='mt-2 flex flex-wrap gap-1.5'><Tag>{entry.cantrip ? 'Cantrip' : rankLabel(entry.rank)}</Tag><Tag>{spell.rarity}</Tag>{entry.traitNames.map((trait) => <Tag key={trait}>{trait}</Tag>)}</div>
           </div>
-          {spellActions && !entry.cantrip && (
+          {spellActions && !entry.cantrip && entry.mode !== 'RITUAL' && (
             entry.exhausted
               ? <button className='h-8 shrink-0 border border-p1-border px-3 text-xs font-semibold text-p1-text hover:bg-p1-hover disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onUncast}>{busy ? 'Saving...' : 'Uncast'}</button>
               : <button className='h-8 shrink-0 border border-p1-accent/50 bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onCast}>{busy ? 'Saving...' : `Cast ${rankLabel(entry.rank)}`}</button>
@@ -1443,6 +1656,9 @@ function SlotCircles({ count, spent, editable, title, onChange }: { count: numbe
   );
 }
 
+function spellRankKey(entry: Phase1SpellEntry) {
+  return entry.cantrip ? -1 : entry.rank;
+}
 function rankLabel(rank: number) {
   if (rank === 0) return 'Cantrip';
   const mod = rank % 100;

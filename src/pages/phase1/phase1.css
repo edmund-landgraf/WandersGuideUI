@@ -34,16 +34,16 @@
 
 [data-theme='grey'] {
   color-scheme: light;
-  --p1-bg-page: #c8c4bb;
-  --p1-bg-header: #bdb8ae;
-  --p1-bg-surface: #d5d1c8;
-  --p1-bg-inset: #b8b3a9;
-  --p1-bg-raised: #d0ccc3;
+  --p1-bg-page: #b3afa6;
+  --p1-bg-header: #a8a399;
+  --p1-bg-surface: #c0bcb3;
+  --p1-bg-inset: #a39e94;
+  --p1-bg-raised: #bbb7ae;
   --p1-text: #2a2926;
-  --p1-text-muted: #5c5953;
-  --p1-text-faint: #7a766e;
-  --p1-border: rgb(40 38 32 / 0.18);
-  --p1-hover: rgb(40 38 32 / 0.08);
+  --p1-text-muted: #4f4c47;
+  --p1-text-faint: #6d6962;
+  --p1-border: rgb(40 38 32 / 0.22);
+  --p1-hover: rgb(40 38 32 / 0.1);
   --p1-accent: #b8863a;
   --p1-accent-soft: #8a6528;
   --p1-accent-ink: #17130d;
@@ -59,8 +59,8 @@
   --p1-action: #2563eb;
   --p1-action-hover: #1d4ed8;
   --p1-action-ink: #f4f7f8;
-  --p1-scrollbar-thumb: #9a958c;
-  --p1-scrollbar-track: #b8b3a9;
+  --p1-scrollbar-thumb: #87827a;
+  --p1-scrollbar-track: #a39e94;
 }
 
 [data-theme='parchment'] {
@@ -185,6 +185,7 @@
 html, body, #root {
   min-height: 100%;
   margin: 0;
+  padding: 0;
   font-family: var(--p1-font-sans);
 }
 html *:not(code):not(pre):not(kbd):not(samp):not(h1):not(h2) {
@@ -195,7 +196,11 @@ h1, h2 {
 }
 button, input, select, textarea { font: inherit; }
 button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--p1-accent); outline-offset: 2px; }
-* { scrollbar-color: var(--p1-scrollbar-thumb) var(--p1-scrollbar-track); scrollbar-width: thin; }
+* { scrollbar-color: var(--p1-scrollbar-thumb) var(--p1-scrollbar-track); scrollbar-width: auto; }
+*::-webkit-scrollbar { width: 12px; height: 12px; }
+*::-webkit-scrollbar-track { background: var(--p1-scrollbar-track); }
+*::-webkit-scrollbar-thumb { background: var(--p1-scrollbar-thumb); border: 2px solid var(--p1-scrollbar-track); }
+*::-webkit-scrollbar-thumb:hover { background: var(--p1-text-muted); }
 .icon-button {
   display: grid;
   width: 2.25rem;
@@ -422,4 +427,34 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 }
 .ability-prose tbody tr:hover {
   background: var(--p1-hover);
+}
+
+.dice-roll-success {
+  background: color-mix(in srgb, #2f8f62 28%, var(--p1-bg-inset));
+  box-shadow: inset 4px 0 0 #3d9a6a;
+}
+.dice-roll-crit-success {
+  background: color-mix(in srgb, #7ed63a 34%, var(--p1-bg-inset));
+  box-shadow: inset 4px 0 0 #c8ff6a;
+  color: #152214;
+}
+.dice-roll-crit-success,
+.dice-roll-crit-success td,
+.dice-roll-crit-success span,
+.dice-roll-crit-success button {
+  color: #152214;
+}
+.dice-roll-crit-success .bg-p1-raised {
+  color: var(--p1-text);
+}
+.dice-roll-crit-success .bg-p1-raised .text-p1-faint {
+  color: var(--p1-text-faint) !important;
+}
+.dice-roll-failure {
+  background: color-mix(in srgb, #c45c4a 26%, var(--p1-bg-inset));
+  box-shadow: inset 4px 0 0 #c45c4a;
+}
+.dice-roll-crit-failure {
+  background: color-mix(in srgb, #6b1c18 72%, var(--p1-bg-inset));
+  box-shadow: inset 4px 0 0 #3a0d0b;
 }

@@ -6,16 +6,19 @@ import { BookOpen, Plus, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { ActionSymbol } from '@common/Actions';
 import { Phase1PickerModal } from './phase1-picker-modal';
-import { heightenRanksFor, spellbookEntriesForSource, spellFitsSlot, type Phase1SpellbookEntry } from './phase1-spells';
+import { heightenRanksFor, isWitchFamiliarSource, spellbookEntriesForSource, spellFitsSlot, type Phase1SpellbookEntry, type Phase1SpellManageMode } from './phase1-spells';
 import { ProseMarkdown } from './phase1-markdown';
 
 const EMPTY_SPELLS: Spell[] = [];
 const TRADITIONS = ['arcane', 'divine', 'occult', 'primal'] as const;
+const RANK_FILTERS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 
 export type SpellbookAssign = { slotId: string; rank: number };
 
 export function Phase1SpellbookModal({
   sourceName,
+  sourceType,
+  manageMode = 'LIST-ONLY',
   tradition,
   list,
   assign,
@@ -25,8 +28,11 @@ export function Phase1SpellbookModal({
   onPick,
   onApplyFont,
   onClose,
+  initialAdding = false,
 }: {
   sourceName: string;
+  sourceType?: string;
+  manageMode?: Phase1SpellManageMode;
   tradition?: string;
   list: Array<{ spell_id: number; rank: number; source: string }>;
   assign?: SpellbookAssign | null;
@@ -36,10 +42,15 @@ export function Phase1SpellbookModal({
   onPick?: (entry: Phase1SpellbookEntry) => Promise<void>;
   onApplyFont?: (choice: 'heal' | 'harm') => Promise<void>;
   onClose: () => void;
+  initialAdding?: boolean;
 }) {
-  const [adding, setAdding] = useState(false);
+  const slotsOnly = manageMode === 'SLOTS-ONLY';
+  const familiar = isWitchFamiliarSource({ name: sourceName, type: sourceType });
+  const [adding, setAdding] = useState(initialAdding || slotsOnly);
   const [preview, setPreview] = useState<Phase1SpellbookEntry | null>(null);
-  const [traditionFilter, setTraditionFilter] = useState<string | null>(tradition?.toLowerCase() || null);
+  const lockTradition = manageMode === 'SLOTS-ONLY' || (manageMode === 'LIST-ONLY' && sourceName !== 'RITUALS');
+  const [traditionFilter, setTraditionFilter] = useState<string | null>(lockTradition ? (tradition?.toLowerCase() || null) : null);
+  const [rankFilter, setRankFilter] = useState<number[]>([]);
   const catalog = useQuery({
     queryKey: ['phase1-spell-catalog', getDefaultSourcesKey('PAGE')],
     queryFn: async () => {
@@ -55,20 +66,23 @@ export function Phase1SpellbookModal({
     if (traditionFilter) {
       entries = entries.filter((entry) => entry.spell.traditions.some((item) => item.toLowerCase() === traditionFilter));
     }
+    if (rankFilter.length) {
+      entries = entries.filter((entry) => rankFilter.includes(entry.rank));
+    }
     if (!assign) return entries;
     return [...entries].sort((a, b) => {
       const aFit = spellFitsSlot(a.spell, assign.rank, a.rank) ? 0 : 1;
       const bFit = spellFitsSlot(b.spell, assign.rank, b.rank) ? 0 : 1;
       return aFit - bFit || a.rank - b.rank || a.spell.name.localeCompare(b.spell.name);
     });
-  }, [assign, catalog.data, list, sourceName, traditionFilter]);
+  }, [assign, catalog.data, list, rankFilter, sourceName, traditionFilter]);
 
   return (
     <>
-      <Phase1PickerModal
-        title={assign ? `Prepare ${sourceName} · Rank ${assign.rank === 0 ? 'Cantrip' : assign.rank}` : `${sourceName} Spellbook`}
+      {!adding && <Phase1PickerModal
+        title={assign ? `Prepare ${sourceName} · Rank ${assign.rank === 0 ? 'Cantrip' : assign.rank}` : sourceName === 'RITUALS' ? 'Rituals' : familiar ? `${sourceName} Familiar` : `${sourceName} Spellbook`}
         titleId='phase1-spellbook-title'
-        searchPlaceholder='Search your spellbook'
+        searchPlaceholder={familiar ? 'Search your familiar' : 'Search your spellbook'}
         items={items}
         getName={(entry) => entry.spell.name}
         getKey={(entry) => entry.key}
@@ -77,7 +91,7 @@ export function Phase1SpellbookModal({
         }
         loading={catalog.isLoading}
         error={catalog.isError ? (catalog.error instanceof Error ? catalog.error.message : 'Could not load spells.') : null}
-        empty='No spells in this book yet. Add any spell from the catalog.'
+        empty={familiar ? 'No spells in the familiar yet. Add patron, lesson, or other spells from the catalog.' : 'No spells in this book yet. Add any spell from the catalog.'}
         onClose={() => {
           if (!adding) onClose();
         }}
@@ -85,6 +99,7 @@ export function Phase1SpellbookModal({
         toolbar={
           <div className='mt-2 space-y-2'>
             <TraditionFilter value={traditionFilter} onChange={setTraditionFilter} />
+            <RankFilter value={rankFilter} onChange={setRankFilter} />
             {onApplyFont && (
               <div className='flex flex-wrap items-center gap-2'>
                 <span className='text-[11px] text-p1-muted'>Divine Font</span>
@@ -97,7 +112,13 @@ export function Phase1SpellbookModal({
             )}
             <div className='flex items-center justify-between gap-2'>
               <p className='text-[11px] text-p1-muted'>
-                Click a spell to prepare it in an empty slot of that rank. Right-click to remove from the book.
+                {sourceName === 'RITUALS'
+                  ? 'Click a ritual for details. Use Add spell to write another into this list.'
+                  : manageMode === 'LIST-ONLY'
+                    ? 'This is your repertoire. Use Add spell to learn another. Click a spell for details.'
+                    : familiar
+                      ? 'This list is the familiar. Patron and lesson spells can be any tradition. Click to prepare an empty slot.'
+                      : 'Click a spell to prepare it in an empty slot of that rank. Right-click to remove from the book.'}
               </p>
               <button
                 type='button'
@@ -151,15 +172,22 @@ export function Phase1SpellbookModal({
             </div>
           );
         }}
-      />
+      />}
       {adding && (
         <SelectCatalogSpellModal
           busy={busy}
           traditionFilter={traditionFilter}
-          onClose={() => setAdding(false)}
+          preferRank={assign?.rank}
+          title={slotsOnly
+            ? (assign ? `Prepare ${sourceName} · Rank ${assign.rank === 0 ? 'Cantrip' : assign.rank}` : `Prepare ${sourceName}`)
+            : 'Add any spell'}
+          onClose={() => {
+            if (initialAdding || slotsOnly) onClose();
+            else setAdding(false);
+          }}
           onAdd={async (spell, rank) => {
             await onAdd(spell, rank);
-            setAdding(false);
+            if (!slotsOnly) setAdding(false);
           }}
         />
       )}
@@ -173,16 +201,21 @@ export function Phase1SpellbookModal({
 function SelectCatalogSpellModal({
   busy,
   traditionFilter,
+  preferRank,
+  title = 'Add any spell',
   onAdd,
   onClose,
 }: {
   busy?: boolean;
   traditionFilter?: string | null;
+  preferRank?: number;
+  title?: string;
   onAdd: (spell: Spell, rank: number) => Promise<void>;
   onClose: () => void;
 }) {
   const [heighten, setHeighten] = useState<Spell | null>(null);
   const [tradition, setTradition] = useState<string | null>(traditionFilter ?? null);
+  const [rankFilter, setRankFilter] = useState<number[]>([]);
   const catalog = useQuery({
     queryKey: ['phase1-spell-catalog', getDefaultSourcesKey('PAGE')],
     queryFn: async () => {
@@ -194,13 +227,25 @@ function SelectCatalogSpellModal({
     staleTime: Number.POSITIVE_INFINITY,
   });
   const items = useMemo(() => {
-    const spells = catalog.data ?? EMPTY_SPELLS;
-    if (!tradition) return spells;
-    return spells.filter((spell) => spell.traditions.some((item) => item.toLowerCase() === tradition));
-  }, [catalog.data, tradition]);
+    let spells = catalog.data ?? EMPTY_SPELLS;
+    if (tradition) {
+      spells = spells.filter((spell) => spell.traditions.some((item) => item.toLowerCase() === tradition));
+    }
+    if (rankFilter.length) {
+      spells = spells.filter((spell) => rankFilter.includes(spell.rank));
+    }
+    if (preferRank != null) {
+      spells = spells.filter((spell) => spellFitsSlot(spell, preferRank));
+    }
+    return spells;
+  }, [catalog.data, preferRank, rankFilter, tradition]);
 
   async function choose(spell: Spell) {
     if (busy) return;
+    if (preferRank != null) {
+      await onAdd(spell, preferRank);
+      return;
+    }
     if (spell.rank === 0 || spell.rank === 10) {
       await onAdd(spell, spell.rank);
       return;
@@ -211,7 +256,7 @@ function SelectCatalogSpellModal({
   return (
     <>
       <Phase1PickerModal
-        title='Add any spell'
+        title={title}
         titleId='phase1-add-spell-title'
         searchPlaceholder='Search the catalog'
         items={items}
@@ -225,11 +270,15 @@ function SelectCatalogSpellModal({
         empty='No matching spells.'
         onClose={onClose}
         maxWidthClass='max-w-2xl'
+        overlayClass='z-[110]'
         toolbar={
           <div className='mt-2 space-y-2'>
             <TraditionFilter value={tradition} onChange={setTradition} />
+            <RankFilter value={rankFilter} onChange={setRankFilter} />
             <p className='text-[11px] text-p1-muted'>
-              Wanderer’s Guide lets you write any spell into the book, regardless of level or access.
+              {preferRank != null
+                ? 'Click a spell to prepare it in this slot.'
+                : 'Click a spell to add it. Ranked spells will ask which rank to write in.'}
             </p>
           </div>
         }
@@ -248,6 +297,7 @@ function SelectCatalogSpellModal({
                 {spell.traditions.length ? ` · ${spell.traditions.join(', ')}` : ''}
               </span>
             </span>
+            <span className='shrink-0 text-[10px] font-semibold text-p1-accent-soft'>{preferRank != null ? 'Prepare' : 'Add'}</span>
           </button>
         )}
       />
@@ -263,6 +313,37 @@ function SelectCatalogSpellModal({
         />
       )}
     </>
+  );
+}
+
+function RankFilter({ value, onChange }: { value: number[]; onChange: (value: number[]) => void }) {
+  function toggle(rank: number) {
+    onChange(value.includes(rank) ? value.filter((item) => item !== rank) : [...value, rank].sort((a, b) => a - b));
+  }
+  return (
+    <div className='flex flex-wrap gap-1' role='group' aria-label='Filter by rank'>
+      <button
+        type='button'
+        className={`h-6 px-2 text-[10px] font-semibold ${!value.length ? 'bg-p1-accent text-p1-accent-ink' : 'border border-p1-border text-p1-muted hover:bg-p1-hover'}`}
+        onClick={() => onChange([])}
+      >
+        All ranks
+      </button>
+      {RANK_FILTERS.map((rank) => {
+        const active = value.includes(rank);
+        return (
+          <button
+            key={rank}
+            type='button'
+            aria-pressed={active}
+            className={`h-6 min-w-6 px-2 text-[10px] font-semibold ${active ? 'bg-p1-accent text-p1-accent-ink' : 'border border-p1-border text-p1-muted hover:bg-p1-hover'}`}
+            onClick={() => toggle(rank)}
+          >
+            {rank === 0 ? 'Cantrip' : rank}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -303,7 +384,7 @@ function HeightenRankModal({
 }) {
   const ranks = heightenRanksFor(spell);
   return (
-    <div className='fixed inset-0 z-[110] grid place-items-center bg-black/60 p-5' role='presentation' onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className='fixed inset-0 z-[120] grid place-items-center bg-black/60 p-5' role='presentation' onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section role='dialog' aria-modal='true' className='w-full max-w-sm border border-p1-border bg-p1-surface p-4 shadow-2xl'>
         <h3 className='text-sm font-semibold'>Add {spell.name} at rank</h3>
         <div className='mt-3 flex flex-wrap gap-1.5'>

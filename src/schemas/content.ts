@@ -967,6 +967,49 @@ export const InitiativeRoundLogSchema = z.object({
 });
 export type InitiativeRoundLog = z.infer<typeof InitiativeRoundLogSchema>;
 
+export const DiceRollOutcomeSchema = z.enum(['critical-success', 'success', 'failure', 'critical-failure']);
+export type DiceRollOutcome = z.infer<typeof DiceRollOutcomeSchema>;
+
+export const DiceRollSideSchema = z.enum(['enemies', 'allies', 'both']);
+export type DiceRollSide = z.infer<typeof DiceRollSideSchema>;
+
+export const DiceCheckResultSchema = z.object({
+  die: z.number(),
+  bonus: z.number(),
+  source: z.string().optional(),
+  total: z.number(),
+  outcome: DiceRollOutcomeSchema,
+});
+export type DiceCheckResult = z.infer<typeof DiceCheckResultSchema>;
+
+export const DiceRollStateSchema = z.object({
+  side: DiceRollSideSchema.optional(),
+  title: z.string().optional(),
+  dc: z.number().nullable().optional(),
+  stat: z.string().optional(),
+  results: z.record(z.string(), DiceCheckResultSchema).optional(),
+});
+export type DiceRollState = z.infer<typeof DiceRollStateSchema>;
+
+export const DiceRollLogEntrySchema = z.object({
+  combatant_id: z.string().optional(),
+  name: z.string(),
+  ally: z.boolean(),
+  calculation: z.string(),
+  total: z.number().nullable(),
+  outcome: DiceRollOutcomeSchema.optional(),
+});
+export type DiceRollLogEntry = z.infer<typeof DiceRollLogEntrySchema>;
+
+export const DiceRollLogSchema = z.object({
+  id: z.string().optional(),
+  title: z.string(),
+  dc: z.number(),
+  defaultStat: z.string(),
+  entries: z.array(DiceRollLogEntrySchema),
+});
+export type DiceRollLog = z.infer<typeof DiceRollLogSchema>;
+
 export const EncounterSchema = z.object({
   id: z.number(),
   created_at: z.string(),
@@ -981,6 +1024,8 @@ export const EncounterSchema = z.object({
     party_level: z.number().optional(),
     party_size: z.number().optional(),
     initiative_log: z.array(InitiativeRoundLogSchema).optional(),
+    dice_roll_state: DiceRollStateSchema.optional(),
+    dice_roll_log: z.array(DiceRollLogSchema).optional(),
   }),
 });
 export type Encounter = z.infer<typeof EncounterSchema>;
