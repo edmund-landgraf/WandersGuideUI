@@ -47,6 +47,7 @@ import { toLabel } from '@utils/strings';
 import { sign } from '@utils/numbers';
 import { buildDiceRollLog, checkStatLabel, DICE_CHECK_OPTIONS, DICE_CHECK_VALUES, DiceCheckResultToast, DiceCheckRollModal, DiceRollColorKey, DiceRollLogPanel, defaultStatForCombatant, degreeOfSuccess, filterCombatantsBySide, formatCheckRoll, loadAllCheckOptions, loadCheckOptions, outcomeLabel, outcomeRowClass, overlayDiceRollMeta, setDiceRollLogEntryNote } from './phase1-dice-rolls';
 import { findAmbaChallenge, challengeCheckEntries, mapAmbaChallengeStat, mergeEncounterMeta, readAmbaChallenges } from './phase1-amba-challenges';
+import { encounterDisplayName, encounterNamesMatch } from './phase1-encounter-title';
 import { appendChangeLog, characterCombatFieldsFromEntity, createChangeLogEntry, parseTempHpInput } from './phase1-change-log';
 import { appendActionLog, createActionLogEntry, currentActionRound, removeActionLogEntry, type ActionLogDraft } from './phase1-action-log';
 import { maxCombatantStats, maxEntityStats, resetCombatant, resetEntityCombatState, resolveResetMaxHp } from './phase1-encounter-reset';
@@ -844,13 +845,13 @@ export function Phase1CampaignPage() {
   function handleCreateNote(name: string) {
     const pages = [
       ...(campaignData.notes?.pages ?? []),
-      { name, icon: 'notebook', color: GUIDE_BLUE, contents: null, shared: false },
+      { name: encounterDisplayName(name), icon: 'notebook', color: GUIDE_BLUE, contents: null, shared: false },
     ];
     updateCampaign.mutate({ ...campaignData, notes: { ...campaignData.notes, pages } });
     navigate(`/phase1/campaign/${campaignId}/notes/${pages.length - 1}`);
   }
   function handleCreateEncounter(name: string) {
-    createEncounter.mutate(name);
+    createEncounter.mutate(encounterDisplayName(name));
   }
   function handleDeleteEncounter(id: number) {
     const remaining = visible.filter((item) => item.id !== id);
@@ -936,8 +937,8 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   }
   const selected = combatants.find((item) => item._id === selectedId) ?? null;
   const statuses = useCombatantStatuses(selectedEncounter?.id ?? null, combatants);
-  const encounterNote = notePages.find((item) => item.page.name.trim().toLowerCase() === selectedEncounter?.name.trim().toLowerCase());
-  const noteEncounter = encounters.find((item) => item.name.trim().toLowerCase() === selectedNote?.page.name.trim().toLowerCase());
+  const encounterNote = notePages.find((item) => encounterNamesMatch(item.page.name, selectedEncounter?.name));
+  const noteEncounter = encounters.find((item) => encounterNamesMatch(item.name, selectedNote?.page.name));
   const activeCharacterIds = new Set((selectedEncounter?.combatants.list ?? []).filter((combatant) => combatant.type === 'CHARACTER').map((combatant) => combatant.character));
   const benchPlayers = players.filter((player) => !activeCharacterIds.has(player.id));
   const diceState = selectedEncounter?.meta_data.dice_roll_state;
@@ -1393,16 +1394,18 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     const trimmed = name.trim();
     const pages = [...(campaign.notes?.pages ?? [])];
     const page = pages[index];
-    if (!page || !trimmed || page.name === trimmed) return;
-    pages[index] = { ...page, name: trimmed };
+    const nextName = encounterDisplayName(trimmed);
+    if (!page || !nextName || page.name === nextName) return;
+    pages[index] = { ...page, name: nextName };
     onUpdateCampaign({ ...campaign, notes: { ...campaign.notes, pages } });
   }
 
   function renameEncounter(id: number, name: string) {
     const trimmed = name.trim();
     const encounter = encounters.find((item) => item.id === id);
-    if (!encounter || !trimmed || encounter.name === trimmed) return;
-    onUpdateEncounter({ ...encounter, name: trimmed });
+    const nextName = encounterDisplayName(trimmed);
+    if (!encounter || !nextName || encounter.name === nextName) return;
+    onUpdateEncounter({ ...encounter, name: nextName });
   }
 
   function persistDeleteLogEntry(entryId: string) {
@@ -1757,10 +1760,10 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
             <Link
               key={`${page.name}-${index}`}
               to={`/phase1/campaign/${campaign.id}/notes/${index}`}
-              onContextMenu={(event) => openRailMenu(event, { kind: 'note', id: index, name: page.name })}
+              onContextMenu={(event) => openRailMenu(event, { kind: 'note', id: index, name: encounterDisplayName(page.name) })}
               className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedNoteIndex === index ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
             >
-              <span className='block truncate'>{page.name}</span>
+              <span className='block truncate'>{encounterDisplayName(page.name)}</span>
               {isGm && <span className='mt-0.5 block text-[11px] text-p1-faint'>{page.shared ? 'Shared with party' : 'GM only'}</span>}
             </Link>
           ))}
@@ -1774,10 +1777,10 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
             <Link
               key={encounter.id}
               to={`/phase1/campaign/${campaign.id}/encounters/${encounter.id}`}
-              onContextMenu={(event) => openRailMenu(event, { kind: 'encounter', id: encounter.id, name: encounter.name })}
+              onContextMenu={(event) => openRailMenu(event, { kind: 'encounter', id: encounter.id, name: encounterDisplayName(encounter.name) })}
               className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedEncounter?.id === encounter.id ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
             >
-              <span className='block truncate'>{encounter.name}</span>
+              <span className='block truncate'>{encounterDisplayName(encounter.name)}</span>
               <span className='mt-0.5 block text-[11px] text-p1-faint'>{encounter.combatants.list.length} combatants</span>
             </Link>
           ))}
@@ -1973,19 +1976,20 @@ function PlayerContextMenu({ x, y, onClose, onRemove, onIncapacitate, onMarkDead
 
 const CHECK_MENU_GROUPS = ['Senses', 'Saves', 'Ability', 'Skill'] as const;
 
-function challengeMenuItems(challenges: Array<{ id: string; title: string; check?: AmbaChallengeTable['check']; effect?: AmbaChallengeTable['effect'] }>) {
-  return challenges.flatMap((challenge) => {
+function challengeMenuGroups(challenges: Array<{ id: string; title: string; check?: AmbaChallengeTable['check']; effect?: AmbaChallengeTable['effect'] }>) {
+  return challenges.map((challenge) => {
     const entries = challengeCheckEntries(challenge as AmbaChallengeTable, DICE_CHECK_VALUES);
-    return entries.map((entry, index) => {
-      const showSkill = entries.length > 1 && entry.skill && !challenge.title.toLowerCase().includes(entry.skill.toLowerCase());
-      return {
+    return {
+      key: challenge.id,
+      title: challenge.title,
+      items: entries.map((entry, index) => ({
         key: `${challenge.id}:${entry.stat ?? entry.skill}:${index}`,
         challengeId: challenge.id,
-        title: showSkill ? `${challenge.title} (${entry.skill})` : challenge.title,
-        stat: entry.stat,
         skill: entry.skill,
-      };
-    });
+        skillLabel: entry.stat ? checkStatLabel(entry.stat) : (entry.skill ? toLabel(entry.skill) : 'Check'),
+        stat: entry.stat,
+      })),
+    };
   });
 }
 
@@ -2004,6 +2008,8 @@ function DiceCombatantContextMenu({ x, y, combatant, canCheck, challenges, canCh
 }) {
   const [openMenu, setOpenMenu] = useState<'check' | 'challenge' | null>(null);
   const [openGroup, setOpenGroup] = useState<(typeof CHECK_MENU_GROUPS)[number] | null>(null);
+  const [openChallengeKey, setOpenChallengeKey] = useState<string | null>(null);
+  const [skillMenuTop, setSkillMenuTop] = useState(0);
   const [checkOptions, setCheckOptions] = useState<Array<{ value: string; num: number }> | null>(null);
   const [hoverTip, setHoverTip] = useState<{ text: string; left: number; top: number } | null>(null);
   useEffect(() => {
@@ -2024,10 +2030,13 @@ function DiceCombatantContextMenu({ x, y, combatant, canCheck, challenges, canCh
   }, [combatant]);
   const left = Math.min(x, window.innerWidth - 220);
   const top = Math.min(y, window.innerHeight - 120);
-  const groupLeft = Math.min(left + 200, window.innerWidth - 160);
-  const statLeft = Math.min(groupLeft + 152, window.innerWidth - 176);
+  const cascadeRight = left + 200 + 176 < window.innerWidth;
+  const groupLeft = cascadeRight ? left + 200 : Math.max(8, left - 176);
+  const statLeft = cascadeRight ? Math.min(groupLeft + 152, window.innerWidth - 176) : Math.max(8, groupLeft - 152);
+  const skillLeft = cascadeRight ? Math.min(groupLeft + 176, window.innerWidth - 160) : Math.max(8, groupLeft - 160);
   const challengeTop = top + 72;
-  const items = useMemo(() => challengeMenuItems(challenges), [challenges]);
+  const groups = useMemo(() => challengeMenuGroups(challenges), [challenges]);
+  const openChallengeGroup = groups.find((group) => group.key === openChallengeKey && group.items.length > 1);
   const selectedChallenge = selectedChallengeId ? challenges.find((challenge) => challenge.id === selectedChallengeId) : undefined;
   const canRollSelected = Boolean(canChallenge && selectedChallenge);
 
@@ -2049,7 +2058,7 @@ function DiceCombatantContextMenu({ x, y, combatant, canCheck, challenges, canCh
           disabled={!canRollSelected}
           className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint'
           title={canRollSelected ? `Roll ${selectedChallenge?.title} for this combatant` : 'Select a challenge in the toolbar first'}
-          onMouseEnter={() => { setOpenMenu(null); setOpenGroup(null); setHoverTip(null); }}
+          onMouseEnter={() => { setOpenMenu(null); setOpenGroup(null); setOpenChallengeKey(null); setHoverTip(null); }}
           onClick={() => { if (canRollSelected && selectedChallengeId) onChallenge(selectedChallengeId, selectedStat); }}
         >
           Roll this challenge
@@ -2060,8 +2069,8 @@ function DiceCombatantContextMenu({ x, y, combatant, canCheck, challenges, canCh
           disabled={!canCheck}
           className='flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint'
           title={canCheck ? 'Roll this combatant against a check' : 'Set a DC in the toolbar first'}
-          onMouseEnter={() => { if (canCheck) { setOpenMenu('check'); setOpenGroup(null); setHoverTip(null); } }}
-          onClick={() => { if (canCheck) { setOpenMenu('check'); setOpenGroup(null); } }}
+          onMouseEnter={() => { if (canCheck) { setOpenMenu('check'); setOpenGroup(null); setOpenChallengeKey(null); setHoverTip(null); } }}
+          onClick={() => { if (canCheck) { setOpenMenu('check'); setOpenGroup(null); setOpenChallengeKey(null); } }}
         >
           Check
           <ChevronRight size={14} className='text-p1-faint' />
@@ -2072,8 +2081,8 @@ function DiceCombatantContextMenu({ x, y, combatant, canCheck, challenges, canCh
           disabled={!canChallenge}
           className='flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint'
           title={canChallenge ? 'Roll this combatant against a challenge' : 'No challenges on this encounter'}
-          onMouseEnter={() => { if (canChallenge) setOpenMenu('challenge'); setHoverTip(null); }}
-          onClick={() => { if (canChallenge) setOpenMenu('challenge'); }}
+          onMouseEnter={() => { if (canChallenge) { setOpenMenu('challenge'); setOpenChallengeKey(null); setHoverTip(null); } }}
+          onClick={() => { if (canChallenge) { setOpenMenu('challenge'); setOpenChallengeKey(null); } }}
         >
           Challenge
           <ChevronRight size={14} className='text-p1-faint' />
@@ -2112,8 +2121,53 @@ function DiceCombatantContextMenu({ x, y, combatant, canCheck, challenges, canCh
         </div>
       )}
       {openMenu === 'challenge' && canChallenge && (
-        <div role='menu' className='fixed z-[110] min-w-44 max-w-64 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left: groupLeft, top: challengeTop }}>
-          {items.map((item) => {
+        <div role='menu' className='fixed z-[110] min-w-44 max-w-52 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left: groupLeft, top: challengeTop }}>
+          {groups.map((group) => {
+            const nested = group.items.length > 1;
+            const only = group.items[0];
+            const tip = !nested && only ? modifierTip(only.stat, only.skill) : undefined;
+            return (
+              <button
+                key={group.key}
+                type='button'
+                role='menuitem'
+                title={tip}
+                className='flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover'
+                onMouseEnter={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  if (nested) {
+                    setOpenChallengeKey(group.key);
+                    setSkillMenuTop(rect.top);
+                    setHoverTip(null);
+                    return;
+                  }
+                  setOpenChallengeKey(null);
+                  if (tip) setHoverTip({ text: tip, left: rect.right + 8, top: rect.top });
+                }}
+                onMouseMove={(event) => {
+                  if (nested || !tip) return;
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setHoverTip({ text: tip, left: rect.right + 8, top: rect.top });
+                }}
+                onMouseLeave={() => { if (!nested) setHoverTip(null); }}
+                onClick={() => {
+                  if (nested) {
+                    setOpenChallengeKey(group.key);
+                    return;
+                  }
+                  if (only) onChallenge(only.challengeId, only.stat);
+                }}
+              >
+                <span className='min-w-0 whitespace-normal'>{group.title}</span>
+                {nested && <ChevronRight size={14} className='shrink-0 text-p1-faint' />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {openMenu === 'challenge' && canChallenge && openChallengeGroup && (
+        <div role='menu' className='fixed z-[110] min-w-36 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left: skillLeft, top: skillMenuTop || challengeTop }}>
+          {openChallengeGroup.items.map((item) => {
             const tip = modifierTip(item.stat, item.skill);
             return (
               <button
@@ -2133,7 +2187,7 @@ function DiceCombatantContextMenu({ x, y, combatant, canCheck, challenges, canCh
                 onMouseLeave={() => setHoverTip(null)}
                 onClick={() => onChallenge(item.challengeId, item.stat)}
               >
-                <span className='truncate'>{item.title}</span>
+                {item.skillLabel}
               </button>
             );
           })}
@@ -2528,7 +2582,7 @@ function EncounterHeader({ encounter, combatants, count, isGm, noteLink, tab, on
   return (
     <div className='sticky top-0 z-10 border-b border-p1-border bg-p1-surface/95 px-5 py-4 backdrop-blur'>
       <div className='flex items-center gap-5'>
-        <div className='min-w-0 flex-1'><Eyebrow>{isGm ? 'GM encounter' : 'Assigned encounter'}</Eyebrow><h2 className='mt-1 truncate text-xl font-semibold'>{encounter?.name ?? 'No encounter selected'}</h2>{noteLink ? <Link to={noteLink.href} className='mt-1 block truncate text-xs text-p1-accent hover:underline'>See campaign Notes page: {noteLink.name}</Link> : <p className='mt-1 truncate text-xs text-p1-faint'>{encounter?.meta_data.description || `${count} combatants`}</p>}
+        <div className='min-w-0 flex-1'><Eyebrow>{isGm ? 'GM encounter' : 'Assigned encounter'}</Eyebrow><h2 className='mt-1 truncate text-xl font-semibold'>{encounter ? encounterDisplayName(encounter.name) : 'No encounter selected'}</h2>{noteLink ? <Link to={noteLink.href} className='mt-1 block truncate text-xs text-p1-accent hover:underline'>See campaign Notes page: {encounterDisplayName(noteLink.name)}</Link> : <p className='mt-1 truncate text-xs text-p1-faint'>{encounter?.meta_data.description || `${count} combatants`}</p>}
           <div className='mt-3 flex gap-1'>
             {(['combat', 'dice'] as const).map((item) => (
               <button
@@ -3153,9 +3207,9 @@ function NoteSurface({ note, isGm, encounterLink }: { note: IndexedNotePage | nu
     <>
       <div className='sticky top-0 z-10 border-b border-p1-border bg-p1-surface/95 px-5 py-4 backdrop-blur'>
         <Eyebrow>{isGm ? 'Campaign notes' : 'Shared campaign notes'}</Eyebrow>
-        <h2 className='mt-1 truncate text-xl font-semibold'>{note?.page.name ?? 'Note not found'}</h2>
+        <h2 className='mt-1 truncate text-xl font-semibold'>{note ? encounterDisplayName(note.page.name) : 'Note not found'}</h2>
         <p className='mt-1 truncate text-xs text-p1-faint'>{note ? (note.page.shared ? 'Shared with party' : 'Visible to the GM only') : 'This campaign note is unavailable.'}</p>
-        {encounterLink && <Link to={encounterLink.href} className='mt-1 block truncate text-xs text-p1-accent hover:underline'>See encounter: {encounterLink.name}</Link>}
+        {encounterLink && <Link to={encounterLink.href} className='mt-1 block truncate text-xs text-p1-accent hover:underline'>See encounter: {encounterDisplayName(encounterLink.name)}</Link>}
       </div>
       <div className='p-5'>
         {!note && <EmptyState>This campaign note could not be found, or it is not shared with you.</EmptyState>}

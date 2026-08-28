@@ -498,6 +498,14 @@ function roundKey(round: DiceRollLog, index: number) {
   return round.id ?? `${round.title}-${index}`;
 }
 
+function combatantLogSummary(entries: DiceRollLogEntry[]) {
+  const count = entries.length;
+  const noun = count === 1 ? 'combatant' : 'combatants';
+  const names = entries.map((entry) => entry.name?.trim()).filter((name): name is string => Boolean(name));
+  if (names.length === 0) return `${count} ${noun}`;
+  return `${count} ${noun} (${names.join(', ')})`;
+}
+
 function sameDiceRollLog(a: DiceRollLog, b: DiceRollLog) {
   if (a.id && b.id) return a.id === b.id;
   return a.title === b.title && a.dc === b.dc && a.defaultStat === b.defaultStat;
@@ -654,7 +662,6 @@ function DiceRollLogRound({
   canEdit: boolean;
   onEditNote: (entry: DiceRollLogEntry) => void;
 }) {
-  const count = round.entries.length;
   return (
     <div
       className='border-b border-p1-border last:border-0'
@@ -672,7 +679,7 @@ function DiceRollLogRound({
             {checkStatLabel(round.defaultStat)} · DC {round.dc}
           </h3>
           <p className='mt-0.5 text-[11px] text-p1-faint'>
-            {count} combatant{count === 1 ? '' : 's'}
+            {combatantLogSummary(round.entries)}
           </p>
         </div>
         <ChevronDown size={14} className={`mt-1 shrink-0 text-p1-faint transition-transform ${expanded ? 'rotate-180' : ''}`} />
