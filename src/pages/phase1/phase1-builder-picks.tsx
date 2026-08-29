@@ -6,7 +6,8 @@ import { uniq } from 'lodash-es';
 import { useMemo, useState } from 'react';
 import { useContentLinks } from './phase1-content-links';
 import { Phase1PickerModal } from './phase1-picker-modal';
-import { heritageSection, resultPrefix, saveSelectionChange, setAncestry, setBackground, setClass, setClass2 } from './phase1-builder-ops';
+import { setOverflowTitle } from './phase1-overflow-title';
+import { heritageSection, resultPrefix, saveSelectionChange, setAncestry, setBackground, setClass, setClass2, clearAncestry, clearBackground, clearClass, clearClass2 } from './phase1-builder-ops';
 import { Phase1OperationResults } from './phase1-builder-select';
 import type { OperationCharacterResultPackage } from '@schemas/content';
 
@@ -178,6 +179,7 @@ export function Phase1BuilderPicks({
           getKey={(item) => String(item.id)}
           empty='No ancestries loaded.'
           onClose={() => setPicker(null)}
+          onNone={character.details?.ancestry ? () => clearAncestry(setCharacter) : undefined}
           renderItem={(item) => (
             <ContentPickRow
               name={item.name}
@@ -201,6 +203,7 @@ export function Phase1BuilderPicks({
           getKey={(item) => String(item.id)}
           empty='No backgrounds loaded.'
           onClose={() => setPicker(null)}
+          onNone={character.details?.background ? () => clearBackground(setCharacter) : undefined}
           renderItem={(item) => (
             <ContentPickRow
               name={item.name}
@@ -224,6 +227,7 @@ export function Phase1BuilderPicks({
           getKey={(item) => String(item.id)}
           empty='No classes loaded.'
           onClose={() => setPicker(null)}
+          onNone={character.details?.class ? () => clearClass(setCharacter, dual) : undefined}
           renderItem={(item) => (
             <ContentPickRow
               name={item.name}
@@ -244,6 +248,7 @@ export function Phase1BuilderPicks({
           getKey={(item) => String(item.id)}
           empty='No classes loaded.'
           onClose={() => setPicker(null)}
+          onNone={character.details?.class_2 ? () => clearClass2(setCharacter) : undefined}
           renderItem={(item) => (
             <ContentPickRow
               name={item.name}
@@ -311,7 +316,13 @@ function PickRow({
       <div className='min-w-0'>
         <div className='text-[11px] uppercase text-p1-faint'>{label}</div>
         {value ? (
-          <button type='button' className='truncate text-left text-sm text-p1-accent hover:underline' onClick={onPreview}>
+          <button
+            type='button'
+            className='block w-full truncate text-left text-sm text-p1-accent hover:underline'
+            data-full-title={extra ? `${value} · ${extra}` : value}
+            onMouseEnter={setOverflowTitle}
+            onClick={onPreview}
+          >
             {value}
             {extra ? ` · ${extra}` : ''}
           </button>
@@ -342,7 +353,13 @@ function ContentPickRow({
   return (
     <div className={`flex items-center justify-between gap-2 border-b border-p1-border px-3 py-2 ${selected ? 'bg-p1-accent/10' : 'hover:bg-p1-hover'}`}>
       <button type='button' className='min-w-0 flex-1 text-left' onClick={onPick}>
-        <span className='block text-sm font-medium'>{name}</span>
+        <span
+          className='block truncate text-sm font-medium'
+          data-full-title={name}
+          onMouseEnter={setOverflowTitle}
+        >
+          {name}
+        </span>
         {detail && <span className='block text-[11px] text-p1-faint'>{detail}</span>}
       </button>
       {onPreview && (

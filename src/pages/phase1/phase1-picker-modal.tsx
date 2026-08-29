@@ -18,6 +18,7 @@ export function Phase1PickerModal<T>({
   error,
   empty,
   onClose,
+  onNone,
   renderItem,
   toolbar,
   footer,
@@ -39,6 +40,7 @@ export function Phase1PickerModal<T>({
   error?: string | null;
   empty: string;
   onClose: () => void;
+  onNone?: () => void;
   renderItem: (item: T) => ReactNode;
   toolbar?: ReactNode;
   footer?: ReactNode;
@@ -122,9 +124,22 @@ export function Phase1PickerModal<T>({
         className={`flex ${maxHeightClass} w-full ${maxWidthClass} flex-col border border-p1-border bg-p1-surface shadow-2xl`}
       >
         <header className='flex items-center gap-3 border-b border-p1-border px-4 py-3'>
-          <h2 id={titleId} className='min-w-0 flex-1 text-lg font-semibold'>
+          <h2 id={titleId} className='min-w-0 flex-1 truncate text-lg font-semibold'>
             {title}
           </h2>
+          {onNone && (
+            <button
+              type='button'
+              className='toolbar-button shrink-0'
+              aria-label='Clear selection'
+              onClick={() => {
+                onNone();
+                onClose();
+              }}
+            >
+              None
+            </button>
+          )}
           <button type='button' className='icon-button shrink-0' onClick={onClose} title='Close'>
             <X size={18} />
           </button>

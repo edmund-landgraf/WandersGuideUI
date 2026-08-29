@@ -4,6 +4,7 @@ import { hasOperationSelection } from '@operations/operation-utils';
 import type { OperationResult } from '@schemas/operations';
 import { Phase1PickerModal } from './phase1-picker-modal';
 import { useContentLinks } from './phase1-content-links';
+import { setOverflowTitle } from './phase1-overflow-title';
 
 export function Phase1OperationResults({
   sourceName,
@@ -58,11 +59,13 @@ function OperationSelectControl({ result, onChange }: { result: OperationResult;
       <div className='flex items-start justify-between gap-2'>
         <div className='min-w-0'>
           <div className='text-xs font-semibold text-p1-muted'>{selection.title || 'Select an option'}</div>
-          <div className='mt-0.5 truncate text-sm'>
+          <div className='mt-0.5 text-sm'>
             {selected ? (
               <button
                 type='button'
-                className='text-left text-p1-accent hover:underline'
+                className='block w-full truncate text-left text-p1-accent hover:underline'
+                data-full-title={selected.name ?? 'Selected'}
+                onMouseEnter={setOverflowTitle}
                 onClick={() => {
                   const type = selected._content_type || options[0]?._content_type;
                   if (type && selected.id != null) open(`link_${type}_${selected.id}`);
@@ -79,11 +82,6 @@ function OperationSelectControl({ result, onChange }: { result: OperationResult;
           <button type='button' className='toolbar-button' onClick={() => setOpenPicker(true)}>
             {selected ? 'Change' : 'Choose'}
           </button>
-          {selected && (
-            <button type='button' className='toolbar-button' onClick={() => onChange(selection.id, '')}>
-              Clear
-            </button>
-          )}
         </div>
       </div>
       {openPicker && (
@@ -95,6 +93,7 @@ function OperationSelectControl({ result, onChange }: { result: OperationResult;
           getKey={(option) => option._select_uuid || String(option.id)}
           empty='No options are available.'
           onClose={() => setOpenPicker(false)}
+          onNone={selected ? () => onChange(selection.id, '') : undefined}
           renderItem={(option) => (
             <SelectOptionRow
               option={option}
@@ -129,7 +128,13 @@ function SelectOptionRow({
   return (
     <div className={`flex items-center justify-between gap-2 border-b border-p1-border px-3 py-2 ${selected ? 'bg-p1-accent/10' : 'hover:bg-p1-hover'}`}>
       <button type='button' className='min-w-0 flex-1 text-left text-sm' onClick={onPick}>
-        <div className='font-medium'>{option.name ?? 'Option'}</div>
+        <div
+          className='truncate font-medium'
+          data-full-title={option.name ?? 'Option'}
+          onMouseEnter={setOverflowTitle}
+        >
+          {option.name ?? 'Option'}
+        </div>
         {option.level != null && option.level > 0 && <div className='text-[11px] text-p1-faint'>Level {option.level}</div>}
       </button>
       {option._content_type && option.id != null && (
