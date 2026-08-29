@@ -213,7 +213,7 @@ export function Phase1SheetPage() {
     canEdit &&
     view === 'sheet' &&
     (remainingChoices > 0 || (choiceCountsQuery.isSuccess && !isPlayable(character)));
-  const sheetArtUrl = view === 'sheet' ? character.details?.background_image_url : undefined;
+  const sheetArtUrl = character.details?.background_image_url;
 
   function persistHp(raw: string) {
     patchCharacter((current) => (confirmHealth(raw, maxHp, current)?.entity as Character) ?? current);
@@ -320,7 +320,7 @@ export function Phase1SheetPage() {
         </div>
       </header>
       <main className={`relative z-10 mx-auto min-h-0 w-full flex-1 overflow-y-scroll px-4 py-6 pb-10 ${view === 'builder' ? 'max-w-6xl' : 'max-w-5xl'}`}>
-        <section className='mb-4 flex flex-wrap items-start gap-4 border border-p1-border bg-p1-surface p-4'>
+        <section className='relative z-30 mb-4 flex flex-wrap items-start gap-4 border border-p1-border bg-p1-surface p-4'>
           <button
             type='button'
             className='grid h-20 w-20 shrink-0 place-items-center overflow-hidden border border-p1-border bg-p1-inset text-p1-faint hover:border-p1-accent/60 disabled:hover:border-p1-border'
@@ -493,20 +493,18 @@ export function Phase1SheetPage() {
           onBack={() => setArtworkPreviewOpen(false)}
         />
       )}
-      {view === 'sheet' && (
-        <Phase1ArtworkOverlay
-          url={character.details?.background_image_url}
-          canEdit={canEdit}
-          onPreview={() => setArtworkPreviewOpen(true)}
-          onSelect={() => setBackgroundOpen(true)}
-          onClear={() =>
-            patchCharacter((current) => ({
-              ...current,
-              details: { ...current.details, background_image_url: undefined },
-            }))
-          }
-        />
-      )}
+      <Phase1ArtworkOverlay
+        url={character.details?.background_image_url}
+        canEdit={canEdit}
+        onPreview={() => setArtworkPreviewOpen(true)}
+        onSelect={() => setBackgroundOpen(true)}
+        onClear={() =>
+          patchCharacter((current) => ({
+            ...current,
+            details: { ...current.details, background_image_url: undefined },
+          }))
+        }
+      />
       {diceOpen && <Phase1DiceModal character={character} onClose={() => setDiceOpen(false)} />}
       {restOpen && (
         <div className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5' onMouseDown={(event) => { if (event.target === event.currentTarget) setRestOpen(false); }}>
