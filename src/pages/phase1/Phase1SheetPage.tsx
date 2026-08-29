@@ -11,7 +11,7 @@ import { labelToVariable } from '@variables/variable-utils';
 import exportToJSON from '@export/export-to-json';
 import exportToPDF from '@export/export-to-pdf';
 import { cloneDeep } from 'lodash-es';
-import { ArrowLeft, Brush, ChevronDown, Download, ExternalLink, Flag, Hammer, HeartPulse, Plus, RotateCcw, Star, User } from 'lucide-react';
+import { ArrowLeft, Brush, ChevronDown, Download, ExternalLink, Eye, Flag, Hammer, HeartPulse, Menu, Plus, RotateCcw, Star, User, X } from 'lucide-react';
 import { Phase1PortraitModal } from './phase1-portrait-modal';
 import { Phase1ArtworkPreview, Phase1BackgroundModal } from './phase1-background-modal';
 import { getAllBackgroundImages } from '@utils/background-images';
@@ -213,6 +213,7 @@ export function Phase1SheetPage() {
     canEdit &&
     view === 'sheet' &&
     (remainingChoices > 0 || (choiceCountsQuery.isSuccess && !isPlayable(character)));
+  const sheetArtUrl = view === 'sheet' ? character.details?.background_image_url : undefined;
 
   function persistHp(raw: string) {
     patchCharacter((current) => (confirmHealth(raw, maxHp, current)?.entity as Character) ?? current);
@@ -301,8 +302,13 @@ export function Phase1SheetPage() {
   }
 
   return (
-    <div className='flex h-dvh min-h-0 flex-col overflow-hidden bg-p1-page text-p1-text'>
-      <header className='flex h-14 shrink-0 items-center gap-4 border-b border-p1-border bg-p1-header px-5'>
+    <div className={`relative flex h-dvh min-h-0 flex-col overflow-hidden bg-p1-page text-p1-text${sheetArtUrl ? ' p1-sheet-has-art' : ''}`}>
+      {sheetArtUrl && (
+        <div className='p1-sheet-art-layer' style={{ backgroundImage: `url(${sheetArtUrl})` }} aria-hidden>
+          <div className='p1-sheet-art-veil' />
+        </div>
+      )}
+      <header className='relative z-10 flex h-14 shrink-0 items-center gap-4 border-b border-p1-border bg-p1-header px-5'>
         <button type='button' className='icon-button' title='Back' onClick={() => (location.key === 'default' ? navigate('/phase1/characters') : navigate(-1))}><ArrowLeft size={16} /></button>
         <span className='font-semibold'>Wanderer's Guide</span>
         <span className='h-4 w-px bg-p1-hover' />
@@ -313,7 +319,7 @@ export function Phase1SheetPage() {
           <Phase1CssThemeToggle />
         </div>
       </header>
-      <main className={`mx-auto min-h-0 w-full flex-1 overflow-y-scroll px-4 py-6 pb-10 ${view === 'builder' ? 'max-w-6xl' : 'max-w-5xl'}`}>
+      <main className={`relative z-10 mx-auto min-h-0 w-full flex-1 overflow-y-scroll px-4 py-6 pb-10 ${view === 'builder' ? 'max-w-6xl' : 'max-w-5xl'}`}>
         <section className='mb-4 flex flex-wrap items-start gap-4 border border-p1-border bg-p1-surface p-4'>
           <button
             type='button'
@@ -338,49 +344,7 @@ export function Phase1SheetPage() {
           </div>
           <div className='flex min-w-0 flex-col items-end gap-2'>
             <div className='flex flex-wrap items-center justify-end gap-2'>
-            {canEdit && (
-              view === 'builder' ? (
-                <button type='button' className='toolbar-button' onClick={() => setSearchParams({}, { replace: true })}>
-                  <User size={14} /> Sheet
-                </button>
-              ) : (
-                !showBuilderReminder && (
-                  <button type='button' className='toolbar-button' onClick={() => setSearchParams({ view: 'builder' }, { replace: true })}>
-                    <Hammer size={14} /> Builder
-                  </button>
-                )
-              )
-            )}
-            {character.campaign_id && (
-              <Link className='toolbar-button' to={`/phase1/campaign/${character.campaign_id}`}><Flag size={14} /> Campaign</Link>
-            )}
-            <a
-              className='toolbar-button'
-              href={`${OLD_UI_ORIGIN}/sheet/${character.id}`}
-              target='_blank'
-              rel='noreferrer'
-              title='Open the original character sheet'
-            >
-              <ExternalLink size={14} /> Original
-            </a>
-            <Phase1ExportMenu character={character} />
-            {(character.options?.dice_roller || campaignQuery.data?.recommended_options?.dice_roller) && (
-              <Phase1DiceButton onOpen={() => setDiceOpen(true)} />
-            )}
-            {canEdit && <button className='toolbar-button' onClick={() => setRestOpen(true)}><RotateCcw size={14} /> Rest</button>}
-            <label className='toolbar-button'>
-              XP
-              <input
-                className='ml-2 w-16 bg-transparent text-right outline-none'
-                value={xpDraft}
-                disabled={!canEdit}
-                onChange={(event) => setXpDraft(event.target.value)}
-                onBlur={() => {
-                  const value = Number.parseInt(xpDraft, 10);
-                  if (Number.isFinite(value)) patchCharacter((current) => ({ ...current, experience: Math.max(0, value) }));
-                }}
-              />
-            </label>
+            {canEdit && <button type='button' className='toolbar-button' onClick={() => setRestOpen(true)}><RotateCcw size={14} /> Rest</button>}
             <div className='toolbar-button'>
               <Star size={14} />
               Hero
@@ -392,6 +356,22 @@ export function Phase1SheetPage() {
                 </span>
               ) : <strong className='ml-2'>{character.hero_points ?? 0}</strong>}
             </div>
+            {(character.options?.dice_roller || campaignQuery.data?.recommended_options?.dice_roller) && (
+              <Phase1DiceButton onOpen={() => setDiceOpen(true)} />
+            )}
+            <Phase1CharacterMenu
+              character={character}
+              canEdit={canEdit}
+              view={view}
+              xpDraft={xpDraft}
+              onXpDraftChange={setXpDraft}
+              onXpCommit={() => {
+                const value = Number.parseInt(xpDraft, 10);
+                if (Number.isFinite(value)) patchCharacter((current) => ({ ...current, experience: Math.max(0, value) }));
+              }}
+              onOpenSheet={() => setSearchParams({}, { replace: true })}
+              onOpenBuilder={() => setSearchParams({ view: 'builder' }, { replace: true })}
+            />
             </div>
             {showBuilderReminder && (
               <button
@@ -513,18 +493,20 @@ export function Phase1SheetPage() {
           onBack={() => setArtworkPreviewOpen(false)}
         />
       )}
-      <Phase1ArtworkPlate
-        url={character.details?.background_image_url}
-        canEdit={canEdit}
-        onPreview={() => setArtworkPreviewOpen(true)}
-        onSelect={() => setBackgroundOpen(true)}
-        onClear={() =>
-          patchCharacter((current) => ({
-            ...current,
-            details: { ...current.details, background_image_url: undefined },
-          }))
-        }
-      />
+      {view === 'sheet' && (
+        <Phase1ArtworkOverlay
+          url={character.details?.background_image_url}
+          canEdit={canEdit}
+          onPreview={() => setArtworkPreviewOpen(true)}
+          onSelect={() => setBackgroundOpen(true)}
+          onClear={() =>
+            patchCharacter((current) => ({
+              ...current,
+              details: { ...current.details, background_image_url: undefined },
+            }))
+          }
+        />
+      )}
       {diceOpen && <Phase1DiceModal character={character} onClose={() => setDiceOpen(false)} />}
       {restOpen && (
         <div className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5' onMouseDown={(event) => { if (event.target === event.currentTarget) setRestOpen(false); }}>
@@ -688,7 +670,27 @@ function toCharacterNotes(text: string, notes: Character['notes']): Character['n
   return { pages: pages.map((item, itemIndex) => (itemIndex === index ? { ...item, contents: text } : item)) };
 }
 
-function Phase1ExportMenu({ character }: { character: Character }) {
+const characterMenuItemClass = 'flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover';
+
+function Phase1CharacterMenu({
+  character,
+  canEdit,
+  view,
+  xpDraft,
+  onXpDraftChange,
+  onXpCommit,
+  onOpenSheet,
+  onOpenBuilder,
+}: {
+  character: Character;
+  canEdit: boolean;
+  view: 'sheet' | 'builder';
+  xpDraft: string;
+  onXpDraftChange: (value: string) => void;
+  onXpCommit: () => void;
+  onOpenSheet: () => void;
+  onOpenBuilder: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [exporting, setExporting] = useState<'pdf' | 'json' | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -698,8 +700,15 @@ function Phase1ExportMenu({ character }: { character: Character }) {
     const close = (event: MouseEvent) => {
       if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
     };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
     document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', onKey);
+    };
   }, [open]);
 
   async function run(kind: 'pdf' | 'json') {
@@ -713,7 +722,7 @@ function Phase1ExportMenu({ character }: { character: Character }) {
     }
   }
 
-  const label = exporting === 'pdf' ? 'Exporting PDF…' : exporting === 'json' ? 'Exporting JSON…' : 'Export';
+  const label = exporting === 'pdf' ? 'Exporting PDF…' : exporting === 'json' ? 'Exporting JSON…' : 'Character';
 
   return (
     <div ref={menuRef} className='relative'>
@@ -725,16 +734,56 @@ function Phase1ExportMenu({ character }: { character: Character }) {
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <Download size={14} /> {label} <ChevronDown size={14} />
+        <Menu size={14} /> {label} <ChevronDown size={14} />
       </button>
       {open && (
-        <div role='menu' className='absolute right-0 z-20 mt-1 min-w-36 border border-p1-border bg-p1-surface py-1 shadow-2xl'>
-          <button type='button' role='menuitem' className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => void run('pdf')}>
-            to PDF
+        <div role='menu' className='absolute right-0 z-20 mt-1 min-w-52 border border-p1-border bg-p1-surface py-1 shadow-2xl'>
+          {canEdit && (
+            view === 'builder' ? (
+              <button type='button' role='menuitem' className={characterMenuItemClass} onClick={() => { setOpen(false); onOpenSheet(); }}>
+                <User size={14} /> Sheet
+              </button>
+            ) : (
+              <button type='button' role='menuitem' className={characterMenuItemClass} onClick={() => { setOpen(false); onOpenBuilder(); }}>
+                <Hammer size={14} /> Builder
+              </button>
+            )
+          )}
+          {character.campaign_id ? (
+            <Link role='menuitem' className={characterMenuItemClass} to={`/phase1/campaign/${character.campaign_id}`} onClick={() => setOpen(false)}>
+              <Flag size={14} /> Campaign
+            </Link>
+          ) : null}
+          <button type='button' role='menuitem' className={characterMenuItemClass} onClick={() => void run('pdf')}>
+            <Download size={14} /> Export PDF
           </button>
-          <button type='button' role='menuitem' className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => void run('json')}>
-            to JSON
+          <button type='button' role='menuitem' className={characterMenuItemClass} onClick={() => void run('json')}>
+            <Download size={14} /> Export JSON
           </button>
+          <a
+            role='menuitem'
+            className={characterMenuItemClass}
+            href={`${OLD_UI_ORIGIN}/sheet/${character.id}`}
+            target='_blank'
+            rel='noreferrer'
+            onClick={() => setOpen(false)}
+          >
+            <ExternalLink size={14} /> Open classic UI
+          </a>
+          <div className='mx-2 my-1 border-t border-p1-border' />
+          <label className='flex items-center gap-2 px-3 py-2 text-sm text-p1-muted'>
+            XP
+            <input
+              className='ml-auto w-16 bg-transparent text-right text-p1-text outline-none'
+              value={xpDraft}
+              disabled={!canEdit}
+              onChange={(event) => onXpDraftChange(event.target.value)}
+              onBlur={onXpCommit}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
+              }}
+            />
+          </label>
         </div>
       )}
     </div>
@@ -756,7 +805,7 @@ function UnauthorizedSheet() {
   );
 }
 
-function Phase1ArtworkPlate({
+function Phase1ArtworkOverlay({
   url,
   canEdit,
   onPreview,
@@ -770,44 +819,43 @@ function Phase1ArtworkPlate({
   onClear: () => void;
 }) {
   const option = url ? getAllBackgroundImages().find((image) => image.url === url) ?? { name: 'Custom', url } : null;
+  if (!canEdit && !option) return null;
 
   return (
-    <div className='fixed bottom-3 right-3 z-20 hidden w-44 sm:block'>
-      {option ? (
-        <div className='overflow-hidden border border-p1-border bg-p1-surface shadow-md'>
-          <button type='button' className='block w-full' onClick={onPreview} title='View artwork'>
-            <img src={option.url} alt='' className='h-28 w-full object-cover' />
-          </button>
-          <div className='px-2 py-1.5'>
-            {option.name && <p className='truncate text-[11px] text-p1-text'>{option.name}</p>}
-            {option.source?.trim() && (
-              <a
-                href={option.source_url}
-                target='_blank'
-                rel='noreferrer'
-                className='mt-0.5 inline-flex items-center gap-1 truncate text-[10px] text-p1-muted hover:text-p1-text'
-              >
-                <Brush size={10} />
-                {option.source}
-              </a>
-            )}
-            {canEdit && (
-              <div className='mt-1 flex flex-wrap gap-x-2'>
-                <button type='button' className='text-[11px] text-p1-muted hover:text-p1-text' onClick={onSelect}>
-                  Select
-                </button>
-                <button type='button' className='text-[11px] text-p1-muted hover:text-p1-text' onClick={onClear}>
-                  Clear
-                </button>
-              </div>
-            )}
-          </div>
+    <div className='pointer-events-none fixed bottom-3 right-3 z-20 flex max-w-[min(16rem,calc(100vw-1.5rem))] flex-col items-end gap-1'>
+      {option && (option.name || option.source?.trim()) && (
+        <div className='pointer-events-auto max-w-full rounded border border-p1-border bg-p1-surface/90 px-2 py-1 text-right shadow-md backdrop-blur-sm'>
+          {option.name && <p className='truncate text-[11px] text-p1-text'>{option.name}</p>}
+          {option.source?.trim() && (
+            <a
+              href={option.source_url}
+              target='_blank'
+              rel='noreferrer'
+              className='mt-0.5 inline-flex max-w-full items-center gap-1 truncate text-[10px] text-p1-muted hover:text-p1-text'
+            >
+              <Brush size={10} />
+              {option.source}
+            </a>
+          )}
         </div>
-      ) : canEdit ? (
-        <button type='button' className='toolbar-button w-full justify-center' onClick={onSelect}>
-          <Brush size={14} /> Select artwork
-        </button>
-      ) : null}
+      )}
+      {canEdit && (
+        <div className='pointer-events-auto flex gap-1'>
+          {option && (
+            <>
+              <button type='button' className='icon-button' title='View artwork' onClick={onPreview}>
+                <Eye size={16} />
+              </button>
+              <button type='button' className='icon-button' title='Clear artwork' onClick={onClear}>
+                <X size={16} />
+              </button>
+            </>
+          )}
+          <button type='button' className='icon-button' title={option ? 'Change artwork' : 'Select artwork'} onClick={onSelect}>
+            <Brush size={16} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

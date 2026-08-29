@@ -484,3 +484,39 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .dice-roll-crit-failure .bg-p1-raised .text-p1-faint {
   color: var(--p1-text-faint) !important;
 }
+
+.p1-sheet-art-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-size: cover;
+  background-position: top center;
+}
+.p1-sheet-art-veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--p1-bg-page) 88%, transparent),
+    color-mix(in srgb, var(--p1-bg-page) 62%, transparent) 42%,
+    color-mix(in srgb, var(--p1-bg-page) 80%, transparent)
+  );
+}
+.p1-sheet-has-art > header,
+.p1-sheet-has-art > main {
+  position: relative;
+  z-index: 10;
+}
+.p1-sheet-has-art > header {
+  background-color: color-mix(in srgb, var(--p1-bg-header) 82%, transparent);
+  backdrop-filter: blur(10px);
+}
+.p1-sheet-has-art > main .bg-p1-surface {
+  background-color: color-mix(in srgb, var(--p1-bg-surface) 82%, transparent);
+  backdrop-filter: blur(10px);
+}
+.p1-sheet-has-art > main .bg-p1-inset {
+  background-color: color-mix(in srgb, var(--p1-bg-inset) 78%, transparent);
+  backdrop-filter: blur(10px);
+}
