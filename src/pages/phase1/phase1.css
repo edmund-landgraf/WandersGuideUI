@@ -520,3 +520,24 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   background-color: color-mix(in srgb, var(--p1-bg-inset) 78%, transparent);
   backdrop-filter: blur(10px);
 }
+.p1-sheet-art-dark .p1-sheet-art-veil {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--p1-bg-page) 38%, transparent),
+    color-mix(in srgb, var(--p1-bg-page) 12%, transparent) 45%,
+    color-mix(in srgb, var(--p1-bg-page) 32%, transparent)
+  );
+}
+.p1-sheet-art-dark > header {
+  background-color: color-mix(in srgb, var(--p1-bg-header) 68%, transparent);
+}
+.p1-sheet-art-dark > main .bg-p1-surface {
+  background-color: color-mix(in srgb, var(--p1-bg-surface) 68%, transparent);
+}
+.p1-sheet-art-dark > main .bg-p1-inset {
+  background-color: color-mix(in srgb, var(--p1-bg-inset) 64%, transparent);
+}
+.icon-button.is-active {
+  border-color: color-mix(in srgb, var(--p1-accent) 50%, transparent);
+  color: var(--p1-accent-soft);
+}

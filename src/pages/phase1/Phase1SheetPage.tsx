@@ -11,15 +11,15 @@ import { labelToVariable } from '@variables/variable-utils';
 import exportToJSON from '@export/export-to-json';
 import exportToPDF from '@export/export-to-pdf';
 import { cloneDeep } from 'lodash-es';
-import { ArrowLeft, Brush, ChevronDown, Download, ExternalLink, Eye, Flag, Hammer, HeartPulse, Menu, Plus, RotateCcw, Star, User, X } from 'lucide-react';
+import { ArrowLeft, Brush, ChevronDown, Download, ExternalLink, Eye, Flag, Hammer, HeartPulse, Menu, Moon, Plus, RotateCcw, Star, Sun, User, X } from 'lucide-react';
 import { Phase1PortraitModal } from './phase1-portrait-modal';
 import { Phase1ArtworkPreview, Phase1BackgroundModal } from './phase1-background-modal';
 import { getAllBackgroundImages } from '@utils/background-images';
 import { parseTempHpInput } from './phase1-change-log';
-import { Phase1DiceButton, Phase1DiceModal } from './phase1-dice';
 import { OLD_UI_ORIGIN } from '../phase-switch/PhaseViewSwitch';
 import { Phase1CssThemeToggle } from './Phase1CssThemeToggle';
 import { Phase1ThemeToggle } from './Phase1ThemeToggle';
+import { PHASE1_SHEET_ART_TONE_EVENT, persistSheetArtTone, readStoredSheetArtTone, type Phase1SheetArtTone } from './phase1-theme';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { isPlayable } from '@utils/character';
@@ -72,7 +72,7 @@ export function Phase1SheetPage() {
   const [portraitOpen, setPortraitOpen] = useState(false);
   const [backgroundOpen, setBackgroundOpen] = useState(false);
   const [artworkPreviewOpen, setArtworkPreviewOpen] = useState(false);
-  const [diceOpen, setDiceOpen] = useState(false);
+  const [artTone, setArtTone] = useState<Phase1SheetArtTone>(() => readStoredSheetArtTone());
   const [xpDraft, setXpDraft] = useState('');
   const saveTimer = useRef<number | null>(null);
   const characterKey = ['phase1-sheet', characterId, session?.user.id ?? null] as const;
@@ -184,6 +184,12 @@ export function Phase1SheetPage() {
   useEffect(() => {
     if (character?.name) document.title = `${character.name} | ${view === 'builder' ? 'Builder' : 'Sheet'}`;
   }, [character?.name, view]);
+
+  useEffect(() => {
+    const sync = () => setArtTone(readStoredSheetArtTone());
+    window.addEventListener(PHASE1_SHEET_ART_TONE_EVENT, sync);
+    return () => window.removeEventListener(PHASE1_SHEET_ART_TONE_EVENT, sync);
+  }, []);
 
   if (session === undefined) return <div className='grid min-h-screen place-items-center bg-p1-page text-sm text-p1-muted'>Loading session...</div>;
   if (!Number.isFinite(characterId)) return <SheetError title='Invalid sheet' body='This character id is not valid.' />;
@@ -302,7 +308,7 @@ export function Phase1SheetPage() {
   }
 
   return (
-    <div className={`relative flex h-dvh min-h-0 flex-col overflow-hidden bg-p1-page text-p1-text${sheetArtUrl ? ' p1-sheet-has-art' : ''}`}>
+    <div className={`relative flex h-dvh min-h-0 flex-col overflow-hidden bg-p1-page text-p1-text${sheetArtUrl ? ` p1-sheet-has-art p1-sheet-art-${artTone}` : ''}`}>
       {sheetArtUrl && (
         <div className='p1-sheet-art-layer' style={{ backgroundImage: `url(${sheetArtUrl})` }} aria-hidden>
           <div className='p1-sheet-art-veil' />
@@ -310,7 +316,7 @@ export function Phase1SheetPage() {
       )}
       <header className='relative z-10 flex h-14 shrink-0 items-center gap-4 border-b border-p1-border bg-p1-header px-5'>
         <button type='button' className='icon-button' title='Back' onClick={() => (location.key === 'default' ? navigate('/phase1/characters') : navigate(-1))}><ArrowLeft size={16} /></button>
-        <span className='font-semibold'>Wanderer's Guide</span>
+        <Link to='/phase1' className='font-semibold hover:underline'>Wanderer's Guide</Link>
         <span className='h-4 w-px bg-p1-hover' />
         <span className='truncate text-sm text-p1-muted'>{view === 'builder' ? 'Character builder' : 'Character sheet'}</span>
         <div className='ml-auto flex items-center gap-2'>
@@ -356,21 +362,34 @@ export function Phase1SheetPage() {
                 </span>
               ) : <strong className='ml-2'>{character.hero_points ?? 0}</strong>}
             </div>
-            {(character.options?.dice_roller || campaignQuery.data?.recommended_options?.dice_roller) && (
-              <Phase1DiceButton onOpen={() => setDiceOpen(true)} />
-            )}
+            {view === 'builder' ? (
+              <button
+                type='button'
+                className='toolbar-button'
+                onClick={() => setSearchParams({}, { replace: true })}
+                title='Character sheet'
+              >
+                <User size={14} /> Sheet
+              </button>
+            ) : canEdit ? (
+              <button
+                type='button'
+                className='toolbar-button'
+                onClick={() => setSearchParams({ view: 'builder', step: 'builder' }, { replace: true })}
+                title='Character builder'
+              >
+                <Hammer size={14} /> Builder
+              </button>
+            ) : null}
             <Phase1CharacterMenu
               character={character}
               canEdit={canEdit}
-              view={view}
               xpDraft={xpDraft}
               onXpDraftChange={setXpDraft}
               onXpCommit={() => {
                 const value = Number.parseInt(xpDraft, 10);
                 if (Number.isFinite(value)) patchCharacter((current) => ({ ...current, experience: Math.max(0, value) }));
               }}
-              onOpenSheet={() => setSearchParams({}, { replace: true })}
-              onOpenBuilder={() => setSearchParams({ view: 'builder' }, { replace: true })}
             />
             </div>
             {showBuilderReminder && (
@@ -496,6 +515,11 @@ export function Phase1SheetPage() {
       <Phase1ArtworkOverlay
         url={character.details?.background_image_url}
         canEdit={canEdit}
+        artTone={artTone}
+        onArtTone={(tone) => {
+          setArtTone(tone);
+          persistSheetArtTone(tone);
+        }}
         onPreview={() => setArtworkPreviewOpen(true)}
         onSelect={() => setBackgroundOpen(true)}
         onClear={() =>
@@ -505,7 +529,6 @@ export function Phase1SheetPage() {
           }))
         }
       />
-      {diceOpen && <Phase1DiceModal character={character} onClose={() => setDiceOpen(false)} />}
       {restOpen && (
         <div className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5' onMouseDown={(event) => { if (event.target === event.currentTarget) setRestOpen(false); }}>
           <section className='w-full max-w-md border border-p1-border bg-p1-surface p-5'>
@@ -673,21 +696,15 @@ const characterMenuItemClass = 'flex w-full items-center gap-2 px-3 py-2 text-le
 function Phase1CharacterMenu({
   character,
   canEdit,
-  view,
   xpDraft,
   onXpDraftChange,
   onXpCommit,
-  onOpenSheet,
-  onOpenBuilder,
 }: {
   character: Character;
   canEdit: boolean;
-  view: 'sheet' | 'builder';
   xpDraft: string;
   onXpDraftChange: (value: string) => void;
   onXpCommit: () => void;
-  onOpenSheet: () => void;
-  onOpenBuilder: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [exporting, setExporting] = useState<'pdf' | 'json' | null>(null);
@@ -736,17 +753,6 @@ function Phase1CharacterMenu({
       </button>
       {open && (
         <div role='menu' className='absolute right-0 z-20 mt-1 min-w-52 border border-p1-border bg-p1-surface py-1 shadow-2xl'>
-          {canEdit && (
-            view === 'builder' ? (
-              <button type='button' role='menuitem' className={characterMenuItemClass} onClick={() => { setOpen(false); onOpenSheet(); }}>
-                <User size={14} /> Sheet
-              </button>
-            ) : (
-              <button type='button' role='menuitem' className={characterMenuItemClass} onClick={() => { setOpen(false); onOpenBuilder(); }}>
-                <Hammer size={14} /> Builder
-              </button>
-            )
-          )}
           {character.campaign_id ? (
             <Link role='menuitem' className={characterMenuItemClass} to={`/phase1/campaign/${character.campaign_id}`} onClick={() => setOpen(false)}>
               <Flag size={14} /> Campaign
@@ -806,12 +812,16 @@ function UnauthorizedSheet() {
 function Phase1ArtworkOverlay({
   url,
   canEdit,
+  artTone,
+  onArtTone,
   onPreview,
   onSelect,
   onClear,
 }: {
   url?: string;
   canEdit: boolean;
+  artTone: 'light' | 'dark';
+  onArtTone: (tone: 'light' | 'dark') => void;
   onPreview: () => void;
   onSelect: () => void;
   onClear: () => void;
@@ -820,7 +830,7 @@ function Phase1ArtworkOverlay({
   if (!canEdit && !option) return null;
 
   return (
-    <div className='pointer-events-none fixed bottom-3 right-3 z-20 flex max-w-[min(16rem,calc(100vw-1.5rem))] flex-col items-end gap-1'>
+    <div className='pointer-events-none fixed bottom-3 right-3 z-20 flex max-w-[min(18rem,calc(100vw-1.5rem))] flex-col items-end gap-1'>
       {option && (option.name || option.source?.trim()) && (
         <div className='pointer-events-auto max-w-full rounded border border-p1-border bg-p1-surface/90 px-2 py-1 text-right shadow-md backdrop-blur-sm'>
           {option.name && <p className='truncate text-[11px] text-p1-text'>{option.name}</p>}
@@ -837,23 +847,45 @@ function Phase1ArtworkOverlay({
           )}
         </div>
       )}
-      {canEdit && (
-        <div className='pointer-events-auto flex gap-1'>
-          {option && (
-            <>
-              <button type='button' className='icon-button' title='View artwork' onClick={onPreview}>
-                <Eye size={16} />
-              </button>
-              <button type='button' className='icon-button' title='Clear artwork' onClick={onClear}>
-                <X size={16} />
-              </button>
-            </>
-          )}
-          <button type='button' className='icon-button' title={option ? 'Change artwork' : 'Select artwork'} onClick={onSelect}>
-            <Brush size={16} />
-          </button>
-        </div>
-      )}
+      <div className='pointer-events-auto flex flex-wrap justify-end gap-1'>
+        {option && (
+          <>
+            <button
+              type='button'
+              className={`icon-button${artTone === 'light' ? ' is-active' : ''}`}
+              title='Lighter artwork'
+              onClick={() => onArtTone('light')}
+            >
+              <Sun size={16} />
+            </button>
+            <button
+              type='button'
+              className={`icon-button${artTone === 'dark' ? ' is-active' : ''}`}
+              title='Darker artwork'
+              onClick={() => onArtTone('dark')}
+            >
+              <Moon size={16} />
+            </button>
+          </>
+        )}
+        {canEdit && (
+          <>
+            {option && (
+              <>
+                <button type='button' className='icon-button' title='View artwork' onClick={onPreview}>
+                  <Eye size={16} />
+                </button>
+                <button type='button' className='icon-button' title='Clear artwork' onClick={onClear}>
+                  <X size={16} />
+                </button>
+              </>
+            )}
+            <button type='button' className='icon-button' title={option ? 'Change artwork' : 'Select artwork'} onClick={onSelect}>
+              <Brush size={16} />
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
