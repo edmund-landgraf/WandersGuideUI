@@ -41,6 +41,9 @@ export function persistSheetArtTone(tone: Phase1SheetArtTone) {
     /* ignore */
   }
   window.dispatchEvent(new Event(PHASE1_SHEET_ART_TONE_EVENT));
+  void import('./display-prefs').then(({ syncDisplayPrefsToUser }) => {
+    void syncDisplayPrefsToUser({ phase1_sheet_art_tone: tone });
+  });
 }
 
 export function applyPhase1Theme(theme: Phase1Theme) {
@@ -55,7 +58,6 @@ export function persistPhase1Theme(theme: Phase1Theme) {
   } catch {
     /* ignore */
   }
-  persistSheetArtTone(artToneForTheme(theme));
   void import('./display-prefs').then(({ syncDisplayPrefsToUser }) => {
     void syncDisplayPrefsToUser({ phase1_theme: theme });
   });

@@ -2038,7 +2038,8 @@ function DiceCombatantContextMenu({ x, y, combatant, canCheck, challenges, canCh
   const groups = useMemo(() => challengeMenuGroups(challenges), [challenges]);
   const openChallengeGroup = groups.find((group) => group.key === openChallengeKey && group.items.length > 1);
   const selectedChallenge = selectedChallengeId ? challenges.find((challenge) => challenge.id === selectedChallengeId) : undefined;
-  const canRollSelected = Boolean(canChallenge && selectedChallenge);
+  const canRollToolbarCheck = Boolean(canCheck && selectedStat);
+  const canRollSelected = Boolean((canChallenge && selectedChallenge) || canRollToolbarCheck);
 
   function modifierTip(stat: string | undefined, skill: string) {
     const label = stat ? checkStatLabel(stat) : skill || 'check';
@@ -2057,9 +2058,21 @@ function DiceCombatantContextMenu({ x, y, combatant, canCheck, challenges, canCh
           role='menuitem'
           disabled={!canRollSelected}
           className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint'
-          title={canRollSelected ? `Roll ${selectedChallenge?.title} for this combatant` : 'Select a challenge in the toolbar first'}
+          title={
+            selectedChallenge
+              ? `Roll ${selectedChallenge.title} for this combatant`
+              : canRollToolbarCheck
+                ? `Roll ${checkStatLabel(selectedStat)} for this combatant`
+                : 'Set a DC and check in the toolbar first'
+          }
           onMouseEnter={() => { setOpenMenu(null); setOpenGroup(null); setOpenChallengeKey(null); setHoverTip(null); }}
-          onClick={() => { if (canRollSelected && selectedChallengeId) onChallenge(selectedChallengeId, selectedStat); }}
+          onClick={() => {
+            if (canChallenge && selectedChallenge && selectedChallengeId) {
+              onChallenge(selectedChallengeId, selectedStat);
+              return;
+            }
+            if (canRollToolbarCheck && selectedStat) onCheck(selectedStat);
+          }}
         >
           Roll this challenge
         </button>

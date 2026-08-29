@@ -1100,6 +1100,7 @@ export const PublicUserSchema = z.object({
       phase1_theme: z.enum(['dark', 'grey', 'parchment']).optional(),
       phase1_css_theme: z.enum(['default', 'waitly']).optional(),
       preferred_phase: z.enum(['phase0', 'phase1']).optional(),
+      phase1_sheet_art_tone: z.enum(['light', 'dark']).optional(),
     })
     .nullable(),
   is_admin: z.boolean(),

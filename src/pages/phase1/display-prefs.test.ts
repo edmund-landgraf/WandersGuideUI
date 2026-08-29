@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PHASE1_CSS_THEME_STORAGE_KEY } from './phase1-css-theme';
-import { PHASE1_THEME_STORAGE_KEY } from './phase1-theme';
+import { PHASE1_SHEET_ART_TONE_KEY, PHASE1_THEME_STORAGE_KEY } from './phase1-theme';
 import {
   applyDisplayPrefsFromUser,
   clearStoragePreservingDisplayPrefs,
@@ -28,6 +28,7 @@ describe('display prefs', () => {
     localStorage.setItem(PHASE1_THEME_STORAGE_KEY, 'parchment');
     localStorage.setItem(PHASE1_CSS_THEME_STORAGE_KEY, 'waitly');
     localStorage.setItem(PHASE1_PREFERRED_PHASE_KEY, 'phase1');
+    localStorage.setItem(PHASE1_SHEET_ART_TONE_KEY, 'light');
     localStorage.setItem('user-data', '{"id":1}');
     localStorage.setItem('unrelated', 'gone');
 
@@ -36,6 +37,7 @@ describe('display prefs', () => {
     expect(localStorage.getItem(PHASE1_THEME_STORAGE_KEY)).toBe('parchment');
     expect(localStorage.getItem(PHASE1_CSS_THEME_STORAGE_KEY)).toBe('waitly');
     expect(localStorage.getItem(PHASE1_PREFERRED_PHASE_KEY)).toBe('phase1');
+    expect(localStorage.getItem(PHASE1_SHEET_ART_TONE_KEY)).toBe('light');
     expect(localStorage.getItem('user-data')).toBeNull();
     expect(localStorage.getItem('unrelated')).toBeNull();
   });
@@ -46,19 +48,23 @@ describe('display prefs', () => {
         phase1_theme: 'grey',
         phase1_css_theme: 'waitly',
         preferred_phase: 'phase0',
+        phase1_sheet_art_tone: 'light',
       },
     } as never);
 
     expect(localStorage.getItem(PHASE1_THEME_STORAGE_KEY)).toBe('grey');
     expect(localStorage.getItem(PHASE1_CSS_THEME_STORAGE_KEY)).toBe('waitly');
     expect(localStorage.getItem(PHASE1_PREFERRED_PHASE_KEY)).toBe('phase0');
+    expect(localStorage.getItem(PHASE1_SHEET_ART_TONE_KEY)).toBe('light');
   });
 
   it('does not overwrite a local header choice with the account copy', () => {
     localStorage.setItem(PHASE1_THEME_STORAGE_KEY, 'parchment');
+    localStorage.setItem(PHASE1_SHEET_ART_TONE_KEY, 'light');
     applyDisplayPrefsFromUser({
-      site_theme: { phase1_theme: 'dark' },
+      site_theme: { phase1_theme: 'dark', phase1_sheet_art_tone: 'dark' },
     } as never);
     expect(localStorage.getItem(PHASE1_THEME_STORAGE_KEY)).toBe('parchment');
+    expect(localStorage.getItem(PHASE1_SHEET_ART_TONE_KEY)).toBe('light');
   });
 });

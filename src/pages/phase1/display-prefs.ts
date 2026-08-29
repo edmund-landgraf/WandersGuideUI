@@ -2,14 +2,26 @@ import { makeRequest } from '@requests/request-manager';
 import type { PublicUser } from '@schemas/content';
 import { getCachedPublicUser } from '@auth/user-manager';
 import { isPhase1CssTheme, PHASE1_CSS_THEME_STORAGE_KEY, type Phase1CssTheme } from './phase1-css-theme';
-import { isPhase1Theme, PHASE1_THEME_STORAGE_KEY, type Phase1Theme } from './phase1-theme';
+import {
+  isPhase1Theme,
+  PHASE1_SHEET_ART_TONE_EVENT,
+  PHASE1_SHEET_ART_TONE_KEY,
+  PHASE1_THEME_STORAGE_KEY,
+  type Phase1SheetArtTone,
+  type Phase1Theme,
+} from './phase1-theme';
 
 export const PHASE1_PREFERRED_PHASE_KEY = 'phase1-preferred-phase';
 export const DISPLAY_PREF_STORAGE_KEYS = [
   PHASE1_THEME_STORAGE_KEY,
   PHASE1_CSS_THEME_STORAGE_KEY,
   PHASE1_PREFERRED_PHASE_KEY,
+  PHASE1_SHEET_ART_TONE_KEY,
 ] as const;
+
+function isSheetArtTone(value: string | null | undefined): value is Phase1SheetArtTone {
+  return value === 'light' || value === 'dark';
+}
 
 export type PreferredPhase = 'phase0' | 'phase1';
 
@@ -68,7 +80,7 @@ export function clearStoragePreservingDisplayPrefs() {
 
 export function applyDisplayPrefsFromUser(user: PublicUser | null | undefined) {
   if (!user?.site_theme) return;
-  const { phase1_theme, phase1_css_theme, preferred_phase } = user.site_theme;
+  const { phase1_theme, phase1_css_theme, preferred_phase, phase1_sheet_art_tone } = user.site_theme;
   try {
     if (isPhase1Theme(phase1_theme) && !localStorage.getItem(PHASE1_THEME_STORAGE_KEY)) {
       localStorage.setItem(PHASE1_THEME_STORAGE_KEY, phase1_theme);
@@ -78,6 +90,10 @@ export function applyDisplayPrefsFromUser(user: PublicUser | null | undefined) {
     }
     if (isPreferredPhase(preferred_phase) && !localStorage.getItem(PHASE1_PREFERRED_PHASE_KEY)) {
       localStorage.setItem(PHASE1_PREFERRED_PHASE_KEY, preferred_phase);
+    }
+    if (isSheetArtTone(phase1_sheet_art_tone) && !localStorage.getItem(PHASE1_SHEET_ART_TONE_KEY)) {
+      localStorage.setItem(PHASE1_SHEET_ART_TONE_KEY, phase1_sheet_art_tone);
+      window.dispatchEvent(new Event(PHASE1_SHEET_ART_TONE_EVENT));
     }
   } catch {
     /* ignore */
@@ -90,16 +106,19 @@ export function hydrateDisplayPrefsFromUser(user: PublicUser | null | undefined)
   const phase1_theme = (localStorage.getItem(PHASE1_THEME_STORAGE_KEY) as Phase1Theme | null) ?? undefined;
   const phase1_css_theme = (localStorage.getItem(PHASE1_CSS_THEME_STORAGE_KEY) as Phase1CssTheme | null) ?? undefined;
   const preferred_phase = readStoredPreferredPhase() ?? undefined;
+  const phase1_sheet_art_tone = (localStorage.getItem(PHASE1_SHEET_ART_TONE_KEY) as Phase1SheetArtTone | null) ?? undefined;
   const theme = user.site_theme;
   if (
     (isPhase1Theme(phase1_theme) && theme?.phase1_theme !== phase1_theme) ||
     (isPhase1CssTheme(phase1_css_theme) && theme?.phase1_css_theme !== phase1_css_theme) ||
-    (preferred_phase && theme?.preferred_phase !== preferred_phase)
+    (preferred_phase && theme?.preferred_phase !== preferred_phase) ||
+    (isSheetArtTone(phase1_sheet_art_tone) && theme?.phase1_sheet_art_tone !== phase1_sheet_art_tone)
   ) {
     void syncDisplayPrefsToUser({
       ...(isPhase1Theme(phase1_theme) ? { phase1_theme } : {}),
       ...(isPhase1CssTheme(phase1_css_theme) ? { phase1_css_theme } : {}),
       ...(preferred_phase ? { preferred_phase } : {}),
+      ...(isSheetArtTone(phase1_sheet_art_tone) ? { phase1_sheet_art_tone } : {}),
     });
   }
 }
@@ -108,6 +127,7 @@ export async function syncDisplayPrefsToUser(patch: {
   phase1_theme?: Phase1Theme;
   phase1_css_theme?: Phase1CssTheme;
   preferred_phase?: PreferredPhase;
+  phase1_sheet_art_tone?: Phase1SheetArtTone;
 }) {
   const user = getCachedPublicUser();
   if (!user) return;
