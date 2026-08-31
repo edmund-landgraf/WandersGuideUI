@@ -2,7 +2,11 @@ import type { Encounter, LivingEntity } from '@schemas/content';
 import { getEntityLevel } from '@utils/entity-utils';
 import { mean } from 'lodash-es';
 
-export type EncounterDifficultyCombatant = { ally: boolean; data: LivingEntity };
+export type EncounterDifficultyCombatant = {
+  ally: boolean;
+  data: LivingEntity;
+  out?: 'dead' | 'incapacitated';
+};
 export type EncounterDifficultyStatus = 'IMPOSSIBLE' | 'Extreme' | 'Severe' | 'Moderate' | 'Low' | 'Trivial';
 export type EncounterDifficultyColor = 'dark' | 'red' | 'orange' | 'yellow' | 'green' | 'blue';
 
@@ -48,19 +52,25 @@ export function xpForLevelDelta(delta: number) {
   return rounded > 4 ? rounded * 40 : 0;
 }
 
+function isInEncounterDifficulty(combatant: EncounterDifficultyCombatant) {
+  return combatant.out !== 'dead' && combatant.out !== 'incapacitated';
+}
+
 export function shouldDisplayEncounterDifficulty(combatants: EncounterDifficultyCombatant[]) {
-  return combatants.length > 0 && combatants.some((c) => c.ally) && combatants.some((c) => !c.ally);
+  const active = combatants.filter(isInEncounterDifficulty);
+  return active.length > 0 && active.some((c) => c.ally) && active.some((c) => !c.ally);
 }
 
 export function calculateDifficulty(encounter: Encounter, combatants: EncounterDifficultyCombatant[]): EncounterDifficulty {
-  const alliesInEncounter = combatants.filter((c) => c.ally);
+  const active = combatants.filter(isInEncounterDifficulty);
+  const alliesInEncounter = active.filter((c) => c.ally);
   const partyLevelFromEncounter = encounter.meta_data.party_level != null;
   const partySizeFromEncounter = encounter.meta_data.party_size != null;
   const partyLevel = encounter.meta_data.party_level ?? mean(alliesInEncounter.map((p) => getEntityLevel(p.data))) ?? 0;
   const partySize = encounter.meta_data.party_size ?? alliesInEncounter.length;
   const partySizeDiff = partySize - 4;
 
-  const lines = combatants
+  const lines = active
     .filter((entity) => !entity.ally)
     .map((entity) => {
       const level = getEntityLevel(entity.data);
