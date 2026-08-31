@@ -367,7 +367,7 @@ export default function SelectContentModal({
                   presetFilters={innerProps.options?.advancedPresetFilters}
                   onSelect={
                     innerProps.onClick
-                      ? (option) => {
+                      ? (option: Record<string, any>) => {
                           innerProps.onClick!(option);
                           context.closeModal(id);
                         }

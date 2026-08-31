@@ -11,6 +11,7 @@ import { createPortal } from 'react-dom';
 import { ConfirmDialog } from './phase1-campaign-settings';
 import { toLabel } from '@utils/strings';
 import {
+  DICE_NOTE_PREVIEW_LIMIT,
   DICE_OUTCOME_LEGEND,
   checkStatLabel,
   defaultStatForCombatant,

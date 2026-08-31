@@ -93,7 +93,7 @@ export function outcomeLabel(outcome: DiceRollOutcome | undefined) {
   return '';
 }
 
-const DICE_NOTE_PREVIEW_LIMIT = 255;
+export const DICE_NOTE_PREVIEW_LIMIT = 255;
 
 export function previewDiceNote(note: string | undefined, clickable: boolean) {
   if (!note) return clickable ? 'Add note' : '';
