@@ -4,7 +4,8 @@ import { drawerState } from '@atoms/navAtoms';
 import { CharacterInfo } from '@common/CharacterInfo';
 import RichText from '@common/RichText';
 import ResultWrapper from '@common/operations/results/ResultWrapper';
-import { SelectContentButton, selectContent } from '@common/select/SelectContent';
+import { SelectContentButton } from '@common/select/SelectContentButton';
+import { selectContent } from '@common/select/open-select-content';
 import { IMPRINT_BG_COLOR, IMPRINT_BG_COLOR_HOVER, IMPRINT_BORDER_COLOR } from '@constants/data';
 import {
   fetchContent,

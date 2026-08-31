@@ -3,7 +3,7 @@ import { ItemMultiSelect, ItemSelect } from '@common/ItemSelect';
 import TraitsInput from '@common/TraitsInput';
 import { OperationSection } from '@common/operations/Operations';
 import RichTextInput from '@common/rich_text_input/RichTextInput';
-import { selectContent } from '@common/select/SelectContent';
+import { selectContent } from '@common/select/open-select-content';
 import { EDIT_MODAL_HEIGHT } from '@constants/data';
 import { DISCORD_URL } from '@constants/urls';
 import { fetchContentById, fetchTraits } from '@content/content-store';

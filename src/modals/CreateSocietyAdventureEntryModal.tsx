@@ -28,7 +28,7 @@ import { characterState } from '@atoms/characterAtoms';
 import { getFlatInvItems } from '@items/inv-utils';
 import { drawerState } from '@atoms/navAtoms';
 import { IconCirclePlus, IconX } from '@tabler/icons-react';
-import { selectContent } from '@common/select/SelectContent';
+import { selectContent } from '@common/select/open-select-content';
 import { convertToGp } from '@items/currency-handler';
 import { selectCondition } from '@pages/character_sheet/sections/ConditionSection';
 import { modals } from '@mantine/modals';

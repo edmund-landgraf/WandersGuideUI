@@ -56,6 +56,7 @@ import { ExtendedProficiencyType, ProficiencyType, VariableListStr, VariableProf
 import { isPhoneSized } from '@utils/mobile-responsive';
 import { pluralize, toLabel } from '@utils/strings';
 import { hasTraitType } from '@utils/traits';
+import { selectContent } from '@common/select/open-select-content';
 import { getStatBlockDisplay, getStatDisplay } from '@variables/initial-stats-display';
 import { meetsPrerequisites } from '@variables/prereq-detection';
 import { getFinalProfValue } from '@variables/variable-helpers';
@@ -74,7 +75,7 @@ import {
   prevProficiencyType,
 } from '@variables/variable-utils';
 import * as JsSearch from 'js-search';
-import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { useAtom, useAtomValue } from 'jotai';
 import {
   AbilityBlock,
@@ -95,13 +96,17 @@ import {
 import { adjustCreature } from '@utils/creature';
 import { intersection, isEqual, isNumber } from 'lodash-es';
 import { getEntityLevel } from '@utils/entity-utils';
-import { AdvancedSearchModal, FiltersParams } from '@modals/AdvancedSearchModal';
+import type { FiltersParams } from '@modals/AdvancedSearchModal';
 import {
   IMPRINT_BG_COLOR,
   IMPRINT_BG_COLOR_HOVER,
   IMPRINT_BG_COLOR_HOVER_2,
   IMPRINT_BORDER_COLOR,
 } from '@constants/data';
+
+const AdvancedSearchModal = lazy(() =>
+  import('@modals/AdvancedSearchModal').then((mod) => ({ default: mod.AdvancedSearchModal }))
+);
 
 export function SelectContentButton<T extends Record<string, any> = Record<string, any>>(props: {
   type: ContentType;
@@ -270,38 +275,6 @@ export function SelectContentButton<T extends Record<string, any> = Record<strin
   );
 }
 
-export function selectContent<T = Record<string, any>>(
-  type: ContentType,
-  onClick?: (option: T) => void,
-  options?: {
-    overrideOptions?: Record<string, any>[];
-    overrideLabel?: string;
-    abilityBlockType?: AbilityBlockType;
-    skillAdjustment?: ExtendedProficiencyType;
-    selectedId?: number;
-    filterFn?: (option: Record<string, any>) => boolean;
-    advancedPresetFilters?: Partial<FiltersParams>;
-    showButton?: boolean;
-    includeOptions?: boolean;
-    zIndex?: number;
-    description?: ReactNode;
-  }
-) {
-  let label = `Select ${toLabel(options?.abilityBlockType || type)}`;
-  if (options?.overrideLabel) label = options.overrideLabel;
-
-  openContextModal({
-    modal: 'selectContent',
-    title: <Title order={3}>{label}</Title>,
-    zIndex: options?.zIndex ?? 499,
-    innerProps: {
-      type,
-      onClick: onClick ? (option: any) => onClick(option as T) : undefined,
-      options,
-    },
-  });
-}
-
 export default function SelectContentModal({
   context,
   id,
@@ -388,22 +361,24 @@ export default function SelectContentModal({
               >
                 <IconAdjustments size='1rem' stroke={1.5} />
               </ActionIcon>
-              <AdvancedSearchModal
-                opened={advancedSearchOpen}
-                presetFilters={innerProps.options?.advancedPresetFilters}
-                onSelect={
-                  innerProps.onClick
-                    ? (option) => {
-                        innerProps.onClick!(option);
-                        context.closeModal(id);
-                      }
-                    : undefined
-                }
-                onClose={() => {
-                  setAdvancedSearchOpen(false);
-                  context.closeModal(id);
-                }}
-              />
+              <Suspense fallback={null}>
+                <AdvancedSearchModal
+                  opened={advancedSearchOpen}
+                  presetFilters={innerProps.options?.advancedPresetFilters}
+                  onSelect={
+                    innerProps.onClick
+                      ? (option) => {
+                          innerProps.onClick!(option);
+                          context.closeModal(id);
+                        }
+                      : undefined
+                  }
+                  onClose={() => {
+                    setAdvancedSearchOpen(false);
+                    context.closeModal(id);
+                  }}
+                />
+              </Suspense>
             </>
           )}
         </Group>

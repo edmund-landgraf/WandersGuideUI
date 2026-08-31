@@ -5,7 +5,7 @@ import { ContextMenu } from '@common/ContextMenu';
 import { EllipsisText } from '@common/EllipsisText';
 import { Icon } from '@common/Icon';
 import { DisplayIcon } from '@common/IconDisplay';
-import { selectContent } from '@common/select/SelectContent';
+import { selectContent } from '@common/select/open-select-content';
 import { applyConditions } from '@conditions/condition-handler';
 import { GUIDE_BLUE, IMPRINT_BG_COLOR, IMPRINT_BORDER_COLOR } from '@constants/data';
 import { defineDefaultSources, fetchContentPackage, getDefaultSources, getDefaultSourcesKey } from '@content/content-store';
@@ -49,6 +49,7 @@ import {
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Campaign, Character, Combatant, Creature, Encounter, LivingEntity } from '@schemas/content';
+import { getCombatantStoreID } from '@utils/combatant-store';
 import { calculateDifficulty } from '@utils/encounter-difficulty';
 import { getEntityLevel } from '@utils/entity-utils';
 import { isPhoneSized, phoneQuery } from '@utils/mobile-responsive';
@@ -1328,14 +1329,3 @@ async function computeCombatants(combatants: PopulatedCombatant[]) {
   return await Promise.all(combatants.map(computeCombatant));
 }
 
-export { calculateDifficulty } from '@utils/encounter-difficulty';
-
-export function getCombatantStoreID(combatant: Combatant) {
-  if (combatant.type === 'CHARACTER') {
-    return `CHARACTER_${combatant._id}`;
-  } else if (combatant.type === 'CREATURE') {
-    return `CREATURE_${combatant._id}`;
-  } else {
-    return '';
-  }
-}

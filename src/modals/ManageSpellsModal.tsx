@@ -1,5 +1,6 @@
 import { drawerState } from '@atoms/navAtoms';
-import { SelectContentButton, SpellSelectionOption, selectContent } from '@common/select/SelectContent';
+import { SelectContentButton, SpellSelectionOption } from '@common/select/SelectContent';
+import { selectContent } from '@common/select/open-select-content';
 import { EDIT_MODAL_HEIGHT, IMPRINT_BG_COLOR } from '@constants/data';
 import { collectEntitySpellcasting } from '@content/collect-content';
 import { isSpellVisible } from '@content/content-hidden';

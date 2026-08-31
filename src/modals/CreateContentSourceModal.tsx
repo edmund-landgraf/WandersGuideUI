@@ -1,5 +1,6 @@
 import RichTextInput from '@common/rich_text_input/RichTextInput';
-import { BaseSelectionOption, selectContent } from '@common/select/SelectContent';
+import { BaseSelectionOption } from '@common/select/SelectContent';
+import { selectContent } from '@common/select/open-select-content';
 import {
   deleteContent,
   upsertAbilityBlock,

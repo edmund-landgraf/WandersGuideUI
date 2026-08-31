@@ -3,7 +3,7 @@ import { drawerState } from '@atoms/navAtoms';
 import BlurBox from '@common/BlurBox';
 import ConditionPill from '@common/ConditionPill';
 import TokenSelect from '@common/TokenSelect';
-import { selectContent } from '@common/select/SelectContent';
+import { selectContent } from '@common/select/open-select-content';
 import { addConditionWithSpawns, compiledConditions, getAllConditions, getConditionByName, removeConditionWithSpawns } from '@conditions/condition-handler';
 import { IMPRINT_BG_COLOR_2 } from '@constants/data';
 import { useMantineTheme, Group, ActionIcon, ScrollArea, Title, Button, Box, Text, GroupProps } from '@mantine/core';

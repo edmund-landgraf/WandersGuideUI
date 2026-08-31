@@ -1,4 +1,4 @@
-import { SelectContentButton } from '@common/select/SelectContent';
+import { SelectContentButton } from '@common/select/SelectContentButton';
 import { Box } from '@mantine/core';
 import { OperationResult } from '@schemas/operations';
 import { Character } from '@schemas/content';

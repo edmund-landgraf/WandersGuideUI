@@ -42,7 +42,7 @@ import { SelectIcon } from '@common/IconDisplay';
 import { isTruthy } from '@utils/type-fixing';
 import { drawerState } from '@atoms/navAtoms';
 import { useAtom } from 'jotai';
-import { selectContent } from '@common/select/SelectContent';
+import { selectContent } from '@common/select/open-select-content';
 import { IconBracketsAngle, IconCirclePlus, IconCornerUpRight, IconTransform, IconX } from '@tabler/icons-react';
 import StatBlockSection from '@common/StatBlockSection';
 import { extractCreatureInfo } from '@utils/creature';

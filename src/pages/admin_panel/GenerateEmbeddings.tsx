@@ -1,6 +1,6 @@
 import { generateEmbeddings } from '@ai/vector-db/generate-embeddings';
 import BlurBox from '@common/BlurBox';
-import { selectContent } from '@common/select/SelectContent';
+import { selectContent } from '@common/select/open-select-content';
 import { upsertAbilityBlock } from '@content/content-creation';
 import { fetchContentSources } from '@content/content-store';
 import { Center, Group, Title, Select, Button } from '@mantine/core';

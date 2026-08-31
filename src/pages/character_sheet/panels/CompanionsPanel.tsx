@@ -34,7 +34,7 @@ import { applyConditions } from '@conditions/condition-handler';
 import { getFinalAcValue, getFinalHealthValue, getFinalProfValue } from '@variables/variable-helpers';
 import { getBestArmor } from '@items/inv-utils';
 import { modals } from '@mantine/modals';
-import { selectContent } from '@common/select/SelectContent';
+import { selectContent } from '@common/select/open-select-content';
 import { hasTraitType } from '@utils/traits';
 import { getEntityLevel } from '@utils/entity-utils';
 import { IMPRINT_BG_COLOR, IMPRINT_BG_COLOR_HOVER, IMPRINT_BORDER_COLOR } from '@constants/data';

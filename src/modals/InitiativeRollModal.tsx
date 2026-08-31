@@ -1,6 +1,7 @@
 import { Button, Divider, Group, ScrollArea, Select, Stack, Text } from '@mantine/core';
 import { ContextModalProps } from '@mantine/modals';
-import { getCombatantStoreID, PopulatedCombatant } from '@pages/campaign/panels/EncountersPanel';
+import { PopulatedCombatant } from '@pages/campaign/panels/EncountersPanel';
+import { getCombatantStoreID } from '@utils/combatant-store';
 import { sign } from '@utils/numbers';
 import { toLabel } from '@utils/strings';
 import { isCharacter, isCreature, isTruthy } from '@utils/type-fixing';

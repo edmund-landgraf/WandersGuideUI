@@ -3,7 +3,7 @@ import { Menu, ScrollArea, Box, Title } from '@mantine/core';
 import { useDisclosure, useWindowEvent } from '@mantine/hooks';
 import { IconLink } from '@tabler/icons-react';
 import { RichTextEditor, useRichTextEditorContext } from '@mantine/tiptap';
-import { selectContent } from '@common/select/SelectContent';
+import { selectContent } from '@common/select/open-select-content';
 import { AbilityBlockType, ContentType } from '@schemas/content';
 import { getContentDataFromHref } from './ContentLinkExtension';
 import { toLabel } from '@utils/strings';

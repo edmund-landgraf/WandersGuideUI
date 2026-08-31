@@ -35,7 +35,7 @@ import { set } from 'node_modules/cypress/types/lodash';
 import { useAtom } from 'jotai';
 import { creatureDrawerState, drawerState } from '@atoms/navAtoms';
 import RichText from '@common/RichText';
-import { calculateDifficulty } from '@pages/campaign/panels/EncountersPanel';
+import { calculateDifficulty } from '@utils/encounter-difficulty';
 import { groupBy, map } from 'lodash-es';
 
 export default function GenerateEncounterModal({

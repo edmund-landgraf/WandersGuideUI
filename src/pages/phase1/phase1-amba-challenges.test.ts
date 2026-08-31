@@ -9,7 +9,7 @@ import {
   noteForAmbaOutcome,
   readAmbaChallenges,
 } from './phase1-amba-challenges';
-import { DICE_CHECK_VALUES } from './phase1-dice-rolls';
+import { DICE_CHECK_VALUES } from './phase1-dice-check';
 
 const challenge: AmbaChallengeTable = {
   id: 'chal-reading-the-room',
