@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Activity, BookOpen, Calculator, ChevronDown, ChevronRight, Crosshair, Eye, Footprints, History, ListChecks, Package, Plus, Search, Shield, Sparkles, Swords, WandSparkles, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { Character, Combatant, CombatantActionLogEntry, CombatantChangeLogEntry, Condition, InitiativeRoundLog, InitiativeRoundLogEntry, LivingEntity, Spell } from '@schemas/content';
+import type { Character, Combatant, CombatantActionLogEntry, CombatantChangeLogEntry, Condition, InitiativeRoundLog, InitiativeRoundLogEntry, Inventory, Item, LivingEntity, Spell } from '@schemas/content';
 import { loadEntityAbilities, type Phase1Ability } from './phase1-abilities';
 import { type Phase1CreatureStatus } from './phase1-stats';
 import type { Phase1EntityCombatant } from './phase1-entity';
@@ -12,6 +12,7 @@ import { loadEntitySkillsActions, type Phase1ActionGroup, type Phase1Skill } fro
 import { isDivinePreparedSource, isWitchFamiliarSource, loadEntitySpells, spellFitsSlot, spellManageMode, type Phase1SpellEntry, type Phase1SpellSection } from './phase1-spells';
 import { Phase1SpellbookModal, type SpellbookAssign } from './phase1-spellbook';
 import { flattenInvItems, inventoryItemToPhase1, loadEntityInventory, matchesInvItem, type Phase1InvItem } from './phase1-inventory';
+import { SelectAddItemsModal, type AddItemKind } from './phase1-add-items';
 import { ConfirmDialog } from './phase1-campaign-settings';
 import { EntityNotesPanel, ProseMarkdown, SourceImportNotesPanel } from './phase1-markdown';
 import { isContentStackOpen, useContentLinks } from './phase1-content-links';
@@ -593,6 +594,7 @@ export type InventoryItemActions = {
   toggleEquipped: (item: Phase1InvItem) => void;
   toggleInvested: (item: Phase1InvItem) => void;
   setQuantity: (item: Phase1InvItem, quantity: number) => void;
+  addItem?: (item: Item, type: AddItemKind, coins?: Inventory['coins']) => void | Promise<void>;
 };
 
 export function InventoryPanel({ combatant, itemActions }: { combatant: PopulatedCombatant; itemActions?: InventoryItemActions }) {
@@ -600,6 +602,7 @@ export function InventoryPanel({ combatant, itemActions }: { combatant: Populate
   const [query, setQuery] = useState('');
   const [invTab, setInvTabState] = useState(persistedInventoryTab);
   const [selected, setSelected] = useState<Phase1InvItem | null>(null);
+  const [adding, setAdding] = useState(false);
   const data = useQuery({
     queryKey: ['phase1-entity-inventory', 'isolated-store', combatant.type, combatant._id, JSON.stringify(combatant.data.inventory ?? null)],
     enabled: detailsAvailable && combatant.access?.details_revealed !== false,
@@ -644,9 +647,21 @@ export function InventoryPanel({ combatant, itemActions }: { combatant: Populate
         ))}
       </div>
     )}
-    <div className={`relative mb-2.5 ${tabBuckets.length > 1 ? '' : 'mt-3'}`}>
-      <Search className='absolute left-3 top-1/2 -translate-y-1/2 text-p1-faint' size={14} />
-      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder='Search items' className='h-9 w-full border border-p1-border bg-p1-surface pl-9 pr-3 text-sm outline-none placeholder:text-p1-faint focus:border-p1-accent/60' />
+    <div className={`mb-2.5 flex items-center gap-2 ${tabBuckets.length > 1 ? '' : 'mt-3'}`}>
+      <div className='relative min-w-0 flex-1'>
+        <Search className='absolute left-3 top-1/2 -translate-y-1/2 text-p1-faint' size={14} />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder='Search items' className='h-9 w-full border border-p1-border bg-p1-surface pl-9 pr-3 text-sm outline-none placeholder:text-p1-faint focus:border-p1-accent/60' />
+      </div>
+      {itemActions?.addItem && (
+        <button
+          type='button'
+          className='inline-flex h-9 shrink-0 items-center gap-1 border border-p1-border bg-p1-surface px-3 text-xs font-semibold text-p1-text hover:bg-p1-hover'
+          onClick={() => setAdding(true)}
+        >
+          <Plus size={14} />
+          Add items
+        </button>
+      )}
     </div>
     {!detailsAvailable && <EmptyState>Private character details are unavailable in this account context.</EmptyState>}
     {data.isLoading && <EmptyState>Loading inventory...</EmptyState>}
@@ -657,6 +672,16 @@ export function InventoryPanel({ combatant, itemActions }: { combatant: Populate
       <InventoryItemSection title={buckets.find((bucket) => bucket.id === activeInv)?.label ?? 'Items'} items={activeItems} onOpen={setSelected} flat={Boolean(needle)} hideTitle={tabBuckets.length > 1} />
     )}
     {selected && <ItemModal item={selected} actions={itemActions} onClose={() => setSelected(null)} />}
+    {adding && itemActions?.addItem && (
+      <SelectAddItemsModal
+        inventory={combatant.data.inventory}
+        onAdd={async (item, type, coins) => {
+          await itemActions.addItem?.(item, type, coins);
+          setInvTab(type === 'FORMULA' ? 'formulas' : 'carried');
+        }}
+        onClose={() => setAdding(false)}
+      />
+    )}
   </>;
 }
 

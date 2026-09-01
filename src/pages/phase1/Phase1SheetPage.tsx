@@ -3,7 +3,7 @@ import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth, handleRest } from '@pages/character_sheet/entity-handler';
 import { GUIDE_BLUE } from '@constants/data';
 import { notePageToMarkdown } from '@pages/character_sheet/panels/gm-notes';
-import type { Campaign, Character, Condition, Creature, Inventory, InventoryItem } from '@schemas/content';
+import type { Campaign, Character, Condition, Creature, Inventory, InventoryItem, Item } from '@schemas/content';
 import type { VariableListStr } from '@schemas/variables';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getVariable } from '@variables/variable-manager';
@@ -40,6 +40,7 @@ import {
   type PopulatedCombatant,
 } from './phase1-entity-panels';
 import { preparePhase1Entity, computePhase1BuilderChoiceCounts, type Phase1EntityCombatant } from './phase1-entity';
+import { addCatalogItemToInventory } from './phase1-inventory';
 import {
   addEntitySpellToList,
   applyEntityDivineFont,
@@ -287,6 +288,21 @@ export function Phase1SheetPage() {
             return next;
           }),
         })),
+        addItem: async (item: Item, type, coins) => {
+          const added = (await addCatalogItemToInventory(undefined, item, type === 'FORMULA')).items[0];
+          if (!added) return;
+          patchCharacter((current) => {
+            const inv = current.inventory ?? { coins: { cp: 0, sp: 0, gp: 0, pp: 0 }, items: [] };
+            return {
+              ...current,
+              inventory: {
+                ...inv,
+                coins: type === 'BUY' && coins ? coins : inv.coins,
+                items: [...(inv.items ?? []), added].sort((a, b) => a.item.name.localeCompare(b.item.name)),
+              },
+            };
+          });
+        },
       }
     : undefined;
 

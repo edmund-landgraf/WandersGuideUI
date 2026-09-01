@@ -1,7 +1,36 @@
 import { priceToString } from '@items/currency-handler';
-import { getItemQuantity, isItemContainer, labelizeBulk } from '@items/inv-utils';
+import { getDefaultContainerContents, getItemQuantity, isItemContainer, labelizeBulk } from '@items/inv-utils';
 import type { Inventory, InventoryItem, Item } from '@schemas/content';
+import { cloneDeep } from 'lodash-es';
 import { preparePhase1Entity, type Phase1EntityCombatant } from './phase1-entity';
+
+const EMPTY_COINS = { cp: 0, sp: 0, gp: 0, pp: 0 };
+
+export async function addCatalogItemToInventory(
+  inventory: Inventory | null | undefined,
+  item: Item,
+  isFormula: boolean,
+  catalog?: Item[]
+): Promise<Inventory> {
+  const current = inventory ?? { coins: { ...EMPTY_COINS }, items: [] };
+  const itemData = cloneDeep(item);
+  if (itemData.meta_data) itemData.meta_data.hp = itemData.meta_data.hp_max;
+  const container_contents = await getDefaultContainerContents(itemData, catalog);
+  const nextItem: InventoryItem = {
+    id: crypto.randomUUID(),
+    item: itemData,
+    is_formula: isFormula,
+    is_equipped: false,
+    is_invested: false,
+    is_implanted: false,
+    container_contents,
+  };
+  return {
+    ...current,
+    coins: current.coins ?? { ...EMPTY_COINS },
+    items: [...(current.items ?? []), nextItem].sort((a, b) => a.item.name.localeCompare(b.item.name)),
+  };
+}
 
 export type Phase1InvItem = {
   key: string;
