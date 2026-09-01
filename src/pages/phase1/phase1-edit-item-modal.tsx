@@ -3,6 +3,7 @@ import { cloneDeep } from 'lodash-es';
 import { X } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { toWgMarkdownLinks } from '@utils/foundry-text';
 import { isContentStackOpen } from './phase1-content-links';
 
 const GROUPS: ItemGroup[] = ['GENERAL', 'ARMOR', 'SHIELD', 'WEAPON', 'RUNE', 'UPGRADE', 'MATERIAL'];
@@ -11,12 +12,46 @@ const SIZES = ['TINY', 'SMALL', 'MEDIUM', 'LARGE', 'HUGE', 'GARGANTUAN'] as cons
 const HANDS = ['', '1', '1+', '2', '2+', '1 or 2'];
 const DICE = ['', 'd2', 'd4', 'd6', 'd8', 'd10', 'd12', 'd20'];
 
+export function createBlankPhase1Item(): Item {
+  return {
+    id: -1,
+    created_at: '',
+    name: '',
+    price: { cp: undefined, sp: undefined, gp: undefined, pp: undefined },
+    bulk: null,
+    level: 0,
+    rarity: 'COMMON',
+    availability: undefined,
+    traits: [],
+    description: '',
+    group: 'GENERAL',
+    hands: null,
+    size: 'MEDIUM',
+    craft_requirements: '',
+    usage: '',
+    meta_data: {
+      bulk: {},
+      quantity: 1,
+      damage: { damageType: '', dice: 1, die: '', extra: '' },
+      runes: { striking: undefined, potency: undefined, property: [] },
+      charges: { current: undefined, max: undefined },
+      is_shoddy: false,
+      unselectable: false,
+    },
+    operations: [],
+    content_source_id: -1,
+    version: '1.0',
+  };
+}
+
 export function Phase1EditItemModal({
   item,
+  title = 'Edit item',
   onSave,
   onClose,
 }: {
   item: Item;
+  title?: string;
   onSave: (next: Item) => void;
   onClose: () => void;
 }) {
@@ -58,6 +93,7 @@ export function Phase1EditItemModal({
     if (!name) return;
     onSave({
       ...draft,
+      description: toWgMarkdownLinks(draft.description),
       name,
       level: Number(draft.level) || 0,
       bulk: draft.bulk === '' ? null : draft.bulk,
@@ -94,7 +130,7 @@ export function Phase1EditItemModal({
       >
         <header className='flex items-start gap-4 border-b border-p1-border px-5 py-4'>
           <h2 id='edit-item-title' className='min-w-0 flex-1 text-xl font-semibold'>
-            Edit item
+            {title}
           </h2>
           <button ref={closeRef} type='button' className='icon-button shrink-0' onClick={onClose} title='Close'>
             <X size={18} />
@@ -183,14 +219,25 @@ export function Phase1EditItemModal({
                 <input className='settings-input' value={draft.usage ?? ''} onChange={(event) => patch({ usage: event.target.value })} />
               </Field>
             </div>
-            <Field label='Description'>
+            <div>
+              <div className='mb-1 flex items-center justify-between gap-2'>
+                <span className='text-[10px] font-semibold uppercase tracking-wide text-p1-muted'>Description</span>
+                <button
+                  type='button'
+                  className='text-[10px] font-semibold uppercase tracking-wide text-p1-accent hover:text-p1-accent-soft disabled:opacity-40'
+                  disabled={draft.description === toWgMarkdownLinks(draft.description)}
+                  onClick={() => patch({ description: toWgMarkdownLinks(draft.description) })}
+                >
+                  Convert to WG links
+                </button>
+              </div>
               <textarea
                 rows={6}
                 className='settings-input min-h-[8rem] resize-y'
                 value={draft.description}
                 onChange={(event) => patch({ description: event.target.value })}
               />
-            </Field>
+            </div>
             <Section title='Weapon'>
               <div className='grid grid-cols-2 gap-3 sm:grid-cols-4'>
                 <Field label='Dice'>

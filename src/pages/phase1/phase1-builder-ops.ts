@@ -32,6 +32,9 @@ export function saveSelectionChange(setCharacter: SetterOrUpdater<Character | nu
     const selections = { ...prev.operation_data?.selections };
     if (!value) delete selections[path];
     else selections[path] = `${value}`;
+    // #region agent log
+    fetch('http://127.0.0.1:7421/ingest/5bcbb1e6-5cc6-4f07-9ef3-8c7101fed88e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b2c7b0'},body:JSON.stringify({sessionId:'b2c7b0',runId:'pre-fix',hypothesisId:'B',location:'phase1-builder-ops.ts:saveSelectionChange',message:'saved selection',data:{path,value,heritageKeys:Object.keys(selections).filter((k)=>k.includes('ancestry-section')||k.includes('heritage'))},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     return {
       ...prev,
       operation_data: {
@@ -49,12 +52,17 @@ export function resultPrefix(key: Parameters<typeof convertKeyToBasePrefix>[0], 
 export function setAncestry(setCharacter: SetterOrUpdater<Character | null>, option: Ancestry) {
   setCharacter((prev) => {
     if (!prev) return prev;
+    const before = Object.keys(prev.operation_data?.selections ?? {});
+    const selections = removeParentSelections('ancestry', prev.operation_data?.selections);
+    // #region agent log
+    fetch('http://127.0.0.1:7421/ingest/5bcbb1e6-5cc6-4f07-9ef3-8c7101fed88e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b2c7b0'},body:JSON.stringify({sessionId:'b2c7b0',runId:'pre-fix',hypothesisId:'A',location:'phase1-builder-ops.ts:setAncestry',message:'ancestry change cleared selections',data:{ancestryId:option.id,removed:before.filter((k)=>!Object.keys(selections??{}).includes(k)),keptHeritage:Object.keys(selections??{}).filter((k)=>k.includes('ancestry-section'))},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     return {
       ...prev,
       details: { ...prev.details, ancestry: option },
       operation_data: {
         ...prev.operation_data,
-        selections: removeParentSelections('ancestry', prev.operation_data?.selections),
+        selections,
       },
     };
   });

@@ -495,14 +495,19 @@ export function autolink(options: AutolinkOptions): Plugin {
 }
 
 export function getContentDataFromHref(href: string) {
-  // Get last part of url
-  const urlParts = href.split('/');
-  const lastPart = urlParts.length > 0 ? urlParts[urlParts.length - 1] : href;
+  let value = href.trim();
+  try {
+    value = decodeURIComponent(value);
+  } catch {
+    /* keep original */
+  }
+  value = value.replace(/^<|>$/g, '');
+  const urlParts = value.split('/');
+  const lastPart = (urlParts.length > 0 ? urlParts[urlParts.length - 1] : value).split(/[?#]/)[0];
 
-  // Check if it is a content link
   if (!lastPart.startsWith('link_')) return null;
 
-  // Get content data
-  const [link, type, id] = lastPart.split('_');
-  return { type: type as ContentType | AbilityBlockType | 'condition', id: id.replace('~', ' ') };
+  const [, type, id] = lastPart.split('_');
+  if (!type || id == null || id === '') return null;
+  return { type: type as ContentType | AbilityBlockType | 'condition', id: id.replace(/~/g, ' ') };
 }

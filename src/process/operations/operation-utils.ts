@@ -404,12 +404,18 @@ async function getAbilityBlockList(id: StoreID, operationUUID: string, filters: 
 
   if (filters.isFromAncestry) {
     const traitIds = getAllAncestryTraitVariables(id).map((v) => v.value) ?? [];
+    const before = abilityBlocks.length;
     abilityBlocks = abilityBlocks.filter((ab) => {
       if (!ab.traits) {
         return false;
       }
       return intersection(ab.traits, traitIds).length > 0;
     });
+    // #region agent log
+    if (filters.abilityBlockType === 'heritage') {
+      fetch('http://127.0.0.1:7421/ingest/5bcbb1e6-5cc6-4f07-9ef3-8c7101fed88e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b2c7b0'},body:JSON.stringify({sessionId:'b2c7b0',runId:'pre-fix',hypothesisId:'C',location:'operation-utils.ts:getAbilityBlockList',message:'heritage filter',data:{traitIds,beforeCount:before,afterCount:abilityBlocks.length,names:abilityBlocks.slice(0,8).map((ab)=>ab.name)},timestamp:Date.now()})}).catch(()=>{});
+    }
+    // #endregion
   }
   if (filters.isFromClass) {
     const traitIds = getAllClassTraitVariables(id).map((v) => v.value) ?? [];

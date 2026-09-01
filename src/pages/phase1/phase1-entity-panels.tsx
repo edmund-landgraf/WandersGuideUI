@@ -3,13 +3,14 @@ import { Activity, BookOpen, Calculator, ChevronDown, ChevronRight, Crosshair, E
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { Character, Combatant, CombatantActionLogEntry, CombatantChangeLogEntry, Condition, InitiativeRoundLog, InitiativeRoundLogEntry, Inventory, Item, LivingEntity, Spell } from '@schemas/content';
-import { loadEntityAbilities, type Phase1Ability } from './phase1-abilities';
+import { loadEntityAbilities, type Phase1Ability, type Phase1FeatCategory } from './phase1-abilities';
 import { type Phase1CreatureStatus } from './phase1-stats';
 import type { Phase1EntityCombatant } from './phase1-entity';
 import { StatDetailModal, type Phase1StatKey, type Phase1StatTarget } from './phase1-stat-modal';
 import { loadEntityDetails, type Phase1ProfRow } from './phase1-details';
 import { loadEntitySkillsActions, type Phase1ActionGroup, type Phase1Skill } from './phase1-skills';
-import { isDivinePreparedSource, isWitchFamiliarSource, loadEntitySpells, spellCatalogSourceIds, spellFitsSlot, spellManageMode, type Phase1SpellEntry, type Phase1SpellSection } from './phase1-spells';
+import { isDivinePreparedSource, isFocusCastBlocked, isWitchFamiliarSource, loadEntitySpells, spellCatalogSourceIds, spellFitsSlot, spellManageMode, type Phase1SpellEntry, type Phase1SpellSection } from './phase1-spells';
+import { wandNeedsOvercharge } from './phase1-item-spells';
 import { Phase1SpellbookModal, type SpellbookAssign } from './phase1-spellbook';
 import { findInventoryItem, flattenInvItems, inventoryContainerTargets, inventoryItemIsNested, inventoryItemToPhase1, loadEntityInventory, matchesInvItem, type Phase1InvItem } from './phase1-inventory';
 import { SelectAddItemsModal, type AddItemKind } from './phase1-add-items';
@@ -17,7 +18,11 @@ import { Phase1EditItemModal } from './phase1-edit-item-modal';
 import { ConfirmDialog } from './phase1-campaign-settings';
 import { EntityNotesPanel, ProseMarkdown, SourceImportNotesPanel } from './phase1-markdown';
 import { isContentStackOpen, useContentLinks } from './phase1-content-links';
-import { getBestShield, getItemHealth } from '@items/inv-utils';
+import { getBestShield, getInvBulk, getItemHealth, labelizeBulk } from '@items/inv-utils';
+import CopperCoin from '@assets/images/currency/copper.png';
+import GoldCoin from '@assets/images/currency/gold.png';
+import PlatinumCoin from '@assets/images/currency/platinum.png';
+import SilverCoin from '@assets/images/currency/silver.png';
 import { lookupMonsterArt, type Phase1MonsterArt } from './phase1-monster-image';
 import { addConditionWithSpawns, compiledConditions, removeConditionWithSpawns } from '@conditions/condition-handler';
 import { ConditionDetailModal, SelectConditionModal } from './phase1-conditions';
@@ -40,6 +45,11 @@ export type Phase1SpellActions = {
   removeFromList: (sourceName: string, spellId: number, rank?: number) => Promise<void>;
   prepareSlot: (sourceName: string, slotId: string | undefined, spell: Spell, rank: number) => Promise<void>;
   applyDivineFont: (sourceName: string, choice: 'heal' | 'harm') => Promise<void>;
+  clearSlot: (slotId: string) => Promise<void>;
+  castStaff: (entry: Phase1SpellEntry, cast: boolean, option?: 'NORMAL' | 'SLOT-CONSUME', slotRank?: number) => Promise<void>;
+  castWand: (entry: Phase1SpellEntry, cast: boolean, overcharge?: boolean) => Promise<void>;
+  setItemCharges: (itemId: string, current: number) => Promise<void>;
+  addStaffCharges: (itemId: string, slotId: string) => Promise<void>;
 };
 export const DETAIL_TABS = ['Health', 'Abilities', 'Skills', 'Inventory', 'Spells', 'Notes', 'Details', 'Log'] as const;
 export type DetailTab = (typeof DETAIL_TABS)[number];
@@ -63,6 +73,12 @@ let persistedInventoryTab: 'equipped' | 'carried' | 'formulas' = 'equipped';
 let persistedActionGroup = 'ALL';
 let persistedSheetDetailsTab: 'info' | 'languages' | 'proficiencies' = 'info';
 const ABILITY_TAB_ORDER = ['Feat', 'Character', 'Weapon', 'Base', 'Added'] as const;
+const FEAT_GROUP_SECTIONS: { id: Phase1FeatCategory; label: string }[] = [
+  { id: 'class', label: 'Class Feats' },
+  { id: 'ancestry', label: 'Ancestry Feats' },
+  { id: 'general', label: 'General & Skill Feats' },
+  { id: 'other', label: 'Other Feats' },
+];
 type AbilityTab = (typeof ABILITY_TAB_ORDER)[number];
 function isAbilityTab(source: Phase1Ability['source']): source is AbilityTab {
   return (ABILITY_TAB_ORDER as readonly string[]).includes(source);
@@ -133,7 +149,7 @@ export function InspectorContent({ combatant, tab, hasMatchingCampaignNote, stat
   else if (tab === 'Abilities') body = <AbilitiesPanel combatant={combatant} onLogAction={onLogAction ? requestLog : undefined} />;
   else if (tab === 'Skills') body = <SkillsActionsPanel combatant={combatant} onLogAction={onLogAction ? requestLog : undefined} />;
   else if (tab === 'Spells') body = <SpellsPanel combatant={combatant} spellActions={spellActions} onLogAction={onLogAction ? requestLog : undefined} />;
-  else if (tab === 'Inventory') body = <InventoryPanel combatant={combatant} />;
+  else if (tab === 'Inventory') body = <InventoryPanel combatant={combatant} status={status} />;
   else if (tab === 'Notes') {
     body = (
       <CombatantNotesPanel
@@ -510,13 +526,31 @@ export function AbilitiesPanel({ combatant, onLogAction }: { combatant: Populate
     )}
     <div className='relative mb-2.5'>
       <Search className='absolute left-3 top-1/2 -translate-y-1/2 text-p1-faint' size={14} />
-      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder='Search abilities' className='h-9 w-full border border-p1-border bg-p1-surface pl-9 pr-3 text-sm outline-none placeholder:text-p1-faint focus:border-p1-accent/60' />
+      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={activeTab === 'Feat' ? 'Search feats' : activeTab === 'Character' ? 'Search class features' : 'Search abilities'} className='h-9 w-full border border-p1-border bg-p1-surface pl-9 pr-3 text-sm outline-none placeholder:text-p1-faint focus:border-p1-accent/60' />
     </div>
     {!detailsAvailable && <EmptyState>Private character details are unavailable in this account context.</EmptyState>}
     {abilities.isLoading && <EmptyState>Loading abilities...</EmptyState>}
     {abilities.isError && <ErrorState error={abilities.error} />}
     {!abilities.isLoading && !visible.length && <EmptyState>No abilities found.</EmptyState>}
-    {visible.length > 0 && (
+    {visible.length > 0 && activeTab === 'Feat' && (
+      <div className='space-y-1.5'>
+        {FEAT_GROUP_SECTIONS.map((section) => {
+          const items = visible.filter((ability) => (ability.featCategory ?? 'other') === section.id);
+          if (!items.length) return null;
+          return (
+            <AbilityGroupCard key={section.id} title={section.label}>
+              {items.map((ability, index) => <AbilityRow key={`${ability.id}-${index}`} ability={ability} onOpen={setSelected} onExecute={onLogAction} compact />)}
+            </AbilityGroupCard>
+          );
+        })}
+      </div>
+    )}
+    {visible.length > 0 && activeTab === 'Character' && (
+      <AbilityGroupCard title='Class Features'>
+        {visible.map((ability, index) => <AbilityRow key={`${ability.id}-${index}`} ability={ability} onOpen={setSelected} onExecute={onLogAction} compact />)}
+      </AbilityGroupCard>
+    )}
+    {visible.length > 0 && activeTab !== 'Feat' && activeTab !== 'Character' && (
       <section className='mb-2.5 border border-p1-border bg-p1-surface'>
         <div className='divide-y divide-white/[0.07]'>
           {visible.map((ability, index) => <AbilityRow key={`${ability.id}-${index}`} ability={ability} onOpen={setSelected} onExecute={onLogAction} />)}
@@ -527,27 +561,82 @@ export function AbilitiesPanel({ combatant, onLogAction }: { combatant: Populate
   </>;
 }
 
+function AbilityGroupCard({ title, children }: { title: string; children: ReactNode }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <section className='overflow-visible rounded-lg border border-white/12 bg-p1-surface/80'>
+      <button type='button' className='flex h-7 w-full items-center px-2.5 text-left text-xs font-semibold hover:bg-p1-hover' onClick={() => setOpen((value) => !value)}>
+        <span className='truncate'>{title}</span>
+        <ChevronDown size={12} className={`ml-auto text-p1-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && <div className='divide-y divide-white/[0.07] border-t border-white/10'>{children}</div>}
+    </section>
+  );
+}
+
 function AbilityRow({ ability, onOpen, onExecute, compact = false }: { ability: Phase1Ability; onOpen: (ability: Phase1Ability) => void; onExecute?: (draft: ActionLogDraft) => void; compact?: boolean }) {
   const kind = classifyAbility(ability);
   const preview = plainText(ability.description).slice(0, 180);
   const { name, cost } = abilityNameAndCost(ability.name, ability.actions);
   const loggable = Boolean(onExecute) && isLoggableAbility(ability);
   const onClick = useClickVsDoubleClick(() => onOpen(ability), loggable ? () => onExecute?.(draftFromAbility(ability)) : undefined);
-  return <button className='group relative grid w-full grid-cols-[42px_minmax(0,1fr)] items-stretch border border-p1-border bg-p1-surface text-left hover:border-p1-border hover:bg-p1-hover focus-visible:outline focus-visible:outline-1 focus-visible:outline-p1-accent' onClick={onClick} title={loggable ? 'Click for info, double-click to log' : undefined}>
+  const rowRef = useRef<HTMLButtonElement>(null);
+  const hideTimer = useRef<number>(0);
+  const showTimer = useRef<number>(0);
+  const [hoverBox, setHoverBox] = useState<{ left: number; width: number; top?: number; bottom?: number } | null>(null);
+
+  const clearHoverTimers = () => {
+    window.clearTimeout(showTimer.current);
+    window.clearTimeout(hideTimer.current);
+  };
+  const placeHover = () => {
+    const row = rowRef.current;
+    if (!row) return;
+    const rect = row.getBoundingClientRect();
+    const gutter = compact ? 30 : 42;
+    const width = Math.max(180, rect.width - gutter - 8);
+    const left = Math.min(rect.left + gutter, window.innerWidth - width - 8);
+    const above = window.innerHeight - rect.bottom < 160;
+    setHoverBox(above
+      ? { left, width, bottom: window.innerHeight - rect.top + 4 }
+      : { left, width, top: rect.bottom + 4 });
+  };
+  useEffect(() => () => clearHoverTimers(), []);
+
+  return <button
+    ref={rowRef}
+    className={`group relative grid w-full items-stretch text-left hover:bg-p1-hover focus-visible:outline focus-visible:outline-1 focus-visible:outline-p1-accent ${compact ? 'grid-cols-[30px_minmax(0,1fr)] bg-transparent' : 'grid-cols-[42px_minmax(0,1fr)] border border-p1-border bg-p1-surface hover:border-p1-border'}`}
+    onClick={onClick}
+    onMouseEnter={() => {
+      clearHoverTimers();
+      showTimer.current = window.setTimeout(placeHover, 300);
+    }}
+    onMouseLeave={() => {
+      clearHoverTimers();
+      hideTimer.current = window.setTimeout(() => setHoverBox(null), 80);
+    }}
+    title={loggable ? 'Click for info, double-click to log' : undefined}
+  >
     <span className='grid place-items-center border-r border-p1-border text-p1-muted' title={kind.label}>
-      {kind.type === 'ranged' ? <Crosshair size={17} /> : kind.type === 'melee' ? <Swords size={17} /> : <Sparkles size={16} />}
+      {kind.type === 'ranged' ? <Crosshair size={compact ? 13 : 17} /> : kind.type === 'melee' ? <Swords size={compact ? 13 : 17} /> : <Sparkles size={compact ? 12 : 16} />}
       <span className='sr-only'>{kind.label}</span>
     </span>
-    <span className={`flex min-w-0 items-center gap-2 px-3 ${compact ? 'py-2' : 'py-2.5'}`}>
-      <ActionSymbol cost={cost} />
-      <span className='min-w-0 flex-1 truncate text-sm'>{name}</span>
-      {ability.level != null && <span className='text-[10px] text-p1-faint'>Lvl {ability.level}</span>}
+    <span className={`flex min-w-0 items-center ${compact ? 'gap-1.5 px-2 py-1' : 'gap-2 px-3 py-2.5'}`}>
+      <ActionSymbol cost={cost} size={compact ? 12 : undefined} />
+      <span className={`min-w-0 flex-1 truncate ${compact ? 'text-xs' : 'text-sm'}`}>{name}</span>
+      {ability.level != null && <span className={`text-p1-faint ${compact ? 'text-[9px]' : 'text-[10px]'}`}>Lvl {ability.level}</span>}
     </span>
-    <span className='pointer-events-none invisible absolute left-10 right-2 top-[calc(100%+4px)] z-40 hidden border border-p1-border bg-p1-surface p-3 opacity-0 shadow-xl transition-opacity delay-300 group-hover:visible group-hover:opacity-100 md:block'>
-      <span className='flex items-center gap-2 text-xs font-semibold text-p1-text'><ActionSymbol cost={cost} />{name}</span>
-      {ability.traitNames.length > 0 && <span className='mt-1.5 block truncate text-[9px] uppercase text-p1-muted'>{ability.traitNames.join(' | ')}</span>}
-      <span className='mt-2 block text-[11px] leading-4 text-p1-muted'>{preview}{plainText(ability.description).length > preview.length ? '...' : ''}</span>
-    </span>
+    {hoverBox && createPortal(
+      <span
+        className='pointer-events-none hidden max-h-[40vh] overflow-hidden border border-p1-border bg-p1-surface p-3 shadow-xl md:block'
+        style={{ position: 'fixed', zIndex: 90, left: hoverBox.left, width: hoverBox.width, top: hoverBox.top, bottom: hoverBox.bottom }}
+      >
+        <span className='flex items-center gap-2 text-xs font-semibold text-p1-text'><ActionSymbol cost={cost} />{name}</span>
+        {ability.traitNames.length > 0 && <span className='mt-1.5 block truncate text-[9px] uppercase text-p1-muted'>{ability.traitNames.join(' | ')}</span>}
+        <span className='mt-2 block text-[11px] leading-4 text-p1-muted'>{preview}{plainText(ability.description).length > preview.length ? '...' : ''}</span>
+      </span>,
+      document.body
+    )}
   </button>;
 }
 function AbilityModal({ ability, onClose }: { ability: Phase1Ability; onClose: () => void }) {
@@ -601,7 +690,7 @@ export type InventoryItemActions = {
   moveItem?: (item: Phase1InvItem, containerKey: string | null) => void;
 };
 
-export function InventoryPanel({ combatant, itemActions }: { combatant: PopulatedCombatant; itemActions?: InventoryItemActions }) {
+export function InventoryPanel({ combatant, itemActions, status }: { combatant: PopulatedCombatant; itemActions?: InventoryItemActions; status?: Phase1CreatureStatus | null }) {
   const detailsAvailable = hasFullEntityDetails(combatant);
   const [query, setQuery] = useState('');
   const [invTab, setInvTabState] = useState(persistedInventoryTab);
@@ -647,10 +736,14 @@ export function InventoryPanel({ combatant, itemActions }: { combatant: Populate
   const activeInv = tabBuckets.some((bucket) => bucket.id === invTab) ? invTab : (tabBuckets[0]?.id ?? 'equipped');
   const activeItems = buckets.find((bucket) => bucket.id === activeInv)?.items ?? [];
   const inventory = rawInventory ? { coins: rawInventory.coins, extras, items: topLevelItems } : data.data;
+  const liveSelected = selected ? flattenInvItems(topLevelItems).find((item) => item.key === selected.key) ?? selected : null;
   const editingSource = editing ? findInventoryItem(combatant.data.inventory?.items, editing.key)?.item : undefined;
+  const coins = inventory?.coins ?? { cp: 0, sp: 0, gp: 0, pp: 0 };
+  const carriedBulk = labelizeBulk(getInvBulk(rawInventory ?? undefined), true);
+  const bulkLimit = data.data?.bulkLimit ?? 5 + (status?.attributes.strength ?? 0);
+  const overBulk = Math.floor(getInvBulk(rawInventory ?? undefined)) > bulkLimit;
 
   return <>
-    {inventory?.coins && <CoinBar coins={inventory.coins} />}
     {extraKeys.map((key) => <DataSection key={key} title={toInventoryExtraLabel(key)} data={extras[key]} />)}
     {tabBuckets.length > 1 && (
       <div className='mb-2.5 mt-3 flex overflow-x-auto border-b border-p1-border'>
@@ -659,11 +752,15 @@ export function InventoryPanel({ combatant, itemActions }: { combatant: Populate
         ))}
       </div>
     )}
-    <div className={`mb-2.5 flex items-center gap-2 ${tabBuckets.length > 1 ? '' : 'mt-3'}`}>
+    <div className={`mb-2.5 flex flex-wrap items-center gap-2 ${tabBuckets.length > 1 ? '' : 'mt-3'}`}>
       <div className='relative min-w-0 flex-1'>
         <Search className='absolute left-3 top-1/2 -translate-y-1/2 text-p1-faint' size={14} />
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder='Search items' className='h-9 w-full border border-p1-border bg-p1-surface pl-9 pr-3 text-sm outline-none placeholder:text-p1-faint focus:border-p1-accent/60' />
       </div>
+      <span className={`shrink-0 whitespace-nowrap border px-2.5 py-1.5 text-xs ${overBulk ? 'border-p1-danger/50 bg-p1-danger/10 text-p1-danger-soft' : 'border-p1-border bg-p1-surface text-p1-muted'}`}>
+        Bulk: {carriedBulk} / {bulkLimit}
+      </span>
+      <CoinStrip coins={coins} />
       {itemActions?.addItem && (
         <button
           type='button'
@@ -694,7 +791,19 @@ export function InventoryPanel({ combatant, itemActions }: { combatant: Populate
         hideTitle={tabBuckets.length > 1}
       />
     )}
-    {selected && <ItemModal item={selected} actions={itemActions} onClose={() => setSelected(null)} />}
+    {liveSelected && (
+      <ItemModal
+        item={liveSelected}
+        actions={itemActions ? {
+          ...itemActions,
+          toggleEquipped: (item) => {
+            itemActions.toggleEquipped(item);
+            setInvTab(item.isEquipped ? 'carried' : 'equipped');
+          },
+        } : undefined}
+        onClose={() => setSelected(null)}
+      />
+    )}
     {menu && itemActions && (
       <InventoryItemContextMenu
         x={menu.x}
@@ -751,25 +860,22 @@ export function InventoryPanel({ combatant, itemActions }: { combatant: Populate
   </>;
 }
 
-function CoinBar({ coins }: { coins: { cp: number; sp: number; gp: number; pp: number } }) {
+function CoinStrip({ coins }: { coins: { cp: number; sp: number; gp: number; pp: number } }) {
   const entries = [
-    ['Platinum', coins.pp],
-    ['Gold', coins.gp],
-    ['Silver', coins.sp],
-    ['Copper', coins.cp],
+    { label: 'Platinum', amount: coins.pp, src: PlatinumCoin },
+    { label: 'Gold', amount: coins.gp, src: GoldCoin },
+    { label: 'Silver', amount: coins.sp, src: SilverCoin },
+    { label: 'Copper', amount: coins.cp, src: CopperCoin },
   ] as const;
   return (
-    <section className='border border-p1-border bg-p1-surface'>
-      <h3 className='border-b border-p1-border px-3 py-2 text-xs font-semibold uppercase text-p1-muted'>Currency</h3>
-      <div className='grid grid-cols-4 divide-x divide-p1-border'>
-        {entries.map(([label, amount]) => (
-          <div key={label} className='px-2 py-3 text-center'>
-            <div className='text-[10px] uppercase text-p1-faint'>{label}</div>
-            <div className='mt-1 text-lg font-semibold'>{amount}</div>
-          </div>
-        ))}
-      </div>
-    </section>
+    <div className='flex shrink-0 items-center gap-2'>
+      {entries.map((entry) => (
+        <span key={entry.label} className='inline-flex items-center gap-1 text-xs font-semibold text-p1-muted' title={entry.label}>
+          {entry.amount.toLocaleString()}
+          <img src={entry.src} alt={entry.label} className='h-4 w-4' />
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -785,6 +891,13 @@ function InventoryItemSection({ title, items, onOpen, onContextMenu, flat = fals
   return (
     <section className='mb-2.5 border border-p1-border bg-p1-surface'>
       {!hideTitle && <h3 className='border-b border-p1-border px-3 py-2 text-xs font-semibold'>{title}</h3>}
+      <div className='hidden grid-cols-[42px_minmax(0,1fr)_2.5rem_2.5rem_8rem] items-center gap-2 border-b border-p1-border px-0 py-1.5 text-[10px] uppercase tracking-wide text-p1-faint sm:grid'>
+        <span />
+        <span className='px-3'>Name</span>
+        <span className='text-right'>Qty</span>
+        <span className='text-right'>Bulk</span>
+        <span className='pr-3 text-right'>Price</span>
+      </div>
       <div className='divide-y divide-white/[0.07]'>
         {items.map((item) => <ItemRow key={item.key} item={item} onOpen={onOpen} onContextMenu={onContextMenu} depth={flat ? 0 : 0} showContents={!flat} />)}
       </div>
@@ -803,7 +916,7 @@ function ItemRow({ item, onOpen, onContextMenu, depth, showContents = true }: {
   const icon = itemGroupIcon(item.group);
   return <>
     <button
-      className='group relative grid w-full grid-cols-[42px_minmax(0,1fr)] items-stretch border-0 bg-transparent text-left hover:bg-p1-hover focus-visible:outline focus-visible:outline-1 focus-visible:outline-p1-accent'
+      className='group relative grid w-full grid-cols-[42px_minmax(0,1fr)] items-stretch border-0 bg-transparent text-left hover:bg-p1-hover focus-visible:outline focus-visible:outline-1 focus-visible:outline-p1-accent sm:grid-cols-[42px_minmax(0,1fr)_2.5rem_2.5rem_8rem] sm:gap-2'
       style={{ paddingLeft: depth * 12 }}
       onClick={() => onOpen(item)}
       onContextMenu={onContextMenu ? (event) => onContextMenu(event, item) : undefined}
@@ -813,11 +926,17 @@ function ItemRow({ item, onOpen, onContextMenu, depth, showContents = true }: {
       </span>
       <span className='flex min-w-0 items-center gap-2 px-3 py-2.5'>
         <span className='min-w-0 flex-1 truncate text-sm'>{item.name}</span>
-        {item.quantity > 1 && <span className='text-[10px] text-p1-faint'>x{item.quantity}</span>}
-        {item.bulkLabel !== '—' && <span className='text-[10px] text-p1-faint'>{item.bulkLabel} Bulk</span>}
         {item.isEquipped && <Tag>Equipped</Tag>}
         {item.isInvested && <Tag>Invested</Tag>}
+        <span className='ml-auto flex shrink-0 items-center gap-2 text-[10px] text-p1-faint sm:hidden'>
+          {item.showQuantity && item.quantity > 0 && <span>×{item.quantity}</span>}
+          {item.bulkLabel !== '—' && <span>{item.bulkLabel}</span>}
+          {item.priceLabel !== '—' && <span>{item.priceLabel}</span>}
+        </span>
       </span>
+      <span className='hidden items-center justify-end text-xs tabular-nums text-p1-muted sm:flex'>{item.showQuantity ? item.quantity : ''}</span>
+      <span className='hidden items-center justify-end text-xs tabular-nums text-p1-muted sm:flex'>{item.bulkLabel !== '—' ? item.bulkLabel : ''}</span>
+      <span className='hidden items-center justify-end whitespace-nowrap pr-3 text-xs tabular-nums text-p1-muted sm:flex'>{item.priceLabel !== '—' ? item.priceLabel : ''}</span>
       <span className='pointer-events-none invisible absolute bottom-[calc(100%+4px)] left-10 right-2 z-40 hidden border border-p1-border bg-p1-surface p-3 opacity-0 shadow-xl transition-opacity delay-300 group-hover:visible group-hover:opacity-100 md:block'>
         <span className='flex items-center gap-2 text-xs font-semibold text-p1-text'>{item.name}</span>
         {item.traitNames.length > 0 && <span className='mt-1.5 block truncate text-[9px] uppercase text-p1-muted'>{item.traitNames.join(' | ')}</span>}
@@ -1069,7 +1188,7 @@ function classifyAbility(ability: Phase1Ability) {
 }
 function abilityGroupLabel(source: Phase1Ability['source']) {
   if (source === 'Weapon') return 'Weapon Attacks';
-  if (source === 'Character') return 'Character Abilities';
+  if (source === 'Character') return 'Class Features';
   if (source === 'Feat') return 'Feats';
   return `${source} Abilities`;
 }
@@ -1464,9 +1583,12 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [spellError, setSpellError] = useState('');
   const [book, setBook] = useState<{ sourceName: string; sourceType?: string; manageMode?: ReturnType<typeof spellManageMode>; assign?: SpellbookAssign | null; adding?: boolean } | null>(null);
+  const [staffChargePick, setStaffChargePick] = useState<Phase1SpellSection | null>(null);
+  const [staffCastPick, setStaffCastPick] = useState<Phase1SpellEntry | null>(null);
+  const [wandOvercharge, setWandOvercharge] = useState<Phase1SpellEntry | null>(null);
   const detailsAvailable = hasFullEntityDetails(combatant);
   const data = useQuery({
-    queryKey: ['phase1-entity-spells', 'isolated-store', combatant.type, combatant._id, JSON.stringify(combatant.data.spells ?? null)],
+    queryKey: ['phase1-entity-spells', 'isolated-store', combatant.type, combatant._id, JSON.stringify(combatant.data.spells ?? null), JSON.stringify((combatant.data.inventory?.items ?? []).map((item) => ({ id: item.id, eq: item.is_equipped, ch: item.item.meta_data?.charges, hp: item.item.meta_data?.hp })))],
     enabled: detailsAvailable && combatant.access?.details_revealed !== false,
     queryFn: () => loadEntitySpells(combatant as Phase1EntityCombatant),
     staleTime: Number.POSITIVE_INFINITY,
@@ -1506,6 +1628,7 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
       : section.slots.some((slot) => (slot.rank === 0 ? -1 : slot.rank) === activeRank);
     if (hasSlotsAtRank && (section.mode === 'PREPARED' || section.mode === 'SPONTANEOUS')) return true;
     if (!needle && spellManageMode(section.source?.type, section.source?.name, section.mode)) return true;
+    if (!needle && (section.mode === 'STAFF' || section.mode === 'WAND' || section.mode === 'SPELLHEART')) return true;
     return section.mode === 'RITUAL' && !needle && activeRank === 'ALL';
   });
   const addTarget = (() => {
@@ -1559,8 +1682,25 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
   }
 
   function castAndLog(entry: Phase1SpellEntry, key: string, closeModal = false) {
+    if (entry.mode === 'SPELLHEART') return;
+    if (entry.mode === 'FOCUS' && isFocusCastBlocked(entry.spell, combatant.data)) {
+      setSpellError('You can’t cast a focus spell whose minimum rank is greater than half your level (rounded up).');
+      return;
+    }
+    if (entry.mode === 'STAFF' && entry.staffCasting === 'SPONTANEOUS' && entry.rank > 0 && !entry.exhausted) {
+      setStaffCastPick(entry);
+      return;
+    }
+    if (entry.mode === 'WAND' && wandNeedsOvercharge(entry)) {
+      setWandOvercharge(entry);
+      return;
+    }
     const draft = spellDraft(entry);
-    const cast = () => runSpellAction(key, () => spellActions!.setCast(entry, true), closeModal);
+    const cast = () => runSpellAction(key, async () => {
+      if (entry.mode === 'STAFF') await spellActions!.castStaff(entry, true, 'NORMAL');
+      else if (entry.mode === 'WAND') await spellActions!.castWand(entry, true);
+      else await spellActions!.setCast(entry, true);
+    }, closeModal);
     if (!draft || !onLogAction) {
       void cast();
       return;
@@ -1607,10 +1747,71 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
     {data.isLoading && <EmptyState>Loading spellcasting...</EmptyState>}
     {data.isError && <ErrorState error={data.error} />}
     <div className='mt-3 space-y-3'>
-      {sections.map((section) => <SpellSection key={section.key} section={section} rankFilter={activeRank} spellActions={spellActions} busyKey={busyKey} canOpenStats={detailsAvailable && combatant.access?.details_revealed !== false} onOpen={setSelected} onOpenBook={(opts) => openBook(section, opts)} onOpenProf={setOpenProf} onCast={(entry) => castAndLog(entry, `cast-${entry.key}`)} onUncast={(entry) => runSpellAction(`uncast-${entry.key}`, () => spellActions!.setCast(entry, false))} onRankSpent={(rank, spent) => runSpellAction(`rank-${section.key}-${rank}`, () => spellActions!.setRankSpent(section, rank, spent))} onFocusSpent={(spent) => runSpellAction(`focus-${section.key}`, () => spellActions!.setFocusSpent(section, spent))} onPreparedSpent={(entry, spent) => runSpellAction(`prepared-${entry.key}`, () => spellActions!.setPreparedSpent(entry, spent))} onInnateSpent={(entry, castsCurrent) => runSpellAction(`innate-${entry.key}`, () => spellActions!.setInnateSpent(entry, castsCurrent))} onRemoveFromList={(entry) => entry.spell && runSpellAction(`remove-${entry.key}`, () => spellActions!.removeFromList(entry.sourceName, entry.spell!.id, entry.rank))} onApplyFont={spellActions && section.mode === 'PREPARED' && isDivinePreparedSource(section.source) ? (choice) => runSpellAction(`font-${section.key}-${choice}`, () => spellActions.applyDivineFont(section.source!.name, choice)) : undefined} onLogCantrip={onLogAction ? logSpell : undefined} />)}
+      {sections.map((section) => <SpellSection key={section.key} section={section} rankFilter={activeRank} spellActions={spellActions} busyKey={busyKey} canOpenStats={detailsAvailable && combatant.access?.details_revealed !== false} onOpen={setSelected} onOpenBook={(opts) => openBook(section, opts)} onOpenProf={setOpenProf} onCast={(entry) => castAndLog(entry, `cast-${entry.key}`)} onUncast={(entry) => runSpellAction(`uncast-${entry.key}`, () => {
+        if (entry.mode === 'STAFF') return spellActions!.castStaff(entry, false);
+        if (entry.mode === 'WAND') return spellActions!.castWand(entry, false);
+        return spellActions!.setCast(entry, false);
+      })} onRankSpent={(rank, spent) => runSpellAction(`rank-${section.key}-${rank}`, () => spellActions!.setRankSpent(section, rank, spent))} onFocusSpent={(spent) => runSpellAction(`focus-${section.key}`, () => spellActions!.setFocusSpent(section, spent))} onPreparedSpent={(entry, spent) => runSpellAction(`prepared-${entry.key}`, () => spellActions!.setPreparedSpent(entry, spent))} onInnateSpent={(entry, castsCurrent) => runSpellAction(`innate-${entry.key}`, () => spellActions!.setInnateSpent(entry, castsCurrent))} onRemoveFromList={(entry) => entry.spell && runSpellAction(`remove-${entry.key}`, () => spellActions!.removeFromList(entry.sourceName, entry.spell!.id, entry.rank))} onClearSlot={(entry) => entry.slotId && runSpellAction(`clear-${entry.key}`, () => spellActions!.clearSlot(entry.slotId!))} onAddStaffCharges={section.canAddStaffCharges ? () => setStaffChargePick(section) : undefined} onStaffCharges={(spent) => section.entries[0]?.itemId && runSpellAction(`staff-ch-${section.key}`, () => spellActions!.setItemCharges(section.entries[0].itemId!, spent))} entity={combatant.data} onApplyFont={spellActions && section.mode === 'PREPARED' && isDivinePreparedSource(section.source) ? (choice) => runSpellAction(`font-${section.key}-${choice}`, () => spellActions.applyDivineFont(section.source!.name, choice)) : undefined} onLogCantrip={onLogAction ? logSpell : undefined} />)}
       {data.data && !sections.length && <EmptyState>{needle ? 'No spells match this search.' : 'No spells found.'}</EmptyState>}
     </div>
-    {selected && selected.spell && <SpellModal entry={selected} spellActions={spellActions} busy={Boolean(busyKey)} onCast={() => castAndLog(selected, `modal-cast-${selected.key}`, true)} onUncast={() => runSpellAction(`modal-uncast-${selected.key}`, () => spellActions!.setCast(selected, false), true)} onClose={() => setSelected(null)} />}
+    {selected && selected.spell && <SpellModal entry={selected} entity={combatant.data} spellActions={spellActions} busy={Boolean(busyKey)} onCast={() => castAndLog(selected, `modal-cast-${selected.key}`, true)} onUncast={() => runSpellAction(`modal-uncast-${selected.key}`, () => {
+      if (selected.mode === 'STAFF') return spellActions!.castStaff(selected, false);
+      if (selected.mode === 'WAND') return spellActions!.castWand(selected, false);
+      return spellActions!.setCast(selected, false);
+    }, true)} onClose={() => setSelected(null)} />}
+    {openProf && <StatDetailModal combatant={combatant as Phase1EntityCombatant} stat={openProf} onClose={() => setOpenProf(null)} />}
+    {staffChargePick && spellActions && (
+      <ConfirmDialog
+        title='Expend a spell slot'
+        message={<div className='space-y-2'><p>Select a slot to add that many charges to the staff.</p><div className='flex flex-col gap-1'>{(staffChargePick.staffSlots ?? []).map((slot) => (
+          <button key={slot.id} type='button' className='h-8 border border-p1-border px-2 text-left text-xs hover:bg-p1-hover' onClick={() => {
+            const itemId = staffChargePick.entries[0]?.itemId;
+            if (!itemId) return;
+            void runSpellAction(`staff-add-${slot.id}`, () => spellActions.addStaffCharges(itemId, slot.id));
+            setStaffChargePick(null);
+          }}>Rank {slot.rank} · {slot.source}</button>
+        ))}{(staffChargePick.staffSlots ?? []).length === 0 && <p className='text-xs text-p1-muted'>No unused ranked slots.</p>}</div></div>}
+        confirmLabel='Close'
+        confirmDanger={false}
+        onCancel={() => setStaffChargePick(null)}
+        onConfirm={() => setStaffChargePick(null)}
+      />
+    )}
+    {staffCastPick && spellActions && (
+      <ConfirmDialog
+        title='Cast from staff'
+        message={<div className='space-y-2'>
+          <p>Spend staff charges equal to the spell’s rank, or consume a spell slot of that rank to add 1 charge and cast.</p>
+          <button type='button' className='h-8 w-full border border-p1-border px-2 text-xs hover:bg-p1-hover' onClick={() => {
+            const entry = staffCastPick;
+            setStaffCastPick(null);
+            void runSpellAction(`staff-slot-${entry.key}`, () => spellActions.castStaff(entry, true, 'SLOT-CONSUME', entry.rank));
+          }}>Consume a rank {staffCastPick.rank} slot</button>
+        </div>}
+        confirmLabel='Use charges'
+        cancelLabel='Cancel'
+        confirmDanger={false}
+        onCancel={() => setStaffCastPick(null)}
+        onConfirm={() => {
+          const entry = staffCastPick;
+          setStaffCastPick(null);
+          void runSpellAction(`staff-normal-${entry.key}`, () => spellActions.castStaff(entry, true, 'NORMAL'));
+        }}
+      />
+    )}
+    {wandOvercharge && spellActions && (
+      <ConfirmDialog
+        title='Overcharge wand'
+        message='You already cast this wand today. Overcharging breaks the wand (DC 10 flat check in play). Confirm to mark it broken and cast again.'
+        confirmLabel='Break wand'
+        onCancel={() => setWandOvercharge(null)}
+        onConfirm={() => {
+          const entry = wandOvercharge;
+          setWandOvercharge(null);
+          void runSpellAction(`wand-over-${entry.key}`, () => spellActions.castWand(entry, true, true));
+        }}
+      />
+    )}
     {openProf && <StatDetailModal combatant={combatant as Phase1EntityCombatant} stat={openProf} onClose={() => setOpenProf(null)} />}
     {book && spellActions && (
       <Phase1SpellbookModal
@@ -1647,7 +1848,7 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
   </>;
 }
 
-function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats, onOpen, onOpenBook, onOpenProf, onCast, onUncast, onRankSpent, onFocusSpent, onPreparedSpent, onInnateSpent, onRemoveFromList, onApplyFont, onLogCantrip }: {
+function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats, onOpen, onOpenBook, onOpenProf, onCast, onUncast, onRankSpent, onFocusSpent, onPreparedSpent, onInnateSpent, onRemoveFromList, onClearSlot, onAddStaffCharges, onStaffCharges, onApplyFont, onLogCantrip, entity }: {
   section: Phase1SpellSection;
   rankFilter: number | 'ALL';
   spellActions?: Phase1SpellActions;
@@ -1663,8 +1864,12 @@ function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats
   onPreparedSpent: (entry: Phase1SpellEntry, spent: boolean) => void;
   onInnateSpent: (entry: Phase1SpellEntry, castsCurrent: number) => void;
   onRemoveFromList: (entry: Phase1SpellEntry) => void;
+  onClearSlot: (entry: Phase1SpellEntry) => void;
+  onAddStaffCharges?: () => void;
+  onStaffCharges?: (spent: number) => void;
   onApplyFont?: (choice: 'heal' | 'harm') => void;
   onLogCantrip?: (entry: Phase1SpellEntry) => void;
+  entity: LivingEntity;
 }) {
   const slotRanks = section.slots.map((slot) => (slot.rank === 0 ? -1 : slot.rank));
   const ranks = [...new Set([...section.entries.map(spellRankKey), ...slotRanks])]
@@ -1688,6 +1893,14 @@ function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats
         )}
         {section.mode === 'FOCUS' && section.focusPoints && section.focusPoints.max > 0 && (
           <SlotCircles count={section.focusPoints.max} spent={focusSpent} editable={Boolean(spellActions)} title='Focus points spent' onChange={onFocusSpent} />
+        )}
+        {section.mode === 'STAFF' && section.charges && (
+          <div className='ml-auto flex items-center gap-2'>
+            {onAddStaffCharges && (
+              <button type='button' className='h-7 border border-p1-border px-2 text-[10px] font-semibold text-p1-muted hover:bg-p1-hover hover:text-p1-text' onClick={onAddStaffCharges}>Add charges</button>
+            )}
+            <SlotCircles count={section.charges.max} spent={section.charges.current} editable={Boolean(spellActions) && Boolean(onStaffCharges)} title='Staff charges spent' onChange={(spent) => onStaffCharges?.(spent)} />
+          </div>
         )}
       </div>
       {(section.attack != null || section.dc != null) && (
@@ -1732,6 +1945,7 @@ function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats
               <SpellRow
                 key={entry.key}
                 entry={entry}
+                entity={entity}
                 spellActions={spellActions}
                 busy={Boolean(busyKey)}
                 onOpen={onOpen}
@@ -1741,12 +1955,19 @@ function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats
                 onPreparedSpent={(spent) => onPreparedSpent(entry, spent)}
                 onInnateSpent={(castsCurrent) => onInnateSpent(entry, castsCurrent)}
                 onRemoveFromList={() => onRemoveFromList(entry)}
+                onClearSlot={() => onClearSlot(entry)}
                 onLogCantrip={onLogCantrip}
               />
             ))}
           </div>
         </div>;
       })}
+      {section.mode === 'SPELLHEART' && section.entries.length === 0 && (
+        <p className='px-3 py-2 text-center text-sm italic text-p1-muted'>No spells detected in spellhearts</p>
+      )}
+      {section.mode === 'SPELLHEART' && section.entries.length === 0 && (
+        <p className='px-3 py-2 text-center text-sm italic text-p1-muted'>No spells detected in spellhearts</p>
+      )}
       {manageMode && spellActions && (
         <button type='button' className='flex min-h-10 w-full items-center gap-2 px-3 py-1.5 text-left text-sm italic text-p1-muted hover:bg-p1-hover' onClick={() => onOpenBook({ adding: true })}>
           <Plus size={14} />
@@ -1757,8 +1978,9 @@ function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats
   </section>;
 }
 
-function SpellRow({ entry, spellActions, busy, onOpen, onOpenEmpty, onCast, onUncast, onPreparedSpent, onInnateSpent, onRemoveFromList, onLogCantrip }: {
+function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCast, onUncast, onPreparedSpent, onInnateSpent, onRemoveFromList, onClearSlot, onLogCantrip }: {
   entry: Phase1SpellEntry;
+  entity: LivingEntity;
   spellActions?: Phase1SpellActions;
   busy: boolean;
   onOpen: (entry: Phase1SpellEntry) => void;
@@ -1768,6 +1990,7 @@ function SpellRow({ entry, spellActions, busy, onOpen, onOpenEmpty, onCast, onUn
   onPreparedSpent: (spent: boolean) => void;
   onInnateSpent: (castsCurrent: number) => void;
   onRemoveFromList: () => void;
+  onClearSlot: () => void;
   onLogCantrip?: (entry: Phase1SpellEntry) => void;
 }) {
   const innateSpent = entry.usesMax != null && entry.usesCurrent != null ? entry.usesMax - entry.usesCurrent : 0;
@@ -1787,6 +2010,9 @@ function SpellRow({ entry, spellActions, busy, onOpen, onOpenEmpty, onCast, onUn
     );
   }
   const canRemove = Boolean(spellActions) && (entry.mode === 'PREPARED' || entry.mode === 'SPONTANEOUS' || entry.mode === 'RITUAL');
+  const focusBlocked = entry.mode === 'FOCUS' && isFocusCastBlocked(entry.spell, entity);
+  const showCast = Boolean(spellActions) && !entry.cantrip && entry.mode !== 'RITUAL' && entry.mode !== 'SPELLHEART';
+  const showUncast = entry.mode === 'STAFF' || entry.mode === 'WAND' ? (entry.usesCurrent ?? 0) > 0 : entry.exhausted;
   return <div className='flex min-h-10 items-center gap-2 px-3 py-1.5 hover:bg-p1-hover' onContextMenu={(event) => {
     if (!canRemove) return;
     event.preventDefault();
@@ -1800,19 +2026,22 @@ function SpellRow({ entry, spellActions, busy, onOpen, onOpenEmpty, onCast, onUn
     )}
     <button className='flex min-w-0 flex-1 items-center gap-2 text-left' onClick={onNameClick} title={cantripExecute ? 'Click for info, double-click to log' : undefined}>
       <ActionSymbol cost={entry.spell.cast} />
-      <span className='min-w-0 flex-1'><span className='block truncate text-sm font-medium'>{entry.spell.name}</span><span className='mt-0.5 block truncate text-[9px] uppercase text-p1-faint'>{entry.traitNames.join(' | ') || entry.spell.traditions.join(' | ')}</span></span>
+      <span className='min-w-0 flex-1'><span className='block truncate text-sm font-medium'>{entry.itemKind ? `${entry.sourceName} — ${entry.spell.name}` : entry.spell.name}</span><span className='mt-0.5 block truncate text-[9px] uppercase text-p1-faint'>{entry.traitNames.join(' | ') || entry.spell.traditions.join(' | ')}</span></span>
       {entry.mode !== 'INNATE' && entry.usesMax != null && <span className='text-[10px] text-p1-muted'>{entry.usesCurrent}/{entry.usesMax}</span>}
     </button>
-    {spellActions && !entry.cantrip && entry.mode !== 'RITUAL' && (
+    {showCast && (
       <div className='flex shrink-0 items-center gap-1.5'>
-        <button className='h-7 border border-p1-accent/40 px-2.5 text-[10px] font-semibold text-p1-accent-soft hover:bg-p1-accent/10 disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onCast}>{busy ? 'Saving...' : 'Cast'}</button>
-        {entry.exhausted && <button className='h-7 border border-p1-border px-2.5 text-[10px] font-semibold text-p1-muted hover:bg-p1-hover disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onUncast}>Uncast</button>}
+        {entry.mode === 'PREPARED' && entry.slotId && (
+          <button className='h-7 border border-p1-border px-2.5 text-[10px] font-semibold text-p1-muted hover:bg-p1-hover disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onClearSlot}>Clear</button>
+        )}
+        <button className='h-7 border border-p1-accent/40 px-2.5 text-[10px] font-semibold text-p1-accent-soft hover:bg-p1-accent/10 disabled:cursor-wait disabled:opacity-50' disabled={busy || focusBlocked || !entry.available} title={focusBlocked ? 'Focus spell rank is too high for your level' : undefined} onClick={onCast}>{busy ? 'Saving...' : 'Cast'}</button>
+        {showUncast && <button className='h-7 border border-p1-border px-2.5 text-[10px] font-semibold text-p1-muted hover:bg-p1-hover disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onUncast}>Uncast</button>}
       </div>
     )}
   </div>;
 }
 
-function SpellModal({ entry, spellActions, busy, onCast, onUncast, onClose }: { entry: Phase1SpellEntry; spellActions?: Phase1SpellActions; busy: boolean; onCast: () => void; onUncast: () => void; onClose: () => void }) {
+function SpellModal({ entry, entity, spellActions, busy, onCast, onUncast, onClose }: { entry: Phase1SpellEntry; entity: LivingEntity; spellActions?: Phase1SpellActions; busy: boolean; onCast: () => void; onUncast: () => void; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     closeRef.current?.focus();
@@ -1824,6 +2053,8 @@ function SpellModal({ entry, spellActions, busy, onCast, onUncast, onClose }: { 
   }, [onClose]);
   const spell = entry.spell;
   if (!spell) return null;
+  const focusBlocked = entry.mode === 'FOCUS' && isFocusCastBlocked(spell, entity);
+  const showCast = spellActions && !entry.cantrip && entry.mode !== 'RITUAL' && entry.mode !== 'SPELLHEART';
   return createPortal(
     <div data-entity-modal className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]' role='presentation' onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section role='dialog' aria-modal='true' aria-labelledby={`spell-${spell.id}-title`} className='flex max-h-[min(84vh,840px)] w-full max-w-3xl flex-col border border-p1-border bg-p1-surface shadow-2xl'>
@@ -1832,10 +2063,10 @@ function SpellModal({ entry, spellActions, busy, onCast, onUncast, onClose }: { 
             <div className='flex items-center gap-2'><ActionSymbol cost={spell.cast} size='1.75rem' /><h2 id={`spell-${spell.id}-title`} className='text-xl font-semibold leading-tight'>{spell.name}</h2></div>
             <div className='mt-2 flex flex-wrap gap-1.5'><Tag>{entry.cantrip ? 'Cantrip' : rankLabel(entry.rank)}</Tag><Tag>{spell.rarity}</Tag>{entry.traitNames.map((trait) => <Tag key={trait}>{trait}</Tag>)}</div>
           </div>
-          {spellActions && !entry.cantrip && entry.mode !== 'RITUAL' && (
+          {showCast && (
             entry.exhausted
               ? <button className='h-8 shrink-0 border border-p1-border px-3 text-xs font-semibold text-p1-text hover:bg-p1-hover disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onUncast}>{busy ? 'Saving...' : 'Uncast'}</button>
-              : <button className='h-8 shrink-0 border border-p1-accent/50 bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onCast}>{busy ? 'Saving...' : `Cast ${rankLabel(entry.rank)}`}</button>
+              : <button className='h-8 shrink-0 border border-p1-accent/50 bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink disabled:cursor-wait disabled:opacity-50' disabled={busy || focusBlocked || !entry.available} title={focusBlocked ? 'Focus spell rank is too high for your level' : undefined} onClick={onCast}>{busy ? 'Saving...' : `Cast ${rankLabel(entry.rank)}`}</button>
           )}
           <button ref={closeRef} className='icon-button shrink-0' onClick={onClose} title='Close spell details'><X size={18} /></button>
         </header>

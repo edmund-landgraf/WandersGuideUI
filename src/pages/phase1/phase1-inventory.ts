@@ -1,5 +1,5 @@
 import { priceToString } from '@items/currency-handler';
-import { getDefaultContainerContents, getItemQuantity, isItemContainer, labelizeBulk } from '@items/inv-utils';
+import { getBulkLimit, getDefaultContainerContents, getItemBulk, getItemQuantity, isItemContainer, isItemWithQuantity, labelizeBulk } from '@items/inv-utils';
 import type { Inventory, InventoryItem, Item } from '@schemas/content';
 import { cloneDeep } from 'lodash-es';
 import { preparePhase1Entity, type Phase1EntityCombatant } from './phase1-entity';
@@ -50,6 +50,7 @@ export type Phase1InvItem = {
   rarity: string;
   traitNames: string[];
   quantity: number;
+  showQuantity: boolean;
   bulkLabel: string;
   priceLabel: string;
   damageSummary: string | null;
@@ -69,15 +70,17 @@ export type Phase1Inventory = {
   coins: Inventory['coins'] | null;
   extras: Record<string, unknown>;
   items: Phase1InvItem[];
+  bulkLimit: number;
 };
 
 export async function loadEntityInventory(combatant: Phase1EntityCombatant): Promise<Phase1Inventory> {
-  const { entity, content } = await preparePhase1Entity(combatant);
+  const { entity, content, storeId } = await preparePhase1Entity(combatant);
   const inventory = entity.inventory;
   const traitNames = new Map(content.traits.map((trait) => [trait.id, trait.name]));
+  const bulkLimit = getBulkLimit(storeId);
 
   if (!inventory) {
-    return { coins: null, extras: {}, items: [] };
+    return { coins: null, extras: {}, items: [], bulkLimit };
   }
 
   const extras = Object.fromEntries(
@@ -88,6 +91,7 @@ export async function loadEntityInventory(combatant: Phase1EntityCombatant): Pro
     coins: inventory.coins ?? null,
     extras,
     items: (inventory.items ?? []).map((entry, index) => mapInvItem(entry, traitNames, `${index}`, 0)),
+    bulkLimit,
   };
 }
 
@@ -111,7 +115,8 @@ function mapInvItem(
     rarity: item.rarity,
     traitNames: (item.traits ?? []).map((id) => traitNames.get(id)).filter((name): name is string => Boolean(name)),
     quantity: getItemQuantity(item),
-    bulkLabel: labelizeBulk(entry.is_formula ? '0' : item.bulk ?? undefined, true),
+    showQuantity: isItemWithQuantity(item),
+    bulkLabel: labelizeBulk(getItemBulk(entry)),
     priceLabel: formatPrice(item),
     damageSummary: formatDamage(item),
     hands: item.hands?.trim() || null,
@@ -160,10 +165,29 @@ export function matchesInvItem(item: Phase1InvItem, needle: string) {
     .includes(needle);
 }
 
-export function findInventoryItem(items: InventoryItem[] | undefined, key: string): InventoryItem | null {
-  for (const entry of items ?? []) {
-    if ((entry.id || '') === key) return entry;
-    const nested = findInventoryItem(entry.container_contents, key);
+export function inventoryEntryKey(entry: InventoryItem, index: number, parentKey?: string) {
+  return entry.id || (parentKey != null ? `${parentKey}-${index}` : String(index));
+}
+
+export function mapInventory(inventory: Inventory | null | undefined, key: string, patch: (item: InventoryItem) => InventoryItem): Inventory {
+  const current = inventory ?? { coins: { ...EMPTY_COINS }, items: [] };
+  return { ...current, items: mapInvEntries(current.items ?? [], key, patch) };
+}
+
+function mapInvEntries(items: InventoryItem[], key: string, patch: (item: InventoryItem) => InventoryItem, parentKey?: string): InventoryItem[] {
+  return items.map((entry, index) => {
+    const itemKey = inventoryEntryKey(entry, index, parentKey);
+    const next = itemKey === key ? patch(entry) : entry;
+    if (!next.container_contents?.length) return next;
+    return { ...next, container_contents: mapInvEntries(next.container_contents, key, patch, itemKey) };
+  });
+}
+
+export function findInventoryItem(items: InventoryItem[] | undefined, key: string, parentKey?: string): InventoryItem | null {
+  for (const [index, entry] of (items ?? []).entries()) {
+    const itemKey = inventoryEntryKey(entry, index, parentKey);
+    if (itemKey === key) return entry;
+    const nested = findInventoryItem(entry.container_contents, key, itemKey);
     if (nested) return nested;
   }
   return null;
@@ -174,10 +198,12 @@ export function deleteInventoryItem(inventory: Inventory | null | undefined, key
   return { ...current, items: removeInventoryItem(current.items ?? [], key) };
 }
 
-function removeInventoryItem(items: InventoryItem[], key: string): InventoryItem[] {
-  return items
-    .filter((entry) => (entry.id || '') !== key)
-    .map((entry) => ({ ...entry, container_contents: removeInventoryItem(entry.container_contents ?? [], key) }));
+function removeInventoryItem(items: InventoryItem[], key: string, parentKey?: string): InventoryItem[] {
+  return items.flatMap((entry, index) => {
+    const itemKey = inventoryEntryKey(entry, index, parentKey);
+    if (itemKey === key) return [];
+    return [{ ...entry, container_contents: removeInventoryItem(entry.container_contents ?? [], key, itemKey) }];
+  });
 }
 
 export function moveInventoryItem(inventory: Inventory | null | undefined, key: string, containerKey: string | null): Inventory {
@@ -192,12 +218,13 @@ export function moveInventoryItem(inventory: Inventory | null | undefined, key: 
   return { ...current, items: insertIntoContainer(without, containerKey, moving) };
 }
 
-function insertIntoContainer(items: InventoryItem[], containerKey: string, moving: InventoryItem): InventoryItem[] {
-  return items.map((entry) => {
-    if ((entry.id || '') === containerKey) {
+function insertIntoContainer(items: InventoryItem[], containerKey: string, moving: InventoryItem, parentKey?: string): InventoryItem[] {
+  return items.map((entry, index) => {
+    const itemKey = inventoryEntryKey(entry, index, parentKey);
+    if (itemKey === containerKey) {
       return { ...entry, container_contents: [...(entry.container_contents ?? []), moving] };
     }
-    return { ...entry, container_contents: insertIntoContainer(entry.container_contents ?? [], containerKey, moving) };
+    return { ...entry, container_contents: insertIntoContainer(entry.container_contents ?? [], containerKey, moving, itemKey) };
   });
 }
 

@@ -3,7 +3,7 @@ import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth, handleRest } from '@pages/character_sheet/entity-handler';
 import { GUIDE_BLUE } from '@constants/data';
 import { notePageToMarkdown } from '@pages/character_sheet/panels/gm-notes';
-import type { Campaign, Character, Condition, Creature, Inventory, InventoryItem, Item } from '@schemas/content';
+import type { Campaign, Character, Condition, Creature, Item } from '@schemas/content';
 import type { VariableListStr } from '@schemas/variables';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getVariable } from '@variables/variable-manager';
@@ -40,10 +40,11 @@ import {
   type PopulatedCombatant,
 } from './phase1-entity-panels';
 import { preparePhase1Entity, computePhase1BuilderChoiceCounts, type Phase1EntityCombatant } from './phase1-entity';
-import { addCatalogItemToInventory, createInventoryEntry, deleteInventoryItem, moveInventoryItem } from './phase1-inventory';
+import { addCatalogItemToInventory, createInventoryEntry, deleteInventoryItem, mapInventory, moveInventoryItem } from './phase1-inventory';
 import {
   addEntitySpellToList,
   applyEntityDivineFont,
+  clearEntitySpellSlot,
   prepareEntitySpellSlot,
   removeEntitySpellFromList,
   setEntityFocusSpent,
@@ -52,6 +53,7 @@ import {
   setEntitySpellCast,
   setEntitySpellRankSpent,
 } from './phase1-spells';
+import { addStaffChargesFromSlot, setStaffCharges, setStaffSpellCast, setWandSpellCast } from './phase1-item-spells';
 import { calculateEntityStatus } from './phase1-stats';
 import { Phase1BuilderWorkspace } from './Phase1BuilderPage';
 import { SelectCompanionModal } from './phase1-creatures';
@@ -273,6 +275,26 @@ export function Phase1SheetPage() {
           const next = await applyEntityDivineFont(combatant as Phase1EntityCombatant, sourceName, choice);
           patchCharacter(() => next as Character);
         },
+        clearSlot: async (slotId) => {
+          const next = await clearEntitySpellSlot(combatant as Phase1EntityCombatant, slotId);
+          patchCharacter(() => next as Character);
+        },
+        castStaff: async (entry, cast, option, slotRank) => {
+          const next = await setStaffSpellCast(combatant as Phase1EntityCombatant, entry, cast, option, slotRank);
+          patchCharacter(() => next as Character);
+        },
+        castWand: async (entry, cast, overcharge) => {
+          const next = await setWandSpellCast(combatant as Phase1EntityCombatant, entry, cast, overcharge);
+          patchCharacter(() => next as Character);
+        },
+        setItemCharges: async (itemId, current) => {
+          const next = await setStaffCharges(combatant as Phase1EntityCombatant, itemId, current);
+          patchCharacter(() => next as Character);
+        },
+        addStaffCharges: async (itemId, slotId) => {
+          const next = await addStaffChargesFromSlot(combatant as Phase1EntityCombatant, itemId, slotId);
+          patchCharacter(() => next as Character);
+        },
       }
     : undefined;
 
@@ -486,7 +508,7 @@ export function Phase1SheetPage() {
         </div>
         <div className='border border-t-0 border-p1-border bg-p1-inset p-4'>
           {tab === 'Skills' && <SkillsActionsPanel combatant={combatant} />}
-          {tab === 'Inventory' && <InventoryPanel combatant={combatant} itemActions={itemActions} />}
+          {tab === 'Inventory' && <InventoryPanel combatant={combatant} itemActions={itemActions} status={statusQuery.data ?? null} />}
           {tab === 'Spells' && <SpellsPanel combatant={combatant} spellActions={spellActions} />}
           {tab === 'Feats' && <AbilitiesPanel combatant={combatant} />}
           {tab === 'Companions' && (
@@ -644,19 +666,6 @@ function creatureAsCombatant(creature: Creature, index: number, canEdit: boolean
     data: creature,
     access: { can_edit: canEdit, details_revealed: true },
   };
-}
-
-function mapInventory(inventory: Inventory | null | undefined, key: string, patch: (item: InventoryItem) => InventoryItem): Inventory {
-  const current = inventory ?? { coins: { cp: 0, sp: 0, gp: 0, pp: 0 }, items: [] };
-  return { ...current, items: mapInvItems(current.items ?? [], key, patch) };
-}
-
-function mapInvItems(items: InventoryItem[], key: string, patch: (item: InventoryItem) => InventoryItem): InventoryItem[] {
-  return items.map((item) => {
-    const next = (item.id || '') === key ? patch(item) : item;
-    if (!next.container_contents?.length) return next;
-    return { ...next, container_contents: mapInvItems(next.container_contents, key, patch) };
-  });
 }
 
 function CharacterNotesPanel({ notes, canEdit, onChange }: { notes: Character['notes']; canEdit: boolean; onChange: (notes: Character['notes']) => void }) {

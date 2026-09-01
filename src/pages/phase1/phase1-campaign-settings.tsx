@@ -21,10 +21,11 @@ import {
   Server,
   Settings,
 } from 'lucide-react';
-import { uniq } from 'lodash-es';
+import { cloneDeep, isEqual, uniq } from 'lodash-es';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { OLD_UI_ORIGIN } from '../phase-switch/PhaseViewSwitch';
+import { Phase1OperationsModal } from './phase1-operations-modal';
 
 type SettingsTab = 'books' | 'homebrew' | 'variants' | 'options';
 
@@ -122,6 +123,7 @@ export function SettingsSurface({
   const [pendingKick, setPendingKick] = useState<Character | null>(null);
   const [pendingDelete, setPendingDelete] = useState(false);
   const [dependencyPrompt, setDependencyPrompt] = useState<{ sources: ContentSource[]; onEnable: () => void; onSkip: () => void } | null>(null);
+  const [openedOperations, setOpenedOperations] = useState(false);
 
   useEffect(() => {
     setName(campaign.name);
@@ -299,18 +301,24 @@ export function SettingsSurface({
                     }))}
                   />
                   {campaign.recommended_options?.custom_operations && (
-                    <p className='border-t border-p1-border px-4 py-3 text-xs leading-5 text-p1-muted'>
-                      Custom operation lists are edited in the{' '}
-                      <a
-                        className='text-p1-accent hover:underline'
-                        href={`${OLD_UI_ORIGIN}/campaign/${campaign.id}?tab=settings`}
-                        target='_blank'
-                        rel='noreferrer'
-                      >
-                        original campaign settings
-                      </a>
-                      .
-                    </p>
+                    <div className='border-t border-p1-border px-4 py-3'>
+                      <button type='button' className='toolbar-button' onClick={() => setOpenedOperations(true)}>
+                        Open Operations{' '}
+                        {campaign.custom_operations && campaign.custom_operations.length > 0
+                          ? `(${campaign.custom_operations.length})`
+                          : ''}
+                      </button>
+                      <Phase1OperationsModal
+                        title='Custom Operations'
+                        opened={openedOperations}
+                        onClose={() => setOpenedOperations(false)}
+                        operations={cloneDeep(campaign.custom_operations ?? [])}
+                        onChange={(operations) => {
+                          if (isEqual(campaign.custom_operations, operations)) return;
+                          patchCampaign({ custom_operations: operations });
+                        }}
+                      />
+                    </div>
                   )}
                 </div>
               )}

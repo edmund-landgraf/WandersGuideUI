@@ -6,7 +6,7 @@ import { BookOpen, Plus, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { ActionSymbol } from '@common/Actions';
 import { Phase1PickerModal } from './phase1-picker-modal';
-import { heightenRanksFor, isWitchFamiliarSource, spellbookEntriesForSource, spellFitsSlot, type Phase1SpellbookEntry, type Phase1SpellManageMode } from './phase1-spells';
+import { heightenRanksFor, isWitchFamiliarSource, spellbookEntriesForSource, spellbookLocksTradition, spellFitsSlot, type Phase1SpellbookEntry, type Phase1SpellManageMode } from './phase1-spells';
 import { ProseMarkdown } from './phase1-markdown';
 
 const EMPTY_SPELLS: Spell[] = [];
@@ -50,7 +50,7 @@ export function Phase1SpellbookModal({
   const familiar = isWitchFamiliarSource({ name: sourceName, type: sourceType });
   const [adding, setAdding] = useState(initialAdding || slotsOnly);
   const [preview, setPreview] = useState<Phase1SpellbookEntry | null>(null);
-  const lockTradition = manageMode === 'SLOTS-ONLY' || (manageMode === 'LIST-ONLY' && sourceName !== 'RITUALS');
+  const lockTradition = spellbookLocksTradition(manageMode, sourceName);
   const [traditionFilter, setTraditionFilter] = useState<string | null>(lockTradition ? (tradition?.toLowerCase() || null) : null);
   const [rankFilter, setRankFilter] = useState<number[]>([]);
   const catalog = useQuery({

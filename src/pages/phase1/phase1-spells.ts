@@ -1,20 +1,28 @@
 import { COMMON_CORE_ID } from '@constants/data';
 import { collectEntitySpellcasting, getFocusPoints } from '@content/collect-content';
+import { getEntityLevel } from '@utils/entity-utils';
 import { getFinalProfValue } from '@variables/variable-helpers';
 import type { CastingSource, LivingEntity, Spell } from '@schemas/content';
+import { isFocusSpell } from '@spells/spell-utils';
 import { cloneDeep, uniq } from 'lodash-es';
 import { preparePhase1Entity, type Phase1EntityCombatant } from './phase1-entity';
+import { collectItemSpellSections } from './phase1-item-spells';
 
-export type Phase1SpellMode = 'PREPARED' | 'SPONTANEOUS' | 'FOCUS' | 'INNATE' | 'RITUAL';
+export type Phase1SpellMode = 'PREPARED' | 'SPONTANEOUS' | 'FOCUS' | 'INNATE' | 'RITUAL' | 'STAFF' | 'WAND' | 'SPELLHEART';
 export type Phase1SpellManageMode = 'LIST-ONLY' | 'SLOTS-AND-LIST' | 'SLOTS-ONLY';
 
 export function spellManageMode(sourceType?: string, sourceName?: string, sectionMode?: Phase1SpellMode): Phase1SpellManageMode | null {
-  if (sectionMode === 'FOCUS' || sectionMode === 'INNATE') return null;
+  if (sectionMode === 'FOCUS' || sectionMode === 'INNATE' || sectionMode === 'STAFF' || sectionMode === 'WAND' || sectionMode === 'SPELLHEART') return null;
   if (sourceName === 'RITUALS' || sectionMode === 'RITUAL') return 'LIST-ONLY';
   if (sourceType?.startsWith('SPONTANEOUS-')) return 'LIST-ONLY';
   if (sourceType === 'PREPARED-LIST') return 'SLOTS-AND-LIST';
   if (sourceType?.startsWith('PREPARED-')) return 'SLOTS-ONLY';
   return null;
+}
+
+/** Tradition filter is locked for prepared-from-tradition and spontaneous repertoire, not for the witch familiar or rituals. */
+export function spellbookLocksTradition(manageMode: Phase1SpellManageMode, sourceName: string) {
+  return manageMode === 'SLOTS-ONLY' || (manageMode === 'LIST-ONLY' && sourceName !== 'RITUALS');
 }
 
 export function isWitchFamiliarSource(source?: { name?: string; type?: string }) {
@@ -37,6 +45,9 @@ export type Phase1SpellEntry = {
   usesMax?: number;
   slotId?: string;
   empty?: boolean;
+  itemId?: string;
+  itemKind?: 'STAFF' | 'WAND' | 'SPELLHEART';
+  staffCasting?: 'PREPARED' | 'SPONTANEOUS' | 'NONE';
 };
 
 export type Phase1SpellbookEntry = {
@@ -58,6 +69,9 @@ export type Phase1SpellSection = {
   entries: Phase1SpellEntry[];
   slots: Array<{ rank: number; exhausted: boolean }>;
   focusPoints?: { current: number; max: number };
+  charges?: { current: number; max: number };
+  canAddStaffCharges?: boolean;
+  staffSlots?: Array<{ id: string; rank: number; source: string }>;
 };
 
 export type Phase1SpellLoad = {
@@ -71,6 +85,11 @@ export function keepPreparedListSection(sourceType: string, entries: number, slo
 
 export function spellCatalogSourceIds(enabled?: number[] | null) {
   return uniq([COMMON_CORE_ID, ...(enabled ?? [])]);
+}
+
+export function isFocusCastBlocked(spell: Spell | undefined, entity: LivingEntity | null | undefined) {
+  if (!spell || !entity || !isFocusSpell(spell)) return false;
+  return spell.rank > Math.ceil(getEntityLevel(entity) / 2);
 }
 
 export async function loadEntitySpells(combatant: Phase1EntityCombatant): Promise<Phase1SpellLoad> {
@@ -176,6 +195,8 @@ export async function loadEntitySpells(combatant: Phase1EntityCombatant): Promis
     slots: [],
   });
 
+  sections.push(...collectItemSpellSections(entity, content.spells, traitById, data));
+
   return { sections, list: data.list };
 }
 
@@ -215,6 +236,7 @@ export async function setEntitySpellCast(combatant: Phase1EntityCombatant, entry
   if (entry.cantrip || entry.empty || !entry.spell) return raw;
 
   const { entity, storeId } = await preparePhase1Entity(combatant);
+  if (entry.mode === 'FOCUS' && cast && isFocusCastBlocked(entry.spell, entity)) return raw;
   const data = collectEntitySpellcasting(storeId, entity);
   const spells = buildSpellState(raw, data);
 
@@ -392,16 +414,26 @@ export async function applyEntityDivineFont(
   const spells = buildSpellState(raw, data);
   const target = content.spells.find((spell) => spell.name.toLowerCase() === choice);
   if (!target) throw new Error(`Could not find the ${choice} spell in your content sources.`);
+  return { ...raw, spells: applyDivineFontToSpellState(spells, sourceName, target) };
+}
+
+export function applyDivineFontToSpellState<T extends { spell_id?: number | null; rank: number; source: string }>(
+  spells: { slots: T[]; list: Array<{ spell_id: number; rank: number; source: string }> },
+  sourceName: string,
+  target: { id: number },
+) {
   const ranks = [...new Set(spells.slots.filter((slot) => slot.source === sourceName && slot.rank > 0).map((slot) => slot.rank))];
   if (!ranks.length) throw new Error('No ranked spell slots to fill with Divine Font.');
+  const list = [...spells.list];
+  let slots = [...spells.slots];
   for (const rank of ranks) {
-    const exists = spells.list.some((entry) => entry.spell_id === target.id && entry.rank === rank && entry.source === sourceName);
-    if (!exists) spells.list.push({ spell_id: target.id, rank, source: sourceName });
-    spells.slots = spells.slots.map((slot) =>
+    const exists = list.some((entry) => entry.spell_id === target.id && entry.rank === rank && entry.source === sourceName);
+    if (!exists) list.push({ spell_id: target.id, rank, source: sourceName });
+    slots = slots.map((slot) =>
       slot.source === sourceName && slot.rank === rank && slot.spell_id == null ? { ...slot, spell_id: target.id } : slot,
     );
   }
-  return { ...raw, spells };
+  return { ...spells, slots, list };
 }
 
 export function isDivinePreparedSource(source?: { name?: string; tradition?: string; type?: string }) {

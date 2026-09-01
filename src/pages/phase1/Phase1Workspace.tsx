@@ -18,6 +18,7 @@ import { loadEntitySkillsActions, type Phase1ActionGroup, type Phase1Skill } fro
 import {
   addEntitySpellToList,
   applyEntityDivineFont,
+  clearEntitySpellSlot,
   prepareEntitySpellSlot,
   removeEntitySpellFromList,
   setEntityFocusSpent,
@@ -26,6 +27,7 @@ import {
   setEntitySpellCast,
   setEntitySpellRankSpent,
 } from './phase1-spells';
+import { addStaffChargesFromSlot, setStaffCharges, setStaffSpellCast, setWandSpellCast } from './phase1-item-spells';
 import { flattenInvItems, inventoryItemToPhase1, loadEntityInventory, matchesInvItem, type Phase1InvItem } from './phase1-inventory';
 import { EntityNotesPanel, ProseMarkdown, SourceImportNotesPanel, noteContentsToMarkdown } from './phase1-markdown';
 import { isContentStackOpen, useContentLinks } from './phase1-content-links';
@@ -1521,7 +1523,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   function persistEntitySpells(entity: LivingEntity) {
     if (!selected || !selectedEncounter) return;
     if (selected.type === 'CHARACTER' && selected.character) {
-      onUpdateCharacter(selected.character, { spells: entity.spells });
+      onUpdateCharacter(selected.character, { spells: entity.spells, inventory: entity.inventory });
       return;
     }
     persistCreature(entity);
@@ -1626,6 +1628,26 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
         applyDivineFont: async (sourceName, choice) => {
           if (!selected) return;
           persistEntitySpells(await applyEntityDivineFont(selected as Phase1EntityCombatant, sourceName, choice));
+        },
+        clearSlot: async (slotId) => {
+          if (!selected) return;
+          persistEntitySpells(await clearEntitySpellSlot(selected as Phase1EntityCombatant, slotId));
+        },
+        castStaff: async (entry, cast, option, slotRank) => {
+          if (!selected) return;
+          persistEntitySpells(await setStaffSpellCast(selected as Phase1EntityCombatant, entry, cast, option, slotRank));
+        },
+        castWand: async (entry, cast, overcharge) => {
+          if (!selected) return;
+          persistEntitySpells(await setWandSpellCast(selected as Phase1EntityCombatant, entry, cast, overcharge));
+        },
+        setItemCharges: async (itemId, current) => {
+          if (!selected) return;
+          persistEntitySpells(await setStaffCharges(selected as Phase1EntityCombatant, itemId, current));
+        },
+        addStaffCharges: async (itemId, slotId) => {
+          if (!selected) return;
+          persistEntitySpells(await addStaffChargesFromSlot(selected as Phase1EntityCombatant, itemId, slotId));
         },
       }
     : undefined;

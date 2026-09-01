@@ -5,10 +5,11 @@ import type { Inventory, Item } from '@schemas/content';
 import { labelToVariable } from '@variables/variable-utils';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CreateItemModal } from '@modals/CreateItemModal';
 import { ConfirmDialog } from './phase1-campaign-settings';
+import { useContentLinks } from './phase1-content-links';
+import { createBlankPhase1Item, Phase1EditItemModal } from './phase1-edit-item-modal';
 import { Phase1PickerModal } from './phase1-picker-modal';
 
 export type AddItemKind = 'GIVE' | 'BUY' | 'FORMULA';
@@ -22,6 +23,7 @@ export function SelectAddItemsModal({
   onAdd: (item: Item, type: AddItemKind, coins?: Inventory['coins']) => void | Promise<void>;
   onClose: () => void;
 }) {
+  const { open } = useContentLinks();
   const catalog = useQuery({
     queryKey: ['phase1-add-items', { sources: getDefaultSourcesKey('PAGE') }],
     queryFn: async () =>
@@ -36,8 +38,9 @@ export function SelectAddItemsModal({
   );
   const [pendingBuy, setPendingBuy] = useState<Item | null>(null);
   const [menuId, setMenuId] = useState<number | null>(null);
-  const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
-  const [creatingCustom, setCreatingCustom] = useState(false);
+  const [notice, setNotice] = useState<{ title: string; message: string; at: number } | null>(null);
+  const dismissNotice = useCallback(() => setNotice(null), []);
+  const [customDraft, setCustomDraft] = useState<Item | null>(null);
   const coins = inventory?.coins ?? { cp: 0, sp: 0, gp: 0, pp: 0 };
 
   function injectBaseItem(item: Item): Item {
@@ -55,6 +58,7 @@ export function SelectAddItemsModal({
     setNotice({
       title: type === 'BUY' ? 'Item bought' : type === 'FORMULA' ? 'Formula added' : 'Item given',
       message: addNoticeMessage(item, type),
+      at: Date.now(),
     });
   }
 
@@ -67,24 +71,6 @@ export function SelectAddItemsModal({
       }
     : {};
   const resultingCoins = pendingBuy ? purchase(buyPrice, coins) : null;
-
-  if (notice) {
-    return <AddItemNotice title={notice.title} message={notice.message} onClose={onClose} />;
-  }
-
-  if (creatingCustom) {
-    return (
-      <CreateItemModal
-        opened
-        zIndex={200}
-        onComplete={(item) => {
-          void add(item, 'GIVE');
-          setCreatingCustom(false);
-        }}
-        onCancel={() => setCreatingCustom(false)}
-      />
-    );
-  }
 
   return (
     <>
@@ -105,7 +91,7 @@ export function SelectAddItemsModal({
         empty='No matching items.'
         onClose={onClose}
         headerAction={
-          <button type='button' className='toolbar-button shrink-0' onClick={() => setCreatingCustom(true)}>
+          <button type='button' className='toolbar-button shrink-0' onClick={() => setCustomDraft(createBlankPhase1Item())}>
             Custom Item
           </button>
         }
@@ -114,10 +100,14 @@ export function SelectAddItemsModal({
         batchSize={24}
         renderItem={(item) => (
           <div className='flex items-center gap-2 border-b border-p1-border px-3 py-2'>
-            <div className='min-w-0 flex-1'>
+            <button
+              type='button'
+              className='min-w-0 flex-1 rounded-none bg-transparent py-0.5 text-left hover:bg-p1-hover'
+              onClick={() => open(`link_item_${item.id}`)}
+            >
               <div className='truncate text-sm text-p1-text'>{item.name}</div>
               <div className='text-[10px] uppercase text-p1-faint'>Lvl {item.level}</div>
-            </div>
+            </button>
             <GiveSplitButton
               open={menuId === item.id}
               onToggle={() => setMenuId((current) => (current === item.id ? null : item.id))}
@@ -159,6 +149,20 @@ export function SelectAddItemsModal({
           }}
         />
       )}
+      {notice && (
+        <AddItemNotice key={notice.at} title={notice.title} message={notice.message} onClose={dismissNotice} />
+      )}
+      {customDraft && (
+        <Phase1EditItemModal
+          item={customDraft}
+          title='Custom item'
+          onSave={(item) => {
+            void add(item, 'GIVE');
+            setCustomDraft(null);
+          }}
+          onClose={() => setCustomDraft(null)}
+        />
+      )}
     </>
   );
 }
@@ -184,30 +188,31 @@ function formatItemPrice(item: Item) {
 
 function AddItemNotice({ title, message, onClose }: { title: string; message: string; onClose: () => void }) {
   useEffect(() => {
+    const timer = window.setTimeout(onClose, 1000);
     function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose();
+      if (event.key !== 'Escape') return;
+      event.stopImmediatePropagation();
+      onClose();
     }
-    document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
+    document.addEventListener('keydown', closeOnEscape, true);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('keydown', closeOnEscape, true);
+    };
   }, [onClose]);
   return createPortal(
     <div
-      className='fixed inset-0 z-[120] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]'
+      className='fixed inset-0 z-[120] grid place-items-center bg-black/50 p-5'
       role='presentation'
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <section role='dialog' aria-modal='true' aria-labelledby='add-item-notice-title' className='w-full max-w-sm border border-p1-border bg-p1-surface p-5 shadow-2xl'>
+      <section role='status' aria-live='polite' aria-labelledby='add-item-notice-title' className='w-full max-w-sm border border-p1-border bg-p1-surface p-5 shadow-2xl'>
         <h2 id='add-item-notice-title' className='text-lg font-semibold'>
           {title}
         </h2>
         <p className='mt-2 text-sm leading-6 text-p1-muted'>{message}</p>
-        <div className='mt-5 flex justify-end'>
-          <button type='button' className='toolbar-button' onClick={onClose}>
-            Close
-          </button>
-        </div>
       </section>
     </div>,
     document.body

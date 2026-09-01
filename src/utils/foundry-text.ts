@@ -31,7 +31,14 @@ export function toStandard2eProse(text: string): string {
   out = convertBareConditionBrackets(out);
   out = collapseDoubleParens(out);
   out = resolveAonLinksInMarkdown(out);
+  out = toWgMarkdownLinks(out);
   return out;
+}
+
+/** Markdown `[name](link_type_id)` → `[name](<link_type_id>)` so underscores in WG hrefs survive CommonMark. */
+export function toWgMarkdownLinks(text: string): string {
+  if (!text) return text;
+  return text.replace(/\[([^\]]+)\]\((?:<)?(link_[^)\s>]+)(?:>)?\)/g, '[$1](<$2>)');
 }
 
 /** Turn AoN-relative hrefs (`Conditions.aspx?ID=36`, `/Spells.aspx?ID=1`) into absolute URLs. */

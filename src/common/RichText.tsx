@@ -13,7 +13,7 @@ import { StoreID } from '@schemas/variables';
 import { isString } from 'lodash-es';
 import { ActionGlyph } from './Actions';
 import { resolveActionGlyph } from '@utils/actions';
-import { autoLinkConditions, toStandard2eProse } from '@utils/foundry-text';
+import { autoLinkConditions, toStandard2eProse, toWgMarkdownLinks } from '@utils/foundry-text';
 
 interface RichTextProps extends TextProps {
   children: any;
@@ -56,6 +56,7 @@ export default function RichText(props: RichTextProps) {
   convertedChildren = convertedChildren
     ? autoLinkConditions(convertedChildren, props.conditionBlacklist)
     : convertedChildren;
+  convertedChildren = convertedChildren ? toWgMarkdownLinks(convertedChildren) : convertedChildren;
 
   // Replace arrow up emoji with the actual arrow up unicode character
   convertedChildren = convertedChildren?.replace(/⬆️/g, '⇧');

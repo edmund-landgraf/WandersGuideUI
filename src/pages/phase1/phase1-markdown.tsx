@@ -2,7 +2,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { gmNotesText, insertGmNoteStamp, notePageToMarkdown, sourceImportPages } from '@pages/character_sheet/panels/gm-notes';
 import { useEffect, useRef, useState } from 'react';
-import { autoLinkConditions, isAonConditionHref, resolveAonHref, toStandard2eProse } from '@utils/foundry-text';
+import { getContentDataFromHref } from '@common/rich_text_input/ContentLinkExtension';
+import { autoLinkConditions, isAonConditionHref, resolveAonHref, toStandard2eProse, toWgMarkdownLinks } from '@utils/foundry-text';
 import { useContentLinks } from './phase1-content-links';
 
 export function noteContentsToMarkdown(contents: unknown) {
@@ -14,7 +15,7 @@ export function noteContentsToMarkdown(contents: unknown) {
 export function ProseMarkdown({ children, className = '' }: { children: string; className?: string }) {
   const { open } = useContentLinks();
   if (!children.trim()) return null;
-  const prose = autoLinkConditions(toStandard2eProse(children));
+  const prose = toWgMarkdownLinks(autoLinkConditions(toStandard2eProse(children)));
   return (
     <div className={`ability-prose text-sm leading-7 text-p1-text ${className}`.trim()}>
       <ReactMarkdown
@@ -22,19 +23,21 @@ export function ProseMarkdown({ children, className = '' }: { children: string; 
         components={{
           a: ({ href, children }) => {
             const resolved = resolveAonHref(href);
-            const isCondition = isAonConditionHref(resolved) || !!resolved?.startsWith('link_condition_');
+            const content = getContentDataFromHref(resolved ?? href ?? '');
+            const wgHref = content ? `link_${content.type}_${String(content.id).replace(/ /g, '~')}` : null;
+            const isCondition = content?.type === 'condition' || isAonConditionHref(resolved) || !!wgHref?.startsWith('link_condition_');
+            if (wgHref) {
+              return (
+                <button type='button' className={isCondition ? 'pf2e-condition' : 'pf2e-content-link'} onClick={() => open(wgHref)}>
+                  {children}
+                </button>
+              );
+            }
             if (resolved && /^https?:\/\//i.test(resolved)) {
               return (
                 <a href={resolved} target='_blank' rel='noreferrer' className={isCondition ? 'pf2e-condition' : undefined}>
                   {children}
                 </a>
-              );
-            }
-            if (resolved?.startsWith('link_')) {
-              return (
-                <button type='button' className={isCondition ? 'pf2e-condition' : 'pf2e-content-link'} onClick={() => open(resolved)}>
-                  {children}
-                </button>
               );
             }
             return (

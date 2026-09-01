@@ -6,12 +6,16 @@ import type { AbilityBlock, Creature, InventoryItem, LivingEntity } from '@schem
 import { isCharacter } from '@utils/type-fixing';
 import type { OperationSelectOptionCustom } from '@schemas/operations';
 import { hashData, sign } from '@utils/numbers';
-import { flattenDeep, uniqBy } from 'lodash-es';
+import { uniqBy } from 'lodash-es';
+import { hasTraitType } from '@utils/traits';
 import { preparePhase1Entity, type Phase1EntityCombatant } from './phase1-entity';
+
+export type Phase1FeatCategory = 'class' | 'ancestry' | 'general' | 'other';
 
 export type Phase1Ability = AbilityBlock & {
   traitNames: string[];
   source: 'Base' | 'Added' | 'Character' | 'Feat' | 'Catalog' | 'Creature' | 'Weapon';
+  featCategory?: Phase1FeatCategory;
 };
 
 export async function loadEntityAbilities(combatant: Phase1EntityCombatant): Promise<Phase1Ability[]> {
@@ -22,20 +26,29 @@ export async function loadEntityAbilities(combatant: Phase1EntityCombatant): Pro
     return collectCreatureAbilities(entity as Creature, content.abilityBlocks, storeId, traits);
   }
 
-  const collected = flattenDeep(
-    Object.values(collectEntityAbilityBlocks(storeId, entity, content.abilityBlocks, { filterBasicClassFeatures: true }))
-  ) as AbilityBlock[];
+  const grouped = collectEntityAbilityBlocks(storeId, entity, content.abilityBlocks, { filterBasicClassFeatures: true });
   const classNames = isCharacter(entity) ? [entity.details?.class?.name, entity.details?.class_2?.name] : [];
-  const usable = collected.filter(
-    (ability) =>
-      ability.type !== 'heritage' &&
-      ability.type !== 'sense' &&
-      !isProgressionPlaceholder(ability, classNames)
+  const usable = (ability: AbilityBlock) =>
+    ability.type !== 'heritage' && ability.type !== 'sense' && !isProgressionPlaceholder(ability, classNames);
+
+  const feats: Phase1Ability[] = [
+    ...grouped.classFeats.filter(usable).map((ability) => enrich(ability, 'Feat', traits, 'class')),
+    ...grouped.ancestryFeats.filter(usable).map((ability) => enrich(ability, 'Feat', traits, 'ancestry')),
+    ...grouped.generalAndSkillFeats.filter(usable).map((ability) => enrich(ability, 'Feat', traits, 'general')),
+    ...grouped.otherFeats.filter(usable).map((ability) => enrich(ability, 'Feat', traits, 'other')),
+  ];
+  const features = [...grouped.classFeatures, ...grouped.physicalFeatures]
+    .filter(usable)
+    .map((ability) => enrich(ability, 'Character', traits));
+  const parents = [...feats, ...features];
+  const extras = collectSelectedCustomAbilities(entity, parents).map((ability) => {
+    const source = ability.type === 'feat' ? ('Feat' as const) : ('Character' as const);
+    const fromParent = parents.find((item) => item.traits === ability.traits)?.featCategory;
+    return enrich(ability, source, traits, source === 'Feat' ? fromParent ?? featCategoryFor(entity, ability) : undefined);
+  });
+  return uniqBy([...feats, ...features, ...extras], (ability) => `${ability.id}:${ability.name}`).sort(
+    (a, b) => (a.level ?? 0) - (b.level ?? 0) || a.name.localeCompare(b.name)
   );
-  const withNested = [...usable, ...collectSelectedCustomAbilities(entity, usable)];
-  return uniqBy(withNested, (ability) => `${ability.id}:${ability.name}`)
-    .map((ability) => enrich(ability, ability.type === 'feat' ? 'Feat' : 'Character', traits))
-    .sort((a, b) => (a.level ?? 0) - (b.level ?? 0) || a.name.localeCompare(b.name));
 }
 
 /**
@@ -61,6 +74,17 @@ export function collectCreatureAbilities(
     (ability) => !covered.has(abilityKey(ability.name))
   );
   return [...fromWeapons, ...fromBlocks];
+}
+
+function featCategoryFor(entity: LivingEntity, feat: AbilityBlock): Phase1FeatCategory {
+  if (isCharacter(entity)) {
+    if (feat.traits?.includes(entity.details?.class?.trait_id ?? -1) || feat.traits?.includes(entity.details?.class_2?.trait_id ?? -1)) {
+      return 'class';
+    }
+    if (feat.traits?.includes(entity.details?.ancestry?.trait_id ?? -1)) return 'ancestry';
+  }
+  if (hasTraitType('GENERAL', feat.traits ?? undefined) || hasTraitType('SKILL', feat.traits ?? undefined)) return 'general';
+  return 'other';
 }
 
 function abilityKey(name: string) {
@@ -117,10 +141,16 @@ function abilityFromCustomOption(option: OperationSelectOptionCustom, parent: Ab
   };
 }
 
-function enrich(ability: AbilityBlock, source: Phase1Ability['source'], traits: Map<number, string>): Phase1Ability {
+function enrich(
+  ability: AbilityBlock,
+  source: Phase1Ability['source'],
+  traits: Map<number, string>,
+  featCategory?: Phase1FeatCategory
+): Phase1Ability {
   return {
     ...ability,
     source,
+    featCategory,
     traitNames: (ability.traits ?? []).map((id) => traits.get(id)).filter((name): name is string => Boolean(name)),
   };
 }

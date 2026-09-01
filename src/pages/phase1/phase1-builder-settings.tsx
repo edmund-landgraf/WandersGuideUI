@@ -3,7 +3,7 @@ import { fetchContentSources } from '@content/content-store';
 import type { Character, ContentSource } from '@schemas/content';
 import type { SetterOrUpdater } from '@utils/type-fixing';
 import { useQuery } from '@tanstack/react-query';
-import { uniq } from 'lodash-es';
+import { cloneDeep, isEqual, uniq } from 'lodash-es';
 import { createPortal } from 'react-dom';
 import {
   Archive,
@@ -25,6 +25,7 @@ import {
 import { getAllBackgroundImages } from '@utils/background-images';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Phase1ArtworkPreview, Phase1BackgroundModal } from './phase1-background-modal';
+import { Phase1OperationsModal } from './phase1-operations-modal';
 import { OLD_UI_ORIGIN } from '../phase-switch/PhaseViewSwitch';
 
 type HomeTab = 'books' | 'homebrew' | 'variants' | 'options';
@@ -139,6 +140,7 @@ export function Phase1BuilderHomeFields({
   const [tab, setTab] = useState<HomeTab>('books');
   const [backgroundOpen, setBackgroundOpen] = useState(false);
   const [artworkPreviewOpen, setArtworkPreviewOpen] = useState(false);
+  const [openedOperations, setOpenedOperations] = useState(false);
   const backgroundUrl = character.details?.background_image_url;
   const backgroundOption = backgroundUrl
     ? getAllBackgroundImages().find((image) => image.url === backgroundUrl) ?? { name: 'Custom', url: backgroundUrl }
@@ -262,16 +264,38 @@ export function Phase1BuilderHomeFields({
           />
         )}
         {tab === 'options' && (
-          <ToggleList
-            items={OPTION_TOGGLES.map((item) => ({
-              key: item.key,
-              label: item.label,
-              info: item.info,
-              enabled: Boolean(character.options?.[item.key]),
-              onChange: (next) =>
-                setCharacter((prev) => (prev ? { ...prev, options: { ...prev.options, [item.key]: next } } : prev)),
-            }))}
-          />
+          <div>
+            <ToggleList
+              items={OPTION_TOGGLES.map((item) => ({
+                key: item.key,
+                label: item.label,
+                info: item.info,
+                enabled: Boolean(character.options?.[item.key]),
+                onChange: (next) =>
+                  setCharacter((prev) => (prev ? { ...prev, options: { ...prev.options, [item.key]: next } } : prev)),
+              }))}
+            />
+            {character.options?.custom_operations && (
+              <div className='border-t border-p1-border px-4 py-3'>
+                <button type='button' className='toolbar-button' onClick={() => setOpenedOperations(true)}>
+                  Open Operations{' '}
+                  {character.custom_operations && character.custom_operations.length > 0
+                    ? `(${character.custom_operations.length})`
+                    : ''}
+                </button>
+                <Phase1OperationsModal
+                  title='Custom Operations'
+                  opened={openedOperations}
+                  onClose={() => setOpenedOperations(false)}
+                  operations={cloneDeep(character.custom_operations ?? [])}
+                  onChange={(operations) => {
+                    if (isEqual(character.custom_operations, operations)) return;
+                    setCharacter((prev) => (prev ? { ...prev, custom_operations: operations } : prev));
+                  }}
+                />
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

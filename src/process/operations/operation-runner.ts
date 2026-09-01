@@ -226,6 +226,11 @@ async function runSelect(
     optionList.length > 0 && foundSkills.length === optionList.length ? optionList[0]?.value?.value : undefined;
 
   // Find selected option
+  // #region agent log
+  if (operation.id === '3fd6a268-771b-49fc-93ed-9b53695d1a29' && !options?.doOnlyValueCreation && !options?.doOnlyConditionals) {
+    fetch('http://127.0.0.1:7421/ingest/5bcbb1e6-5cc6-4f07-9ef3-8c7101fed88e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b2c7b0'},body:JSON.stringify({sessionId:'b2c7b0',runId:'pre-fix',hypothesisId:'C',location:'operation-runner.ts:runSelect',message:'heritage select resolve',data:{path:selectionTrack.path,nodeValue:selectionTrack.node?.value??null,hasNode:Boolean(selectionTrack.node),optionCount:optionList.length,optionIds:optionList.slice(0,8).map((o)=>o._select_uuid),inList:optionList.some((o)=>o._select_uuid===selectionTrack.node?.value)},timestamp:Date.now()})}).catch(()=>{});
+  }
+  // #endregion
   if (selectionTrack.node && selectionTrack.node.value) {
     let selectedOption = optionList.find((option) => option._select_uuid === selectionTrack.node?.value);
     if (selectedOption) {

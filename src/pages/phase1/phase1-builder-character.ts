@@ -178,6 +178,14 @@ export function usePhase1BuilderCharacter(characterId: number, seed?: Character 
         confirmHealth(`${debounced.hp_current}`, getFinalHealthValue('CHARACTER'), debounced, convertToSetEntity(setCharacter));
       }
       saveCalculatedStats('CHARACTER', debounced, convertToSetEntity(setCharacter));
+      // #region agent log
+      {
+        const heritageSection = packageResults.ancestrySectionResults?.find((s) => s.baseSource?.name === 'Heritage');
+        const heritageResult = heritageSection?.baseResults?.[0];
+        const sel = debounced.operation_data?.selections ?? {};
+        fetch('http://127.0.0.1:7421/ingest/5bcbb1e6-5cc6-4f07-9ef3-8c7101fed88e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b2c7b0'},body:JSON.stringify({sessionId:'b2c7b0',runId:'pre-fix',hypothesisId:'E',location:'phase1-builder-character.ts:execute',message:'ops package heritage',data:{sectionId:heritageSection?.baseSource?.id,sectionPrefix:`ancestry-section-${heritageSection?.baseSource?.id}`,heritageKeys:Object.entries(sel).filter(([k])=>k.includes('ancestry-section')||k.includes('3fd6a268')),selectedName:heritageResult?.result?.source?.name??null,optionCount:heritageResult?.selection?.options?.length??0,hasNodeValue:Boolean(heritageResult?.result?.source),allSelCount:Object.keys(sel).length},timestamp:Date.now()})}).catch(()=>{});
+      }
+      // #endregion
       setResults(packageResults);
       executing.current = null;
     });
@@ -193,6 +201,13 @@ export function usePhase1BuilderCharacter(characterId: number, seed?: Character 
   }, [characterId, content, debounced]);
 
   function enqueueSave(body: Record<string, unknown>) {
+    // #region agent log
+    {
+      const od = body.operation_data as { selections?: Record<string, string> } | undefined;
+      const sel = od?.selections ?? {};
+      fetch('http://127.0.0.1:7421/ingest/5bcbb1e6-5cc6-4f07-9ef3-8c7101fed88e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b2c7b0'},body:JSON.stringify({sessionId:'b2c7b0',runId:'pre-fix',hypothesisId:'D',location:'phase1-builder-character.ts:enqueueSave',message:'save payload selections',data:{heritageKeys:Object.entries(sel).filter(([k])=>k.includes('ancestry-section')||k.includes('3fd6a268')),selCount:Object.keys(sel).length,queued:saving.current},timestamp:Date.now()})}).catch(()=>{});
+    }
+    // #endregion
     if (saving.current) {
       pending.current = body;
       return;
