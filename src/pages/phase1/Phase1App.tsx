@@ -11,6 +11,7 @@ import { getPublicUser } from '@auth/user-manager';
 import { applyDisplayPrefsFromUser } from './display-prefs';
 import { applyPhase1CssTheme, readStoredPhase1CssTheme } from './phase1-css-theme';
 import { applyPhase1Theme, readStoredPhase1Theme } from './phase1-theme';
+import { OperationErrorModalHost } from '@utils/operation-error-modal';
 import './phase1.css';
 
 const queryClient = new QueryClient({
@@ -32,6 +33,7 @@ export function Phase1Shell() {
       <CloseStackOnNavigate />
       <Outlet />
       <ContentStackModal />
+      <OperationErrorModalHost />
     </ContentLinkProvider>
   );
 }

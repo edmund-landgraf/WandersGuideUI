@@ -188,6 +188,10 @@ export function usePhase1BuilderCharacter(characterId: number, seed?: Character 
       // #endregion
       setResults(packageResults);
       executing.current = null;
+    }).catch(() => {
+      if (executing.current === hash) {
+        executing.current = null;
+      }
     });
   }, [content, debounced]);
 

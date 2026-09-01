@@ -262,7 +262,11 @@ export default function useCharacter(
         content: options.data.content,
         context: options.data.context,
       },
-    }).then((results) => handleOperationResults(results));
+    }).then((results) => handleOperationResults(results)).catch(() => {
+      if (executingOperations.current === opsHash) {
+        executingOperations.current = null;
+      }
+    });
   }, [debouncedCharacter]);
 
   const handleOperationResults = (results: OperationCharacterResultPackage) => {

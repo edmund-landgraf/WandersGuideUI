@@ -6,6 +6,7 @@ import {
 } from '@schemas/content';
 import { VariableStore } from '@schemas/variables';
 import { exportVariableStore, importVariableStore, normalizeProficiencies } from '@variables/variable-manager';
+import { appendCommonLog } from '@utils/common-log';
 import { _executeCharacterOperations, _executeCreatureOperations } from './operation-controller';
 
 // // Create a worker pool
@@ -159,6 +160,19 @@ function execInWorker(execution: OperationExecution, charStore?: VariableStore):
 }
 
 export async function executeOperations<T = OperationCharacterResultPackage | OperationCreatureResultPackage>(
+  execution: OperationExecution,
+  options?: { directExecution?: boolean }
+) {
+  try {
+    return await runExecuteOperations<T>(execution, options);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    appendCommonLog('operations', message);
+    throw error;
+  }
+}
+
+async function runExecuteOperations<T = OperationCharacterResultPackage | OperationCreatureResultPackage>(
   execution: OperationExecution,
   options?: { directExecution?: boolean }
 ) {

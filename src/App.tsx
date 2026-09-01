@@ -18,6 +18,7 @@ import { Outlet, useLocation, useSearchParams } from 'react-router-dom';
 import { useAtom, useAtomValue } from 'jotai';
 import { supabase } from './main';
 import Layout from './nav/Layout';
+import { OperationErrorModalHost } from '@utils/operation-error-modal';
 import AddNewLoreModal from '@modals/AddNewLoreModal';
 import { resetContentStore } from '@content/content-store';
 import SelectContentModal from '@common/select/SelectContent';
@@ -316,6 +317,7 @@ export default function App() {
         <SearchSpotlight />
         <Notifications position='top-right' zIndex={9400} containerWidth={350} />
         <DrawerBase />
+        <OperationErrorModalHost />
         <Box style={{ zoom: getCachedCustomization()?.sheet_theme?.zoom ?? 1 }}>
           {hideSiteChrome ? (
             <Outlet />
