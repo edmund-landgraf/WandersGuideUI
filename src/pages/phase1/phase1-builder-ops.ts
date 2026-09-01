@@ -156,10 +156,6 @@ export function clearClass2(setCharacter: SetterOrUpdater<Character | null>) {
   });
 }
 
-export function heritageSection(results: OperationCharacterResultPackage | null) {
-  return results?.ancestrySectionResults.find((section) => section.baseSource.type === 'heritage' || section.baseSource.name === 'Heritage') ?? null;
-}
-
 export function foundationChoiceCounts(results: OperationCharacterResultPackage) {
   return addChoiceCounts(
     countChoices(results.ancestryResults),
@@ -173,15 +169,11 @@ export function foundationChoiceCounts(results: OperationCharacterResultPackage)
 }
 
 export function countAllBuilderChoices(character: Character, results: OperationCharacterResultPackage): ChoiceCounts {
-  const heritage = heritageSection(results);
   const levels = Array.from({ length: (character.level ?? 0) + 1 }, (_, index) => index);
   return addChoiceCounts(
-    countChoices(heritage?.baseResults),
     ...levels.map((level) => {
       if (level === 0) return foundationChoiceCounts(results);
-      const ancestrySections = results.ancestrySectionResults.filter(
-        (section) => section.baseSource.level === level && section !== heritage
-      );
+      const ancestrySections = results.ancestrySectionResults.filter((section) => section.baseSource.level === level);
       const classFeatures = results.classFeatureResults.filter((section) => section.baseSource.level === level);
       return addChoiceCounts(
         ...ancestrySections.map((section) => countChoices(section.baseResults)),

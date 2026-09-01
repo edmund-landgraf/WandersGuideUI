@@ -43,4 +43,16 @@ describe('countAllBuilderChoices', () => {
     const counts = countAllBuilderChoices({ level: 1 } as never, results);
     expect(counts).toEqual({ current: 4, max: 6 });
   });
+
+  it('counts heritage with other level 1 ancestry sections', () => {
+    const results = packageOf({
+      ancestrySectionResults: [
+        feature(1, 1, 'Heritage', 2, 2),
+        feature(2, 1, 'Human Feat', 1, 1),
+      ],
+      classFeatureResults: [feature(10, 1, 'Rogue Feat', 1, 1)],
+    });
+    const counts = countAllBuilderChoices({ level: 1 } as never, results);
+    expect(counts).toEqual({ current: 4, max: 4 });
+  });
 });

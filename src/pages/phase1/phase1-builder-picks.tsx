@@ -7,8 +7,7 @@ import { useMemo, useState } from 'react';
 import { useContentLinks } from './phase1-content-links';
 import { Phase1PickerModal } from './phase1-picker-modal';
 import { setOverflowTitle } from './phase1-overflow-title';
-import { heritageSection, resultPrefix, saveSelectionChange, setAncestry, setBackground, setClass, setClass2, clearAncestry, clearBackground, clearClass, clearClass2 } from './phase1-builder-ops';
-import { Phase1OperationResults } from './phase1-builder-select';
+import { setAncestry, setBackground, setClass, setClass2, clearAncestry, clearBackground, clearClass, clearClass2 } from './phase1-builder-ops';
 import type { OperationCharacterResultPackage } from '@schemas/content';
 
 type Picker = 'ancestry' | 'background' | 'class' | 'class2' | 'archetype' | 'archetype2' | null;
@@ -18,7 +17,6 @@ export function Phase1BuilderPicks({
   setCharacter,
   flushSave,
   content,
-  results,
   showIdentity = true,
   showPicks = true,
 }: {
@@ -26,7 +24,7 @@ export function Phase1BuilderPicks({
   setCharacter: SetterOrUpdater<Character | null>;
   flushSave?: (row?: Character | null) => void;
   content: ContentPackage;
-  results: OperationCharacterResultPackage | null;
+  results?: OperationCharacterResultPackage | null;
   showIdentity?: boolean;
   showPicks?: boolean;
 }) {
@@ -34,7 +32,6 @@ export function Phase1BuilderPicks({
   const [picker, setPicker] = useState<Picker>(null);
   const [archetypes, setArchetypes] = useState<ClassArchetype[]>([]);
   const dual = Boolean(character.variants?.dual_class);
-  const heritage = heritageSection(results);
   const allowedSources = useMemo(
     () => new Set(uniq([COMMON_CORE_ID, ...(character.content_sources?.enabled ?? [])])),
     [character.content_sources?.enabled]
@@ -136,17 +133,6 @@ export function Phase1BuilderPicks({
         onChoose={() => setPicker('ancestry')}
         onPreview={character.details?.ancestry ? () => open(`link_ancestry_${character.details!.ancestry!.id}`) : undefined}
       />
-      {heritage && (
-        <div>
-          <div className='mb-1 text-xs text-p1-muted'>Heritage</div>
-          <Phase1OperationResults
-            results={heritage.baseResults}
-            onChange={(path, value) =>
-              saveSelectionChange(setCharacter, `${resultPrefix('ancestrySectionResults', heritage.baseSource.id)}_${path}`, value)
-            }
-          />
-        </div>
-      )}
       <PickRow
         label='Background'
         value={character.details?.background?.name}

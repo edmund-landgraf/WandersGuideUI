@@ -1,7 +1,7 @@
 import type { Character, OperationCharacterResultPackage } from '@schemas/content';
 import type { OperationResult } from '@schemas/operations';
 import type { SetterOrUpdater } from '@utils/type-fixing';
-import { addChoiceCounts, countChoices, foundationChoiceCounts, hasAnySelection, heritageSection, resultPrefix, saveSelectionChange } from './phase1-builder-ops';
+import { addChoiceCounts, countChoices, foundationChoiceCounts, hasAnySelection, resultPrefix, saveSelectionChange } from './phase1-builder-ops';
 import { Phase1OperationResults } from './phase1-builder-select';
 import { useState } from 'react';
 
@@ -51,10 +51,7 @@ function LevelBlock({
   results: OperationCharacterResultPackage;
 }) {
   const [open, setOpen] = useState(level === 0);
-  const heritage = heritageSection(results);
-  const ancestrySections = results.ancestrySectionResults.filter(
-    (section) => section.baseSource.level === level && section !== heritage
-  );
+  const ancestrySections = results.ancestrySectionResults.filter((section) => section.baseSource.level === level);
   const classFeatures = results.classFeatureResults.filter((section) => section.baseSource.level === level);
 
   const counts =
