@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { Activity, BookOpen, Calculator, ChevronDown, ChevronRight, Crosshair, Eye, Footprints, History, ListChecks, Package, Plus, Search, Shield, Sparkles, Swords, WandSparkles, X } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Activity, BookOpen, Calculator, ChevronDown, ChevronRight, Crosshair, Eye, Footprints, History, ListChecks, Package, Pencil, Plus, Search, Shield, Sparkles, Swords, Trash2, WandSparkles, X } from 'lucide-react';
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { Character, Combatant, CombatantActionLogEntry, CombatantChangeLogEntry, Condition, InitiativeRoundLog, InitiativeRoundLogEntry, Inventory, Item, LivingEntity, Spell } from '@schemas/content';
 import { loadEntityAbilities, type Phase1Ability } from './phase1-abilities';
@@ -11,8 +11,9 @@ import { loadEntityDetails, type Phase1ProfRow } from './phase1-details';
 import { loadEntitySkillsActions, type Phase1ActionGroup, type Phase1Skill } from './phase1-skills';
 import { isDivinePreparedSource, isWitchFamiliarSource, loadEntitySpells, spellFitsSlot, spellManageMode, type Phase1SpellEntry, type Phase1SpellSection } from './phase1-spells';
 import { Phase1SpellbookModal, type SpellbookAssign } from './phase1-spellbook';
-import { flattenInvItems, inventoryItemToPhase1, loadEntityInventory, matchesInvItem, type Phase1InvItem } from './phase1-inventory';
+import { findInventoryItem, flattenInvItems, inventoryContainerTargets, inventoryItemIsNested, inventoryItemToPhase1, loadEntityInventory, matchesInvItem, type Phase1InvItem } from './phase1-inventory';
 import { SelectAddItemsModal, type AddItemKind } from './phase1-add-items';
+import { Phase1EditItemModal } from './phase1-edit-item-modal';
 import { ConfirmDialog } from './phase1-campaign-settings';
 import { EntityNotesPanel, ProseMarkdown, SourceImportNotesPanel } from './phase1-markdown';
 import { isContentStackOpen, useContentLinks } from './phase1-content-links';
@@ -595,6 +596,9 @@ export type InventoryItemActions = {
   toggleInvested: (item: Phase1InvItem) => void;
   setQuantity: (item: Phase1InvItem, quantity: number) => void;
   addItem?: (item: Item, type: AddItemKind, coins?: Inventory['coins']) => void | Promise<void>;
+  deleteItem?: (item: Phase1InvItem) => void;
+  updateItem?: (item: Phase1InvItem, next: Item) => void;
+  moveItem?: (item: Phase1InvItem, containerKey: string | null) => void;
 };
 
 export function InventoryPanel({ combatant, itemActions }: { combatant: PopulatedCombatant; itemActions?: InventoryItemActions }) {
@@ -603,8 +607,10 @@ export function InventoryPanel({ combatant, itemActions }: { combatant: Populate
   const [invTab, setInvTabState] = useState(persistedInventoryTab);
   const [selected, setSelected] = useState<Phase1InvItem | null>(null);
   const [adding, setAdding] = useState(false);
+  const [menu, setMenu] = useState<{ item: Phase1InvItem; x: number; y: number } | null>(null);
+  const [editing, setEditing] = useState<Phase1InvItem | null>(null);
   const data = useQuery({
-    queryKey: ['phase1-entity-inventory', 'isolated-store', combatant.type, combatant._id, JSON.stringify(combatant.data.inventory ?? null)],
+    queryKey: ['phase1-entity-inventory', 'isolated-store', combatant.type, combatant._id],
     enabled: detailsAvailable && combatant.access?.details_revealed !== false,
     queryFn: () => loadEntityInventory(combatant as Phase1EntityCombatant),
     staleTime: Number.POSITIVE_INFINITY,
@@ -614,10 +620,12 @@ export function InventoryPanel({ combatant, itemActions }: { combatant: Populate
     setInvTabState(tab);
   };
   const needle = query.trim().toLowerCase();
-  const inventory = data.data;
-  const extras = inventory?.extras ?? {};
+  const rawInventory = combatant.data.inventory;
+  const extras = Object.fromEntries(
+    Object.entries((rawInventory ?? {}) as Record<string, unknown>).filter(([key]) => key !== 'coins' && key !== 'items')
+  );
   const extraKeys = Object.keys(extras);
-  const topLevelItems = inventory?.items ?? [];
+  const topLevelItems = (rawInventory?.items ?? []).map((entry, index) => inventoryItemToPhase1(entry, entry.id || String(index)));
   const visibleItems = needle ? flattenInvItems(topLevelItems).filter((item) => matchesInvItem(item, needle)) : topLevelItems;
   const equipped = visibleItems.filter((item) => item.isEquipped && !item.isFormula);
   const carried = visibleItems.filter((item) => !item.isEquipped && !item.isFormula);
@@ -628,7 +636,9 @@ export function InventoryPanel({ combatant, itemActions }: { combatant: Populate
     { id: 'formulas', label: 'Formulas', items: formulas },
   ];
   const allItems = flattenInvItems(topLevelItems);
+  const canAdd = Boolean(itemActions?.addItem);
   const tabBuckets = buckets.filter((bucket) => {
+    if (canAdd) return true;
     if (needle) return bucket.items.length > 0;
     if (bucket.id === 'formulas') return allItems.some((item) => item.isFormula);
     if (bucket.id === 'equipped') return allItems.some((item) => item.isEquipped && !item.isFormula);
@@ -636,6 +646,8 @@ export function InventoryPanel({ combatant, itemActions }: { combatant: Populate
   });
   const activeInv = tabBuckets.some((bucket) => bucket.id === invTab) ? invTab : (tabBuckets[0]?.id ?? 'equipped');
   const activeItems = buckets.find((bucket) => bucket.id === activeInv)?.items ?? [];
+  const inventory = rawInventory ? { coins: rawInventory.coins, extras, items: topLevelItems } : data.data;
+  const editingSource = editing ? findInventoryItem(combatant.data.inventory?.items, editing.key)?.item : undefined;
 
   return <>
     {inventory?.coins && <CoinBar coins={inventory.coins} />}
@@ -664,14 +676,68 @@ export function InventoryPanel({ combatant, itemActions }: { combatant: Populate
       )}
     </div>
     {!detailsAvailable && <EmptyState>Private character details are unavailable in this account context.</EmptyState>}
-    {data.isLoading && <EmptyState>Loading inventory...</EmptyState>}
-    {data.isError && <ErrorState error={data.error} />}
-    {!data.isLoading && inventory && topLevelItems.length === 0 && <EmptyState>No items in inventory.</EmptyState>}
-    {!data.isLoading && needle && !visibleItems.length && topLevelItems.length > 0 && <EmptyState>No items match this search.</EmptyState>}
-    {!data.isLoading && activeItems.length > 0 && (
-      <InventoryItemSection title={buckets.find((bucket) => bucket.id === activeInv)?.label ?? 'Items'} items={activeItems} onOpen={setSelected} flat={Boolean(needle)} hideTitle={tabBuckets.length > 1} />
+    {detailsAvailable && !rawInventory && data.isLoading && <EmptyState>Loading inventory...</EmptyState>}
+    {detailsAvailable && data.isError && !rawInventory && <ErrorState error={data.error} />}
+    {detailsAvailable && topLevelItems.length === 0 && <EmptyState>No items in inventory.</EmptyState>}
+    {detailsAvailable && needle && !visibleItems.length && topLevelItems.length > 0 && <EmptyState>No items match this search.</EmptyState>}
+    {detailsAvailable && activeItems.length > 0 && (
+      <InventoryItemSection
+        title={buckets.find((bucket) => bucket.id === activeInv)?.label ?? 'Items'}
+        items={activeItems}
+        onOpen={setSelected}
+        onContextMenu={itemActions ? (event, item) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setMenu({ item, x: event.clientX, y: event.clientY });
+        } : undefined}
+        flat={Boolean(needle)}
+        hideTitle={tabBuckets.length > 1}
+      />
     )}
     {selected && <ItemModal item={selected} actions={itemActions} onClose={() => setSelected(null)} />}
+    {menu && itemActions && (
+      <InventoryItemContextMenu
+        x={menu.x}
+        y={menu.y}
+        equipped={menu.item.isEquipped}
+        canEquip={!menu.item.isFormula}
+        nested={inventoryItemIsNested(topLevelItems, menu.item.key)}
+        containers={inventoryContainerTargets(topLevelItems, menu.item.key)}
+        canEdit={Boolean(itemActions.updateItem)}
+        canDelete={Boolean(itemActions.deleteItem) && !menu.item.unselectable}
+        canMove={Boolean(itemActions.moveItem) && !menu.item.unselectable}
+        onClose={() => setMenu(null)}
+        onToggleEquipped={() => {
+          itemActions.toggleEquipped(menu.item);
+          setInvTab(menu.item.isEquipped ? 'carried' : 'equipped');
+          setMenu(null);
+        }}
+        onEdit={() => {
+          setMenu(null);
+          setEditing(menu.item);
+        }}
+        onDelete={() => {
+          itemActions.deleteItem?.(menu.item);
+          setMenu(null);
+          if (selected?.key === menu.item.key) setSelected(null);
+        }}
+        onMove={(containerKey) => {
+          itemActions.moveItem?.(menu.item, containerKey);
+          setMenu(null);
+          setInvTab(containerKey ? 'carried' : (menu.item.isEquipped ? 'equipped' : 'carried'));
+        }}
+      />
+    )}
+    {editing && editingSource && itemActions?.updateItem && (
+      <Phase1EditItemModal
+        item={editingSource}
+        onSave={(item) => {
+          itemActions.updateItem?.(editing, item);
+          setEditing(null);
+        }}
+        onClose={() => setEditing(null)}
+      />
+    )}
     {adding && itemActions?.addItem && (
       <SelectAddItemsModal
         inventory={combatant.data.inventory}
@@ -707,19 +773,32 @@ function CoinBar({ coins }: { coins: { cp: number; sp: number; gp: number; pp: n
   );
 }
 
-function InventoryItemSection({ title, items, onOpen, flat = false, hideTitle = false }: { title: string; items: Phase1InvItem[]; onOpen: (item: Phase1InvItem) => void; flat?: boolean; hideTitle?: boolean }) {
+function InventoryItemSection({ title, items, onOpen, onContextMenu, flat = false, hideTitle = false }: {
+  title: string;
+  items: Phase1InvItem[];
+  onOpen: (item: Phase1InvItem) => void;
+  onContextMenu?: (event: ReactMouseEvent, item: Phase1InvItem) => void;
+  flat?: boolean;
+  hideTitle?: boolean;
+}) {
   if (!items.length) return null;
   return (
     <section className='mb-2.5 border border-p1-border bg-p1-surface'>
       {!hideTitle && <h3 className='border-b border-p1-border px-3 py-2 text-xs font-semibold'>{title}</h3>}
       <div className='divide-y divide-white/[0.07]'>
-        {items.map((item) => <ItemRow key={item.key} item={item} onOpen={onOpen} depth={flat ? 0 : 0} showContents={!flat} />)}
+        {items.map((item) => <ItemRow key={item.key} item={item} onOpen={onOpen} onContextMenu={onContextMenu} depth={flat ? 0 : 0} showContents={!flat} />)}
       </div>
     </section>
   );
 }
 
-function ItemRow({ item, onOpen, depth, showContents = true }: { item: Phase1InvItem; onOpen: (item: Phase1InvItem) => void; depth: number; showContents?: boolean }) {
+function ItemRow({ item, onOpen, onContextMenu, depth, showContents = true }: {
+  item: Phase1InvItem;
+  onOpen: (item: Phase1InvItem) => void;
+  onContextMenu?: (event: ReactMouseEvent, item: Phase1InvItem) => void;
+  depth: number;
+  showContents?: boolean;
+}) {
   const preview = plainText(item.description).slice(0, 180);
   const icon = itemGroupIcon(item.group);
   return <>
@@ -727,6 +806,7 @@ function ItemRow({ item, onOpen, depth, showContents = true }: { item: Phase1Inv
       className='group relative grid w-full grid-cols-[42px_minmax(0,1fr)] items-stretch border-0 bg-transparent text-left hover:bg-p1-hover focus-visible:outline focus-visible:outline-1 focus-visible:outline-p1-accent'
       style={{ paddingLeft: depth * 12 }}
       onClick={() => onOpen(item)}
+      onContextMenu={onContextMenu ? (event) => onContextMenu(event, item) : undefined}
     >
       <span className='grid place-items-center border-r border-p1-border text-p1-muted' title={item.group}>
         {icon}
@@ -745,8 +825,119 @@ function ItemRow({ item, onOpen, depth, showContents = true }: { item: Phase1Inv
         <span className='mt-2 block text-[11px] leading-4 text-p1-muted'>{preview}{plainText(item.description).length > preview.length ? '...' : ''}</span>
       </span>
     </button>
-    {showContents && item.contents.map((child) => <ItemRow key={child.key} item={child} onOpen={onOpen} depth={depth + 1} />)}
+    {showContents && item.contents.map((child) => <ItemRow key={child.key} item={child} onOpen={onOpen} onContextMenu={onContextMenu} depth={depth + 1} />)}
   </>;
+}
+
+function InventoryItemContextMenu({
+  x,
+  y,
+  equipped,
+  canEquip,
+  nested,
+  containers,
+  canEdit,
+  canDelete,
+  canMove,
+  onClose,
+  onToggleEquipped,
+  onEdit,
+  onDelete,
+  onMove,
+}: {
+  x: number;
+  y: number;
+  equipped: boolean;
+  canEquip: boolean;
+  nested: boolean;
+  containers: Array<{ key: string; name: string }>;
+  canEdit: boolean;
+  canDelete: boolean;
+  canMove: boolean;
+  onClose: () => void;
+  onToggleEquipped: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onMove: (containerKey: string | null) => void;
+}) {
+  const [moveOpen, setMoveOpen] = useState(false);
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+  const showMove = canMove && (nested || containers.length > 0);
+  const left = Math.min(x, window.innerWidth - 176);
+  const top = Math.min(y, window.innerHeight - 140);
+  const cascadeRight = left + 176 + 176 < window.innerWidth;
+  const cascadeLeft = cascadeRight ? left + 176 : Math.max(8, left - 176);
+  return createPortal(
+    <>
+      <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
+      <div role='menu' className='fixed z-[110] min-w-44 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        {canEquip && (
+          <button
+            type='button'
+            role='menuitem'
+            className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover'
+            onMouseEnter={() => setMoveOpen(false)}
+            onClick={onToggleEquipped}
+          >
+            {equipped ? 'Unequip' : 'Equip'}
+          </button>
+        )}
+        {canEdit && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onEdit}>
+            <Pencil size={14} /> Edit
+          </button>
+        )}
+        {showMove && (
+          <button
+            type='button'
+            role='menuitem'
+            className='flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover'
+            onMouseEnter={() => setMoveOpen(true)}
+            onClick={() => setMoveOpen(true)}
+          >
+            Move
+            <ChevronRight size={14} className='text-p1-faint' />
+          </button>
+        )}
+        {canDelete && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onDelete}>
+            <Trash2 size={14} /> Delete
+          </button>
+        )}
+      </div>
+      {showMove && moveOpen && (
+        <div
+          role='menu'
+          className='fixed z-[111] min-w-44 border border-p1-border bg-p1-surface py-1 shadow-2xl'
+          style={{ left: cascadeLeft, top }}
+          onMouseEnter={() => setMoveOpen(true)}
+        >
+          <button type='button' role='menuitem' className='flex w-full items-center px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => onMove(null)}>
+            Unstored
+          </button>
+          {containers.length > 0 && <div className='my-1 border-t border-p1-border' />}
+          {containers.map((container) => (
+            <button
+              key={container.key}
+              type='button'
+              role='menuitem'
+              className='flex w-full items-center px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover'
+              onClick={() => onMove(container.key)}
+            >
+              {container.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </>,
+    document.body
+  );
 }
 
 function ItemModal({ item, actions, onClose }: { item: Phase1InvItem; actions?: InventoryItemActions; onClose: () => void }) {

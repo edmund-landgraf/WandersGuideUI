@@ -6,17 +6,10 @@ import { preparePhase1Entity, type Phase1EntityCombatant } from './phase1-entity
 
 const EMPTY_COINS = { cp: 0, sp: 0, gp: 0, pp: 0 };
 
-export async function addCatalogItemToInventory(
-  inventory: Inventory | null | undefined,
-  item: Item,
-  isFormula: boolean,
-  catalog?: Item[]
-): Promise<Inventory> {
-  const current = inventory ?? { coins: { ...EMPTY_COINS }, items: [] };
+export function createInventoryEntry(item: Item, isFormula: boolean, container_contents: InventoryItem[] = []): InventoryItem {
   const itemData = cloneDeep(item);
   if (itemData.meta_data) itemData.meta_data.hp = itemData.meta_data.hp_max;
-  const container_contents = await getDefaultContainerContents(itemData, catalog);
-  const nextItem: InventoryItem = {
+  return {
     id: crypto.randomUUID(),
     item: itemData,
     is_formula: isFormula,
@@ -25,6 +18,22 @@ export async function addCatalogItemToInventory(
     is_implanted: false,
     container_contents,
   };
+}
+
+export async function addCatalogItemToInventory(
+  inventory: Inventory | null | undefined,
+  item: Item,
+  isFormula: boolean,
+  catalog?: Item[]
+): Promise<Inventory> {
+  const current = inventory ?? { coins: { ...EMPTY_COINS }, items: [] };
+  let container_contents: InventoryItem[] = [];
+  try {
+    container_contents = await getDefaultContainerContents(item, catalog);
+  } catch {
+    container_contents = [];
+  }
+  const nextItem = createInventoryEntry(item, isFormula, container_contents);
   return {
     ...current,
     coins: current.coins ?? { ...EMPTY_COINS },
@@ -51,8 +60,9 @@ export type Phase1InvItem = {
   isEquipped: boolean;
   isFormula: boolean;
   isInvested: boolean;
-  isContainer: boolean;
-  contents: Phase1InvItem[];
+    isContainer: boolean;
+    unselectable: boolean;
+    contents: Phase1InvItem[];
 };
 
 export type Phase1Inventory = {
@@ -112,6 +122,7 @@ function mapInvItem(
     isFormula: entry.is_formula,
     isInvested: entry.is_invested,
     isContainer: isItemContainer(item),
+    unselectable: Boolean(item.meta_data?.unselectable),
     contents: entry.container_contents.map((child, index) => mapInvItem(child, traitNames, `${key}-${index}`, depth + 1)),
   };
 }
@@ -147,4 +158,53 @@ export function matchesInvItem(item: Phase1InvItem, needle: string) {
     .join(' ')
     .toLowerCase()
     .includes(needle);
+}
+
+export function findInventoryItem(items: InventoryItem[] | undefined, key: string): InventoryItem | null {
+  for (const entry of items ?? []) {
+    if ((entry.id || '') === key) return entry;
+    const nested = findInventoryItem(entry.container_contents, key);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+export function deleteInventoryItem(inventory: Inventory | null | undefined, key: string): Inventory {
+  const current = inventory ?? { coins: { ...EMPTY_COINS }, items: [] };
+  return { ...current, items: removeInventoryItem(current.items ?? [], key) };
+}
+
+function removeInventoryItem(items: InventoryItem[], key: string): InventoryItem[] {
+  return items
+    .filter((entry) => (entry.id || '') !== key)
+    .map((entry) => ({ ...entry, container_contents: removeInventoryItem(entry.container_contents ?? [], key) }));
+}
+
+export function moveInventoryItem(inventory: Inventory | null | undefined, key: string, containerKey: string | null): Inventory {
+  const current = inventory ?? { coins: { ...EMPTY_COINS }, items: [] };
+  const moving = cloneDeep(findInventoryItem(current.items, key));
+  if (!moving || (containerKey && containerKey === key)) return current;
+  const without = removeInventoryItem(current.items ?? [], key);
+  if (!containerKey) {
+    return { ...current, items: [...without, moving] };
+  }
+  moving.is_equipped = false;
+  return { ...current, items: insertIntoContainer(without, containerKey, moving) };
+}
+
+function insertIntoContainer(items: InventoryItem[], containerKey: string, moving: InventoryItem): InventoryItem[] {
+  return items.map((entry) => {
+    if ((entry.id || '') === containerKey) {
+      return { ...entry, container_contents: [...(entry.container_contents ?? []), moving] };
+    }
+    return { ...entry, container_contents: insertIntoContainer(entry.container_contents ?? [], containerKey, moving) };
+  });
+}
+
+export function inventoryContainerTargets(items: Phase1InvItem[], excludeKey: string) {
+  return items.filter((item) => item.isContainer && item.key !== excludeKey).map((item) => ({ key: item.key, name: item.name }));
+}
+
+export function inventoryItemIsNested(items: Phase1InvItem[], key: string): boolean {
+  return items.some((item) => item.contents.some((child) => child.key === key) || inventoryItemIsNested(item.contents, key));
 }

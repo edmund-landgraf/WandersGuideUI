@@ -40,7 +40,7 @@ import {
   type PopulatedCombatant,
 } from './phase1-entity-panels';
 import { preparePhase1Entity, computePhase1BuilderChoiceCounts, type Phase1EntityCombatant } from './phase1-entity';
-import { addCatalogItemToInventory } from './phase1-inventory';
+import { addCatalogItemToInventory, createInventoryEntry, deleteInventoryItem, moveInventoryItem } from './phase1-inventory';
 import {
   addEntitySpellToList,
   applyEntityDivineFont,
@@ -289,8 +289,13 @@ export function Phase1SheetPage() {
           }),
         })),
         addItem: async (item: Item, type, coins) => {
-          const added = (await addCatalogItemToInventory(undefined, item, type === 'FORMULA')).items[0];
-          if (!added) return;
+          let added;
+          try {
+            added = (await addCatalogItemToInventory(undefined, item, type === 'FORMULA')).items[0];
+          } catch {
+            added = createInventoryEntry(item, type === 'FORMULA');
+          }
+          if (!added) added = createInventoryEntry(item, type === 'FORMULA');
           patchCharacter((current) => {
             const inv = current.inventory ?? { coins: { cp: 0, sp: 0, gp: 0, pp: 0 }, items: [] };
             return {
@@ -303,6 +308,12 @@ export function Phase1SheetPage() {
             };
           });
         },
+        deleteItem: (item) => patchCharacter((current) => ({ ...current, inventory: deleteInventoryItem(current.inventory, item.key) })),
+        updateItem: (item, next) => patchCharacter((current) => ({
+          ...current,
+          inventory: mapInventory(current.inventory, item.key, (entry) => ({ ...entry, item: next })),
+        })),
+        moveItem: (item, containerKey) => patchCharacter((current) => ({ ...current, inventory: moveInventoryItem(current.inventory, item.key, containerKey) })),
       }
     : undefined;
 

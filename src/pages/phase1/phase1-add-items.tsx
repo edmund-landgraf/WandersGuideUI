@@ -4,7 +4,10 @@ import { convertToCp, priceToString, purchase } from '@items/currency-handler';
 import type { Inventory, Item } from '@schemas/content';
 import { labelToVariable } from '@variables/variable-utils';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { CreateItemModal } from '@modals/CreateItemModal';
 import { ConfirmDialog } from './phase1-campaign-settings';
 import { Phase1PickerModal } from './phase1-picker-modal';
 
@@ -21,7 +24,10 @@ export function SelectAddItemsModal({
 }) {
   const catalog = useQuery({
     queryKey: ['phase1-add-items', { sources: getDefaultSourcesKey('PAGE') }],
-    queryFn: async () => (await fetchContentAll<Item>('item', getDefaultSources('PAGE'))).filter((item) => isItemVisible('CHARACTER', item)),
+    queryFn: async () =>
+      (await fetchContentAll<Item>('item', getDefaultSources('PAGE'))).filter(
+        (item) => isItemVisible('CHARACTER', item) && !item.meta_data?.deprecated
+      ),
     staleTime: Number.POSITIVE_INFINITY,
   });
   const items = useMemo(
@@ -29,6 +35,9 @@ export function SelectAddItemsModal({
     [catalog.data]
   );
   const [pendingBuy, setPendingBuy] = useState<Item | null>(null);
+  const [menuId, setMenuId] = useState<number | null>(null);
+  const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
+  const [creatingCustom, setCreatingCustom] = useState(false);
   const coins = inventory?.coins ?? { cp: 0, sp: 0, gp: 0, pp: 0 };
 
   function injectBaseItem(item: Item): Item {
@@ -42,6 +51,11 @@ export function SelectAddItemsModal({
 
   async function add(item: Item, type: AddItemKind, nextCoins?: Inventory['coins']) {
     await onAdd(injectBaseItem(item), type, nextCoins);
+    setPendingBuy(null);
+    setNotice({
+      title: type === 'BUY' ? 'Item bought' : type === 'FORMULA' ? 'Formula added' : 'Item given',
+      message: addNoticeMessage(item, type),
+    });
   }
 
   const buyPrice = pendingBuy?.price
@@ -53,6 +67,24 @@ export function SelectAddItemsModal({
       }
     : {};
   const resultingCoins = pendingBuy ? purchase(buyPrice, coins) : null;
+
+  if (notice) {
+    return <AddItemNotice title={notice.title} message={notice.message} onClose={onClose} />;
+  }
+
+  if (creatingCustom) {
+    return (
+      <CreateItemModal
+        opened
+        zIndex={200}
+        onComplete={(item) => {
+          void add(item, 'GIVE');
+          setCreatingCustom(false);
+        }}
+        onCancel={() => setCreatingCustom(false)}
+      />
+    );
+  }
 
   return (
     <>
@@ -72,6 +104,11 @@ export function SelectAddItemsModal({
         error={catalog.isError ? (catalog.error instanceof Error ? catalog.error.message : 'Could not load items.') : null}
         empty='No matching items.'
         onClose={onClose}
+        headerAction={
+          <button type='button' className='toolbar-button shrink-0' onClick={() => setCreatingCustom(true)}>
+            Custom Item
+          </button>
+        }
         maxWidthClass='max-w-2xl'
         maxHeightClass='max-h-[min(82vh,720px)]'
         batchSize={24}
@@ -79,27 +116,18 @@ export function SelectAddItemsModal({
           <div className='flex items-center gap-2 border-b border-p1-border px-3 py-2'>
             <div className='min-w-0 flex-1'>
               <div className='truncate text-sm text-p1-text'>{item.name}</div>
-              <div className='text-[10px] uppercase text-p1-faint'>
-                Lvl {item.level}
-                {item.price ? ` · ${priceToString({
-                  cp: Number(item.price.cp) || undefined,
-                  sp: Number(item.price.sp) || undefined,
-                  gp: Number(item.price.gp) || undefined,
-                  pp: Number(item.price.pp) || undefined,
-                })}` : ''}
-              </div>
+              <div className='text-[10px] uppercase text-p1-faint'>Lvl {item.level}</div>
             </div>
-            <div className='flex shrink-0 items-center gap-1' onClick={(event) => event.stopPropagation()}>
-              <button type='button' className='h-7 border border-p1-border px-2 text-[11px] font-semibold hover:bg-p1-hover' onClick={() => void add(item, 'GIVE')}>
-                Give
-              </button>
-              <button type='button' className='h-7 border border-p1-border px-2 text-[11px] font-semibold hover:bg-p1-hover' onClick={() => setPendingBuy(item)}>
-                Buy
-              </button>
-              <button type='button' className='h-7 border border-p1-border px-2 text-[11px] font-semibold hover:bg-p1-hover' onClick={() => void add(item, 'FORMULA')}>
-                Formula
-              </button>
-            </div>
+            <GiveSplitButton
+              open={menuId === item.id}
+              onToggle={() => setMenuId((current) => (current === item.id ? null : item.id))}
+              onGive={() => void add(item, 'GIVE')}
+              onBuy={() => {
+                setMenuId(null);
+                setPendingBuy(item);
+              }}
+              onFormula={() => void add(item, 'FORMULA')}
+            />
           </div>
         )}
       />
@@ -112,7 +140,8 @@ export function SelectAddItemsModal({
           message={
             resultingCoins ? (
               <p>
-                This item costs {convertToCp(buyPrice) > 0 ? priceToString(buyPrice) : 'nothing'}. Your remaining coins will be {priceToString(resultingCoins)}.
+                This item costs {convertToCp(buyPrice) > 0 ? priceToString(buyPrice) : 'nothing'}. Your remaining coins will be{' '}
+                {priceToString(resultingCoins)}.
               </p>
             ) : (
               <p>You do not have the funds to purchase this item.</p>
@@ -124,11 +153,118 @@ export function SelectAddItemsModal({
               setPendingBuy(null);
               return;
             }
-            await add(pendingBuy, 'BUY', resultingCoins);
+            const item = pendingBuy;
             setPendingBuy(null);
+            await add(item, 'BUY', resultingCoins);
           }}
         />
       )}
     </>
+  );
+}
+
+function addNoticeMessage(item: Item, type: AddItemKind) {
+  const name = item.name;
+  if (type === 'GIVE') return `${name} given (free) to inventory.`;
+  if (type === 'FORMULA') return `${name} formula given (free) to inventory.`;
+  const cost = formatItemPrice(item);
+  return `${name} bought for ${cost} and added to inventory.`;
+}
+
+function formatItemPrice(item: Item) {
+  if (!item.price) return 'nothing';
+  const label = priceToString({
+    cp: Number(item.price.cp) || undefined,
+    sp: Number(item.price.sp) || undefined,
+    gp: Number(item.price.gp) || undefined,
+    pp: Number(item.price.pp) || undefined,
+  });
+  return label === '—' ? 'nothing' : label;
+}
+
+function AddItemNotice({ title, message, onClose }: { title: string; message: string; onClose: () => void }) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+  return createPortal(
+    <div
+      className='fixed inset-0 z-[120] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]'
+      role='presentation'
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section role='dialog' aria-modal='true' aria-labelledby='add-item-notice-title' className='w-full max-w-sm border border-p1-border bg-p1-surface p-5 shadow-2xl'>
+        <h2 id='add-item-notice-title' className='text-lg font-semibold'>
+          {title}
+        </h2>
+        <p className='mt-2 text-sm leading-6 text-p1-muted'>{message}</p>
+        <div className='mt-5 flex justify-end'>
+          <button type='button' className='toolbar-button' onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+function GiveSplitButton({
+  open,
+  onToggle,
+  onGive,
+  onBuy,
+  onFormula,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  onGive: () => void;
+  onBuy: () => void;
+  onFormula: () => void;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    function close(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) onToggle();
+    }
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open, onToggle]);
+
+  return (
+    <div ref={rootRef} className='relative flex shrink-0' onMouseDown={(event) => event.stopPropagation()}>
+      <button
+        type='button'
+        className='h-7 border border-p1-border border-r-0 bg-p1-accent px-2.5 text-[11px] font-semibold text-p1-accent-ink hover:opacity-90'
+        onClick={onGive}
+      >
+        Give
+      </button>
+      <button
+        type='button'
+        className='grid h-7 w-7 place-items-center border border-p1-border bg-p1-accent text-p1-accent-ink hover:opacity-90'
+        aria-label='Buy or add formula'
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div className='absolute right-0 top-full z-20 mt-0.5 min-w-[7.5rem] border border-p1-border bg-p1-surface py-1 shadow-xl'>
+          <button type='button' className='block w-full px-3 py-1.5 text-left text-xs hover:bg-p1-hover' onClick={onBuy}>
+            Buy
+          </button>
+          <button type='button' className='block w-full px-3 py-1.5 text-left text-xs hover:bg-p1-hover' onClick={onFormula}>
+            Formula
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

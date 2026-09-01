@@ -21,6 +21,7 @@ export function Phase1PickerModal<T>({
   onNone,
   renderItem,
   toolbar,
+  headerAction,
   footer,
   aside,
   listClassName,
@@ -43,6 +44,7 @@ export function Phase1PickerModal<T>({
   onNone?: () => void;
   renderItem: (item: T) => ReactNode;
   toolbar?: ReactNode;
+  headerAction?: ReactNode;
   footer?: ReactNode;
   aside?: ReactNode;
   listClassName?: string;
@@ -127,6 +129,7 @@ export function Phase1PickerModal<T>({
           <h2 id={titleId} className='min-w-0 flex-1 truncate text-lg font-semibold'>
             {title}
           </h2>
+          {headerAction}
           {onNone && (
             <button
               type='button'
