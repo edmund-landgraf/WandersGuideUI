@@ -29,9 +29,14 @@ export async function openExportDirectory(directory: FileSystemDirectoryHandle) 
   }
 }
 
-export async function writeFileToDirectory(directory: FileSystemDirectoryHandle, fileName: string, data: BlobPart, type: string) {
+export async function writeFileToDirectory(
+  directory: FileSystemDirectoryHandle,
+  fileName: string,
+  data: BlobPart | Uint8Array,
+  type: string,
+) {
   const file = await directory.getFileHandle(fileName, { create: true });
   const writable = await file.createWritable({ keepExistingData: false });
-  await writable.write(new Blob([data], { type }));
+  await writable.write(new Blob([data as BlobPart], { type }));
   await writable.close();
 }
