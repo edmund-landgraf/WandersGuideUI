@@ -27,18 +27,20 @@ import {
   getVariables,
 } from '@variables/variable-manager';
 
-export default async function jsonV4(entity: LivingEntity) {
-  const exportObject = {
+export function characterExportFileStem(name: string) {
+  return name.trim().toLowerCase().replace(/([^a-z0-9]+)/gi, '-') || 'character';
+}
+
+export async function buildJsonV4Export(entity: LivingEntity) {
+  return {
     version: 4,
     character: entity,
     content: await getJsonV4Content(entity),
   };
+}
 
-  const fileName = entity.name
-    .trim()
-    .toLowerCase()
-    .replace(/([^a-z0-9]+)/gi, '-');
-  downloadObjectAsJson(exportObject, fileName);
+export default async function jsonV4(entity: LivingEntity) {
+  downloadObjectAsJson(await buildJsonV4Export(entity), characterExportFileStem(entity.name));
 }
 
 export async function getJsonV4Content(entity: LivingEntity, inputStoreID?: StoreID) {

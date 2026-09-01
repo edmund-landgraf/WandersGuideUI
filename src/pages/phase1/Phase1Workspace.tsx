@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, ExternalLink, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Pencil, Plus, RotateCcw, Search, Settings, Shield, Skull, Sparkles, Swords, Trash2, Upload, UserMinus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, ExternalLink, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Pencil, Plus, RotateCcw, Search, Settings, Shield, Skull, Sparkles, Swords, Trash2, Upload, UserMinus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -64,6 +64,8 @@ import { getAllBackgroundImages } from '@utils/background-images';
 import { getFileContents } from '@import/json/import-from-json';
 import exportToJSON, { downloadObjectAsJson } from '@export/export-to-json';
 import exportToPDF from '@export/export-to-pdf';
+import { openExportDirectory, pickExportDirectory, writeFileToDirectory } from '@export/export-to-directory';
+import { buildJsonV4Export, characterExportFileStem } from '@export/json/json-v4';
 import importFromGUIDECHAR from '@import/guidechar/import-from-guidechar';
 import { importFromFTC } from '@import/ftc/import-from-ftc';
 import { importFromPathbuilder } from '@import/pathbuilder/import-from-pathbuilder';
@@ -233,6 +235,18 @@ export function Phase1CharactersPage() {
   const [characterMenu, setCharacterMenu] = useState<{ character: Character; x: number; y: number } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ id: number; name: string } | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [exportAllOpen, setExportAllOpen] = useState(false);
+  const [exportAllProgress, setExportAllProgress] = useState<{
+    kind: 'json' | 'pdf';
+    total: number;
+    current: number;
+    name: string;
+    succeeded: number;
+    failed: number;
+    done: boolean;
+    summary: string;
+    directory: FileSystemDirectoryHandle;
+  } | null>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const guidecharInputRef = useRef<HTMLInputElement>(null);
   const characters = useQuery({
@@ -327,8 +341,7 @@ export function Phase1CharactersPage() {
           await exportToJSON(character);
         } catch (error) {
           console.error(error);
-          const fileName = character.name.trim().toLowerCase().replace(/([^a-z0-9]+)/gi, '-') || 'character';
-          downloadObjectAsJson({ version: 4, character }, fileName);
+          downloadObjectAsJson({ version: 4, character }, characterExportFileStem(character.name));
           setJoinStatus(`Exported “${character.name}” as JSON (stats snapshot unavailable).`);
           return;
         }
@@ -339,6 +352,90 @@ export function Phase1CharactersPage() {
       setJoinStatus(`Exported “${character.name}” as PDF.`);
     } catch (error) {
       setJoinStatus(error instanceof Error ? error.message : kind === 'json' ? 'JSON export failed.' : 'PDF export failed.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function exportAll(kind: 'json' | 'pdf') {
+    const roster = characters.data ?? [];
+    if (!roster.length || exporting) return;
+    setExportAllOpen(false);
+    let directory: FileSystemDirectoryHandle | null;
+    try {
+      directory = await pickExportDirectory();
+    } catch (error) {
+      setJoinStatus(error instanceof Error ? error.message : 'Could not open the export folder.');
+      return;
+    }
+    if (!directory) return;
+
+    const format = kind === 'json' ? 'JSON' : 'PDF';
+    setExporting(true);
+    setExportAllProgress({
+      kind,
+      total: roster.length,
+      current: 0,
+      name: roster[0]?.name ?? '',
+      succeeded: 0,
+      failed: 0,
+      done: false,
+      summary: `Exporting ${roster.length} ${format} file${roster.length === 1 ? '' : 's'}…`,
+      directory,
+    });
+    let succeeded = 0;
+    let failed = 0;
+    try {
+      for (let index = 0; index < roster.length; index += 1) {
+        const source = roster[index];
+        setExportAllProgress({
+          kind,
+          total: roster.length,
+          current: index + 1,
+          name: source.name,
+          succeeded,
+          failed,
+          done: false,
+          summary: `Exporting ${index + 1} of ${roster.length}: “${source.name}”`,
+          directory,
+        });
+        try {
+          const character = await loadCharacterForExport(source.id);
+          const stem = characterExportFileStem(character.name);
+          if (kind === 'json') {
+            let payload: Record<string, unknown>;
+            try {
+              payload = await buildJsonV4Export(character);
+            } catch (error) {
+              console.error(error);
+              payload = { version: 4, character };
+            }
+            await writeFileToDirectory(directory, `${stem}.json`, JSON.stringify(payload), 'application/json');
+          } else {
+            const { pdfV2Bytes } = await import('@export/pdf/pdf-v2');
+            await writeFileToDirectory(directory, `${stem}.pdf`, await pdfV2Bytes(character), 'application/pdf');
+          }
+          succeeded += 1;
+        } catch (error) {
+          console.error(error);
+          failed += 1;
+        }
+      }
+      const summary = failed
+        ? `Exported ${succeeded} ${format} file${succeeded === 1 ? '' : 's'}; ${failed} failed.`
+        : `Exported ${succeeded} ${format} file${succeeded === 1 ? '' : 's'}.`;
+      setJoinStatus(summary);
+      setExportAllProgress({
+        kind,
+        total: roster.length,
+        current: roster.length,
+        name: '',
+        succeeded,
+        failed,
+        done: true,
+        summary,
+        directory,
+      });
     } finally {
       setExporting(false);
     }
@@ -410,6 +507,7 @@ export function Phase1CharactersPage() {
           title={reachedCharacterLimit ? 'Character slot limit reached' : 'Create character'}
           onClick={() => {
             setUploadOpen(false);
+            setExportAllOpen(false);
             setCreateOpen((open) => !open);
           }}
         >
@@ -510,7 +608,29 @@ export function Phase1CharactersPage() {
             <div className='flex flex-wrap items-center gap-2'>
               <CreateMenu />
               <div className='relative'>
-                <button type='button' className='toolbar-button' disabled={createDisabled} title={reachedCharacterLimit ? 'Character slot limit reached' : 'Upload character'} onClick={() => { setCreateOpen(false); setUploadOpen((open) => !open); }}>
+                <button
+                  type='button'
+                  className='toolbar-button'
+                  disabled={exporting || !(characters.data?.length)}
+                  title='Export all characters'
+                  onClick={() => {
+                    setCreateOpen(false);
+                    setUploadOpen(false);
+                    setExportAllOpen((open) => !open);
+                  }}
+                >
+                  <FolderDown size={15} />
+                  {exporting ? 'Exporting…' : 'Export all'}
+                </button>
+                {exportAllOpen && (
+                  <div className='absolute right-0 z-20 mt-1 min-w-[14rem] border border-p1-border bg-p1-surface py-1'>
+                    <button type='button' className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => void exportAll('pdf')}>Export all as PDF</button>
+                    <button type='button' className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => void exportAll('json')}>Export all as JSON</button>
+                  </div>
+                )}
+              </div>
+              <div className='relative'>
+                <button type='button' className='toolbar-button' disabled={createDisabled} title={reachedCharacterLimit ? 'Character slot limit reached' : 'Upload character'} onClick={() => { setCreateOpen(false); setExportAllOpen(false); setUploadOpen((open) => !open); }}>
                   <Upload size={15} />
                   {importing ? 'Uploading…' : 'Upload'}
                 </button>
@@ -623,6 +743,53 @@ export function Phase1CharactersPage() {
         )}
         <input ref={jsonInputRef} type='file' accept='application/json,.json' className='hidden' onChange={(event) => { void importJsonFile(event.target.files?.[0] ?? null); event.target.value = ''; }} />
         <input ref={guidecharInputRef} type='file' accept='.guidechar' className='hidden' onChange={(event) => { void importGuidecharFile(event.target.files?.[0] ?? null); event.target.value = ''; }} />
+        {exportAllProgress && (
+          <div
+            className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5'
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget && exportAllProgress.done) setExportAllProgress(null);
+            }}
+          >
+            <section role='dialog' aria-modal='true' aria-labelledby='export-all-title' className='w-full max-w-md border border-p1-border bg-p1-surface p-5'>
+              <h2 id='export-all-title' className='text-lg font-semibold'>
+                {exportAllProgress.done ? 'Export complete' : `Exporting ${exportAllProgress.kind === 'json' ? 'JSON' : 'PDF'}`}
+              </h2>
+              <p className='mt-2 text-sm text-p1-muted'>{exportAllProgress.summary}</p>
+              <div className='mt-4 h-2 overflow-hidden border border-p1-border bg-p1-page' role='progressbar' aria-valuemin={0} aria-valuemax={exportAllProgress.total} aria-valuenow={exportAllProgress.current}>
+                <div
+                  className='h-full transition-[width] duration-200'
+                  style={{
+                    width: `${exportAllProgress.total ? Math.round((exportAllProgress.current / exportAllProgress.total) * 100) : 0}%`,
+                    background: 'var(--p1-accent)',
+                  }}
+                />
+              </div>
+              <p className='mt-2 text-xs text-p1-muted'>
+                {exportAllProgress.current}/{exportAllProgress.total}
+                {exportAllProgress.failed ? ` · ${exportAllProgress.failed} failed` : ''}
+              </p>
+              {exportAllProgress.done && (
+                <div className='mt-5 flex flex-wrap justify-end gap-2'>
+                  <button
+                    type='button'
+                    className='toolbar-button'
+                    style={{ background: 'var(--p1-accent)', color: 'var(--p1-accent-ink)', borderColor: 'var(--p1-accent)' }}
+                    onClick={() => void openExportDirectory(exportAllProgress.directory)}
+                  >
+                    <FolderOpen size={15} />
+                    Open folder
+                  </button>
+                  <button type='button' className='toolbar-button' onClick={() => setExportAllProgress(null)}>
+                    OK
+                  </button>
+                  <button type='button' className='toolbar-button' onClick={() => setExportAllProgress(null)}>
+                    Close
+                  </button>
+                </div>
+              )}
+            </section>
+          </div>
+        )}
       </main>
       {randomOpen && (
         <Phase1RandomCharacterModal

@@ -51,24 +51,17 @@ import { stripEmojis, toLabel } from '@utils/strings';
 import { isTruthy } from '@utils/type-fixing';
 import { chunk, groupBy, split } from 'lodash-es';
 
-export async function pdfV2(character: Character) {
-  // Load your PDF
+export async function pdfV2Bytes(character: Character) {
   const url = '/files/character-sheet-v2.pdf';
   const existingPdfBytes = await fetch(url).then((res) => res.arrayBuffer());
-
-  // Load a PDFDocument from the existing PDF bytes
   const pdfDoc = await PDFDocument.load(existingPdfBytes);
-
-  // Get the form
   const form = pdfDoc.getForm();
-
-  // Fill in the fields
   await fillPDF(form, character);
+  return pdfDoc.save();
+}
 
-  // Serialize the PDFDocument to bytes (a Uint8Array)
-  const pdfBytes = await pdfDoc.save();
-
-  // Download the PDF file
+export async function pdfV2(character: Character) {
+  const pdfBytes = await pdfV2Bytes(character);
   const fileName = character.name
     .trim()
     .toLowerCase()
