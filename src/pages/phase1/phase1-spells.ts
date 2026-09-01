@@ -417,11 +417,9 @@ export async function applyEntityDivineFont(
   return { ...raw, spells: applyDivineFontToSpellState(spells, sourceName, target) };
 }
 
-export function applyDivineFontToSpellState<T extends { spell_id?: number | null; rank: number; source: string }>(
-  spells: { slots: T[]; list: Array<{ spell_id: number; rank: number; source: string }> },
-  sourceName: string,
-  target: { id: number },
-) {
+export function applyDivineFontToSpellState<
+  S extends { slots: Array<{ spell_id?: number | null; rank: number; source: string }>; list: Array<{ spell_id: number; rank: number; source: string }> },
+>(spells: S, sourceName: string, target: { id: number }): S {
   const ranks = [...new Set(spells.slots.filter((slot) => slot.source === sourceName && slot.rank > 0).map((slot) => slot.rank))];
   if (!ranks.length) throw new Error('No ranked spell slots to fill with Divine Font.');
   const list = [...spells.list];

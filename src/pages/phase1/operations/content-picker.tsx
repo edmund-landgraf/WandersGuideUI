@@ -25,7 +25,7 @@ export function Phase1ContentPickButton<T extends Pickable>(props: {
     queryFn: async () => {
       const all = await fetchContentAll<T>(props.type, getDefaultSources('PAGE'));
       return all.filter((item) => {
-        if (props.abilityBlockType && 'type' in item && (item as AbilityBlock).type !== props.abilityBlockType) return false;
+        if (props.abilityBlockType && (item as T & { type?: AbilityBlockType }).type !== props.abilityBlockType) return false;
         if (props.filterFn && !props.filterFn(item)) return false;
         return true;
       });

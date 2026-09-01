@@ -199,7 +199,7 @@ export async function addStaffChargesFromSlot(combatant: Phase1EntityCombatant, 
   const spells = {
     slots: data.slots.map((entry) => (entry.id === slotId ? { ...entry, exhausted: true } : entry)),
     list: [...(raw.spells?.list ?? [])],
-    focus_point_current: data.focus.length ? (raw.spells?.focus_point_current ?? 0) : raw.spells?.focus_point_current,
+    focus_point_current: raw.spells?.focus_point_current ?? 0,
     innate_casts: [...(raw.spells?.innate_casts ?? data.innate)],
   };
   const next = {
@@ -244,7 +244,7 @@ export async function setStaffSpellCast(
       spells: {
         slots,
         list: [...(raw.spells?.list ?? [])],
-        focus_point_current: raw.spells?.focus_point_current,
+        focus_point_current: raw.spells?.focus_point_current ?? 0,
         innate_casts: [...(raw.spells?.innate_casts ?? [])],
       },
     };

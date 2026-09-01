@@ -115,7 +115,7 @@ function mapInvItem(
     rarity: item.rarity,
     traitNames: (item.traits ?? []).map((id) => traitNames.get(id)).filter((name): name is string => Boolean(name)),
     quantity: getItemQuantity(item),
-    showQuantity: isItemWithQuantity(item),
+    showQuantity: Boolean(isItemWithQuantity(item)),
     bulkLabel: labelizeBulk(getItemBulk(entry)),
     priceLabel: formatPrice(item),
     damageSummary: formatDamage(item),
