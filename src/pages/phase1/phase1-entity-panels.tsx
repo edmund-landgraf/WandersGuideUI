@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Activity, BookOpen, Calculator, ChevronDown, ChevronRight, Crosshair, Eye, Footprints, History, ListChecks, Package, Pencil, Plus, Search, Shield, Sparkles, Swords, Trash2, WandSparkles, X } from 'lucide-react';
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { Character, Combatant, CombatantActionLogEntry, CombatantChangeLogEntry, Condition, InitiativeRoundLog, InitiativeRoundLogEntry, Inventory, Item, LivingEntity, Spell } from '@schemas/content';
 import { loadEntityAbilities, type Phase1Ability } from './phase1-abilities';
@@ -818,7 +818,7 @@ function ItemRow({ item, onOpen, onContextMenu, depth, showContents = true }: {
         {item.isEquipped && <Tag>Equipped</Tag>}
         {item.isInvested && <Tag>Invested</Tag>}
       </span>
-      <span className='pointer-events-none invisible absolute left-10 right-2 top-[calc(100%+4px)] z-40 hidden border border-p1-border bg-p1-surface p-3 opacity-0 shadow-xl transition-opacity delay-300 group-hover:visible group-hover:opacity-100 md:block'>
+      <span className='pointer-events-none invisible absolute bottom-[calc(100%+4px)] left-10 right-2 z-40 hidden border border-p1-border bg-p1-surface p-3 opacity-0 shadow-xl transition-opacity delay-300 group-hover:visible group-hover:opacity-100 md:block'>
         <span className='flex items-center gap-2 text-xs font-semibold text-p1-text'>{item.name}</span>
         {item.traitNames.length > 0 && <span className='mt-1.5 block truncate text-[9px] uppercase text-p1-muted'>{item.traitNames.join(' | ')}</span>}
         {item.damageSummary && <span className='mt-1 block text-[10px] text-p1-muted'>{item.damageSummary}</span>}
@@ -861,6 +861,10 @@ function InventoryItemContextMenu({
   onMove: (containerKey: string | null) => void;
 }) {
   const [moveOpen, setMoveOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const subMenuRef = useRef<HTMLDivElement>(null);
+  const [menuBox, setMenuBox] = useState({ w: 176, h: 200 });
+  const [subBox, setSubBox] = useState({ w: 176, h: 120 });
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -869,14 +873,22 @@ function InventoryItemContextMenu({
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
   const showMove = canMove && (nested || containers.length > 0);
-  const left = Math.min(x, window.innerWidth - 176);
-  const top = Math.min(y, window.innerHeight - 140);
-  const cascadeRight = left + 176 + 176 < window.innerWidth;
-  const cascadeLeft = cascadeRight ? left + 176 : Math.max(8, left - 176);
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    if (menu) setMenuBox({ w: menu.offsetWidth, h: menu.offsetHeight });
+    const sub = subMenuRef.current;
+    if (sub) setSubBox({ w: sub.offsetWidth, h: sub.offsetHeight });
+  }, [moveOpen, canEquip, canEdit, canDelete, showMove, containers.length]);
+  const pad = 8;
+  const left = Math.min(Math.max(pad, x), Math.max(pad, window.innerWidth - menuBox.w - pad));
+  const top = Math.min(Math.max(pad, y), Math.max(pad, window.innerHeight - menuBox.h - pad));
+  const cascadeRight = left + menuBox.w + subBox.w + pad < window.innerWidth;
+  const cascadeLeft = cascadeRight ? left + menuBox.w : Math.max(pad, left - subBox.w);
+  const cascadeTop = Math.min(top, Math.max(pad, window.innerHeight - subBox.h - pad));
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
-      <div role='menu' className='fixed z-[110] min-w-44 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+      <div ref={menuRef} role='menu' className='fixed z-[110] min-w-44 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
         {canEquip && (
           <button
             type='button'
@@ -913,9 +925,10 @@ function InventoryItemContextMenu({
       </div>
       {showMove && moveOpen && (
         <div
+          ref={subMenuRef}
           role='menu'
           className='fixed z-[111] min-w-44 border border-p1-border bg-p1-surface py-1 shadow-2xl'
-          style={{ left: cascadeLeft, top }}
+          style={{ left: cascadeLeft, top: cascadeTop }}
           onMouseEnter={() => setMoveOpen(true)}
         >
           <button type='button' role='menuitem' className='flex w-full items-center px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => onMove(null)}>
