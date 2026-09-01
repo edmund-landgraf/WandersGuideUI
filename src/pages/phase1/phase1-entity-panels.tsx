@@ -2072,14 +2072,14 @@ function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCa
   }
   const canRemove = Boolean(spellActions) && (entry.mode === 'PREPARED' || entry.mode === 'SPONTANEOUS' || entry.mode === 'RITUAL');
   const focusBlocked = entry.mode === 'FOCUS' && isFocusCastBlocked(entry.spell, entity);
-  const showCast = Boolean(spellActions) && !entry.cantrip && entry.mode !== 'RITUAL' && entry.mode !== 'SPELLHEART';
+  const showCast = Boolean(spellActions) && !entry.cantrip && entry.mode !== 'RITUAL' && entry.mode !== 'SPELLHEART' && (entry.mode !== 'PREPARED' || Boolean(entry.slotId));
   const showUncast = entry.mode === 'STAFF' || entry.mode === 'WAND' ? (entry.usesCurrent ?? 0) > 0 : entry.exhausted;
   return <div className='flex min-h-10 items-center gap-2 px-3 py-1.5 hover:bg-p1-hover' onContextMenu={(event) => {
     if (!canRemove) return;
     event.preventDefault();
     onRemoveFromList();
   }}>
-    {entry.mode === 'PREPARED' && !entry.cantrip && (
+    {entry.mode === 'PREPARED' && !entry.cantrip && entry.slotId && (
       <SlotCircles count={1} spent={entry.exhausted ? 1 : 0} editable={Boolean(spellActions)} title={`${entry.spell.name} slot`} onChange={(spent) => onPreparedSpent(spent > 0)} />
     )}
     {entry.mode === 'INNATE' && !entry.cantrip && entry.usesMax != null && entry.usesMax > 0 && (

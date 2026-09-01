@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Spell } from '@schemas/content';
-import { keepPreparedListSection, spellbookEntriesForSource, spellCatalogSourceIds } from './phase1-spells';
+import { buildCastingSourceEntries, keepPreparedListSection, spellbookEntriesForSource, spellCatalogSourceIds } from './phase1-spells';
 
 function spell(id: number, name: string): Spell {
   return { id, name, rank: 1, traditions: ['occult'], traits: [], description: '' } as unknown as Spell;
@@ -23,5 +23,31 @@ describe('witch familiar spell load', () => {
 
   it('includes common core plus character books for the catalog fetch', () => {
     expect(spellCatalogSourceIds([1, 2])).toEqual([3, 1, 2]);
+  });
+
+  it('shows catalog-added familiar spells on the sheet even before they are prepared into a slot', () => {
+    const acidGrip = spell(500, 'Acid Grip');
+    const entries = buildCastingSourceEntries(
+      { name: 'Witch', type: 'PREPARED-LIST' },
+      'PREPARED',
+      [{ id: 'slot-1', rank: 1, source: 'Witch', spell_id: null }],
+      [{ spell_id: 500, rank: 1, source: 'Witch' }],
+      new Map([[500, acidGrip]]),
+      new Map(),
+    );
+    expect(entries.some((entry) => entry.spell?.name === 'Acid Grip' && !entry.slotId)).toBe(true);
+  });
+
+  it('shows spontaneous repertoire spells from the saved list', () => {
+    const acidGrip = spell(500, 'Acid Grip');
+    const entries = buildCastingSourceEntries(
+      { name: 'Sorcerer', type: 'SPONTANEOUS-REPERTOIRE' },
+      'SPONTANEOUS',
+      [{ id: 'slot-1', rank: 1, source: 'Sorcerer', spell_id: null }],
+      [{ spell_id: 500, rank: 1, source: 'Sorcerer' }],
+      new Map([[500, acidGrip]]),
+      new Map(),
+    );
+    expect(entries.map((entry) => entry.spell?.name)).toEqual(['Acid Grip']);
   });
 });

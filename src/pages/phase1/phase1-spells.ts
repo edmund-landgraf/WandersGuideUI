@@ -83,6 +83,50 @@ export function keepPreparedListSection(sourceType: string, entries: number, slo
   return entries > 0 || slots > 0 || hasFamiliarList || sourceType === 'PREPARED-LIST';
 }
 
+export function buildCastingSourceEntries(
+  source: { name: string; type: string },
+  mode: 'PREPARED' | 'SPONTANEOUS',
+  sourceSlots: Array<{ id: string; rank: number; source: string; spell_id?: number | null; exhausted?: boolean }>,
+  list: Array<{ spell_id: number; rank: number; source: string }>,
+  spellById: Map<number, Spell>,
+  traitById: Map<number, string>,
+): Phase1SpellEntry[] {
+  const sourceList = list.filter((entry) => entry.source === source.name);
+  if (mode === 'SPONTANEOUS') {
+    return sourceList.flatMap((record, index) => {
+      const spell = spellById.get(record.spell_id);
+      if (!spell) return [];
+      const traitNames = namesFor(spell, traitById);
+      const cantrip = isCantrip(traitNames, record.rank);
+      const rankSlots = sourceSlots.filter((slot) => slot.rank === record.rank);
+      const exhausted = cantrip ? false : !rankSlots.some((slot) => !slot.exhausted);
+      const available = cantrip || rankSlots.some((slot) => !slot.exhausted);
+      return [makeEntry(spell, record.rank, traitNames, source.name, mode, cantrip, available, exhausted, index)];
+    });
+  }
+  const prepared = sourceSlots.flatMap((slot, index) => {
+    if (slot.spell_id == null) {
+      return [makeEmptyEntry(source.name, slot.rank, slot.id, Boolean(slot.exhausted))];
+    }
+    const spell = spellById.get(slot.spell_id);
+    if (!spell) return [makeEmptyEntry(source.name, slot.rank, slot.id, Boolean(slot.exhausted))];
+    const traitNames = namesFor(spell, traitById);
+    const cantrip = isCantrip(traitNames, slot.rank);
+    return [makeEntry(spell, slot.rank, traitNames, source.name, mode, cantrip, cantrip || !slot.exhausted, Boolean(slot.exhausted), index, undefined, undefined, slot.id)];
+  });
+  if (source.type !== 'PREPARED-LIST') return prepared;
+  const slotted = new Set(sourceSlots.map((slot) => slot.spell_id).filter((id): id is number => id != null));
+  const unprepared = sourceList.flatMap((record, index) => {
+    if (slotted.has(record.spell_id)) return [];
+    const spell = spellById.get(record.spell_id);
+    if (!spell) return [];
+    const traitNames = namesFor(spell, traitById);
+    const cantrip = isCantrip(traitNames, record.rank);
+    return [makeEntry(spell, record.rank, traitNames, source.name, mode, cantrip, false, false, sourceSlots.length + index)];
+  });
+  return [...prepared, ...unprepared];
+}
+
 export function spellCatalogSourceIds(enabled?: number[] | null) {
   return uniq([COMMON_CORE_ID, ...(enabled ?? [])]);
 }
@@ -105,27 +149,7 @@ export async function loadEntitySpells(combatant: Phase1EntityCombatant): Promis
     const mode = source.type.startsWith('PREPARED-') ? 'PREPARED' : source.type.startsWith('SPONTANEOUS-') ? 'SPONTANEOUS' : null;
     if (mode) {
       const sourceSlots = data.slots.filter((slot) => slot.source === source.name);
-      const entries = mode === 'PREPARED'
-        ? sourceSlots.flatMap((slot, index) => {
-            if (slot.spell_id == null) {
-              return [makeEmptyEntry(source.name, slot.rank, slot.id, Boolean(slot.exhausted))];
-            }
-            const spell = spellById.get(slot.spell_id);
-            if (!spell) return [makeEmptyEntry(source.name, slot.rank, slot.id, Boolean(slot.exhausted))];
-            const traitNames = namesFor(spell, traitById);
-            const cantrip = isCantrip(traitNames, slot.rank);
-            return [makeEntry(spell, slot.rank, traitNames, source.name, mode, cantrip, cantrip || !slot.exhausted, Boolean(slot.exhausted), index, undefined, undefined, slot.id)];
-          })
-        : data.list.filter((entry) => entry.source === source.name).flatMap((record, index) => {
-            const spell = spellById.get(record.spell_id);
-            if (!spell) return [];
-            const traitNames = namesFor(spell, traitById);
-            const cantrip = isCantrip(traitNames, record.rank);
-            const rankSlots = sourceSlots.filter((slot) => slot.rank === record.rank);
-            const exhausted = cantrip ? false : !rankSlots.some((slot) => !slot.exhausted);
-            const available = cantrip || rankSlots.some((slot) => !slot.exhausted);
-            return [makeEntry(spell, record.rank, traitNames, source.name, mode, cantrip, available, exhausted, index)];
-          });
+      const entries = buildCastingSourceEntries(source, mode, sourceSlots, data.list, spellById, traitById);
       const hasFamiliarList = mode === 'PREPARED' && source.type === 'PREPARED-LIST'
         && data.list.some((entry) => entry.source === source.name);
       if (keepPreparedListSection(source.type, entries.length, sourceSlots.length, hasFamiliarList)) {
