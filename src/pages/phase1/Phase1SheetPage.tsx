@@ -99,6 +99,7 @@ export function Phase1SheetPage() {
       character &&
       (character.user_id === session.user.id || campaignQuery.data?.user_id === session.user.id)
   );
+  const isAnonymousPublicView = Boolean(!session && character && (character.options?.is_public ?? true));
 
   const combatant = useMemo(() => (character ? characterAsCombatant(character, canEdit) : null), [character, canEdit]);
 
@@ -210,12 +211,12 @@ export function Phase1SheetPage() {
   }
 
   const maxHp = statusQuery.data?.maxHp ?? statsFor(character).maxHp ?? character.hp_current ?? 0;
-  const identity = [
-    character.details?.ancestry?.name,
-    character.details?.background?.name,
-    character.details?.class?.name,
-    character.details?.class_2?.name,
-  ].filter(Boolean).join(' · ');
+  const identityParts = [
+    character.details?.ancestry?.name ? { label: 'Ancestry', name: character.details.ancestry.name } : null,
+    character.details?.background?.name ? { label: 'Background', name: character.details.background.name } : null,
+    character.details?.class?.name ? { label: 'Class', name: character.details.class.name } : null,
+    character.details?.class_2?.name ? { label: 'Second class', name: character.details.class_2.name } : null,
+  ].filter((part): part is { label: string; name: string } => Boolean(part));
   const choiceCounts = choiceCountsQuery.data;
   const remainingChoices = choiceCounts ? Math.max(0, choiceCounts.max - choiceCounts.current) : 0;
   const showBuilderReminder =
@@ -368,6 +369,11 @@ export function Phase1SheetPage() {
         <Link to='/phase1' className='font-semibold hover:underline'>Wanderer's Guide</Link>
         <span className='h-4 w-px bg-p1-hover' />
         <span className='truncate text-sm text-p1-muted'>{view === 'builder' ? 'Character builder' : 'Character sheet'}</span>
+        {isAnonymousPublicView && (
+          <span className='shrink-0 border border-p1-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-p1-muted'>
+            Read only
+          </span>
+        )}
         <div className='ml-auto flex items-center gap-2'>
           {saveCharacter.isPending && <span className='text-[11px] text-p1-faint'>Saving...</span>}
           <Phase1ThemeToggle />
@@ -392,10 +398,26 @@ export function Phase1SheetPage() {
             )}
           </button>
           <div className='min-w-0 flex-1'>
-            <Eyebrow>Player character</Eyebrow>
+            <div className='flex flex-wrap items-center gap-2'>
+              <Eyebrow>Player character</Eyebrow>
+              {isAnonymousPublicView && (
+                <span className='border border-p1-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-p1-muted'>
+                  Read only
+                </span>
+              )}
+            </div>
             <h1 className='mt-1 truncate text-2xl font-semibold'>{character.name}</h1>
-            <p className='mt-1 text-sm text-p1-muted'>{identity || 'Ancestry, background, and class load with calculated details.'}</p>
-            <p className='mt-1 text-xs text-p1-faint'>Level {character.level}{canEdit ? '' : ' · Read only'}</p>
+            <p className='mt-1 text-sm text-p1-muted'>
+              {identityParts.length > 0
+                ? identityParts.map((part, index) => (
+                    <span key={part.label}>
+                      {index > 0 ? ' · ' : null}
+                      <span title={part.label}>{part.name}</span>
+                    </span>
+                  ))
+                : 'Ancestry, background, and class load with calculated details.'}
+            </p>
+            <p className='mt-1 text-xs text-p1-faint'>Level {character.level}{canEdit || isAnonymousPublicView ? '' : ' · Read only'}</p>
           </div>
           <div className='flex min-w-0 flex-col items-end gap-2'>
             <div className='flex flex-wrap items-center justify-end gap-2'>

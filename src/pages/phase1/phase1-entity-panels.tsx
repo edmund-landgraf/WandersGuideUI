@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Activity, BookOpen, Calculator, ChevronDown, ChevronRight, Crosshair, Eye, Footprints, History, ListChecks, Package, Pencil, Plus, Search, Shield, Sparkles, Swords, Trash2, WandSparkles, X } from 'lucide-react';
+import { Activity, BookOpen, Calculator, ChevronDown, ChevronRight, Copy, Crosshair, Eye, Footprints, History, ListChecks, Package, Pencil, Plus, Search, Shield, Sparkles, Swords, Trash2, WandSparkles, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { Character, Combatant, CombatantActionLogEntry, CombatantChangeLogEntry, Condition, InitiativeRoundLog, InitiativeRoundLogEntry, Inventory, Item, LivingEntity, Spell } from '@schemas/content';
@@ -18,7 +18,7 @@ import { Phase1EditItemModal } from './phase1-edit-item-modal';
 import { ConfirmDialog } from './phase1-campaign-settings';
 import { EntityNotesPanel, ProseMarkdown, SourceImportNotesPanel } from './phase1-markdown';
 import { isContentStackOpen, useContentLinks } from './phase1-content-links';
-import { getBestShield, getInvBulk, getItemHealth, labelizeBulk } from '@items/inv-utils';
+import { getBestShield, getInvBulk, getItemHealth, isItemContainer, labelizeBulk } from '@items/inv-utils';
 import CopperCoin from '@assets/images/currency/copper.png';
 import GoldCoin from '@assets/images/currency/gold.png';
 import PlatinumCoin from '@assets/images/currency/platinum.png';
@@ -69,7 +69,7 @@ let persistedDetailsInnerTab: 'details' | 'source' = 'details';
 let persistedAbilitiesInnerTab: Phase1Ability['source'] = 'Feat';
 let persistedSpellsRankFilter: number | 'ALL' = 'ALL';
 let persistedSpellsSourceKey = 'ALL';
-let persistedInventoryTab: 'equipped' | 'carried' | 'formulas' = 'equipped';
+let persistedInventoryTab: 'equipped' | 'carried' | 'containers' = 'equipped';
 let persistedActionGroup = 'ALL';
 let persistedSheetDetailsTab: 'info' | 'languages' | 'proficiencies' = 'info';
 const ABILITY_TAB_ORDER = ['Feat', 'Character', 'Weapon', 'Base', 'Added'] as const;
@@ -716,22 +716,22 @@ export function InventoryPanel({ combatant, itemActions, status }: { combatant: 
   const extraKeys = Object.keys(extras);
   const topLevelItems = (rawInventory?.items ?? []).map((entry, index) => inventoryItemToPhase1(entry, entry.id || String(index)));
   const visibleItems = needle ? flattenInvItems(topLevelItems).filter((item) => matchesInvItem(item, needle)) : topLevelItems;
-  const equipped = visibleItems.filter((item) => item.isEquipped && !item.isFormula);
-  const carried = visibleItems.filter((item) => !item.isEquipped && !item.isFormula);
-  const formulas = visibleItems.filter((item) => item.isFormula);
+  const equipped = visibleItems.filter((item) => item.isEquipped && !item.isContainer);
+  const carried = visibleItems.filter((item) => !item.isEquipped && !item.isContainer);
+  const containers = visibleItems.filter((item) => item.isContainer);
   const buckets: Array<{ id: typeof persistedInventoryTab; label: string; items: typeof equipped }> = [
     { id: 'equipped', label: 'Equipped', items: equipped },
     { id: 'carried', label: 'Carried', items: carried },
-    { id: 'formulas', label: 'Formulas', items: formulas },
+    { id: 'containers', label: 'Containers', items: containers },
   ];
   const allItems = flattenInvItems(topLevelItems);
   const canAdd = Boolean(itemActions?.addItem);
   const tabBuckets = buckets.filter((bucket) => {
     if (canAdd) return true;
     if (needle) return bucket.items.length > 0;
-    if (bucket.id === 'formulas') return allItems.some((item) => item.isFormula);
-    if (bucket.id === 'equipped') return allItems.some((item) => item.isEquipped && !item.isFormula);
-    return allItems.some((item) => !item.isEquipped && !item.isFormula);
+    if (bucket.id === 'containers') return allItems.some((item) => item.isContainer);
+    if (bucket.id === 'equipped') return allItems.some((item) => item.isEquipped && !item.isContainer);
+    return allItems.some((item) => !item.isEquipped && !item.isContainer);
   });
   const activeInv = tabBuckets.some((bucket) => bucket.id === invTab) ? invTab : (tabBuckets[0]?.id ?? 'equipped');
   const activeItems = buckets.find((bucket) => bucket.id === activeInv)?.items ?? [];
@@ -788,6 +788,7 @@ export function InventoryPanel({ combatant, itemActions, status }: { combatant: 
           setMenu({ item, x: event.clientX, y: event.clientY });
         } : undefined}
         flat={Boolean(needle)}
+        collapsible={activeInv === 'containers' && !needle}
         hideTitle={tabBuckets.length > 1}
       />
     )}
@@ -813,6 +814,7 @@ export function InventoryPanel({ combatant, itemActions, status }: { combatant: 
         nested={inventoryItemIsNested(topLevelItems, menu.item.key)}
         containers={inventoryContainerTargets(topLevelItems, menu.item.key)}
         canEdit={Boolean(itemActions.updateItem)}
+        canClone={Boolean(itemActions.addItem)}
         canDelete={Boolean(itemActions.deleteItem) && !menu.item.unselectable}
         canMove={Boolean(itemActions.moveItem) && !menu.item.unselectable}
         onClose={() => setMenu(null)}
@@ -825,6 +827,13 @@ export function InventoryPanel({ combatant, itemActions, status }: { combatant: 
           setMenu(null);
           setEditing(menu.item);
         }}
+        onClone={() => {
+          const source = findInventoryItem(combatant.data.inventory?.items, menu.item.key)?.item;
+          setMenu(null);
+          if (!source || !itemActions.addItem) return;
+          void itemActions.addItem(source, 'GIVE');
+          setInvTab(isItemContainer(source) ? 'containers' : 'carried');
+        }}
         onDelete={() => {
           itemActions.deleteItem?.(menu.item);
           setMenu(null);
@@ -833,7 +842,7 @@ export function InventoryPanel({ combatant, itemActions, status }: { combatant: 
         onMove={(containerKey) => {
           itemActions.moveItem?.(menu.item, containerKey);
           setMenu(null);
-          setInvTab(containerKey ? 'carried' : (menu.item.isEquipped ? 'equipped' : 'carried'));
+          setInvTab(containerKey ? 'containers' : (menu.item.isEquipped ? 'equipped' : 'carried'));
         }}
       />
     )}
@@ -852,7 +861,7 @@ export function InventoryPanel({ combatant, itemActions, status }: { combatant: 
         inventory={combatant.data.inventory}
         onAdd={async (item, type, coins) => {
           await itemActions.addItem?.(item, type, coins);
-          setInvTab(type === 'FORMULA' ? 'formulas' : 'carried');
+          setInvTab(isItemContainer(item) ? 'containers' : 'carried');
         }}
         onClose={() => setAdding(false)}
       />
@@ -879,12 +888,13 @@ function CoinStrip({ coins }: { coins: { cp: number; sp: number; gp: number; pp:
   );
 }
 
-function InventoryItemSection({ title, items, onOpen, onContextMenu, flat = false, hideTitle = false }: {
+function InventoryItemSection({ title, items, onOpen, onContextMenu, flat = false, collapsible = false, hideTitle = false }: {
   title: string;
   items: Phase1InvItem[];
   onOpen: (item: Phase1InvItem) => void;
   onContextMenu?: (event: ReactMouseEvent, item: Phase1InvItem) => void;
   flat?: boolean;
+  collapsible?: boolean;
   hideTitle?: boolean;
 }) {
   if (!items.length) return null;
@@ -899,32 +909,54 @@ function InventoryItemSection({ title, items, onOpen, onContextMenu, flat = fals
         <span className='pr-3 text-right'>Price</span>
       </div>
       <div className='divide-y divide-white/[0.07]'>
-        {items.map((item) => <ItemRow key={item.key} item={item} onOpen={onOpen} onContextMenu={onContextMenu} depth={flat ? 0 : 0} showContents={!flat} />)}
+        {items.map((item) => (
+          <ItemRow
+            key={item.key}
+            item={item}
+            onOpen={onOpen}
+            onContextMenu={onContextMenu}
+            depth={0}
+            showContents={!flat}
+            collapsible={collapsible && !flat}
+          />
+        ))}
       </div>
     </section>
   );
 }
 
-function ItemRow({ item, onOpen, onContextMenu, depth, showContents = true }: {
+function ItemRow({ item, onOpen, onContextMenu, depth, showContents = true, collapsible = false }: {
   item: Phase1InvItem;
   onOpen: (item: Phase1InvItem) => void;
   onContextMenu?: (event: ReactMouseEvent, item: Phase1InvItem) => void;
   depth: number;
   showContents?: boolean;
+  collapsible?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const preview = plainText(item.description).slice(0, 180);
   const icon = itemGroupIcon(item.group);
+  const canToggle = collapsible && item.isContainer;
+  const contentsOpen = showContents && (!canToggle || expanded);
   return <>
     <button
       className='group relative grid w-full grid-cols-[42px_minmax(0,1fr)] items-stretch border-0 bg-transparent text-left hover:bg-p1-hover focus-visible:outline focus-visible:outline-1 focus-visible:outline-p1-accent sm:grid-cols-[42px_minmax(0,1fr)_2.5rem_2.5rem_8rem] sm:gap-2'
       style={{ paddingLeft: depth * 12 }}
-      onClick={() => onOpen(item)}
+      onClick={() => {
+        if (canToggle) setExpanded((open) => !open);
+        else onOpen(item);
+      }}
       onContextMenu={onContextMenu ? (event) => onContextMenu(event, item) : undefined}
     >
       <span className='grid place-items-center border-r border-p1-border text-p1-muted' title={item.group}>
         {icon}
       </span>
       <span className='flex min-w-0 items-center gap-2 px-3 py-2.5'>
+        {canToggle && (
+          expanded
+            ? <ChevronDown size={14} className='shrink-0 text-p1-faint' />
+            : <ChevronRight size={14} className='shrink-0 text-p1-faint' />
+        )}
         <span className='min-w-0 flex-1 truncate text-sm'>{item.name}</span>
         {item.isEquipped && <Tag>Equipped</Tag>}
         {item.isInvested && <Tag>Invested</Tag>}
@@ -944,7 +976,21 @@ function ItemRow({ item, onOpen, onContextMenu, depth, showContents = true }: {
         <span className='mt-2 block text-[11px] leading-4 text-p1-muted'>{preview}{plainText(item.description).length > preview.length ? '...' : ''}</span>
       </span>
     </button>
-    {showContents && item.contents.map((child) => <ItemRow key={child.key} item={child} onOpen={onOpen} onContextMenu={onContextMenu} depth={depth + 1} />)}
+    {contentsOpen && item.contents.length > 0 && (
+      <div>
+        {item.contents.map((child) => (
+          <ItemRow
+            key={child.key}
+            item={child}
+            onOpen={onOpen}
+            onContextMenu={onContextMenu}
+            depth={depth + 1}
+            showContents={showContents}
+            collapsible={collapsible}
+          />
+        ))}
+      </div>
+    )}
   </>;
 }
 
@@ -956,11 +1002,13 @@ function InventoryItemContextMenu({
   nested,
   containers,
   canEdit,
+  canClone,
   canDelete,
   canMove,
   onClose,
   onToggleEquipped,
   onEdit,
+  onClone,
   onDelete,
   onMove,
 }: {
@@ -971,11 +1019,13 @@ function InventoryItemContextMenu({
   nested: boolean;
   containers: Array<{ key: string; name: string }>;
   canEdit: boolean;
+  canClone: boolean;
   canDelete: boolean;
   canMove: boolean;
   onClose: () => void;
   onToggleEquipped: () => void;
   onEdit: () => void;
+  onClone: () => void;
   onDelete: () => void;
   onMove: (containerKey: string | null) => void;
 }) {
@@ -997,7 +1047,7 @@ function InventoryItemContextMenu({
     if (menu) setMenuBox({ w: menu.offsetWidth, h: menu.offsetHeight });
     const sub = subMenuRef.current;
     if (sub) setSubBox({ w: sub.offsetWidth, h: sub.offsetHeight });
-  }, [moveOpen, canEquip, canEdit, canDelete, showMove, containers.length]);
+  }, [moveOpen, canEquip, canEdit, canClone, canDelete, showMove, containers.length]);
   const pad = 8;
   const left = Math.min(Math.max(pad, x), Math.max(pad, window.innerWidth - menuBox.w - pad));
   const top = Math.min(Math.max(pad, y), Math.max(pad, window.innerHeight - menuBox.h - pad));
@@ -1022,6 +1072,17 @@ function InventoryItemContextMenu({
         {canEdit && (
           <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onEdit}>
             <Pencil size={14} /> Edit
+          </button>
+        )}
+        {canClone && (
+          <button
+            type='button'
+            role='menuitem'
+            className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover'
+            onMouseEnter={() => setMoveOpen(false)}
+            onClick={onClone}
+          >
+            <Copy size={14} /> Clone
           </button>
         )}
         {showMove && (
