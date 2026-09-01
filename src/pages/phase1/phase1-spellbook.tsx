@@ -21,6 +21,7 @@ export function Phase1SpellbookModal({
   manageMode = 'LIST-ONLY',
   tradition,
   list,
+  catalogSources,
   assign,
   busy,
   onAdd,
@@ -35,6 +36,7 @@ export function Phase1SpellbookModal({
   manageMode?: Phase1SpellManageMode;
   tradition?: string;
   list: Array<{ spell_id: number; rank: number; source: string }>;
+  catalogSources?: number[];
   assign?: SpellbookAssign | null;
   busy?: boolean;
   onAdd: (spell: Spell, rank: number) => Promise<void>;
@@ -52,9 +54,10 @@ export function Phase1SpellbookModal({
   const [traditionFilter, setTraditionFilter] = useState<string | null>(lockTradition ? (tradition?.toLowerCase() || null) : null);
   const [rankFilter, setRankFilter] = useState<number[]>([]);
   const catalog = useQuery({
-    queryKey: ['phase1-spell-catalog', getDefaultSourcesKey('PAGE')],
+    queryKey: ['phase1-spell-catalog', catalogSources ?? getDefaultSourcesKey('PAGE')],
     queryFn: async () => {
-      const spells = await fetchContentAll<Spell>('spell', getDefaultSources('PAGE'));
+      const sources = catalogSources ?? getDefaultSources('PAGE');
+      const spells = await fetchContentAll<Spell>('spell', sources);
       return (spells ?? [])
         .filter((spell) => isSpellVisible('CHARACTER', spell))
         .sort((a, b) => a.name.localeCompare(b.name));
@@ -176,6 +179,7 @@ export function Phase1SpellbookModal({
       {adding && (
         <SelectCatalogSpellModal
           busy={busy}
+          catalogSources={catalogSources}
           traditionFilter={traditionFilter}
           preferRank={assign?.rank}
           title={slotsOnly
@@ -200,6 +204,7 @@ export function Phase1SpellbookModal({
 
 function SelectCatalogSpellModal({
   busy,
+  catalogSources,
   traditionFilter,
   preferRank,
   title = 'Add any spell',
@@ -207,6 +212,7 @@ function SelectCatalogSpellModal({
   onClose,
 }: {
   busy?: boolean;
+  catalogSources?: number[];
   traditionFilter?: string | null;
   preferRank?: number;
   title?: string;
@@ -217,9 +223,10 @@ function SelectCatalogSpellModal({
   const [tradition, setTradition] = useState<string | null>(traditionFilter ?? null);
   const [rankFilter, setRankFilter] = useState<number[]>([]);
   const catalog = useQuery({
-    queryKey: ['phase1-spell-catalog', getDefaultSourcesKey('PAGE')],
+    queryKey: ['phase1-spell-catalog', catalogSources ?? getDefaultSourcesKey('PAGE')],
     queryFn: async () => {
-      const spells = await fetchContentAll<Spell>('spell', getDefaultSources('PAGE'));
+      const sources = catalogSources ?? getDefaultSources('PAGE');
+      const spells = await fetchContentAll<Spell>('spell', sources);
       return (spells ?? [])
         .filter((spell) => isSpellVisible('CHARACTER', spell))
         .sort((a, b) => a.name.localeCompare(b.name));

@@ -9,7 +9,7 @@ import type { Phase1EntityCombatant } from './phase1-entity';
 import { StatDetailModal, type Phase1StatKey, type Phase1StatTarget } from './phase1-stat-modal';
 import { loadEntityDetails, type Phase1ProfRow } from './phase1-details';
 import { loadEntitySkillsActions, type Phase1ActionGroup, type Phase1Skill } from './phase1-skills';
-import { isDivinePreparedSource, isWitchFamiliarSource, loadEntitySpells, spellFitsSlot, spellManageMode, type Phase1SpellEntry, type Phase1SpellSection } from './phase1-spells';
+import { isDivinePreparedSource, isWitchFamiliarSource, loadEntitySpells, spellCatalogSourceIds, spellFitsSlot, spellManageMode, type Phase1SpellEntry, type Phase1SpellSection } from './phase1-spells';
 import { Phase1SpellbookModal, type SpellbookAssign } from './phase1-spellbook';
 import { findInventoryItem, flattenInvItems, inventoryContainerTargets, inventoryItemIsNested, inventoryItemToPhase1, loadEntityInventory, matchesInvItem, type Phase1InvItem } from './phase1-inventory';
 import { SelectAddItemsModal, type AddItemKind } from './phase1-add-items';
@@ -1479,10 +1479,10 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
     persistedSpellsSourceKey = key;
     setSourceKeyState(key);
   };
-  const allSections = data.data ?? [];
+  const allSections = data.data?.sections ?? [];
   const sourceTabs = allSections.map((section) => ({ key: section.key, label: section.label }));
   const activeSource = sourceKey === 'ALL' || sourceTabs.some((tab) => tab.key === sourceKey) ? sourceKey : 'ALL';
-  const availableRanks = [...new Set((data.data ?? []).flatMap((section) => [
+  const availableRanks = [...new Set(allSections.flatMap((section) => [
     ...section.entries.map(spellRankKey),
     ...section.slots.map((slot) => (slot.rank === 0 ? -1 : slot.rank)),
   ]))].sort((a, b) => a - b);
@@ -1504,6 +1504,7 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
       ? section.slots.length > 0
       : section.slots.some((slot) => (slot.rank === 0 ? -1 : slot.rank) === activeRank);
     if (hasSlotsAtRank && (section.mode === 'PREPARED' || section.mode === 'SPONTANEOUS')) return true;
+    if (!needle && spellManageMode(section.source?.type, section.source?.name, section.mode)) return true;
     return section.mode === 'RITUAL' && !needle && activeRank === 'ALL';
   });
   const addTarget = (() => {
@@ -1616,7 +1617,8 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
         sourceType={book.sourceType}
         manageMode={book.manageMode || undefined}
         tradition={data.data?.find((section) => section.source?.name === book.sourceName)?.source?.tradition}
-        list={combatant.data.spells?.list ?? []}
+        list={data.data?.list ?? combatant.data.spells?.list ?? []}
+        catalogSources={spellCatalogSourceIds((combatant.data as Character).content_sources?.enabled)}
         assign={book.assign}
         initialAdding={book.adding}
         busy={Boolean(busyKey)}

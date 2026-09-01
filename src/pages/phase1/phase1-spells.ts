@@ -1,7 +1,8 @@
+import { COMMON_CORE_ID } from '@constants/data';
 import { collectEntitySpellcasting, getFocusPoints } from '@content/collect-content';
 import { getFinalProfValue } from '@variables/variable-helpers';
 import type { CastingSource, LivingEntity, Spell } from '@schemas/content';
-import { cloneDeep } from 'lodash-es';
+import { cloneDeep, uniq } from 'lodash-es';
 import { preparePhase1Entity, type Phase1EntityCombatant } from './phase1-entity';
 
 export type Phase1SpellMode = 'PREPARED' | 'SPONTANEOUS' | 'FOCUS' | 'INNATE' | 'RITUAL';
@@ -59,7 +60,20 @@ export type Phase1SpellSection = {
   focusPoints?: { current: number; max: number };
 };
 
-export async function loadEntitySpells(combatant: Phase1EntityCombatant): Promise<Phase1SpellSection[]> {
+export type Phase1SpellLoad = {
+  sections: Phase1SpellSection[];
+  list: Array<{ spell_id: number; rank: number; source: string }>;
+};
+
+export function keepPreparedListSection(sourceType: string, entries: number, slots: number, hasFamiliarList: boolean) {
+  return entries > 0 || slots > 0 || hasFamiliarList || sourceType === 'PREPARED-LIST';
+}
+
+export function spellCatalogSourceIds(enabled?: number[] | null) {
+  return uniq([COMMON_CORE_ID, ...(enabled ?? [])]);
+}
+
+export async function loadEntitySpells(combatant: Phase1EntityCombatant): Promise<Phase1SpellLoad> {
   const { entity, content, storeId } = await preparePhase1Entity(combatant);
   const data = collectEntitySpellcasting(storeId, entity);
   const spellById = new Map(content.spells.map((spell) => [spell.id, spell]));
@@ -95,7 +109,7 @@ export async function loadEntitySpells(combatant: Phase1EntityCombatant): Promis
           });
       const hasFamiliarList = mode === 'PREPARED' && source.type === 'PREPARED-LIST'
         && data.list.some((entry) => entry.source === source.name);
-      if (entries.length || sourceSlots.length || hasFamiliarList) {
+      if (keepPreparedListSection(source.type, entries.length, sourceSlots.length, hasFamiliarList)) {
         sections.push({
           key: `${mode}-${source.name}`,
           label: source.name,
@@ -162,7 +176,7 @@ export async function loadEntitySpells(combatant: Phase1EntityCombatant): Promis
     slots: [],
   });
 
-  return sections;
+  return { sections, list: data.list };
 }
 
 export function spellbookEntriesForSource(
