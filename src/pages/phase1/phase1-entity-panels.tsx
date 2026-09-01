@@ -1480,6 +1480,7 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
     setSourceKeyState(key);
   };
   const allSections = data.data?.sections ?? [];
+  const bookTradition = book ? allSections.find((section) => section.source?.name === book.sourceName)?.source?.tradition : undefined;
   const sourceTabs = allSections.map((section) => ({ key: section.key, label: section.label }));
   const activeSource = sourceKey === 'ALL' || sourceTabs.some((tab) => tab.key === sourceKey) ? sourceKey : 'ALL';
   const availableRanks = [...new Set(allSections.flatMap((section) => [
@@ -1616,7 +1617,7 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
         sourceName={book.sourceName}
         sourceType={book.sourceType}
         manageMode={book.manageMode || undefined}
-        tradition={data.data?.find((section) => section.source?.name === book.sourceName)?.source?.tradition}
+        tradition={bookTradition}
         list={data.data?.list ?? combatant.data.spells?.list ?? []}
         catalogSources={spellCatalogSourceIds((combatant.data as Character).content_sources?.enabled)}
         assign={book.assign}
@@ -1638,7 +1639,7 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
           await spellActions.prepareSlot(book.sourceName, preferId, entry.spell, entry.rank);
           if (book.assign) setBook(null);
         }) : undefined}
-        onApplyFont={isDivinePreparedSource({ name: book.sourceName, tradition: data.data?.find((section) => section.source?.name === book.sourceName)?.source?.tradition })
+        onApplyFont={isDivinePreparedSource({ name: book.sourceName, tradition: bookTradition })
           ? (choice) => runSpellAction(`font-${book.sourceName}-${choice}`, () => spellActions.applyDivineFont(book.sourceName, choice))
           : undefined}
       />

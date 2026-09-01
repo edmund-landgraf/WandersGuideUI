@@ -3,7 +3,7 @@ import type { Spell } from '@schemas/content';
 import { keepPreparedListSection, spellbookEntriesForSource, spellCatalogSourceIds } from './phase1-spells';
 
 function spell(id: number, name: string): Spell {
-  return { id, name, rank: 1, traditions: ['occult'], traits: [], description: '' } as Spell;
+  return { id, name, rank: 1, traditions: ['occult'], traits: [], description: '' } as unknown as Spell;
 }
 
 describe('witch familiar spell load', () => {
