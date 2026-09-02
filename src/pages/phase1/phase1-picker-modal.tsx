@@ -29,6 +29,7 @@ export function Phase1PickerModal<T>({
   maxHeightClass = 'max-h-[min(82vh,640px)]',
   overlayClass = 'z-[100]',
   batchSize = DEFAULT_BATCH,
+  rangeSize,
 }: {
   title: string;
   titleId: string;
@@ -52,9 +53,12 @@ export function Phase1PickerModal<T>({
   maxHeightClass?: string;
   overlayClass?: string;
   batchSize?: number;
+  /** When set, a second filter row pages the list in this many items (e.g. 100 → 100, 200, 300). */
+  rangeSize?: number;
 }) {
   const [query, setQuery] = useState('');
   const [letter, setLetter] = useState<string | null>(null);
+  const [rangeIndex, setRangeIndex] = useState(0);
   const [visibleCount, setVisibleCount] = useState(batchSize);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -76,10 +80,19 @@ export function Phase1PickerModal<T>({
     () => (letter ? searched.filter((item) => firstLetter(getName(item)) === letter) : searched),
     [searched, letter, getName]
   );
-  const visible = options.slice(0, visibleCount);
-  const hasMore = visibleCount < options.length;
+  const rangeCount = rangeSize && rangeSize > 0 && options.length > 0 ? Math.ceil(options.length / rangeSize) : 0;
+  const clampedRange = rangeCount > 0 ? Math.min(rangeIndex, rangeCount - 1) : 0;
+  const ranged =
+    rangeSize && rangeSize > 0
+      ? options.slice(clampedRange * rangeSize, clampedRange * rangeSize + rangeSize)
+      : options;
+  const visible = rangeSize ? ranged : ranged.slice(0, visibleCount);
+  const hasMore = !rangeSize && visibleCount < options.length;
 
-  useEffect(() => setVisibleCount(batchSize), [query, letter, batchSize, items]);
+  useEffect(() => {
+    setVisibleCount(batchSize);
+    setRangeIndex(0);
+  }, [query, letter, batchSize, items]);
   useEffect(() => {
     if (letter && !availableLetters.has(letter)) setLetter(null);
   }, [letter, availableLetters]);
@@ -173,6 +186,24 @@ export function Phase1PickerModal<T>({
               </LetterButton>
             ))}
           </div>
+          {rangeSize && rangeSize > 0 && rangeCount > 0 && (
+            <div className='mt-1.5 flex flex-wrap justify-center gap-0.5' role='group' aria-label='Filter by range'>
+              {Array.from({ length: rangeCount }, (_, index) => {
+                const end = (index + 1) * rangeSize;
+                const start = index * rangeSize;
+                return (
+                  <LetterButton
+                    key={end}
+                    active={clampedRange === index}
+                    title={`${start}–${end}`}
+                    onClick={() => setRangeIndex(index)}
+                  >
+                    {String(end)}
+                  </LetterButton>
+                );
+              })}
+            </div>
+          )}
           {toolbar}
         </div>
         <div className={`flex min-h-0 flex-1 ${aside ? 'flex-row' : 'flex-col'}`}>
@@ -207,16 +238,19 @@ function LetterButton({
   children,
   active,
   disabled,
+  title,
   onClick,
 }: {
   children: string;
   active?: boolean;
   disabled?: boolean;
+  title?: string;
   onClick: () => void;
 }) {
   return (
     <button
       type='button'
+      title={title}
       aria-pressed={active}
       disabled={disabled}
       onClick={onClick}
