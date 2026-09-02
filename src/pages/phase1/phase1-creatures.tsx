@@ -173,7 +173,6 @@ export function SelectCreatureModal({
       maxWidthClass='max-w-4xl'
       maxHeightClass='max-h-[min(86vh,760px)]'
       batchSize={16}
-      rangeSize={100}
       toolbar={
         <div className='mt-2 flex items-center gap-2'>
           <div className='flex border border-p1-border' role='group' aria-label='Combatant side'>

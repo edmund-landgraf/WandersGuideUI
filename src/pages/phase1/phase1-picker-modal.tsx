@@ -5,6 +5,7 @@ import { isContentStackOpen } from './phase1-content-links';
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 const DEFAULT_BATCH = 12;
+const DEFAULT_RANGE = 100;
 
 export function Phase1PickerModal<T>({
   title,
@@ -29,7 +30,7 @@ export function Phase1PickerModal<T>({
   maxHeightClass = 'max-h-[min(82vh,640px)]',
   overlayClass = 'z-[100]',
   batchSize = DEFAULT_BATCH,
-  rangeSize,
+  rangeSize = DEFAULT_RANGE,
 }: {
   title: string;
   titleId: string;
@@ -53,7 +54,7 @@ export function Phase1PickerModal<T>({
   maxHeightClass?: string;
   overlayClass?: string;
   batchSize?: number;
-  /** When set, a second filter row pages the list in this many items (e.g. 100 → 100, 200, 300). */
+  /** Page size for the 100/200/300 row. Shown only when the filtered list is larger than this. Pass 0 to disable. */
   rangeSize?: number;
 }) {
   const [query, setQuery] = useState('');
@@ -186,7 +187,7 @@ export function Phase1PickerModal<T>({
               </LetterButton>
             ))}
           </div>
-          {rangeSize && rangeSize > 0 && rangeCount > 0 && (
+          {rangeCount > 1 && (
             <div className='mt-1.5 flex flex-wrap justify-center gap-0.5' role='group' aria-label='Filter by range'>
               {Array.from({ length: rangeCount }, (_, index) => {
                 const end = (index + 1) * rangeSize;
