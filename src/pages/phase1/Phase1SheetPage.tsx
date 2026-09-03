@@ -380,7 +380,7 @@ export function Phase1SheetPage() {
           <Phase1CssThemeToggle />
         </div>
       </header>
-      <main className={`relative z-10 mx-auto min-h-0 w-full flex-1 overflow-y-scroll px-4 py-6 pb-10 ${view === 'builder' ? 'max-w-6xl' : 'max-w-5xl'}`}>
+      <main className={`relative z-10 mx-auto min-h-0 w-full flex-1 overflow-y-scroll px-4 py-6 pb-28 sm:pb-10 ${view === 'builder' ? 'max-w-6xl' : 'max-w-5xl'}`}>
         <section className='relative z-30 mb-4 flex flex-wrap items-start gap-4 border border-p1-border bg-p1-surface p-4'>
           <button
             type='button'
@@ -890,7 +890,7 @@ function Phase1ArtworkOverlay({
   return (
     <div className='pointer-events-none fixed bottom-3 right-3 z-20 flex max-w-[min(18rem,calc(100vw-1.5rem))] flex-col items-end gap-1'>
       {option && (option.name || option.source?.trim()) && (
-        <div className='pointer-events-auto max-w-full rounded border border-p1-border bg-p1-surface/90 px-2 py-1 text-right shadow-md backdrop-blur-sm'>
+        <div className='hidden max-w-full rounded border border-p1-border bg-p1-surface/90 px-2 py-1 text-right shadow-md backdrop-blur-sm sm:pointer-events-auto sm:block'>
           {option.name && <p className='truncate text-[11px] text-p1-text'>{option.name}</p>}
           {option.source?.trim() && (
             <a

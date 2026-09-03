@@ -507,7 +507,9 @@ export function getContentDataFromHref(href: string) {
 
   if (!lastPart.startsWith('link_')) return null;
 
-  const [, type, id] = lastPart.split('_');
+  const parts = lastPart.split('_');
+  const type = parts[1];
+  const id = parts.slice(2).join('_');
   if (!type || id == null || id === '') return null;
   return { type: type as ContentType | AbilityBlockType | 'condition', id: id.replace(/~/g, ' ') };
 }

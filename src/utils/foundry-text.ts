@@ -4,9 +4,9 @@ import { toLabel } from '@utils/strings';
 /**
  * Foundry leftover markup → standard Pathfinder 2e prose.
  *
- * [[Sickened]]                    → sickened
- * [[Sickened]]{Sickened 1}        → sickened 1
- * [Sickened]                      → sickened
+ * [[Sickened]]                    → [sickened](link_condition_sickened)
+ * [[Sickened]]{Sickened 1}        → [sickened 1](link_condition_sickened)
+ * [Sickened]                      → sickened (then auto-linked)
  * @Check[fortitude|dc:14]         → DC 14 Fortitude
  * @Check[fortitude|dc:14|basic]   → DC 14 basic Fortitude
  * [[/br 1d4 #hours]]{1d4 hours}   → 1d4 hours
@@ -22,7 +22,7 @@ const AON_ORIGIN = 'https://2e.aonprd.com';
 
 export function toStandard2eProse(text: string): string {
   if (!text) return text;
-  let out = text;
+  let out = unescapeWikiBrackets(text);
   out = convertHtmlAnchors(out);
   out = convertUuidEnrichers(out);
   out = convertCheckEnrichers(out);
@@ -38,7 +38,10 @@ export function toStandard2eProse(text: string): string {
 /** Markdown `[name](link_type_id)` → `[name](<link_type_id>)` so underscores in WG hrefs survive CommonMark. */
 export function toWgMarkdownLinks(text: string): string {
   if (!text) return text;
-  return text.replace(/\[([^\]]+)\]\((?:<)?(link_[^)\s>]+)(?:>)?\)/g, '[$1](<$2>)');
+  // `[[label](link_type_id)]` is an unresolved WG wiki wrapper around a real content link.
+  let out = text.replace(/\[\[([^\]]+)\]\((?:<)?(link_[^)\s>]+)(?:>)?\)\]/g, '[$1](<$2>)');
+  out = out.replace(/\[([^\]]+)\]\((?:<)?(link_[^)\s>]+)(?:>)?\)/g, '[$1](<$2>)');
+  return out;
 }
 
 /** Turn AoN-relative hrefs (`Conditions.aspx?ID=36`, `/Spells.aspx?ID=1`) into absolute URLs. */
@@ -66,8 +69,13 @@ export function autoLinkConditions(text: string, blacklist: string[] = []): stri
     .sort((a, b) => b.length - a.length);
   if (conditions.length === 0) return text;
 
-  const conditionRegex = new RegExp(`(?<!\\[)\\b(${conditions.map(escapeRegex).join('|')})\\b(?!\\])`, 'gi');
-  let out = text.replace(conditionRegex, (match) => `[${match.toLowerCase()}](link_condition_${match.toLowerCase().replace(/ /g, '~')})`);
+  const names = conditions.map(escapeRegex).join('|');
+  let out = unescapeWikiBrackets(text);
+  // `[[Concealed]]` is skipped by the bare-word pass (`(?<!\[)`), so resolve wiki wrappers first.
+  out = out.replace(new RegExp(`\\[\\[\\s*(${names})(?:\\s+(\\d+))?\\s*\\]\\]`, 'gi'), (_full, name: string, value?: string) =>
+    conditionMarkdownLink(name, value)
+  );
+  out = out.replace(new RegExp(`(?<!\\[)\\b(${names})\\b(?!\\])`, 'gi'), (match) => conditionMarkdownLink(match));
   out = out.replace(/persistent (\w*?\s|)damage/gi, (match) => `[${match}](link_condition_persistent~damage)`);
   return out;
 }
@@ -105,6 +113,13 @@ function convertInlineRolls(text: string): string {
   });
 }
 
+function unescapeWikiBrackets(text: string): string {
+  return text
+    .replace(/\\\[\\\[([^\]]+)\\\]\\\]/g, '[[$1]]')
+    .replace(/&(?:#0*91|#x0*5b|lsqb|lbrack);/gi, '[')
+    .replace(/&(?:#0*93|#x0*5d|rsqb|rbrack);/gi, ']');
+}
+
 function convertWikiLinks(text: string): string {
   return text.replace(/\[\[([^\]/][^\]]*)\]\](?:\{([^}]+)\})?/g, (full, inner: string, display?: string) => {
     if (inner.includes('](')) return full;
@@ -113,7 +128,7 @@ function convertWikiLinks(text: string): string {
 }
 
 function convertBareConditionBrackets(text: string): string {
-  return text.replace(/\[([^\]\n]+)\](?!\()/g, (full, inner: string) => {
+  return text.replace(/(?<!\[)\[([^\]\[\n]+)\](?!\()/g, (full, inner: string) => {
     const styled = asStandardCondition(inner);
     return styled ?? full;
   });
@@ -147,8 +162,19 @@ function formatCheck(body: string): string {
   return body;
 }
 
+function conditionMarkdownLink(name: string, value?: string): string {
+  const lower = name.toLowerCase();
+  const label = value ? `${lower} ${value}` : lower;
+  return `[${label}](link_condition_${lower.replace(/ /g, '~')})`;
+}
+
 function styleConditionOrPlain(text: string): string {
-  return asStandardCondition(text) ?? text;
+  const trimmed = text.trim();
+  const match = trimmed.match(/^([A-Za-z][A-Za-z\- ]*?)(?:\s+(\d+))?$/);
+  if (!match) return trimmed;
+  const name = match[1].trim();
+  if (!conditionNameSet().has(name.toLowerCase())) return trimmed;
+  return conditionMarkdownLink(name, match[2]);
 }
 
 function asStandardCondition(text: string): string | null {
