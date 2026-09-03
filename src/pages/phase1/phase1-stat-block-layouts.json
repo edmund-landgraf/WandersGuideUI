@@ -1,0 +1,27 @@
+{
+  "storageKey": "phase1-stat-block-layout",
+  "default": "current",
+  "notes": "Frozen board snapshots. Switch in the stat-block chrome to compare; add a new id when replacing Experimental.",
+  "layouts": [
+    {
+      "id": "current",
+      "label": "Current",
+      "kind": "prose",
+      "description": "Remaster one-column stat block (Phase1StatBlockView)."
+    },
+    {
+      "id": "board-v1",
+      "label": "Board v1",
+      "kind": "cards",
+      "module": "phase1-stat-block-cards-v1.tsx",
+      "description": "Two equal columns: combat stack | checks stack, then items/features. Snapshot 2026-09-03 before masonry flow."
+    },
+    {
+      "id": "experimental",
+      "label": "Experimental",
+      "kind": "cards",
+      "module": "phase1-stat-block-cards.tsx",
+      "description": "Header identity + 3-up short cards + skills band + full-width spell ranks."
+    }
+  ]
+}

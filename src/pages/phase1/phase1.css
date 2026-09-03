@@ -237,6 +237,14 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   color: var(--p1-accent-soft);
   background: color-mix(in srgb, var(--p1-accent) 16%, transparent);
 }
+.stat-block-layout-switch button {
+  width: auto;
+  padding: 0 0.75rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 .toolbar-button {
   display: inline-flex;
   height: 2.25rem;
@@ -401,26 +409,41 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   background: transparent;
   padding: 0;
 }
+.ability-prose .table-wrap {
+  overflow-x: auto;
+  margin: 1rem 0;
+  border: 1px solid var(--p1-border);
+  background: var(--p1-bg-inset);
+}
 .ability-prose table {
   width: 100%;
-  margin: 1rem 0;
+  min-width: 36rem;
+  margin: 0;
   border-collapse: collapse;
-  font-size: 0.82rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 .ability-prose thead th {
   border-bottom: 1px solid var(--p1-border);
-  padding: 0.55rem 0.65rem;
-  text-align: left;
+  padding: 0.4rem 0.45rem;
   color: var(--p1-accent-soft);
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+.ability-prose thead th:first-child,
+.ability-prose tbody td:first-child {
+  text-align: left;
+  font-weight: 600;
 }
 .ability-prose tbody td {
   border-bottom: 1px solid var(--p1-border);
-  padding: 0.55rem 0.65rem;
-  vertical-align: top;
+  padding: 0.35rem 0.45rem;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 .ability-prose tbody tr:nth-child(even) {
   background: var(--p1-hover);
@@ -537,7 +560,75 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .p1-sheet-art-dark > main .bg-p1-inset {
   background-color: color-mix(in srgb, var(--p1-bg-inset) 64%, transparent);
 }
+
+.p1-char-row {
+  position: relative;
+  overflow: hidden;
+}
+.p1-char-row::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: transparent;
+}
+.p1-char-row:hover::after {
+  background: var(--p1-hover);
+}
+.p1-char-row-art {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.p1-char-row-art img {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+}
+.p1-char-row-art-veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--p1-bg-page) 88%, transparent),
+    color-mix(in srgb, var(--p1-bg-page) 40%, transparent) 42%,
+    color-mix(in srgb, var(--p1-bg-page) 12%, transparent) 62%,
+    color-mix(in srgb, var(--p1-bg-page) 58%, transparent)
+  );
+}
+.p1-char-row > :not(.p1-char-row-art) {
+  position: relative;
+  z-index: 10;
+}
 .icon-button.is-active {
   border-color: color-mix(in srgb, var(--p1-accent) 50%, transparent);
   color: var(--p1-accent-soft);
+}
+
+.stat-block-line.ability-prose {
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.stat-block-line.ability-prose p {
+  margin: 0;
+  max-width: none;
+  font-size: inherit;
+  line-height: inherit;
+}
+.stat-block-line.ability-prose .table-wrap {
+  display: block;
+  margin: 0.65rem 0 0.25rem;
+}
+
+@media print {
+  .stat-block-chrome {
+    display: none !important;
+  }
+  .stat-block-page {
+    background: white !important;
+    color: #1a1a1a !important;
+  }
 }

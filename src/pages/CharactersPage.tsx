@@ -369,10 +369,10 @@ export function Component() {
             </VisuallyHidden>
             <PathbuilderInputModal
               open={openedPathbuilderModal}
-              onConfirm={async (pathbuilderId) => {
+              onConfirm={async (source) => {
                 setOpenedPathbuilderModal(false);
                 setLoadingImportCharacter(true);
-                const character = await importFromPathbuilder(pathbuilderId);
+                await importFromPathbuilder(source);
                 refetch();
                 setLoadingImportCharacter(false);
               }}

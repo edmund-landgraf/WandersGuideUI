@@ -1,12 +1,16 @@
-import { Button, Group, Modal, NumberInput, Stack, Text, TextInput, Title } from '@mantine/core';
+import { PathbuilderImportSource } from '@import/pathbuilder/import-from-pathbuilder';
+import { Button, FileButton, Group, Modal, NumberInput, Stack, Text, Title } from '@mantine/core';
 import { useState } from 'react';
 
 export default function PathbuilderInputModal(props: {
   open: boolean;
-  onConfirm: (pathbuilderId: number) => void;
+  onConfirm: (source: PathbuilderImportSource) => void;
   onClose: () => void;
 }) {
   const [pathbuilderId, setPathbuilderId] = useState<number>();
+  const [file, setFile] = useState<File | null>(null);
+
+  const canImport = Boolean(file) || Boolean(pathbuilderId);
 
   return (
     <Modal
@@ -23,9 +27,19 @@ export default function PathbuilderInputModal(props: {
           onChange={(val) => setPathbuilderId(parseInt(`${val}`))}
         />
 
+        <FileButton onChange={setFile} accept='application/json,.json'>
+          {(buttonProps) => (
+            <Button variant='default' {...buttonProps}>
+              {file ? file.name : 'Or upload Export JSON'}
+            </Button>
+          )}
+        </FileButton>
+
         <Text fs='italic' fz='sm'>
-          Warning: Some selections may be missing after import. This can occur due to incomplete export data and name
-          changes due to Pathbuilder not complying with Paizo’s Community Use Policy.
+          Some feats, items, and spells may be missing after import. Pathbuilder names often differ from Paizo’s
+          Community Use Policy names, and the public JSON omits some builder choices. If the JSON ID fetch is blocked
+          by the browser, use Pathbuilder’s Export JSON file instead. Runes, containers, formulas, and companions are
+          not imported.
         </Text>
 
         <Group justify='flex-end'>
@@ -33,8 +47,12 @@ export default function PathbuilderInputModal(props: {
             Cancel
           </Button>
           <Button
-            disabled={!pathbuilderId}
+            disabled={!canImport}
             onClick={() => {
+              if (file) {
+                props.onConfirm({ file });
+                return;
+              }
               if (!pathbuilderId) return;
               props.onConfirm(pathbuilderId);
             }}

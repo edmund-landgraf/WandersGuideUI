@@ -7,10 +7,12 @@ export function Phase1PortraitModal({
   currentUrl,
   onSelect,
   onClose,
+  overlayClass,
 }: {
   currentUrl?: string;
   onSelect: (url: string | undefined) => void;
   onClose: () => void;
+  overlayClass?: string;
 }) {
   const portraits = useMemo(() => getAllPortraitImages(), []);
   const [customUrl, setCustomUrl] = useState(currentUrl && !portraits.some((item) => item.url === currentUrl) ? currentUrl : '');
@@ -29,6 +31,7 @@ export function Phase1PortraitModal({
       empty='No matching portraits.'
       onClose={onClose}
       maxWidthClass='max-w-3xl'
+      {...(overlayClass ? { overlayClass } : {})}
       batchSize={24}
       listClassName='grid grid-cols-3 gap-2 p-3 sm:grid-cols-4 md:grid-cols-5'
       footer={

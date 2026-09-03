@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, ExternalLink, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Pencil, Plus, RotateCcw, Search, Settings, Shield, Skull, Sparkles, Swords, Trash2, Upload, UserMinus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, ExternalLink, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Pencil, Plus, RotateCcw, Search, Settings, Shield, Skull, Sparkles, Swords, Trash2, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -72,6 +72,7 @@ import importFromGUIDECHAR from '@import/guidechar/import-from-guidechar';
 import { importFromFTC } from '@import/ftc/import-from-ftc';
 import { importFromPathbuilder } from '@import/pathbuilder/import-from-pathbuilder';
 import { Phase1RandomCharacterModal } from './phase1-random-character-modal';
+import { Phase1PortraitModal } from './phase1-portrait-modal';
 import { calculateDifficulty, formatLevelDelta, shouldDisplayEncounterDifficulty, type EncounterDifficulty } from '@utils/encounter-difficulty';
 import { InspectorContent, DETAIL_TABS, fallbackStatus, hasFullEntityDetails, normalizeDetailTab, signed, statsFor, type DetailTab, type Phase1SpellActions } from './phase1-entity-panels';
 type CampaignNotePage = NonNullable<Campaign['notes']>['pages'][number];
@@ -214,7 +215,6 @@ export function Phase1IndexPage() {
 type AddAllJoinResult = {
   assigned: number;
   skippedSame: number;
-  skippedAssigned: number;
   failed: number;
   firstError?: string;
   campaignName?: string;
@@ -225,8 +225,9 @@ export function Phase1CharactersPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [joinKey, setJoinKey] = useState('');
-  const [reassign, setReassign] = useState(false);
   const [joinStatus, setJoinStatus] = useState<string | null>(null);
+  const [pendingAddAll, setPendingAddAll] = useState<string | null>(null);
+  const [checkingAddAll, setCheckingAddAll] = useState(false);
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -234,7 +235,13 @@ export function Phase1CharactersPage() {
   const [randomOpen, setRandomOpen] = useState(false);
   const [pathbuilderOpen, setPathbuilderOpen] = useState(false);
   const [pathbuilderId, setPathbuilderId] = useState('');
+  const [pathbuilderFile, setPathbuilderFile] = useState<File | null>(null);
+  const pathbuilderFileRef = useRef<HTMLInputElement>(null);
   const [characterMenu, setCharacterMenu] = useState<{ character: Character; x: number; y: number } | null>(null);
+  const [joinResult, setJoinResult] = useState<{ title: string; message: string; ok: boolean } | null>(null);
+  const [assignPicker, setAssignPicker] = useState<Character | null>(null);
+  const [portraitPreview, setPortraitPreview] = useState<Character | null>(null);
+  const [portraitPickerOpen, setPortraitPickerOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{ id: number; name: string } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportAllOpen, setExportAllOpen] = useState(false);
@@ -256,6 +263,22 @@ export function Phase1CharactersPage() {
     enabled: Boolean(session),
     queryFn: () => phase1Request<Character[]>('find-character', { user_id: session!.user.id }),
   });
+  const campaigns = useQuery({
+    queryKey: ['phase1-campaigns', session?.user.id],
+    enabled: Boolean(session),
+    queryFn: async () => {
+      const owned = await phase1Request<Campaign[]>('find-campaign', { user_id: session!.user.id });
+      const roster = await phase1Request<Character[]>('find-character', { user_id: session!.user.id });
+      const joinedIds = [...new Set(roster.map((item) => item.campaign_id).filter(isNumber))];
+      const joined = (await Promise.all(joinedIds.map((id) => phase1Request<Campaign[]>('find-campaign', { id })))).flat();
+      return uniqueById([...owned, ...joined]);
+    },
+  });
+  const campaignById = useMemo(() => new Map((campaigns.data ?? []).map((campaign) => [campaign.id, campaign])), [campaigns.data]);
+  const assignableCampaigns = useMemo(
+    () => (campaigns.data ?? []).filter((campaign) => campaign.user_id === session?.user.id).slice(0, 6),
+    [campaigns.data, session?.user.id]
+  );
 
   const addAllToJoinKey = useMutation({
     mutationFn: async (): Promise<AddAllJoinResult> => {
@@ -267,15 +290,10 @@ export function Phase1CharactersPage() {
       if (!campaign) throw new Error('Invalid join key. Please ask your GM for a valid key.');
 
       let skippedSame = 0;
-      let skippedAssigned = 0;
       const eligible: Character[] = [];
       for (const character of roster) {
         if (character.campaign_id === campaign.id) {
           skippedSame += 1;
-          continue;
-        }
-        if (character.campaign_id != null && !reassign) {
-          skippedAssigned += 1;
           continue;
         }
         eligible.push(character);
@@ -294,7 +312,7 @@ export function Phase1CharactersPage() {
         }
       }
 
-      return { assigned, skippedSame, skippedAssigned, failed, firstError, campaignName: campaign.name };
+      return { assigned, skippedSame, failed, firstError, campaignName: campaign.name };
     },
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] });
@@ -305,7 +323,6 @@ export function Phase1CharactersPage() {
       }
       const parts = [`Assigned ${result.assigned} to ${result.campaignName ?? 'campaign'}`];
       if (result.skippedSame) parts.push(`${result.skippedSame} already in campaign`);
-      if (result.skippedAssigned) parts.push(`${result.skippedAssigned} already assigned`);
       if (result.failed) parts.push(`${result.failed} failed${result.firstError ? `: ${result.firstError}` : ''}`);
       setJoinStatus(parts.join(' · '));
     },
@@ -313,6 +330,78 @@ export function Phase1CharactersPage() {
       setJoinStatus(error instanceof Error ? error.message : 'Could not add characters to join key.');
     },
   });
+
+  async function invalidateCharacterCampaigns() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] }),
+      queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] }),
+    ]);
+  }
+
+  async function assignCharacterToCampaign(character: Character, campaign: Campaign) {
+    if (character.campaign_id === campaign.id) return { already: true as const, campaign };
+    await phase1Request('update-character', { id: character.id, campaign_id: campaign.id });
+    return { already: false as const, campaign };
+  }
+
+  async function joinCharacterFromClipboard(character: Character) {
+    let key = '';
+    try {
+      key = (await navigator.clipboard.readText()).trim();
+    } catch {
+      setAssignPicker(character);
+      return;
+    }
+    if (!key) {
+      setAssignPicker(character);
+      return;
+    }
+    try {
+      const found = await phase1Request<Campaign | Campaign[]>('find-campaign', { join_key: key });
+      const campaign = Array.isArray(found) ? found[0] : found;
+      if (!campaign) {
+        setAssignPicker(character);
+        return;
+      }
+      const result = await assignCharacterToCampaign(character, campaign);
+      await invalidateCharacterCampaigns();
+      setJoinResult({
+        ok: true,
+        title: 'Joined campaign',
+        message: result.already
+          ? `${character.name} is already in the ${campaign.name} campaign.`
+          : `${character.name} successfully added to the ${campaign.name} campaign.`,
+      });
+    } catch (error) {
+      setJoinResult({
+        ok: false,
+        title: 'Could not join campaign',
+        message: error instanceof Error ? error.message : `Could not add ${character.name} to the campaign.`,
+      });
+    }
+  }
+
+  async function assignCharacterFromPicker(character: Character, campaign: Campaign) {
+    try {
+      const result = await assignCharacterToCampaign(character, campaign);
+      await invalidateCharacterCampaigns();
+      setAssignPicker(null);
+      setJoinResult({
+        ok: true,
+        title: 'Assigned to campaign',
+        message: result.already
+          ? `${character.name} is already in the ${campaign.name} campaign.`
+          : `${character.name} successfully added to the ${campaign.name} campaign.`,
+      });
+    } catch (error) {
+      setAssignPicker(null);
+      setJoinResult({
+        ok: false,
+        title: 'Could not assign campaign',
+        message: error instanceof Error ? error.message : `Could not add ${character.name} to the campaign.`,
+      });
+    }
+  }
 
   const deleteCharacter = useMutation({
     mutationFn: (id: number) => phase1Request('delete-content', { id, type: 'character' }),
@@ -443,7 +532,34 @@ export function Phase1CharactersPage() {
     }
   }
 
-  const canAddAll = Boolean(joinKey.trim()) && Boolean(characters.data?.length) && !addAllToJoinKey.isPending;
+  const canAddAll =
+    Boolean(joinKey.trim()) && Boolean(characters.data?.length) && !addAllToJoinKey.isPending && !checkingAddAll;
+
+  async function requestAddAll() {
+    if (!canAddAll) return;
+    const key = joinKey.trim();
+    const roster = characters.data ?? [];
+    setCheckingAddAll(true);
+    try {
+      const found = await phase1Request<Campaign[]>('find-campaign', { join_key: key });
+      const campaign = found?.[0];
+      if (!campaign) {
+        addAllToJoinKey.mutate();
+        return;
+      }
+      const elsewhere = roster.filter((character) => character.campaign_id != null && character.campaign_id !== campaign.id);
+      if (elsewhere.length > 0) {
+        const noun = elsewhere.length === 1 ? 'character is' : 'characters are';
+        setPendingAddAll(`${elsewhere.length} ${noun} already in another campaign. Add all will move them to this join key.`);
+        return;
+      }
+      addAllToJoinKey.mutate();
+    } catch (error) {
+      setJoinStatus(error instanceof Error ? error.message : 'Could not add characters to join key.');
+    } finally {
+      setCheckingAddAll(false);
+    }
+  }
   const reachedCharacterLimit =
     (characters.data?.length ?? 0) >= CHARACTER_SLOT_CAP && !hasPatreonAccess(getCachedPublicUser(), 2);
   const createDisabled = reachedCharacterLimit || creating || importing;
@@ -578,18 +694,24 @@ export function Phase1CharactersPage() {
     }
   }
 
-  async function importPathbuilder(id: number) {
+  async function importPathbuilder() {
+    const id = Number.parseInt(pathbuilderId, 10);
+    if (!pathbuilderFile && !id) return;
     setPathbuilderOpen(false);
     setImporting(true);
     setJoinStatus(null);
     try {
-      const character = await importFromPathbuilder(id);
+      const character = await importFromPathbuilder(pathbuilderFile ? { file: pathbuilderFile } : id, {
+        notify: false,
+      });
       await queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] });
       setJoinStatus(character ? `Imported “${character.name}”.` : 'Pathbuilder import failed.');
     } catch (error) {
       setJoinStatus(error instanceof Error ? error.message : 'Pathbuilder import failed.');
     } finally {
       setImporting(false);
+      setPathbuilderFile(null);
+      setPathbuilderId('');
     }
   }
 
@@ -644,14 +766,13 @@ export function Phase1CharactersPage() {
                   </div>
                 )}
               </div>
-              <button type='button' className='toolbar-button' disabled={!canAddAll} onClick={() => addAllToJoinKey.mutate()}>
+              <button type='button' className='toolbar-button' disabled={!canAddAll} onClick={() => void requestAddAll()}>
                 <Plus size={15} />
-                {addAllToJoinKey.isPending ? 'Adding…' : 'Add all'}
+                {addAllToJoinKey.isPending || checkingAddAll ? 'Adding…' : 'Add all'}
               </button>
-              <div className='relative min-w-[12rem] flex-1'>
-                <KeyRound className='pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-p1-faint' size={14} />
+              <div className='min-w-[12rem] flex-1'>
                 <input
-                  className='settings-input h-9 w-full pl-8'
+                  className='settings-input h-9 w-full'
                   aria-label='Join key'
                   placeholder='Join key'
                   value={joinKey}
@@ -661,20 +782,11 @@ export function Phase1CharactersPage() {
                     setJoinStatus(null);
                   }}
                   onKeyDown={(event) => {
-                    if (event.key === 'Enter' && canAddAll) addAllToJoinKey.mutate();
+                    if (event.key === 'Enter' && canAddAll) void requestAddAll();
                   }}
                 />
               </div>
             </div>
-            <label className='flex items-center gap-2 text-sm text-p1-muted'>
-              <input
-                type='checkbox'
-                checked={reassign}
-                disabled={addAllToJoinKey.isPending}
-                onChange={(event) => setReassign(event.target.checked)}
-              />
-              Reassign PCs to this join key
-            </label>
             {joinStatus && <p className='max-w-md text-right text-xs text-p1-muted'>{joinStatus}</p>}
           </div>
         </div>
@@ -689,23 +801,95 @@ export function Phase1CharactersPage() {
         <div className='divide-y divide-p1-border border-y border-p1-border'>
           {characters.data?.map((character) => {
             const identity = [character.details?.ancestry?.name, character.details?.class?.name].filter(Boolean).join(' · ');
+            const portraitUrl = character.details?.image_url?.trim();
+            const sheetArtUrl = character.details?.background_image_url?.trim();
+            const assignedCampaign = character.campaign_id != null ? campaignById.get(character.campaign_id) : undefined;
             return (
-              <button
+              <div
                 key={character.id}
-                className='group grid w-full grid-cols-[1fr_auto] items-center gap-6 px-2 py-5 text-left hover:bg-p1-hover'
-                onClick={() => navigate(`/sheet/${character.id}`)}
+                className={`p1-char-row group grid w-full grid-cols-[auto_1fr_minmax(7.5rem,11rem)_auto] items-center gap-4 px-2 py-4 text-left${sheetArtUrl ? ' p1-char-row-has-art' : ''}`}
                 onContextMenu={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
                   setCharacterMenu({ character, x: event.clientX, y: event.clientY });
                 }}
               >
-                <div>
+                {sheetArtUrl && (
+                  <div className='p1-char-row-art' aria-hidden>
+                    <img src={sheetArtUrl} alt='' loading='lazy' decoding='async' />
+                    <div className='p1-char-row-art-veil' />
+                  </div>
+                )}
+                {portraitUrl ? (
+                  <button
+                    type='button'
+                    className='h-14 w-14 shrink-0 overflow-hidden border border-p1-border bg-p1-inset hover:border-p1-accent/60'
+                    title={`View portrait for ${character.name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setPortraitPreview(character);
+                      setPortraitPickerOpen(false);
+                    }}
+                  >
+                    <img src={portraitUrl} alt='' className='h-full w-full object-cover' />
+                  </button>
+                ) : (
+                  <button
+                    type='button'
+                    className='grid h-14 w-14 shrink-0 place-items-center border border-p1-border bg-p1-inset text-p1-faint hover:border-p1-accent/60 hover:text-p1-muted'
+                    title={`Choose portrait for ${character.name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setPortraitPreview(character);
+                      setPortraitPickerOpen(true);
+                    }}
+                  >
+                    <User size={22} />
+                  </button>
+                )}
+                <button
+                  type='button'
+                  className='min-w-0 text-left'
+                  onClick={() => navigate(`/sheet/${character.id}`)}
+                >
                   <div className='font-semibold'>{character.name}</div>
                   <div className='mt-1 line-clamp-1 text-sm text-p1-muted'>Level {character.level}{identity ? ` · ${identity}` : ''}</div>
+                </button>
+                <div className='min-w-0 text-right'>
+                  {assignedCampaign ? (
+                    <button
+                      type='button'
+                      className='toolbar-button h-8 max-w-full px-2 text-xs'
+                      title={assignedCampaign.name}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setAssignPicker(character);
+                      }}
+                    >
+                      <span className='truncate'>{assignedCampaign.name}</span>
+                    </button>
+                  ) : character.campaign_id != null ? null : (
+                    <button
+                      type='button'
+                      className='toolbar-button h-8 px-2 text-xs'
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setAssignPicker(character);
+                      }}
+                    >
+                      Assign
+                    </button>
+                  )}
                 </div>
-                <ChevronRight className='text-p1-faint group-hover:text-p1-accent' size={18} />
-              </button>
+                <button
+                  type='button'
+                  className='grid h-10 w-10 place-items-center text-p1-faint group-hover:text-p1-accent'
+                  aria-label={`Open ${character.name}`}
+                  onClick={() => navigate(`/sheet/${character.id}`)}
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
             );
           })}
         </div>
@@ -714,10 +898,20 @@ export function Phase1CharactersPage() {
             x={characterMenu.x}
             y={characterMenu.y}
             onClose={() => setCharacterMenu(null)}
+            onJoinCampaign={() => {
+              const target = characterMenu.character;
+              setCharacterMenu(null);
+              void joinCharacterFromClipboard(target);
+            }}
             onExportJson={() => {
               const target = characterMenu.character;
               setCharacterMenu(null);
               void exportCharacter('json', target);
+            }}
+            onOpenStatBlock={() => {
+              const target = characterMenu.character;
+              setCharacterMenu(null);
+              window.open(`/stat-block/character/${target.id}`, '_blank');
             }}
             onExportPdf={() => {
               const target = characterMenu.character;
@@ -727,6 +921,53 @@ export function Phase1CharactersPage() {
             onDelete={() => {
               setPendingDelete({ id: characterMenu.character.id, name: characterMenu.character.name });
               setCharacterMenu(null);
+            }}
+          />
+        )}
+        {portraitPreview && portraitPreview.details?.image_url && (
+          <PortraitPreviewModal
+            url={portraitPreview.details.image_url}
+            name={portraitPreview.name}
+            ignoreEscape={portraitPickerOpen}
+            onChange={() => setPortraitPickerOpen(true)}
+            onClose={() => {
+              setPortraitPreview(null);
+              setPortraitPickerOpen(false);
+            }}
+          />
+        )}
+        {portraitPreview && portraitPickerOpen && (
+          <Phase1PortraitModal
+            currentUrl={portraitPreview.details?.image_url}
+            overlayClass='z-[110]'
+            onSelect={(url) => {
+              const next = { ...portraitPreview, details: { ...portraitPreview.details, image_url: url } };
+              setPortraitPreview(url ? next : null);
+              setPortraitPickerOpen(false);
+              void phase1Request('update-character', { id: portraitPreview.id, details: next.details }).then(
+                () => {
+                  void queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] });
+                },
+                (error) => {
+                  setJoinStatus(error instanceof Error ? error.message : 'Could not update portrait.');
+                }
+              );
+            }}
+            onClose={() => {
+              setPortraitPickerOpen(false);
+              if (!portraitPreview.details?.image_url) setPortraitPreview(null);
+            }}
+          />
+        )}
+        {pendingAddAll && (
+          <ConfirmDialog
+            title='Move characters'
+            message={pendingAddAll}
+            confirmLabel={addAllToJoinKey.isPending ? 'Adding…' : 'Add all'}
+            onCancel={() => setPendingAddAll(null)}
+            onConfirm={() => {
+              setPendingAddAll(null);
+              addAllToJoinKey.mutate();
             }}
           />
         )}
@@ -741,6 +982,21 @@ export function Phase1CharactersPage() {
               setPendingDelete(null);
               deleteCharacter.mutate(id);
             }}
+          />
+        )}
+        {assignPicker && (
+          <CampaignAssignPickerModal
+            characterName={assignPicker.name}
+            campaigns={assignableCampaigns}
+            onCancel={() => setAssignPicker(null)}
+            onPick={(campaign) => void assignCharacterFromPicker(assignPicker, campaign)}
+          />
+        )}
+        {joinResult && (
+          <MessageDialog
+            title={joinResult.title}
+            message={joinResult.message}
+            onClose={() => setJoinResult(null)}
           />
         )}
         <input ref={jsonInputRef} type='file' accept='application/json,.json' className='hidden' onChange={(event) => { void importJsonFile(event.target.files?.[0] ?? null); event.target.value = ''; }} />
@@ -806,7 +1062,9 @@ export function Phase1CharactersPage() {
         <div className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5' onMouseDown={(event) => { if (event.target === event.currentTarget) setPathbuilderOpen(false); }}>
           <section className='w-full max-w-md border border-p1-border bg-p1-surface p-5'>
             <h2 className='text-lg font-semibold'>Import from Pathbuilder 2e</h2>
-            <p className='mt-2 text-sm text-p1-muted'>Enter the Pathbuilder JSON ID. Some selections may be missing after import.</p>
+            <p className='mt-2 text-sm text-p1-muted'>
+              Enter a Pathbuilder JSON ID, or upload an Export JSON file if the ID fetch is blocked. Some feats, items, and spells may be missing because Pathbuilder names often differ from Paizo CUP names. Runes, containers, formulas, and companions are not imported.
+            </p>
             <input
               className='settings-input mt-4 h-9 w-full'
               type='number'
@@ -815,14 +1073,27 @@ export function Phase1CharactersPage() {
               value={pathbuilderId}
               onChange={(event) => setPathbuilderId(event.target.value)}
             />
+            <input
+              ref={pathbuilderFileRef}
+              type='file'
+              accept='application/json,.json'
+              className='hidden'
+              onChange={(event) => {
+                setPathbuilderFile(event.target.files?.[0] ?? null);
+                event.target.value = '';
+              }}
+            />
+            <button type='button' className='toolbar-button mt-3 w-full' onClick={() => pathbuilderFileRef.current?.click()}>
+              {pathbuilderFile ? pathbuilderFile.name : 'Or upload Export JSON'}
+            </button>
             <div className='mt-4 flex justify-end gap-2'>
-              <button type='button' className='toolbar-button' onClick={() => setPathbuilderOpen(false)}>Cancel</button>
+              <button type='button' className='toolbar-button' onClick={() => { setPathbuilderOpen(false); setPathbuilderFile(null); }}>Cancel</button>
               <button
                 type='button'
                 className='toolbar-button'
-                disabled={!Number.parseInt(pathbuilderId, 10)}
+                disabled={!pathbuilderFile && !Number.parseInt(pathbuilderId, 10)}
                 style={{ background: 'var(--p1-accent)', color: 'var(--p1-accent-ink)', borderColor: 'var(--p1-accent)' }}
-                onClick={() => void importPathbuilder(Number.parseInt(pathbuilderId, 10))}
+                onClick={() => void importPathbuilder()}
               >
                 Import
               </button>
@@ -2559,7 +2830,7 @@ function CreateNameModal({ title, label, confirmLabel, onCancel, onConfirm }: { 
   );
 }
 
-function CharacterGridContextMenu({ x, y, onClose, onExportJson, onExportPdf, onDelete }: { x: number; y: number; onClose: () => void; onExportJson: () => void; onExportPdf: () => void; onDelete: () => void }) {
+function CharacterGridContextMenu({ x, y, onClose, onJoinCampaign, onOpenStatBlock, onExportJson, onExportPdf, onDelete }: { x: number; y: number; onClose: () => void; onJoinCampaign: () => void; onOpenStatBlock: () => void; onExportJson: () => void; onExportPdf: () => void; onDelete: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -2567,17 +2838,23 @@ function CharacterGridContextMenu({ x, y, onClose, onExportJson, onExportPdf, on
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
-  const left = Math.min(x, window.innerWidth - 176);
-  const top = Math.min(y, window.innerHeight - 120);
+  const left = Math.min(x, window.innerWidth - 200);
+  const top = Math.min(y, window.innerHeight - 200);
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onPointerDown={onClose} />
       <div
         role='menu'
-        className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl'
+        className='fixed z-[110] min-w-44 border border-p1-border bg-p1-surface py-1 shadow-2xl'
         style={{ left, top }}
         onPointerDown={(event) => event.stopPropagation()}
       >
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onOpenStatBlock(); }}>
+          <AlignLeft size={14} /> Open Stat Block
+        </button>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onJoinCampaign(); }}>
+          <UserPlus size={14} /> Join campaign
+        </button>
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onExportJson(); }}>
           <Download size={14} /> Export to JSON
         </button>
@@ -2589,6 +2866,88 @@ function CharacterGridContextMenu({ x, y, onClose, onExportJson, onExportPdf, on
         </button>
       </div>
     </>,
+    document.body
+  );
+}
+
+function MessageDialog({ title, message, onClose }: { title: string; message: string; onClose: () => void }) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+  return createPortal(
+    <div
+      className='fixed inset-0 z-[120] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]'
+      role='presentation'
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section role='dialog' aria-modal='true' aria-labelledby='message-dialog-title' className='w-full max-w-sm border border-p1-border bg-p1-surface p-5 shadow-2xl'>
+        <h2 id='message-dialog-title' className='text-lg font-semibold'>{title}</h2>
+        <p className='mt-2 text-sm leading-6 text-p1-muted'>{message}</p>
+        <div className='mt-5 flex justify-end'>
+          <button type='button' className='toolbar-button' onClick={onClose}>OK</button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+function CampaignAssignPickerModal({
+  characterName,
+  campaigns,
+  onCancel,
+  onPick,
+}: {
+  characterName: string;
+  campaigns: Campaign[];
+  onCancel: () => void;
+  onPick: (campaign: Campaign) => void;
+}) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onCancel();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onCancel]);
+  return createPortal(
+    <div
+      className='fixed inset-0 z-[120] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]'
+      role='presentation'
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <section role='dialog' aria-modal='true' aria-labelledby='assign-campaign-title' className='w-full max-w-md border border-p1-border bg-p1-surface p-5 shadow-2xl'>
+        <h2 id='assign-campaign-title' className='text-lg font-semibold'>Assign campaign</h2>
+        <p className='mt-2 text-sm text-p1-muted'>Choose a campaign for {characterName}.</p>
+        {campaigns.length === 0 ? (
+          <p className='mt-4 text-sm text-p1-muted'>You do not own a campaign yet. Create one from Campaigns, or use Join campaign with a copied join key.</p>
+        ) : (
+          <div className='mt-4 grid grid-cols-2 gap-2'>
+            {campaigns.map((campaign) => (
+              <button
+                key={campaign.id}
+                type='button'
+                className='flex min-h-[4.25rem] flex-col items-start justify-center border border-p1-border bg-p1-inset px-3 py-2 text-left hover:border-p1-accent/60 hover:bg-p1-hover'
+                onClick={() => onPick(campaign)}
+              >
+                <span className='line-clamp-2 text-sm font-medium text-p1-text'>{campaign.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <div className='mt-5 flex justify-end'>
+          <button type='button' className='toolbar-button' onClick={onCancel}>Cancel</button>
+        </div>
+      </section>
+    </div>,
     document.body
   );
 }
@@ -3439,6 +3798,56 @@ function ResizeRail({ onResize }: { onResize: (delta: number) => void }) {
 
 function EntityIcon({ type }: { type: Combatant['type'] }) {
   return <span className={`grid h-9 w-9 shrink-0 place-items-center border ${type === 'CREATURE' ? 'border-p1-creature/50 text-p1-creature' : 'border-p1-pc/50 text-p1-pc'}`}>{type === 'CREATURE' ? <Swords size={16} /> : <UserRound size={16} />}</span>;
+}
+function PortraitPreviewModal({
+  url,
+  name,
+  ignoreEscape,
+  onChange,
+  onClose,
+}: {
+  url: string;
+  name: string;
+  ignoreEscape?: boolean;
+  onChange: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !ignoreEscape) onClose();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      document.body.style.overflow = overflow;
+    };
+  }, [onClose, ignoreEscape]);
+
+  return createPortal(
+    <div
+      className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5'
+      role='presentation'
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !ignoreEscape) onClose();
+      }}
+    >
+      <section role='dialog' aria-modal='true' aria-labelledby='portrait-preview-title' className='flex max-h-[min(92vh,960px)] w-full max-w-[min(90vw,720px)] flex-col border border-p1-border bg-p1-surface p-4'>
+        <h2 id='portrait-preview-title' className='mb-3 truncate text-lg font-semibold'>{name}</h2>
+        <img src={url} alt={name} className='min-h-0 w-full flex-1 object-contain' />
+        <div className='mt-4 flex justify-end gap-2'>
+          <button type='button' className='toolbar-button' onClick={onChange}>
+            Change
+          </button>
+          <button type='button' className='toolbar-button' onClick={onClose}>
+            OK
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
 }
 function Eyebrow({ children }: { children: ReactNode }) { return <div className='text-[10px] font-semibold uppercase text-p1-accent'>{children}</div>; }
 function EmptyState({ children }: { children: ReactNode }) { return <div className='border border-p1-border p-8 text-center text-sm text-p1-muted'>{children}</div>; }

@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { Outlet, RouterProvider, createBrowserRouter } from 'react-router-dom';
 import { Phase1CampaignPage, Phase1CharactersPage, Phase1IndexPage } from './Phase1Workspace';
 import { Phase1SheetPage } from './Phase1SheetPage';
+import { Phase1StatBlockPage } from './Phase1StatBlockPage';
 import { Phase1BuilderPage } from './Phase1BuilderPage';
 import { Phase1AuthCallback } from '@auth/Phase1AuthCallback';
 import { ContentLinkProvider } from './phase1-content-links';
@@ -51,6 +52,7 @@ const router = createBrowserRouter([
       { path: '/phase1/campaign/:campaignId/settings', Component: Phase1CampaignPage },
       { path: '/sheet/:characterId', Component: Phase1SheetPage },
       { path: '/builder/:characterId', Component: Phase1BuilderPage },
+      { path: '/stat-block/:type/:id', Component: Phase1StatBlockPage },
     ],
   },
 ]);

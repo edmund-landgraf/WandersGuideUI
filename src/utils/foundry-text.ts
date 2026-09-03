@@ -198,3 +198,85 @@ function conditionNameSet(): Set<string> {
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
+
+/** Turn HTML / broken pipe tables into GFM so remark-gfm can render them. */
+export function normalizeMarkdownTables(text: string): string {
+  if (!text) return text;
+  let out = text.replace(/<br\s*\/?>/gi, '\n');
+  out = out.replace(/<\/p>\s*<p\b[^>]*>/gi, '\n');
+  out = out.replace(/<\/?p\b[^>]*>/gi, '\n');
+  out = out.replace(/<table\b[\s\S]*?<\/table>/gi, (html) => htmlTableToGfm(html));
+  return isolatePipeTables(out);
+}
+
+function htmlTableToGfm(html: string): string {
+  const rows = [...html.matchAll(/<tr\b[\s\S]*?<\/tr>/gi)].map((match) => {
+    const cells = [...match[0].matchAll(/<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/gi)].map((cell) =>
+      cell[1]
+        .replace(/<br\s*\/?>/gi, ' ')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&mdash;|&#8212;/gi, '—')
+        .replace(/&ndash;|&#8211;/gi, '–')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/\s+/g, ' ')
+        .trim()
+    );
+    return cells;
+  }).filter((row) => row.length > 0);
+  if (rows.length === 0) return '';
+  const width = Math.max(...rows.map((row) => row.length));
+  const padded = rows.map((row) => [...row, ...Array(Math.max(0, width - row.length)).fill('')]);
+  const header = padded[0];
+  const divider = header.map(() => '---');
+  const body = padded.slice(1);
+  const lines = [`| ${header.join(' | ')} |`, `| ${divider.join(' | ')} |`, ...body.map((row) => `| ${row.join(' | ')} |`)];
+  return `\n\n${lines.join('\n')}\n\n`;
+}
+
+function isPipeRow(line: string): boolean {
+  return /^\|.+\|\s*$/.test(line.trim());
+}
+
+function isDelimiterRow(line: string): boolean {
+  return /^\|[\s\-:|]+\|\s*$/.test(line.trim());
+}
+
+function flushPipeTable(rows: string[]): string[] {
+  if (rows.length === 0) return [];
+  const cells = rows[0].split('|').filter((part) => part.trim() !== '');
+  if (rows.length === 1 || !isDelimiterRow(rows[1])) {
+    rows = [rows[0], `| ${cells.map(() => '---').join(' | ')} |`, ...rows.slice(1)];
+  }
+  return ['', ...rows, ''];
+}
+
+function isolatePipeTables(text: string): string {
+  const lines = text.split(/\r?\n/);
+  const out: string[] = [];
+  let rows: string[] = [];
+
+  const flush = () => {
+    if (rows.length === 0) return;
+    const block = flushPipeTable(rows);
+    if (out.length > 0 && out[out.length - 1].trim() !== '') out.push('');
+    if (out[out.length - 1] === '') out.push(...block.slice(1));
+    else out.push(...block);
+    rows = [];
+  };
+
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (isPipeRow(trimmed)) {
+      rows.push(trimmed);
+      continue;
+    }
+    if (rows.length > 0 && trimmed === '') continue;
+    flush();
+    out.push(raw);
+  }
+  flush();
+  return out.join('\n').replace(/\n{3,}/g, '\n\n');
+}

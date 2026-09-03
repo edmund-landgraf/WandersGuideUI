@@ -278,11 +278,20 @@ const router = createBrowserRouter([
     ],
   },
   {
-    path: 'stat-block/:type/:id',
-    lazy: () => import('@pages/StatBlockPage.tsx'),
-    loader: async ({ params }: { params: any }) => {
-      return { type: params.type, id: params.id };
+    path: '/stat-block/:type/:id',
+    lazy: async () => {
+      const { Phase1Shell } = await import('@pages/phase1/Phase1App');
+      return { Component: Phase1Shell };
     },
+    children: [
+      {
+        index: true,
+        lazy: async () => {
+          const { Phase1StatBlockPage } = await import('@pages/phase1/Phase1StatBlockPage');
+          return { Component: Phase1StatBlockPage };
+        },
+      },
+    ],
   },
 ]);
 

@@ -3,7 +3,7 @@ import remarkGfm from 'remark-gfm';
 import { gmNotesText, insertGmNoteStamp, notePageToMarkdown, sourceImportPages } from '@pages/character_sheet/panels/gm-notes';
 import { useEffect, useRef, useState } from 'react';
 import { getContentDataFromHref } from '@common/rich_text_input/ContentLinkExtension';
-import { autoLinkConditions, isAonConditionHref, resolveAonHref, toStandard2eProse, toWgMarkdownLinks } from '@utils/foundry-text';
+import { autoLinkConditions, isAonConditionHref, normalizeMarkdownTables, resolveAonHref, toStandard2eProse, toWgMarkdownLinks } from '@utils/foundry-text';
 import { useContentLinks } from './phase1-content-links';
 
 export function noteContentsToMarkdown(contents: unknown) {
@@ -15,12 +15,17 @@ export function noteContentsToMarkdown(contents: unknown) {
 export function ProseMarkdown({ children, className = '' }: { children: string; className?: string }) {
   const { open } = useContentLinks();
   if (!children.trim()) return null;
-  const prose = toWgMarkdownLinks(autoLinkConditions(toStandard2eProse(children)));
+  const prose = normalizeMarkdownTables(toWgMarkdownLinks(autoLinkConditions(toStandard2eProse(children))));
   return (
     <div className={`ability-prose text-sm leading-7 text-p1-text ${className}`.trim()}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
+          table: ({ children }) => (
+            <div className='table-wrap'>
+              <table>{children}</table>
+            </div>
+          ),
           a: ({ href, children }) => {
             const resolved = resolveAonHref(href);
             const content = getContentDataFromHref(resolved ?? href ?? '');

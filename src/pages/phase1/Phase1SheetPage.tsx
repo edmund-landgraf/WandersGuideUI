@@ -11,7 +11,7 @@ import { labelToVariable } from '@variables/variable-utils';
 import exportToJSON from '@export/export-to-json';
 import exportToPDF from '@export/export-to-pdf';
 import { cloneDeep } from 'lodash-es';
-import { ArrowLeft, Brush, ChevronDown, Download, ExternalLink, Eye, Flag, Hammer, HeartPulse, Menu, Moon, Plus, RotateCcw, Star, Sun, User, X } from 'lucide-react';
+import { AlignLeft, ArrowLeft, Brush, ChevronDown, Download, ExternalLink, Eye, Flag, Hammer, HeartPulse, Menu, Moon, Plus, RotateCcw, Star, Sun, User, X } from 'lucide-react';
 import { Phase1PortraitModal } from './phase1-portrait-modal';
 import { Phase1ArtworkPreview, Phase1BackgroundModal } from './phase1-background-modal';
 import { getAllBackgroundImages } from '@utils/background-images';
@@ -368,6 +368,8 @@ export function Phase1SheetPage() {
         <button type='button' className='icon-button' title='Back' onClick={() => (location.key === 'default' ? navigate('/phase1/characters') : navigate(-1))}><ArrowLeft size={16} /></button>
         <Link to='/phase1' className='font-semibold hover:underline'>Wanderer's Guide</Link>
         <span className='h-4 w-px bg-p1-hover' />
+        <Link to='/phase1/characters' className='text-sm text-p1-muted hover:text-p1-text'>Characters</Link>
+        <span className='text-p1-faint'>/</span>
         <span className='truncate text-sm text-p1-muted'>{view === 'builder' ? 'Character builder' : 'Character sheet'}</span>
         {isAnonymousPublicView && (
           <span className='shrink-0 border border-p1-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-p1-muted'>
@@ -822,6 +824,16 @@ function Phase1CharacterMenu({
           <button type='button' role='menuitem' className={characterMenuItemClass} onClick={() => void run('json')}>
             <Download size={14} /> Export JSON
           </button>
+          <a
+            role='menuitem'
+            className={characterMenuItemClass}
+            href={`/stat-block/character/${character.id}`}
+            target='_blank'
+            rel='noreferrer'
+            onClick={() => setOpen(false)}
+          >
+            <AlignLeft size={14} /> Open Stat Block
+          </a>
           <a
             role='menuitem'
             className={characterMenuItemClass}

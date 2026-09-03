@@ -58,6 +58,7 @@
         : location.pathname.startsWith('/phase1') ||
             location.pathname.startsWith('/sheet') ||
             location.pathname.startsWith('/builder') ||
+            location.pathname.startsWith('/stat-block') ||
             isAuthCallback
           ? import('/src/pages/phase1/main.tsx')
           : import('/src/pages/launcher/main.tsx');
