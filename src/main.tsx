@@ -119,6 +119,20 @@ const router = createBrowserRouter([
         },
       },
       {
+        path: 'encounters',
+        lazy: async () => {
+          const { Phase1EncountersPage } = await import('@pages/phase1/Phase1Workspace');
+          return { Component: Phase1EncountersPage };
+        },
+      },
+      {
+        path: 'encounters/:encounterId',
+        lazy: async () => {
+          const { Phase1StandaloneEncounterPage } = await import('@pages/phase1/Phase1Workspace');
+          return { Component: Phase1StandaloneEncounterPage };
+        },
+      },
+      {
         path: 'campaign/:campaignId',
         lazy: async () => {
           const { Phase1CampaignPage } = await import('@pages/phase1/Phase1Workspace');

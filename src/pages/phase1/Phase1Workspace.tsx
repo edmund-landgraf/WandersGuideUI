@@ -51,6 +51,7 @@ import { DiceCheckResultToast, DiceCheckRollModal, DiceRollColorKey, DiceRollLog
 import { buildDiceRollLog, checkStatLabel, DICE_CHECK_OPTIONS, DICE_CHECK_VALUES, defaultStatForCombatant, degreeOfSuccess, filterCombatantsBySide, formatCheckRoll, loadAllCheckOptions, loadCheckOptions, outcomeLabel, outcomeRowClass, overlayDiceRollMeta, setDiceRollLogEntryNote } from './phase1-dice-check';
 import { findAmbaChallenge, challengeCheckEntries, mapAmbaChallengeStat, mergeEncounterMeta, readAmbaChallenges } from './phase1-amba-challenges';
 import { encounterDisplayName, encounterNamesMatch } from './phase1-encounter-title';
+import { nextEncounterName } from './phase1-encounter-name';
 import { appendChangeLog, characterCombatFieldsFromEntity, createChangeLogEntry, parseTempHpInput } from './phase1-change-log';
 import { appendActionLog, createActionLogEntry, currentActionRound, removeActionLogEntry, type ActionLogDraft } from './phase1-action-log';
 import { maxCombatantStats, maxEntityStats, resetCombatant, resetEntityCombatState, resolveResetMaxHp } from './phase1-encounter-reset';
@@ -379,6 +380,15 @@ export function Phase1CharactersPage() {
         message: error instanceof Error ? error.message : `Could not add ${character.name} to the campaign.`,
       });
     }
+  }
+
+  async function unassignCharacterFromCampaign(character: Character) {
+    if (character.campaign_id == null) return;
+    await phase1Request('remove-from-campaign', { character_id: character.id, campaign_id: character.campaign_id });
+    queryClient.setQueryData<Character[]>(['phase1-characters', session?.user.id], (roster) =>
+      (roster ?? []).map((item) => (item.id === character.id ? { ...item, campaign_id: null } : item))
+    );
+    await invalidateCharacterCampaigns();
   }
 
   async function assignCharacterFromPicker(character: Character, campaign: Campaign) {
@@ -903,6 +913,21 @@ export function Phase1CharactersPage() {
               setCharacterMenu(null);
               void joinCharacterFromClipboard(target);
             }}
+            onUnassign={
+              characterMenu.character.campaign_id == null
+                ? undefined
+                : () => {
+                    const target = characterMenu.character;
+                    setCharacterMenu(null);
+                    void unassignCharacterFromCampaign(target).catch((error) => {
+                      setJoinResult({
+                        ok: false,
+                        title: 'Could not unassign campaign',
+                        message: error instanceof Error ? error.message : `Could not remove ${target.name} from the campaign.`,
+                      });
+                    });
+                  }
+            }
             onExportJson={() => {
               const target = characterMenu.character;
               setCharacterMenu(null);
@@ -1105,6 +1130,281 @@ export function Phase1CharactersPage() {
   );
 }
 
+function phase1EncounterPath(encounterId: number, campaignId?: number | null) {
+  return campaignId != null ? `/phase1/campaign/${campaignId}/encounters/${encounterId}` : `/phase1/encounters/${encounterId}`;
+}
+
+function encounterSideCounts(encounter: Encounter) {
+  const list = encounter.combatants.list ?? [];
+  return {
+    pcs: list.filter((item) => item.ally).length,
+    enemies: list.filter((item) => !item.ally).length,
+  };
+}
+
+function standaloneEncounterPayload(name: string): Encounter {
+  return {
+    id: -1,
+    created_at: '',
+    user_id: '',
+    name,
+    icon: 'combat',
+    color: GUIDE_BLUE,
+    campaign_id: null,
+    combatants: { list: [] },
+    meta_data: { description: '' },
+  };
+}
+
+export function Phase1EncountersPage() {
+  const session = useAuthSession();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const encounters = useQuery({
+    queryKey: ['phase1-standalone-encounters', session?.user.id],
+    enabled: Boolean(session),
+    queryFn: async () => {
+      const result = await phase1Request<Encounter[]>('find-encounter', { user_id: session!.user.id });
+      return (result ?? []).filter((item) => item.campaign_id == null);
+    },
+  });
+
+  async function handleCreateEncounter(name?: string) {
+    if (creating) return;
+    setCreating(true);
+    setCreateError(null);
+    setCreateOpen(false);
+    try {
+      const nextName = name?.trim() || nextEncounterName((encounters.data ?? []).map((item) => item.name));
+      const encounter = await phase1Request<Encounter>('create-encounter', standaloneEncounterPayload(nextName));
+      await queryClient.invalidateQueries({ queryKey: ['phase1-standalone-encounters'] });
+      if (encounter?.id != null && encounter.id !== -1) {
+        navigate(`/phase1/encounters/${encounter.id}`);
+      }
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : 'Could not create encounter.');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  if (session === undefined) return <LoadingScreen label='Loading session' />;
+  if (!session) return <CampaignSignIn variant='phase1' />;
+  return (
+    <div className='min-h-screen bg-p1-page text-p1-text'>
+      <WorkspaceHeader section='encounters' />
+      <main className='mx-auto max-w-5xl px-6 py-10'>
+        <div className='mb-8 flex items-end justify-between gap-6 border-b border-p1-border pb-6'>
+          <div>
+            <Eyebrow>Phase 1</Eyebrow>
+            <h1 className='mt-2 text-3xl font-semibold'>Encounters</h1>
+            <p className='mt-2 text-sm text-p1-muted'>Standalone combats that are not tied to a campaign.</p>
+            {createError && <p className='mt-2 text-xs text-p1-danger-soft'>{createError}</p>}
+          </div>
+          <button type='button' className='toolbar-button' disabled={creating} title='Create encounter' onClick={() => setCreateOpen(true)}>
+            <Plus size={15} />
+            {creating ? 'Creating…' : 'Create encounter'}
+          </button>
+        </div>
+        {encounters.isLoading && <EmptyState>Loading encounters...</EmptyState>}
+        {encounters.error && <ErrorState error={encounters.error} />}
+        {encounters.data?.length === 0 && (
+          <EmptyState>
+            <div>No standalone encounters yet.</div>
+            <button type='button' className='toolbar-button mt-4 inline-flex' disabled={creating} onClick={() => setCreateOpen(true)}>
+              <Plus size={15} />
+              {creating ? 'Creating…' : 'Create encounter'}
+            </button>
+          </EmptyState>
+        )}
+        {!!encounters.data?.length && (
+          <div className='overflow-hidden border border-p1-border'>
+            <table className='w-full text-left text-sm'>
+              <thead className='border-b border-p1-border bg-p1-header text-[11px] uppercase tracking-wide text-p1-faint'>
+                <tr>
+                  <th className='px-4 py-3 font-semibold'>Encounter</th>
+                  <th className='px-4 py-3 font-semibold'>PCs</th>
+                  <th className='px-4 py-3 font-semibold'>Enemies</th>
+                </tr>
+              </thead>
+              <tbody className='divide-y divide-p1-border'>
+                {encounters.data.map((encounter) => (
+                  <EncounterListRow
+                    key={encounter.id}
+                    encounter={encounter}
+                    onOpen={() => navigate(`/phase1/encounters/${encounter.id}`)}
+                    onChanged={() => queryClient.invalidateQueries({ queryKey: ['phase1-standalone-encounters'] })}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </main>
+      {createOpen && (
+        <CreateNameModal
+          title='New encounter'
+          label='Encounter name'
+          confirmLabel='Create'
+          skipLabel='Skip'
+          onCancel={() => setCreateOpen(false)}
+          onSkip={() => { void handleCreateEncounter(); }}
+          onConfirm={(name) => { void handleCreateEncounter(name); }}
+        />
+      )}
+    </div>
+  );
+}
+
+export function Phase1StandaloneEncounterPage() {
+  const session = useAuthSession();
+  const { encounterId: rawEncounterId } = useParams();
+  const encounterId = rawEncounterId ? Number(rawEncounterId) : null;
+  const enabled = Boolean(session && encounterId != null && Number.isFinite(encounterId));
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const encounterSaveChain = useRef(Promise.resolve<void>(undefined));
+  const initiativeLogsRef = useRef(new Map<number, InitiativeRoundLog[]>());
+  const diceLogsRef = useRef(new Map<number, DiceRollLog[]>());
+  const diceStatesRef = useRef(new Map<number, DiceRollState | undefined>());
+  const encountersKey = ['phase1-standalone-encounters', session?.user.id] as const;
+  const playersKey = ['phase1-standalone-characters', session?.user.id] as const;
+  const encounters = useQuery({
+    queryKey: encountersKey,
+    enabled,
+    queryFn: async () => {
+      const result = await phase1Request<Encounter[]>('find-encounter', { user_id: session!.user.id });
+      return overlayDiceRollMeta(
+        overlayInitiativeLogs((result ?? []).filter((item) => item.campaign_id == null), initiativeLogsRef.current),
+        diceLogsRef.current,
+        diceStatesRef.current,
+      );
+    },
+  });
+  const players = useQuery({
+    queryKey: playersKey,
+    enabled,
+    queryFn: () => phase1Request<Character[]>('find-character', { user_id: session!.user.id }),
+  });
+  const updateEncounter = useMutation<boolean, Error, Encounter, { previous?: Encounter[] }>({
+    mutationKey: ['phase1-update-standalone-encounter'],
+    mutationFn: (encounter) => {
+      const result = encounterSaveChain.current.then(() => phase1Request<boolean>('create-encounter', { ...encounter }));
+      encounterSaveChain.current = result.then(() => undefined, () => undefined);
+      return result;
+    },
+    onMutate: async (encounter) => {
+      await queryClient.cancelQueries({ queryKey: encountersKey });
+      const previous = queryClient.getQueryData<Encounter[]>(encountersKey);
+      if (encounter.meta_data.initiative_log !== undefined) {
+        initiativeLogsRef.current.set(encounter.id, encounter.meta_data.initiative_log);
+      }
+      if (encounter.meta_data.dice_roll_log !== undefined) {
+        diceLogsRef.current.set(encounter.id, encounter.meta_data.dice_roll_log);
+      }
+      if ('dice_roll_state' in encounter.meta_data) {
+        diceStatesRef.current.set(encounter.id, encounter.meta_data.dice_roll_state);
+      }
+      queryClient.setQueryData<Encounter[]>(encountersKey, (current = []) => current.map((item) => item.id === encounter.id ? encounter : item));
+      return { previous };
+    },
+    onError: (_error, _encounter, context) => {
+      if (context?.previous) queryClient.setQueryData(encountersKey, context.previous);
+    },
+    onSettled: () => {
+      if (queryClient.isMutating({ mutationKey: ['phase1-update-standalone-encounter'] }) > 1) return;
+      queryClient.invalidateQueries({ queryKey: encountersKey });
+    },
+  });
+  const updateCharacter = useMutation<unknown, Error, { id: number; spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }, { previous?: Character[] }>({
+    mutationFn: ({ id, ...fields }) => phase1Request('update-character', { id, ...fields }),
+    onMutate: async ({ id, ...fields }) => {
+      await queryClient.cancelQueries({ queryKey: playersKey });
+      const previous = queryClient.getQueryData<Character[]>(playersKey);
+      queryClient.setQueryData<Character[]>(playersKey, (current = []) => current.map((item) => item.id === id ? { ...item, ...fields } : item));
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous) queryClient.setQueryData(playersKey, context.previous);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: playersKey }),
+  });
+  const createEncounter = useMutation({
+    mutationFn: (name: string) => phase1Request<Encounter>('create-encounter', standaloneEncounterPayload(name)),
+    onSuccess: (encounter) => {
+      queryClient.invalidateQueries({ queryKey: encountersKey });
+      if (encounter?.id != null && encounter.id !== -1) {
+        navigate(`/phase1/encounters/${encounter.id}`);
+      }
+    },
+  });
+  const deleteEncounter = useMutation<unknown, Error, number, { previous?: Encounter[] }>({
+    mutationFn: (id) => phase1Request('delete-content', { id, type: 'encounter' }),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: encountersKey });
+      const previous = queryClient.getQueryData<Encounter[]>(encountersKey);
+      queryClient.setQueryData<Encounter[]>(encountersKey, (current = []) => current.filter((item) => item.id !== id));
+      return { previous };
+    },
+    onError: (_error, _id, context) => {
+      if (context?.previous) queryClient.setQueryData(encountersKey, context.previous);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: encountersKey }),
+  });
+  if (session === undefined) return <LoadingScreen label='Loading session' />;
+  if (!session) return <CampaignSignIn variant='phase1' />;
+  if (encounters.isLoading || players.isLoading) return <LoadingScreen label='Loading encounter' />;
+  const error = encounters.error || players.error;
+  if (error) return <PageError error={error} />;
+  const visible = encounters.data ?? [];
+  const selected = visible.find((item) => item.id === encounterId) ?? null;
+  function handleCreateEncounter(name: string) {
+    const trimmed = name.trim();
+    createEncounter.mutate(trimmed ? encounterDisplayName(trimmed) : nextEncounterName(visible.map((item) => item.name)));
+  }
+  function handleDeleteEncounter(id: number) {
+    const remaining = visible.filter((item) => item.id !== id);
+    deleteEncounter.mutate(id);
+    if (encounterId === id) {
+      if (remaining[0]) navigate(`/phase1/encounters/${remaining[0].id}`);
+      else navigate('/phase1/encounters');
+    }
+  }
+  if (!selected) return <PageError error={new Error('Encounter not found')} />;
+  const isGm = !selected.user_id || selected.user_id === session.user.id;
+  return (
+    <EncounterWorkspace
+      campaign={null}
+      encounters={visible}
+      players={players.data ?? []}
+      selectedEncounter={selected}
+      notePages={[]}
+      selectedNote={null}
+      viewingNotes={false}
+      viewingSettings={false}
+      isGm={isGm}
+      sessionUserId={session.user.id}
+      onUpdateEncounter={(encounter) => updateEncounter.mutate(encounter)}
+      onUpdateCharacter={(id, fields) => updateCharacter.mutate({ id, ...fields })}
+      onUpdateCampaign={() => undefined}
+      onResetJoinKey={async () => undefined}
+      onKickPlayer={async () => undefined}
+      onDeleteCampaign={async () => undefined}
+      onDeleteNote={() => undefined}
+      onDeleteEncounter={handleDeleteEncounter}
+      onCreateNote={() => undefined}
+      onCreateEncounter={handleCreateEncounter}
+      rosterSaving={updateEncounter.isPending}
+      campaignSaving={false}
+      rosterError={updateEncounter.error ?? updateCharacter.error ?? deleteEncounter.error}
+      campaignError={null}
+    />
+  );
+}
+
 export function Phase1CampaignPage() {
   const session = useAuthSession();
   const location = useLocation();
@@ -1292,7 +1592,8 @@ export function Phase1CampaignPage() {
     navigate(`/phase1/campaign/${campaignId}/notes/${pages.length - 1}`);
   }
   function handleCreateEncounter(name: string) {
-    createEncounter.mutate(encounterDisplayName(name));
+    const trimmed = name.trim();
+    createEncounter.mutate(trimmed ? encounterDisplayName(trimmed) : nextEncounterName(visible.map((item) => item.name)));
   }
   function handleDeleteEncounter(id: number) {
     const remaining = visible.filter((item) => item.id !== id);
@@ -1337,8 +1638,9 @@ export function Phase1CampaignPage() {
 
 
 function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, viewingSettings, isGm, sessionUserId, onUpdateEncounter, onUpdateCharacter, onUpdateCampaign, onResetJoinKey, onKickPlayer, onDeleteCampaign, onDeleteNote, onDeleteEncounter, onCreateNote, onCreateEncounter, rosterSaving, campaignSaving, rosterError, campaignError }: {
-  campaign: Campaign; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; campaignError: Error | null;
+  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; campaignError: Error | null;
 }) {
+  const standalone = campaign == null;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailWidth, setDetailWidth] = useState(readDetailWidth);
   const [activeTab, setActiveTab] = useState<DetailTab>('Health');
@@ -1832,6 +2134,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   }
 
   function renameNote(index: number, name: string) {
+    if (!campaign) return;
     const trimmed = name.trim();
     const pages = [...(campaign.notes?.pages ?? [])];
     const page = pages[index];
@@ -1936,11 +2239,11 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
 
   return (
     <div className='flex h-screen min-h-[680px] flex-col overflow-hidden bg-p1-page text-p1-text'>
-      <WorkspaceHeader label={campaign.name} campaignId={campaign.id} encounterId={selectedEncounter?.id ?? null} noteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} />
+      <WorkspaceHeader section={standalone ? 'encounters' : undefined} label={campaign?.name ?? encounterDisplayName(selectedEncounter?.name ?? 'Encounter')} campaignId={campaign?.id ?? null} encounterId={selectedEncounter?.id ?? null} noteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} />
       <div className={`grid min-h-0 flex-1 ${viewingNotes || viewingSettings ? 'grid-cols-[248px_minmax(280px,1fr)]' : 'grid-cols-[248px_minmax(280px,1fr)_6px_auto]'}`}>
         <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddAllPlayers={addAllPlayers} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onDeleteNote={onDeleteNote} onDeleteEncounter={onDeleteEncounter} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} onRenameNote={renameNote} onRenameEncounter={renameEncounter} />
         <main className='min-w-0 overflow-auto bg-p1-surface'>
-          {viewingSettings ? (
+          {viewingSettings && campaign ? (
             <SettingsSurface
               campaign={campaign}
               players={players}
@@ -1952,10 +2255,10 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               error={campaignError}
             />
           ) : viewingNotes ? (
-            <NoteSurface note={selectedNote} isGm={isGm} encounterLink={noteEncounter ? { href: `/phase1/campaign/${campaign.id}/encounters/${noteEncounter.id}`, name: noteEncounter.name } : undefined} />
+            <NoteSurface note={selectedNote} isGm={isGm} encounterLink={noteEncounter ? { href: phase1EncounterPath(noteEncounter.id, campaign?.id), name: noteEncounter.name } : undefined} />
           ) : (
             <>
-              <EncounterHeader encounter={selectedEncounter} combatants={activeCombatants} count={activeCombatants.length} isGm={isGm} noteLink={encounterNote ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} tab={encounterTab} onTab={setEncounterTab} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} canRollInitiative={isGm && activeCombatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && activeCombatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} onOpenDice={() => setDiceOpen(true)} />
+              <EncounterHeader encounter={selectedEncounter} combatants={activeCombatants} count={activeCombatants.length} isGm={isGm} noteLink={!standalone && encounterNote && campaign ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} tab={encounterTab} onTab={setEncounterTab} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} canRollInitiative={isGm && activeCombatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && activeCombatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} onOpenDice={() => setDiceOpen(true)} />
               {rosterError && <div className='border-b border-p1-danger/40 bg-p1-danger/10 px-5 py-2 text-xs text-p1-danger-soft'>Roster update failed: {rosterError.message}</div>}
               {encounterTab === 'dice' && (
                 <DiceRollToolbar
@@ -2127,7 +2430,7 @@ function useCombatantStatuses(encounterId: number | null, combatants: PopulatedC
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
-function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, viewingSettings }: { label?: string; section?: 'campaigns' | 'characters'; campaignId?: number | null; encounterId?: number | null; noteIndex?: number | null; viewingSettings?: boolean }) {
+function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, viewingSettings }: { label?: string; section?: 'campaigns' | 'characters' | 'encounters'; campaignId?: number | null; encounterId?: number | null; noteIndex?: number | null; viewingSettings?: boolean }) {
   const navClass = (active: boolean) => `text-sm ${active ? 'text-p1-text' : 'text-p1-muted hover:text-p1-text'}`;
   const user = useQuery({
     queryKey: ['phase1-public-user'],
@@ -2141,6 +2444,7 @@ function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, v
       <span className='h-4 w-px bg-p1-border' />
       <Link to='/phase1' className={navClass(section === 'campaigns')}>Campaigns</Link>
       <Link to='/phase1/characters' className={navClass(section === 'characters')}>Characters</Link>
+      <Link to='/phase1/encounters' className={navClass(section === 'encounters')}>Encounters</Link>
       {label && <><span className='text-p1-faint'>/</span><span className='truncate text-sm text-p1-muted'>{label}</span></>}
       <div className='ml-auto flex items-center gap-2'>
         <span className='hidden text-[11px] uppercase tracking-[0.14em] text-p1-faint sm:inline' title='patreon.tier from get-user'>
@@ -2156,8 +2460,9 @@ function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, v
 }
 
 function CampaignRail({ campaign, encounters, players, outCombatants, selectedEncounter, selectedId, notePages, selectedNoteIndex, viewingSettings, isGm, rosterSaving, onRemovePlayer, onAddAllPlayers, onSelectCombatant, onMarkOut, onDeleteNote, onDeleteEncounter, onCreateNote, onCreateEncounter, onRenameNote, onRenameEncounter }: {
-  campaign: Campaign; encounters: Encounter[]; players: Character[]; outCombatants: PopulatedCombatant[]; selectedEncounter: Encounter | null; selectedId: string | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; rosterSaving: boolean; onRemovePlayer: (combatantId: string) => void; onAddAllPlayers: () => void; onSelectCombatant: (id: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; onRenameNote: (index: number, name: string) => void; onRenameEncounter: (id: number, name: string) => void;
+  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; outCombatants: PopulatedCombatant[]; selectedEncounter: Encounter | null; selectedId: string | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; rosterSaving: boolean; onRemovePlayer: (combatantId: string) => void; onAddAllPlayers: () => void; onSelectCombatant: (id: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; onRenameNote: (index: number, name: string) => void; onRenameEncounter: (id: number, name: string) => void;
 }) {
+  const standalone = campaign == null;
   const [benchActive, setBenchActive] = useState(false);
   const [outActive, setOutActive] = useState(false);
   const [notesOpen, setNotesOpen] = useState(selectedNoteIndex != null);
@@ -2173,6 +2478,7 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
 
   function openSectionMenu(event: ReactMouseEvent, kind: 'note' | 'encounter') {
     if (!isGm) return;
+    if (kind === 'note' && standalone) return;
     event.preventDefault();
     setMenu(null);
     setSectionMenu({ kind, x: event.clientX, y: event.clientY });
@@ -2211,9 +2517,20 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
   return (
     <aside className='min-h-0 overflow-y-auto border-r border-p1-border bg-p1-header'>
       <div className='border-b border-p1-border p-4'>
-        <Link to='/phase1' className='mb-5 flex items-center gap-2 text-xs text-p1-muted hover:text-p1-text'><ArrowLeft size={14} /> Campaigns</Link>
-        <Eyebrow>{isGm ? 'Game master' : 'Player'}</Eyebrow><h1 className='mt-2 text-lg font-semibold leading-tight'>{campaign.name}</h1>
+        <Link to={standalone ? '/phase1/encounters' : '/phase1'} className='mb-5 flex items-center gap-2 text-xs text-p1-muted hover:text-p1-text'><ArrowLeft size={14} /> {standalone ? 'Encounters' : 'Campaigns'}</Link>
+        {standalone ? (
+          <>
+            <Eyebrow>Standalone</Eyebrow>
+            <h1 className='mt-2 text-lg font-semibold leading-tight'>Encounters</h1>
+          </>
+        ) : campaign ? (
+          <>
+            <Eyebrow>{isGm ? 'Game master' : 'Player'}</Eyebrow><h1 className='mt-2 text-lg font-semibold leading-tight'>{campaign.name}</h1>
+          </>
+        ) : null}
       </div>
+      {!standalone && campaign && (
+        <>
       <RailLabel icon={<BookOpen size={14} />} label='Notes' count={notePages.length} open={notesOpen} onToggle={() => setNotesOpen((value) => !value)} onContextMenu={(event) => openSectionMenu(event, 'note')} />
       {notesOpen && (
         <nav className='px-2 pb-4' onContextMenu={(event) => openSectionMenu(event, 'note')}>
@@ -2231,13 +2548,15 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
           {notePages.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>{isGm ? 'No campaign notes yet.' : 'No shared campaign notes.'}</p>}
         </nav>
       )}
+        </>
+      )}
       <RailLabel icon={<Swords size={14} />} label='Encounters' count={encounters.length} open={encountersOpen} onToggle={() => setEncountersOpen((value) => !value)} onContextMenu={(event) => openSectionMenu(event, 'encounter')} />
       {encountersOpen && (
         <nav className='px-2 pb-4' onContextMenu={(event) => openSectionMenu(event, 'encounter')}>
           {encounters.map((encounter) => (
             <Link
               key={encounter.id}
-              to={`/phase1/campaign/${campaign.id}/encounters/${encounter.id}`}
+              to={phase1EncounterPath(encounter.id, campaign?.id)}
               onContextMenu={(event) => openRailMenu(event, { kind: 'encounter', id: encounter.id, name: encounterDisplayName(encounter.name) })}
               className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedEncounter?.id === encounter.id ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
             >
@@ -2245,10 +2564,10 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
               <span className='mt-0.5 block text-[11px] text-p1-faint'>{encounter.combatants.list.length} combatants</span>
             </Link>
           ))}
-          {encounters.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>No encounters are visible for this campaign.</p>}
+          {encounters.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>{standalone ? 'No standalone encounters yet.' : 'No encounters are visible for this campaign.'}</p>}
         </nav>
       )}
-      {isGm && (
+      {!standalone && isGm && campaign && (
         <>
           <RailLabel icon={<Settings size={14} />} label='Settings' />
           <nav className='px-2 pb-4'>
@@ -2262,35 +2581,71 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
           </nav>
         </>
       )}
-      {selectedEncounter && (
+      {selectedEncounter && !standalone && (
         <>
           <RailLabel icon={<UsersRound size={14} />} label='Party bench' count={players.length} onContextMenu={openBenchMenu} />
           <div className={`mx-2 min-h-16 border px-1 pb-4 pt-1 transition-colors ${benchActive ? 'border-p1-accent bg-p1-accent/[0.07]' : 'border-transparent'}`} onContextMenu={openBenchMenu} onDragOver={(event) => { if (canManageRoster && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setBenchActive(true); } }} onDragLeave={() => setBenchActive(false)} onDrop={dropOnBench}>
-            {players.map((player) => <a key={player.id} href={`/sheet/${player.id}`} target='_blank' rel='noreferrer' draggable={canManageRoster} onDragStart={(event) => writeCombatantDrag(event, { source: 'bench', characterId: player.id })} onDragEnd={() => setBenchActive(false)} className='flex items-center gap-2 px-2 py-2 text-sm text-p1-muted hover:bg-p1-hover hover:text-p1-text'>{canManageRoster && <GripVertical size={14} className='shrink-0 cursor-grab text-p1-faint' />}<UserRound size={15} /><span className='min-w-0 flex-1 truncate'>{player.name}</span><ExternalLink size={12} /></a>)}
+            {players.map((player) => (
+              <div key={player.id} className='flex items-center gap-2 px-2 py-2 text-sm text-p1-muted hover:bg-p1-hover hover:text-p1-text'>
+                {canManageRoster && (
+                  <span
+                    draggable
+                    onDragStart={(event) => writeCombatantDrag(event, { source: 'bench', characterId: player.id })}
+                    onDragEnd={() => setBenchActive(false)}
+                    className='shrink-0 cursor-grab text-p1-faint'
+                    title='Drag to encounter'
+                    aria-label={`Drag ${player.name} to encounter`}
+                  >
+                    <GripVertical size={14} />
+                  </span>
+                )}
+                <a href={`/sheet/${player.id}`} target='_blank' rel='noreferrer' className='flex min-w-0 flex-1 items-center gap-2 hover:text-p1-text'>
+                  <UserRound size={15} />
+                  <span className='min-w-0 flex-1 truncate'>{player.name}</span>
+                  <ExternalLink size={12} />
+                </a>
+              </div>
+            ))}
             {players.length === 0 && <p className='px-2 py-3 text-xs text-p1-faint'>No PCs on the bench.</p>}
           </div>
+        </>
+      )}
+      {selectedEncounter && (
+        <>
           <RailLabel icon={<Skull size={14} />} label='Dead / Incapacitated' count={outCombatants.length} />
           <div className={`mx-2 min-h-16 border px-1 pb-4 pt-1 transition-colors ${outActive ? 'border-p1-accent bg-p1-accent/[0.07]' : 'border-transparent'}`} onDragOver={(event) => { if (canManageRoster && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setOutActive(true); } }} onDragLeave={() => setOutActive(false)} onDrop={dropOnOut}>
             {outCombatants.map((combatant) => (
-              <button
+              <div
                 key={combatant._id}
-                type='button'
-                draggable={canManageRoster}
-                onDragStart={(event) => writeCombatantDrag(event, { source: 'out', combatantId: combatant._id, characterId: combatant.character })}
-                onDragEnd={() => setOutActive(false)}
-                onClick={() => onSelectCombatant(combatant._id)}
+                className={`flex w-full items-center gap-2 px-2 py-2 text-sm hover:bg-p1-hover ${combatant._id === selectedId ? 'bg-p1-hover text-p1-text' : 'text-p1-muted hover:text-p1-text'}`}
                 onContextMenu={(event) => {
                   if (!canManageRoster) return;
                   event.preventDefault();
                   setOutMenu({ id: combatant._id, x: event.clientX, y: event.clientY });
                 }}
-                className={`flex w-full items-center gap-2 px-2 py-2 text-left text-sm hover:bg-p1-hover ${combatant._id === selectedId ? 'bg-p1-hover text-p1-text' : 'text-p1-muted hover:text-p1-text'}`}
               >
-                {canManageRoster && <GripVertical size={14} className='shrink-0 cursor-grab text-p1-faint' />}
-                <Skull size={15} className='shrink-0' />
-                <span className='min-w-0 flex-1 truncate'>{combatant.data.name}</span>
-                <span className='shrink-0 text-[10px] uppercase text-p1-faint'>{combatant.out === 'dead' ? 'Dead' : 'Incap.'}</span>
-              </button>
+                {canManageRoster && (
+                  <span
+                    draggable
+                    onDragStart={(event) => writeCombatantDrag(event, { source: 'out', combatantId: combatant._id, characterId: combatant.character })}
+                    onDragEnd={() => setOutActive(false)}
+                    className='shrink-0 cursor-grab text-p1-faint'
+                    title='Drag back to encounter'
+                    aria-label={`Drag ${combatant.data.name} back to encounter`}
+                  >
+                    <GripVertical size={14} />
+                  </span>
+                )}
+                <button
+                  type='button'
+                  onClick={() => onSelectCombatant(combatant._id)}
+                  className='flex min-w-0 flex-1 items-center gap-2 text-left'
+                >
+                  <Skull size={15} className='shrink-0' />
+                  <span className='min-w-0 flex-1 truncate'>{combatant.data.name}</span>
+                  <span className='shrink-0 text-[10px] uppercase text-p1-faint'>{combatant.out === 'dead' ? 'Dead' : 'Incap.'}</span>
+                </button>
+              </div>
             ))}
             {outCombatants.length === 0 && <p className='px-2 py-3 text-xs text-p1-faint'>No combatants out of the fight.</p>}
           </div>
@@ -2330,7 +2685,12 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
           title={createKind === 'note' ? 'New note' : 'New encounter'}
           label={createKind === 'note' ? 'Note name' : 'Encounter name'}
           confirmLabel='Create'
+          skipLabel={createKind === 'encounter' ? 'Skip' : undefined}
           onCancel={() => setCreateKind(null)}
+          onSkip={createKind === 'encounter' ? () => {
+            onCreateEncounter(nextEncounterName(encounters.map((item) => item.name)));
+            setCreateKind(null);
+          } : undefined}
           onConfirm={(name) => {
             if (createKind === 'note') onCreateNote(name);
             else onCreateEncounter(name);
@@ -2782,20 +3142,25 @@ function SectionContextMenu({ x, y, onClose, onNew }: { x: number; y: number; on
   );
 }
 
-function CreateNameModal({ title, label, confirmLabel, onCancel, onConfirm }: { title: string; label: string; confirmLabel: string; onCancel: () => void; onConfirm: (name: string) => void }) {
+function CreateNameModal({ title, label, confirmLabel, skipLabel, onCancel, onSkip, onConfirm }: { title: string; label: string; confirmLabel: string; skipLabel?: string; onCancel: () => void; onSkip?: () => void; onConfirm: (name: string) => void }) {
   const [name, setName] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const skipRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    inputRef.current?.focus();
+    if (onSkip) skipRef.current?.focus();
+    else inputRef.current?.focus();
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onCancel();
     }
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [onCancel]);
+  }, [onCancel, onSkip]);
   const trimmed = name.trim();
   function submit() {
-    if (!trimmed) return;
+    if (!trimmed) {
+      if (onSkip) onSkip();
+      return;
+    }
     onConfirm(trimmed);
   }
   return createPortal(
@@ -2822,7 +3187,10 @@ function CreateNameModal({ title, label, confirmLabel, onCancel, onConfirm }: { 
         </label>
         <div className='mt-5 flex justify-end gap-2'>
           <button type='button' className='toolbar-button' onClick={onCancel}>Cancel</button>
-          <button type='button' className='toolbar-button' disabled={!trimmed} onClick={submit}>{confirmLabel}</button>
+          {onSkip && skipLabel && (
+            <button ref={skipRef} type='button' className='toolbar-button' onClick={onSkip}>{skipLabel}</button>
+          )}
+          <button type='button' className='toolbar-button' disabled={!trimmed} onClick={() => onConfirm(trimmed)}>{confirmLabel}</button>
         </div>
       </section>
     </div>,
@@ -2830,7 +3198,7 @@ function CreateNameModal({ title, label, confirmLabel, onCancel, onConfirm }: { 
   );
 }
 
-function CharacterGridContextMenu({ x, y, onClose, onJoinCampaign, onOpenStatBlock, onExportJson, onExportPdf, onDelete }: { x: number; y: number; onClose: () => void; onJoinCampaign: () => void; onOpenStatBlock: () => void; onExportJson: () => void; onExportPdf: () => void; onDelete: () => void }) {
+function CharacterGridContextMenu({ x, y, onClose, onJoinCampaign, onUnassign, onOpenStatBlock, onExportJson, onExportPdf, onDelete }: { x: number; y: number; onClose: () => void; onJoinCampaign: () => void; onUnassign?: () => void; onOpenStatBlock: () => void; onExportJson: () => void; onExportPdf: () => void; onDelete: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -2855,6 +3223,11 @@ function CharacterGridContextMenu({ x, y, onClose, onJoinCampaign, onOpenStatBlo
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onJoinCampaign(); }}>
           <UserPlus size={14} /> Join campaign
         </button>
+        {onUnassign && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onUnassign(); }}>
+            <UserMinus size={14} /> Unassign
+          </button>
+        )}
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onExportJson(); }}>
           <Download size={14} /> Export to JSON
         </button>
@@ -3399,9 +3772,31 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
             const rowTone = outcomeTone || (combatant._id === selectedId ? 'bg-p1-accent/[0.07]' : 'hover:bg-p1-hover');
             const critInk = result?.outcome === 'critical-success';
             return (
-              <tr key={combatant._id} draggable={draggable} onDragStart={(event) => { if (draggable) writeCombatantDrag(event, { source: 'encounter', combatantId: combatant._id, characterId: combatant.character }); }} onDragEnd={() => setEncounterActive(false)} onContextMenu={(event) => { if (!canManageRoster || (combatant.type !== 'CREATURE' && combatant.type !== 'CHARACTER')) return; event.preventDefault(); setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY }); }} className={`border-b border-p1-border last:border-0 ${draggable ? 'cursor-grab' : ''} ${rowTone}`}>
+              <tr key={combatant._id} onClick={(event) => { if ((event.target as HTMLElement).closest('button, input, textarea, a, [draggable="true"]')) return; openCombatant(combatant, onSelect); }} onContextMenu={(event) => { if (!canManageRoster || (combatant.type !== 'CREATURE' && combatant.type !== 'CHARACTER')) return; event.preventDefault(); setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY }); }} className={`cursor-pointer border-b border-p1-border last:border-0 ${rowTone}`}>
                 {!dice && <td className='px-3 py-3'><InitiativeCell key={`${combatant._id}:${combatant.initiative ?? ''}:${combatant.initiative_roll?.die ?? ''}`} combatant={combatant} canEdit={canManageRoster} onUpdate={(initiative) => onUpdateInitiative(combatant._id, initiative)} /></td>}
-                <td className='px-3 py-3'><button className={`flex w-full items-center gap-3 text-left ${critInk ? 'text-[#152214]' : ''}`} onClick={() => openCombatant(combatant, onSelect)}>{draggable && <GripVertical size={14} className={`shrink-0 ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`} />}<EntityIcon type={combatant.type} /><span className='min-w-0'><span className='block truncate font-semibold'>{combatant.data.name}</span><span className={`block text-xs ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}>Level {combatant.data.level} | {combatant.ally ? 'Ally' : 'Enemy'}</span></span></button></td>
+                <td className='px-3 py-3'>
+                  <div className={`flex w-full items-center gap-3 text-left ${critInk ? 'text-[#152214]' : ''}`}>
+                    {draggable && (
+                      <span
+                        draggable
+                        onDragStart={(event) => writeCombatantDrag(event, { source: 'encounter', combatantId: combatant._id, characterId: combatant.character })}
+                        onDragEnd={() => setEncounterActive(false)}
+                        className={`shrink-0 cursor-grab ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}
+                        title='Drag to reorder'
+                        aria-label={`Drag ${combatant.data.name} to reorder`}
+                      >
+                        <GripVertical size={14} />
+                      </span>
+                    )}
+                    <button type='button' className='flex min-w-0 flex-1 items-center gap-3 text-left' onClick={() => openCombatant(combatant, onSelect)}>
+                      <EntityIcon type={combatant.type} />
+                      <span className='min-w-0'>
+                        <span className='block truncate font-semibold'>{combatant.data.name}</span>
+                        <span className={`block text-xs ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}>Level {combatant.data.level} | {combatant.ally ? 'Ally' : 'Enemy'}</span>
+                      </span>
+                    </button>
+                  </div>
+                </td>
                 <td className='px-3 py-3'>
                   <div className='flex flex-wrap items-center gap-1'>
                     {dice && (
@@ -3861,6 +4256,103 @@ function populateCombatants(combatants: Combatant[], players: Character[]): Popu
     return data ? { ...combatant, data } : null;
   }).filter((combatant): combatant is PopulatedCombatant => Boolean(combatant));
 }
+function EncounterListRow({ encounter, onOpen, onChanged }: { encounter: Encounter; onOpen: () => void; onChanged: () => void }) {
+  const counts = encounterSideCounts(encounter);
+  const displayName = encounterDisplayName(encounter.name);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [pendingRename, setPendingRename] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  function openMenu(event: ReactMouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    setActionError(null);
+    setMenu({ x: event.clientX, y: event.clientY });
+  }
+
+  async function confirmRename(name: string) {
+    const nextName = encounterDisplayName(name.trim());
+    if (!nextName || nextName === displayName || busy) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      await phase1Request('create-encounter', { ...encounter, name: nextName });
+      setPendingRename(false);
+      onChanged();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not rename encounter.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (busy) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      await phase1Request('delete-content', { id: encounter.id, type: 'encounter' });
+      setPendingDelete(false);
+      onChanged();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not delete encounter.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <tr className='cursor-pointer hover:bg-p1-hover' onClick={onOpen} onContextMenu={openMenu}>
+        <td className='px-4 py-4 font-medium'>
+          {displayName}
+          {actionError && <div className='mt-1 text-xs font-normal text-p1-danger-soft'>{actionError}</div>}
+        </td>
+        <td className='px-4 py-4 text-p1-muted'>{counts.pcs}</td>
+        <td className='px-4 py-4 text-p1-muted'>{counts.enemies}</td>
+      </tr>
+      {menu && (
+        <RailContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          onRename={() => {
+            setMenu(null);
+            setPendingRename(true);
+          }}
+          onDelete={() => {
+            setMenu(null);
+            setPendingDelete(true);
+          }}
+        />
+      )}
+      {pendingRename && (
+        <RenameDialog
+          title='Rename encounter'
+          initialName={displayName}
+          onCancel={() => {
+            if (!busy) setPendingRename(false);
+          }}
+          onConfirm={(name) => { void confirmRename(name); }}
+        />
+      )}
+      {pendingDelete && (
+        <ConfirmDialog
+          title='Delete encounter'
+          message={`Are you sure you want to delete "${displayName}"?`}
+          confirmLabel={busy ? 'Deleting…' : 'Delete'}
+          onCancel={() => {
+            if (!busy) setPendingDelete(false);
+          }}
+          onConfirm={() => { void confirmDelete(); }}
+        />
+      )}
+    </>
+  );
+}
+
 function CampaignWorkspaceRow({ campaign, canDelete, onOpen, onDeleted }: { campaign: Campaign; canDelete: boolean; onOpen: () => void; onDeleted: () => void }) {
   const [visible, setVisible] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');

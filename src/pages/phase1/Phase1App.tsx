@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Outlet, RouterProvider, createBrowserRouter } from 'react-router-dom';
-import { Phase1CampaignPage, Phase1CharactersPage, Phase1IndexPage } from './Phase1Workspace';
+import { Phase1CampaignPage, Phase1CharactersPage, Phase1EncountersPage, Phase1IndexPage, Phase1StandaloneEncounterPage } from './Phase1Workspace';
 import { Phase1SheetPage } from './Phase1SheetPage';
 import { Phase1StatBlockPage } from './Phase1StatBlockPage';
 import { Phase1BuilderPage } from './Phase1BuilderPage';
@@ -46,6 +46,8 @@ const router = createBrowserRouter([
       { path: '/', Component: Phase1AuthCallback },
       { path: '/phase1', Component: Phase1IndexPage },
       { path: '/phase1/characters', Component: Phase1CharactersPage },
+      { path: '/phase1/encounters', Component: Phase1EncountersPage },
+      { path: '/phase1/encounters/:encounterId', Component: Phase1StandaloneEncounterPage },
       { path: '/phase1/campaign/:campaignId', Component: Phase1CampaignPage },
       { path: '/phase1/campaign/:campaignId/encounters/:encounterId', Component: Phase1CampaignPage },
       { path: '/phase1/campaign/:campaignId/notes/:noteIndex', Component: Phase1CampaignPage },
