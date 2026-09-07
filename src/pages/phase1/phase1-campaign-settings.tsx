@@ -272,6 +272,7 @@ export function SettingsSurface({
                   hasBookEnabled={hasBookEnabled}
                   onToggle={(id, enabled) => toggleBooks([id], enabled)}
                   onEnableAll={(ids) => toggleBooks(ids, true)}
+                  onUncheckAll={(ids) => toggleBooks(ids, false)}
                 />
               )}
               {tab === 'homebrew' && (
@@ -476,12 +477,14 @@ function BooksPanel({
   hasBookEnabled,
   onToggle,
   onEnableAll,
+  onUncheckAll,
 }: {
   books: ContentSource[];
   loading: boolean;
   hasBookEnabled: (id: number) => boolean | undefined;
   onToggle: (id: number, enabled: boolean) => void;
   onEnableAll: (ids: number[]) => void;
+  onUncheckAll: (ids: number[]) => void;
 }) {
   if (loading) return <EmptySettingsState>Loading books...</EmptySettingsState>;
   return (
@@ -499,6 +502,7 @@ function BooksPanel({
               hasBookEnabled={hasBookEnabled}
               onToggle={onToggle}
               onEnableAll={() => onEnableAll(groupBooks.map((book) => book.id))}
+              onUncheckAll={() => onUncheckAll(groupBooks.map((book) => book.id))}
             />
           </div>
         );
@@ -550,6 +554,7 @@ function BookGroup({
   hasBookEnabled,
   onToggle,
   onEnableAll,
+  onUncheckAll,
 }: {
   label: string;
   icon: ReactNode;
@@ -557,6 +562,7 @@ function BookGroup({
   hasBookEnabled: (id: number) => boolean | undefined;
   onToggle: (id: number, enabled: boolean) => void;
   onEnableAll: () => void;
+  onUncheckAll: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const enabledCount = books.filter((book) => hasBookEnabled(book.id)).length;
@@ -582,9 +588,12 @@ function BookGroup({
       </button>
       {open && (
         <div className='pb-2'>
-          <div className='px-4 pb-2'>
+          <div className='flex gap-4 px-4 pb-2'>
             <button type='button' className='text-xs text-p1-accent hover:underline' onClick={onEnableAll}>
-              Enable all
+              check all
+            </button>
+            <button type='button' className='text-xs text-p1-accent hover:underline' onClick={onUncheckAll}>
+              uncheck all
             </button>
           </div>
           {sorted.map((book) => (

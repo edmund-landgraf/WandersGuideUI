@@ -240,6 +240,7 @@ export function Phase1BuilderHomeFields({
             enabled={enabled}
             onToggle={(id, next) => toggleBooks([id], next)}
             onEnableAll={(ids) => toggleBooks(ids, true)}
+            onUncheckAll={(ids) => toggleBooks(ids, false)}
           />
         )}
         {tab === 'homebrew' && (
@@ -336,12 +337,14 @@ function BooksPanel({
   enabled,
   onToggle,
   onEnableAll,
+  onUncheckAll,
 }: {
   books: ContentSource[];
   loading: boolean;
   enabled: number[];
   onToggle: (id: number, next: boolean) => void;
   onEnableAll: (ids: number[]) => void;
+  onUncheckAll: (ids: number[]) => void;
 }) {
   if (loading) return <p className='px-4 py-8 text-center text-sm italic text-p1-faint'>Loading books...</p>;
   return (
@@ -359,6 +362,7 @@ function BooksPanel({
               enabled={enabled}
               onToggle={onToggle}
               onEnableAll={() => onEnableAll(groupBooks.map((book) => book.id))}
+              onUncheckAll={() => onUncheckAll(groupBooks.map((book) => book.id))}
             />
           </div>
         );
@@ -410,6 +414,7 @@ function BookGroup({
   enabled,
   onToggle,
   onEnableAll,
+  onUncheckAll,
 }: {
   label: string;
   icon: ReactNode;
@@ -417,6 +422,7 @@ function BookGroup({
   enabled: number[];
   onToggle: (id: number, next: boolean) => void;
   onEnableAll: () => void;
+  onUncheckAll: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const enabledCount = books.filter((book) => enabled.includes(book.id)).length;
@@ -442,9 +448,12 @@ function BookGroup({
       </button>
       {open && (
         <div className='pb-2'>
-          <div className='px-4 pb-2'>
+          <div className='flex gap-4 px-4 pb-2'>
             <button type='button' className='text-xs text-p1-accent hover:underline' onClick={(event) => { event.preventDefault(); event.stopPropagation(); onEnableAll(); }}>
-              Enable all
+              check all
+            </button>
+            <button type='button' className='text-xs text-p1-accent hover:underline' onClick={(event) => { event.preventDefault(); event.stopPropagation(); onUncheckAll(); }}>
+              uncheck all
             </button>
           </div>
           <ul className='grid grid-cols-1 gap-x-2 sm:grid-cols-2'>
