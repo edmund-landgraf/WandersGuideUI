@@ -235,6 +235,7 @@ export function Phase1CharactersPage() {
   const [characterMenu, setCharacterMenu] = useState<{ character: Character; x: number; y: number } | null>(null);
   const [joinResult, setJoinResult] = useState<{ title: string; message: string; ok: boolean } | null>(null);
   const [assignPicker, setAssignPicker] = useState<Character | null>(null);
+  const [joinOtherPicker, setJoinOtherPicker] = useState<Character | null>(null);
   const [portraitPreview, setPortraitPreview] = useState<Character | null>(null);
   const [portraitPickerOpen, setPortraitPickerOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{ id: number; name: string } | null>(null);
@@ -333,23 +334,25 @@ export function Phase1CharactersPage() {
     return { already: false as const, campaign };
   }
 
-  async function joinCharacterFromClipboard(character: Character) {
-    let key = '';
-    try {
-      key = (await navigator.clipboard.readText()).trim();
-    } catch {
-      setAssignPicker(character);
-      return;
-    }
-    if (!key) {
-      setAssignPicker(character);
+  async function joinCharacterWithKey(character: Character, key: string) {
+    const trimmed = key.trim();
+    if (!trimmed) {
+      setJoinResult({
+        ok: false,
+        title: 'Could not join campaign',
+        message: 'Enter a join key.',
+      });
       return;
     }
     try {
-      const found = await phase1Request<Campaign | Campaign[]>('find-campaign', { join_key: key });
+      const found = await phase1Request<Campaign | Campaign[]>('find-campaign', { join_key: trimmed });
       const campaign = Array.isArray(found) ? found[0] : found;
       if (!campaign) {
-        setAssignPicker(character);
+        setJoinResult({
+          ok: false,
+          title: 'Could not join campaign',
+          message: 'Invalid join key. Please ask your GM for a valid key.',
+        });
         return;
       }
       const result = await assignCharacterToCampaign(character, campaign);
@@ -372,7 +375,13 @@ export function Phase1CharactersPage() {
 
   async function unassignCharacterFromCampaign(character: Character) {
     if (character.campaign_id == null) return;
-    await phase1Request('remove-from-campaign', { character_id: character.id, campaign_id: character.campaign_id });
+    const campaign = campaignById.get(character.campaign_id);
+    const isOwnCampaign = campaign?.user_id === session?.user.id;
+    if (isOwnCampaign) {
+      await phase1Request('remove-from-campaign', { character_id: character.id, campaign_id: character.campaign_id });
+    } else {
+      await phase1Request('update-character', { id: character.id, campaign_id: null });
+    }
     queryClient.setQueryData<Character[]>(['phase1-characters', session?.user.id], (roster) =>
       (roster ?? []).map((item) => (item.id === character.id ? { ...item, campaign_id: null } : item))
     );
@@ -896,10 +905,15 @@ export function Phase1CharactersPage() {
             x={characterMenu.x}
             y={characterMenu.y}
             onClose={() => setCharacterMenu(null)}
-            onJoinCampaign={() => {
+            onJoinMyCampaign={() => {
               const target = characterMenu.character;
               setCharacterMenu(null);
-              void joinCharacterFromClipboard(target);
+              setAssignPicker(target);
+            }}
+            onJoinOthersCampaign={() => {
+              const target = characterMenu.character;
+              setCharacterMenu(null);
+              setJoinOtherPicker(target);
             }}
             onUnassign={
               characterMenu.character.campaign_id == null
@@ -1003,6 +1017,17 @@ export function Phase1CharactersPage() {
             campaigns={assignableCampaigns}
             onCancel={() => setAssignPicker(null)}
             onPick={(campaign) => void assignCharacterFromPicker(assignPicker, campaign)}
+          />
+        )}
+        {joinOtherPicker && (
+          <JoinKeyModal
+            characterName={joinOtherPicker.name}
+            onCancel={() => setJoinOtherPicker(null)}
+            onConfirm={(key) => {
+              const target = joinOtherPicker;
+              setJoinOtherPicker(null);
+              void joinCharacterWithKey(target, key);
+            }}
           />
         )}
         {joinResult && (
@@ -3209,7 +3234,7 @@ function CreateNameModal({ title, label, confirmLabel, skipLabel, onCancel, onSk
   );
 }
 
-function CharacterGridContextMenu({ x, y, onClose, onJoinCampaign, onUnassign, onOpenStatBlock, onExportJson, onExportPdf, onDelete }: { x: number; y: number; onClose: () => void; onJoinCampaign: () => void; onUnassign?: () => void; onOpenStatBlock: () => void; onExportJson: () => void; onExportPdf: () => void; onDelete: () => void }) {
+function CharacterGridContextMenu({ x, y, onClose, onJoinMyCampaign, onJoinOthersCampaign, onUnassign, onOpenStatBlock, onExportJson, onExportPdf, onDelete }: { x: number; y: number; onClose: () => void; onJoinMyCampaign: () => void; onJoinOthersCampaign: () => void; onUnassign?: () => void; onOpenStatBlock: () => void; onExportJson: () => void; onExportPdf: () => void; onDelete: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -3217,22 +3242,25 @@ function CharacterGridContextMenu({ x, y, onClose, onJoinCampaign, onUnassign, o
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
-  const left = Math.min(x, window.innerWidth - 200);
-  const top = Math.min(y, window.innerHeight - 200);
+  const left = Math.min(x, window.innerWidth - 220);
+  const top = Math.min(y, window.innerHeight - 240);
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onPointerDown={onClose} />
       <div
         role='menu'
-        className='fixed z-[110] min-w-44 border border-p1-border bg-p1-surface py-1 shadow-2xl'
+        className='fixed z-[110] min-w-52 border border-p1-border bg-p1-surface py-1 shadow-2xl'
         style={{ left, top }}
         onPointerDown={(event) => event.stopPropagation()}
       >
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onOpenStatBlock(); }}>
           <AlignLeft size={14} /> Open Stat Block
         </button>
-        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onJoinCampaign(); }}>
-          <UserPlus size={14} /> Join campaign
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onJoinMyCampaign(); }}>
+          <UserPlus size={14} /> Join my campaign
+        </button>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onJoinOthersCampaign(); }}>
+          <KeyRound size={14} /> Join other's campaign
         </button>
         {onUnassign && (
           <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onUnassign(); }}>
@@ -3282,6 +3310,63 @@ function MessageDialog({ title, message, onClose }: { title: string; message: st
   );
 }
 
+function JoinKeyModal({
+  characterName,
+  onCancel,
+  onConfirm,
+}: {
+  characterName: string;
+  onCancel: () => void;
+  onConfirm: (key: string) => void;
+}) {
+  const [key, setKey] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    inputRef.current?.focus();
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onCancel();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onCancel]);
+  const trimmed = key.trim();
+  function submit() {
+    if (!trimmed) return;
+    onConfirm(trimmed);
+  }
+  return createPortal(
+    <div
+      className='fixed inset-0 z-[120] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]'
+      role='presentation'
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <section role='dialog' aria-modal='true' aria-labelledby='join-key-title' className='w-full max-w-sm border border-p1-border bg-p1-surface p-5 shadow-2xl'>
+        <h2 id='join-key-title' className='text-lg font-semibold'>Join other's campaign</h2>
+        <p className='mt-2 text-sm text-p1-muted'>Enter a join key to add {characterName} to another GM's campaign.</p>
+        <label className='mt-3 block text-xs text-p1-muted'>
+          Join key
+          <input
+            ref={inputRef}
+            className='settings-input mt-1 w-full'
+            value={key}
+            onChange={(event) => setKey(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') submit();
+            }}
+          />
+        </label>
+        <div className='mt-5 flex justify-end gap-2'>
+          <button type='button' className='toolbar-button' onClick={onCancel}>Cancel</button>
+          <button type='button' className='toolbar-button' disabled={!trimmed} onClick={submit}>OK</button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
 function CampaignAssignPickerModal({
   characterName,
   campaigns,
@@ -3312,7 +3397,7 @@ function CampaignAssignPickerModal({
         <h2 id='assign-campaign-title' className='text-lg font-semibold'>Assign campaign</h2>
         <p className='mt-2 text-sm text-p1-muted'>Choose a campaign for {characterName}.</p>
         {campaigns.length === 0 ? (
-          <p className='mt-4 text-sm text-p1-muted'>You do not own a campaign yet. Create one from Campaigns, or use Join campaign with a copied join key.</p>
+          <p className='mt-4 text-sm text-p1-muted'>You do not own a campaign yet. Create one from Campaigns, or use Join other's campaign with a join key.</p>
         ) : (
           <div className='mt-4 grid grid-cols-2 gap-2'>
             {campaigns.map((campaign) => (

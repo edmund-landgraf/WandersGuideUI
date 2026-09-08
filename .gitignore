@@ -36,6 +36,10 @@ bun.lockb
 # Test data
 public_user.csv
 cypress/screenshots
+test-results
+playwright-report
+blob-report
+playwright/.cache
 
 # validate-content build output
 scripts/.dist/

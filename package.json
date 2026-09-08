@@ -23,7 +23,8 @@
     "cy:e2e:open": "CYPRESS_BASE_URL=http://localhost:3000 CYPRESS_TEST_EMAIL=test@wanderersguide.app CYPRESS_TEST_PASSWORD=test1234 cypress open",
     "validate:content": "esbuild scripts/validate-content.ts --bundle --platform=node --format=esm --target=node20 --outfile=scripts/.dist/validate.mjs && node scripts/.dist/validate.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@mantine/carousel": "^9.0.0",
@@ -92,6 +93,7 @@
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@playwright/test": "^1.63.0",
     "@types/cypress": "^1.1.3",
     "@types/js-search": "^1.4.1",
     "@types/js-yaml": "^4.0.9",
