@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, ExternalLink, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Pencil, Plus, RotateCcw, Search, Settings, Shield, Skull, Sparkles, Swords, Trash2, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, ExternalLink, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -1833,13 +1833,15 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     const rolledIds = new Set<string>();
     const list = encounter.combatants.list.map((combatant) => {
       const choice = rollBonuses.get(combatant._id);
-      if (!choice) return combatant;
+      if (choice === undefined) return combatant;
+      const bonus = choice?.bonus ?? 0;
+      const source = choice?.source ?? '';
       rolledIds.add(combatant._id);
       const die = rollDie('D20');
       return {
         ...combatant,
-        initiative: die + choice.bonus,
-        initiative_roll: { die, bonus: choice.bonus, source: choice.source },
+        initiative: die + bonus,
+        initiative_roll: { die, bonus, source },
       };
     });
     if (rolledIds.size === 0) {
@@ -1903,13 +1905,14 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     }
     const results: Record<string, DiceCheckResult> = {};
     for (const [id, choice] of rollBonuses) {
-      if (!choice) continue;
+      const bonus = choice?.bonus ?? 0;
+      const source = choice?.source ?? '';
       const die = rollDie('D20');
-      const total = die + choice.bonus;
+      const total = die + bonus;
       results[id] = {
         die,
-        bonus: choice.bonus,
-        source: choice.source,
+        bonus,
+        source,
         total,
         outcome: degreeOfSuccess(die, total, dc),
       };

@@ -689,12 +689,12 @@ function EncounterView(props: {
 
                         // Roll initiative for each combatant
                         for (const [_id, bonus] of rollBonuses) {
-                          if (bonus === null) continue;
+                          const modifier = bonus ?? 0;
                           newEncounter.combatants.list = newEncounter.combatants.list.map((c) => {
                             if (c._id === _id) {
                               return {
                                 ...c,
-                                initiative: rollDie('D20') + bonus,
+                                initiative: rollDie('D20') + modifier,
                               };
                             } else {
                               return c;

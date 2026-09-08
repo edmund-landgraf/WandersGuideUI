@@ -102,7 +102,7 @@ export default function InitiativeRollModal({
 
   return (
     <Stack style={{ position: 'relative' }}>
-      <Text fz='sm'>Set which bonus to use for roll (or none to skip).</Text>
+      <Text fz='sm'>Set which bonus to use for the roll. Skip means a natural d20 (no bonus).</Text>
       <Divider />
       <ScrollArea h={250} scrollbars='y' px={14}>
         <Stack gap={5}>

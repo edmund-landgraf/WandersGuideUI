@@ -147,7 +147,7 @@ export function DiceCheckRollModal({
               Assign check skills
             </h2>
             <p className='mt-1 text-sm text-p1-muted'>
-              {title.trim() || checkStatLabel(defaultStat)} vs DC {dc}. Change a bonus (or skip) before rolling.
+              {title.trim() || checkStatLabel(defaultStat)} vs DC {dc}. Change a bonus before rolling. Skip means a natural d20 (no bonus).
             </p>
           </div>
           <button type='button' className='icon-button shrink-0' onClick={onClose} title='Close'>

@@ -306,7 +306,7 @@ export function InitiativeRollModal({
             <h2 id='initiative-roll-title' className='text-lg font-semibold'>
               Assign Initiative Skills
             </h2>
-            <p className='mt-1 text-sm text-p1-muted'>Set which bonus to use for roll (or none to skip).</p>
+            <p className='mt-1 text-sm text-p1-muted'>Set which bonus to use for the roll. Skip means a natural d20 (no bonus).</p>
           </div>
           <button type='button' className='icon-button shrink-0' onClick={onClose} title='Close'>
             <X size={18} />

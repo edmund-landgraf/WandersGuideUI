@@ -1271,11 +1271,9 @@ export function HealthStatusPanel({ combatant, calculatedStatus, calculating, on
   const shieldHealth = shield ? getItemHealth(shield.item) : null;
   const currentHp = entity.hp_current ?? status.maxHp;
 
-  const showPortrait = combatant.type !== 'CHARACTER';
-
   return (
     <div className='space-y-2.5'>
-      <div className={showPortrait ? 'grid grid-cols-[minmax(0,1fr)_86px] gap-2.5' : undefined}>
+      <div className='grid grid-cols-[minmax(0,1fr)_86px] gap-2.5'>
         <section className='border border-p1-border bg-p1-surface'>
           <div className='grid grid-cols-2 px-3 py-3 text-center'>
             {canEditHp ? (
@@ -1312,7 +1310,7 @@ export function HealthStatusPanel({ combatant, calculatedStatus, calculating, on
             {resistanceSummary ? 'Resistances, weaknesses & immunities' : 'No resistances or weaknesses'}
           </button>
         </section>
-        {showPortrait && <CreaturePortrait combatant={combatant} />}
+        <CreaturePortrait combatant={combatant} />
       </div>
 
       {resistanceSummary > 0 && (
