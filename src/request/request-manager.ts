@@ -2,7 +2,7 @@ import { FunctionsHttpError, FunctionsRelayError, FunctionsFetchError } from '@s
 import { JSendResponse, RequestType } from '@schemas/requests';
 import { logError, throwError } from '@utils/error-handling';
 import { showNotification } from '@mantine/notifications';
-import { supabase } from '../supabase-client';
+import { supabase, supabaseInvokeHeaders } from '../supabase-client';
 
 // A single logical request makes at most MAX_ATTEMPTS network calls, and we retry
 // ONLY genuine transient network failures — never timeouts or HTTP errors. This is
@@ -152,8 +152,8 @@ async function invokeWithTimeout(
       resolve({ data: null, error: new Error('Timeout') });
     }, timeout);
 
-    supabase.functions
-      .invoke(type, { body })
+    void supabaseInvokeHeaders()
+      .then((headers) => supabase.functions.invoke(type, { body, headers }))
       .then((res) => {
         if (settled) return;
         settled = true;

@@ -8,7 +8,7 @@ import { CampaignSignIn } from '@auth/CampaignSignIn';
 import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
 import { supabase } from '../../supabase-client';
-import { phase1Request } from './phase1-api';
+import { phase1Request, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, visibleCampaignEncounters } from './phase1-api';
 import { loadEntityAbilities, type Phase1Ability } from './phase1-abilities';
 import { calculateEntityStatus, type Phase1CreatureStatus } from './phase1-stats';
 import type { Phase1EntityCombatant } from './phase1-entity';
@@ -95,13 +95,7 @@ export function Phase1IndexPage() {
   const campaigns = useQuery({
     queryKey: ['phase1-campaigns', session?.user.id],
     enabled: Boolean(session),
-    queryFn: async () => {
-      const owned = await phase1Request<Campaign[]>('find-campaign', { user_id: session!.user.id });
-      const characters = await phase1Request<Character[]>('find-character', { user_id: session!.user.id });
-      const joinedIds = [...new Set(characters.map((item) => item.campaign_id).filter(isNumber))];
-      const joined = (await Promise.all(joinedIds.map((id) => phase1Request<Campaign[]>('find-campaign', { id })))).flat();
-      return uniqueById([...owned, ...joined]);
-    },
+    queryFn: () => loadPhase1Campaigns(session!.user.id, session!.access_token),
   });
 
   const ownedCampaigns = (campaigns.data ?? []).filter((campaign) => campaign.user_id === session?.user.id);
@@ -267,13 +261,7 @@ export function Phase1CharactersPage() {
   const campaigns = useQuery({
     queryKey: ['phase1-campaigns', session?.user.id],
     enabled: Boolean(session),
-    queryFn: async () => {
-      const owned = await phase1Request<Campaign[]>('find-campaign', { user_id: session!.user.id });
-      const roster = await phase1Request<Character[]>('find-character', { user_id: session!.user.id });
-      const joinedIds = [...new Set(roster.map((item) => item.campaign_id).filter(isNumber))];
-      const joined = (await Promise.all(joinedIds.map((id) => phase1Request<Campaign[]>('find-campaign', { id })))).flat();
-      return uniqueById([...owned, ...joined]);
-    },
+    queryFn: () => loadPhase1Campaigns(session!.user.id, session!.access_token),
   });
   const campaignById = useMemo(() => new Map((campaigns.data ?? []).map((campaign) => [campaign.id, campaign])), [campaigns.data]);
   const assignableCampaigns = useMemo(
@@ -1425,15 +1413,23 @@ export function Phase1CampaignPage() {
   const encountersKey = ['phase1-encounters', campaignId, session?.user.id] as const;
   const playersKey = ['phase1-players', campaignId, session?.user.id] as const;
   const campaign = useQuery({ queryKey: campaignKey, enabled, queryFn: async () => (await phase1Request<Campaign[]>('find-campaign', { id: campaignId }))[0] ?? null });
-  const players = useQuery({ queryKey: playersKey, enabled, queryFn: () => phase1Request<Character[]>('find-character', { campaign_id: campaignId }) });
+  const players = useQuery({
+    queryKey: playersKey,
+    enabled,
+    queryFn: () => loadPhase1CampaignPlayers(campaignId, session!.user.id, session!.access_token),
+  });
   const encounters = useQuery({
     queryKey: encountersKey,
     enabled,
-    queryFn: async () => overlayDiceRollMeta(
-      overlayInitiativeLogs(await phase1Request<Encounter[]>('find-encounter', { campaign_id: campaignId }), initiativeLogsRef.current),
-      diceLogsRef.current,
-      diceStatesRef.current,
-    ),
+    queryFn: async () => {
+      const campaignRow = queryClient.getQueryData<Campaign | null>(campaignKey);
+      const ownerId = campaignRow?.user_id ?? (await phase1Request<Campaign[]>('find-campaign', { id: campaignId }))[0]?.user_id;
+      return overlayDiceRollMeta(
+        overlayInitiativeLogs(await loadPhase1CampaignEncounters(campaignId, ownerId, session!.access_token), initiativeLogsRef.current),
+        diceLogsRef.current,
+        diceStatesRef.current,
+      );
+    },
   });
   const updateEncounter = useMutation<boolean, Error, Encounter, { previous?: Encounter[] }>({
     mutationKey: ['phase1-update-encounter', campaignId],
@@ -1560,9 +1556,8 @@ export function Phase1CampaignPage() {
 
   const campaignData = campaign.data;
   const isGm = campaignData.user_id === session.user.id;
-  const ownIds = new Set((players.data ?? []).filter((item) => item.user_id === session.user.id).map((item) => item.id));
-  const campaignEncounters = (encounters.data ?? []).filter((encounter) => encounter.campaign_id === campaignId);
-  const visible = isGm ? campaignEncounters : campaignEncounters.filter((encounter) => encounter.combatants.list.some((item) => item.type === 'CHARACTER' && item.character && ownIds.has(item.character)));
+  const ownIds = ownCharacterIds(players.data ?? [], session.user.id);
+  const visible = visibleCampaignEncounters(encounters.data ?? [], campaignId, isGm, ownIds);
   const notePages = visibleNotePages(campaignData, isGm);
   const selectedNote = noteIndex == null ? null : notePages.find((item) => item.index === noteIndex) ?? null;
   function handleDeleteNote(index: number) {
@@ -2241,7 +2236,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     <div className='flex h-screen min-h-[680px] flex-col overflow-hidden bg-p1-page text-p1-text'>
       <WorkspaceHeader section={standalone ? 'encounters' : undefined} label={campaign?.name ?? encounterDisplayName(selectedEncounter?.name ?? 'Encounter')} campaignId={campaign?.id ?? null} encounterId={selectedEncounter?.id ?? null} noteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} />
       <div className={`grid min-h-0 flex-1 ${viewingNotes || viewingSettings ? 'grid-cols-[248px_minmax(280px,1fr)]' : 'grid-cols-[248px_minmax(280px,1fr)_6px_auto]'}`}>
-        <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddAllPlayers={addAllPlayers} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onDeleteNote={onDeleteNote} onDeleteEncounter={onDeleteEncounter} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} onRenameNote={renameNote} onRenameEncounter={renameEncounter} />
+        <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddPlayer={addPlayer} onAddAllPlayers={addAllPlayers} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onDeleteNote={onDeleteNote} onDeleteEncounter={onDeleteEncounter} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} onRenameNote={renameNote} onRenameEncounter={renameEncounter} />
         <main className='min-w-0 overflow-auto bg-p1-surface'>
           {viewingSettings && campaign ? (
             <SettingsSurface
@@ -2459,8 +2454,8 @@ function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, v
   );
 }
 
-function CampaignRail({ campaign, encounters, players, outCombatants, selectedEncounter, selectedId, notePages, selectedNoteIndex, viewingSettings, isGm, rosterSaving, onRemovePlayer, onAddAllPlayers, onSelectCombatant, onMarkOut, onDeleteNote, onDeleteEncounter, onCreateNote, onCreateEncounter, onRenameNote, onRenameEncounter }: {
-  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; outCombatants: PopulatedCombatant[]; selectedEncounter: Encounter | null; selectedId: string | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; rosterSaving: boolean; onRemovePlayer: (combatantId: string) => void; onAddAllPlayers: () => void; onSelectCombatant: (id: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; onRenameNote: (index: number, name: string) => void; onRenameEncounter: (id: number, name: string) => void;
+function CampaignRail({ campaign, encounters, players, outCombatants, selectedEncounter, selectedId, notePages, selectedNoteIndex, viewingSettings, isGm, rosterSaving, onRemovePlayer, onAddPlayer, onAddAllPlayers, onSelectCombatant, onMarkOut, onDeleteNote, onDeleteEncounter, onCreateNote, onCreateEncounter, onRenameNote, onRenameEncounter }: {
+  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; outCombatants: PopulatedCombatant[]; selectedEncounter: Encounter | null; selectedId: string | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; rosterSaving: boolean; onRemovePlayer: (combatantId: string) => void; onAddPlayer: (characterId: number) => void; onAddAllPlayers: () => void; onSelectCombatant: (id: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; onRenameNote: (index: number, name: string) => void; onRenameEncounter: (id: number, name: string) => void;
 }) {
   const standalone = campaign == null;
   const [benchActive, setBenchActive] = useState(false);
@@ -2470,7 +2465,7 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
   const [menu, setMenu] = useState<RailContextTarget | null>(null);
   const [sectionMenu, setSectionMenu] = useState<{ kind: 'note' | 'encounter'; x: number; y: number } | null>(null);
   const [createKind, setCreateKind] = useState<'note' | 'encounter' | null>(null);
-  const [benchMenu, setBenchMenu] = useState<{ x: number; y: number } | null>(null);
+  const [benchMenu, setBenchMenu] = useState<{ x: number; y: number; characterId?: number } | null>(null);
   const [outMenu, setOutMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<RailContextTarget | null>(null);
   const [pendingRename, setPendingRename] = useState<RailContextTarget | null>(null);
@@ -2508,10 +2503,11 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
     setMenu({ ...target, x: event.clientX, y: event.clientY });
   }
 
-  function openBenchMenu(event: ReactMouseEvent) {
+  function openBenchMenu(event: ReactMouseEvent, characterId?: number) {
     if (!canManageRoster) return;
     event.preventDefault();
-    setBenchMenu({ x: event.clientX, y: event.clientY });
+    event.stopPropagation();
+    setBenchMenu({ x: event.clientX, y: event.clientY, characterId });
   }
 
   return (
@@ -2586,20 +2582,24 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
           <RailLabel icon={<UsersRound size={14} />} label='Party bench' count={players.length} onContextMenu={openBenchMenu} />
           <div className={`mx-2 min-h-16 border px-1 pb-4 pt-1 transition-colors ${benchActive ? 'border-p1-accent bg-p1-accent/[0.07]' : 'border-transparent'}`} onContextMenu={openBenchMenu} onDragOver={(event) => { if (canManageRoster && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setBenchActive(true); } }} onDragLeave={() => setBenchActive(false)} onDrop={dropOnBench}>
             {players.map((player) => (
-              <div key={player.id} className='flex items-center gap-2 px-2 py-2 text-sm text-p1-muted hover:bg-p1-hover hover:text-p1-text'>
+              <div
+                key={player.id}
+                className='flex items-center gap-2 px-2 py-2 text-sm text-p1-muted hover:bg-p1-hover hover:text-p1-text'
+                onContextMenu={(event) => openBenchMenu(event, player.id)}
+                draggable={canManageRoster}
+                onDragStart={(event) => writeCombatantDrag(event, { source: 'bench', characterId: player.id })}
+                onDragEnd={() => { clearCombatantDrag(); setBenchActive(false); }}
+              >
                 {canManageRoster && (
                   <span
-                    draggable
-                    onDragStart={(event) => writeCombatantDrag(event, { source: 'bench', characterId: player.id })}
-                    onDragEnd={() => setBenchActive(false)}
                     className='shrink-0 cursor-grab text-p1-faint'
                     title='Drag to encounter'
-                    aria-label={`Drag ${player.name} to encounter`}
+                    aria-hidden
                   >
                     <GripVertical size={14} />
                   </span>
                 )}
-                <a href={`/sheet/${player.id}`} target='_blank' rel='noreferrer' className='flex min-w-0 flex-1 items-center gap-2 hover:text-p1-text'>
+                <a href={`/sheet/${player.id}`} target='_blank' rel='noreferrer' draggable={false} className='flex min-w-0 flex-1 items-center gap-2 hover:text-p1-text'>
                   <UserRound size={15} />
                   <span className='min-w-0 flex-1 truncate'>{player.name}</span>
                   <ExternalLink size={12} />
@@ -2628,7 +2628,7 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
                   <span
                     draggable
                     onDragStart={(event) => writeCombatantDrag(event, { source: 'out', combatantId: combatant._id, characterId: combatant.character })}
-                    onDragEnd={() => setOutActive(false)}
+                    onDragEnd={() => { clearCombatantDrag(); setOutActive(false); }}
                     className='shrink-0 cursor-grab text-p1-faint'
                     title='Drag back to encounter'
                     aria-label={`Drag ${combatant.data.name} back to encounter`}
@@ -2702,8 +2702,14 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
         <BenchContextMenu
           x={benchMenu.x}
           y={benchMenu.y}
-          disabled={players.length === 0}
+          showAdd={benchMenu.characterId != null}
+          addAllDisabled={players.length === 0}
           onClose={() => setBenchMenu(null)}
+          onAdd={() => {
+            const characterId = benchMenu.characterId;
+            setBenchMenu(null);
+            if (characterId != null) onAddPlayer(characterId);
+          }}
           onAddAll={() => {
             setBenchMenu(null);
             onAddAllPlayers();
@@ -3096,7 +3102,7 @@ function OutContextMenu({ x, y, onClose, onReturn }: { x: number; y: number; onC
   );
 }
 
-function BenchContextMenu({ x, y, disabled, onClose, onAddAll }: { x: number; y: number; disabled: boolean; onClose: () => void; onAddAll: () => void }) {
+function BenchContextMenu({ x, y, showAdd, addAllDisabled, onClose, onAdd, onAddAll }: { x: number; y: number; showAdd: boolean; addAllDisabled: boolean; onClose: () => void; onAdd: () => void; onAddAll: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -3105,12 +3111,17 @@ function BenchContextMenu({ x, y, disabled, onClose, onAddAll }: { x: number; y:
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
   const left = Math.min(x, window.innerWidth - 176);
-  const top = Math.min(y, window.innerHeight - 56);
+  const top = Math.min(y, window.innerHeight - (showAdd ? 88 : 56));
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
       <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
-        <button type='button' role='menuitem' disabled={disabled} className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint disabled:hover:bg-transparent' onClick={onAddAll}>
+        {showAdd && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onAdd}>
+            <Plus size={14} /> Add
+          </button>
+        )}
+        <button type='button' role='menuitem' disabled={addAllDisabled} className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint disabled:hover:bg-transparent' onClick={onAddAll}>
           <Plus size={14} /> Add all
         </button>
       </div>
@@ -3398,21 +3409,29 @@ function RenameDialog({ title, initialName, onCancel, onConfirm }: { title: stri
 
 const COMBATANT_DRAG_TYPE = 'application/x-wanderers-guide-player';
 type CombatantDragPayload = { source: 'bench' | 'encounter' | 'out'; combatantId?: string; characterId?: number };
+let activeCombatantDrag: CombatantDragPayload | null = null;
 
 function writeCombatantDrag(event: ReactDragEvent, payload: CombatantDragPayload) {
+  activeCombatantDrag = payload;
   event.dataTransfer.effectAllowed = 'move';
-  event.dataTransfer.setData(COMBATANT_DRAG_TYPE, JSON.stringify(payload));
+  const serialized = JSON.stringify(payload);
+  event.dataTransfer.setData(COMBATANT_DRAG_TYPE, serialized);
+  event.dataTransfer.setData('text/plain', serialized);
+}
+function clearCombatantDrag() {
+  activeCombatantDrag = null;
 }
 function readCombatantDrag(event: ReactDragEvent): CombatantDragPayload | null {
+  if (activeCombatantDrag) return activeCombatantDrag;
   try {
-    const value = event.dataTransfer.getData(COMBATANT_DRAG_TYPE);
+    const value = event.dataTransfer.getData(COMBATANT_DRAG_TYPE) || event.dataTransfer.getData('text/plain');
     return value ? JSON.parse(value) as CombatantDragPayload : null;
   } catch {
     return null;
   }
 }
-function hasCombatantDrag(event: ReactDragEvent) {
-  return Array.from(event.dataTransfer.types).includes(COMBATANT_DRAG_TYPE);
+function hasCombatantDrag(_event?: ReactDragEvent) {
+  return activeCombatantDrag != null;
 }
 function EncounterDifficultyModal({ difficulty, onClose }: { difficulty: EncounterDifficulty; onClose: () => void }) {
   useEffect(() => {
@@ -3780,7 +3799,7 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                       <span
                         draggable
                         onDragStart={(event) => writeCombatantDrag(event, { source: 'encounter', combatantId: combatant._id, characterId: combatant.character })}
-                        onDragEnd={() => setEncounterActive(false)}
+                        onDragEnd={() => { clearCombatantDrag(); setEncounterActive(false); }}
                         className={`shrink-0 cursor-grab ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}
                         title='Drag to reorder'
                         aria-label={`Drag ${combatant.data.name} to reorder`}
@@ -4252,7 +4271,8 @@ function LoadingScreen({ label }: { label: string }) { return <div className='gr
 
 function populateCombatants(combatants: Combatant[], players: Character[]): PopulatedCombatant[] {
   return combatants.map((combatant) => {
-    const data = combatant.type === 'CHARACTER' ? players.find((player) => player.id === combatant.character) ?? combatant.data : combatant.creature ?? combatant.data;
+    const characterId = numericId(combatant.character);
+    const data = combatant.type === 'CHARACTER' ? players.find((player) => numericId(player.id) === characterId) ?? combatant.data : combatant.creature ?? combatant.data;
     return data ? { ...combatant, data } : null;
   }).filter((combatant): combatant is PopulatedCombatant => Boolean(combatant));
 }
@@ -4511,11 +4531,9 @@ function isCampaignLimitError(error: unknown) {
   return /patreon|patron|campaign slot|too many campaign|campaign limit/i.test(message);
 }
 
-function uniqueById(campaigns: Campaign[]) { return [...new Map(campaigns.map((campaign) => [campaign.id, campaign])).values()]; }
 function visibleNotePages(campaign: Campaign, isGm: boolean): IndexedNotePage[] {
   return (campaign.notes?.pages ?? []).map((page, index) => ({ page, index })).filter((item) => isGm || item.page.shared);
 }
-function isNumber(value: number | null): value is number { return typeof value === 'number'; }
 function clamp(value: number, min: number, max: number) { return Math.min(max, Math.max(min, value)); }
 function readDetailWidth() {
   const stored = Number(window.localStorage.getItem(DETAIL_WIDTH_KEY));

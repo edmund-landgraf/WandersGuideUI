@@ -25,3 +25,10 @@ if (isUnsetEnv(supabaseUrl) || isUnsetEnv(supabaseKey)) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
+
+/** User JWT for edge functions. The SDK can invoke with the anon key right after OAuth, before storage catches up. */
+export async function supabaseInvokeHeaders(accessToken?: string): Promise<Record<string, string> | undefined> {
+  const token = accessToken ?? (await supabase.auth.getSession()).data.session?.access_token;
+  if (!token) return undefined;
+  return { Authorization: `Bearer ${token}` };
+}
