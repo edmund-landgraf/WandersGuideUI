@@ -80,4 +80,39 @@ describe('witch familiar spell load', () => {
     expect(entries[0]?.available).toBe(false);
     expect(entries[0]?.exhausted).toBe(true);
   });
+
+  it('treats prepared cantrips as a shared slot pool', () => {
+    const stabilize = { ...spell(1, 'Stabilize'), rank: 0 };
+    const arc = { ...spell(2, 'Electric Arc'), rank: 0 };
+    const entries = buildCastingSourceEntries(
+      { name: 'Cleric', type: 'PREPARED-TRADITION' },
+      'PREPARED',
+      [
+        { id: 'c1', rank: 0, source: 'Cleric', spell_id: 1, exhausted: false },
+        { id: 'c2', rank: 0, source: 'Cleric', spell_id: 2, exhausted: true },
+      ],
+      [],
+      new Map([[1, stabilize], [2, arc]]),
+      new Map(),
+    );
+    expect(entries.every((entry) => entry.available)).toBe(true);
+    expect(entries.every((entry) => !entry.exhausted)).toBe(true);
+  });
+
+  it('marks prepared cantrips exhausted only when every cantrip slot is spent', () => {
+    const stabilize = { ...spell(1, 'Stabilize'), rank: 0 };
+    const entries = buildCastingSourceEntries(
+      { name: 'Cleric', type: 'PREPARED-TRADITION' },
+      'PREPARED',
+      [
+        { id: 'c1', rank: 0, source: 'Cleric', spell_id: 1, exhausted: true },
+        { id: 'c2', rank: 0, source: 'Cleric', spell_id: 1, exhausted: true },
+      ],
+      [],
+      new Map([[1, stabilize]]),
+      new Map(),
+    );
+    expect(entries.every((entry) => entry.available === false)).toBe(true);
+    expect(entries.every((entry) => entry.exhausted)).toBe(true);
+  });
 });

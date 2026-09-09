@@ -9,7 +9,7 @@ import type { Phase1EntityCombatant } from './phase1-entity';
 import { StatDetailModal, type Phase1StatKey, type Phase1StatTarget } from './phase1-stat-modal';
 import { loadEntityDetails, type Phase1ProfRow } from './phase1-details';
 import { loadEntitySkillsActions, type Phase1ActionGroup, type Phase1Skill } from './phase1-skills';
-import { hasEmptyPreparedSlot, isDivinePreparedSource, isFocusCastBlocked, isWitchFamiliarSource, loadEntitySpells, spellCastsWithoutPreparedSlot, spellCatalogSourceIds, spellFitsSlot, spellManageMode, type Phase1SpellEntry, type Phase1SpellManageMode, type Phase1SpellSection } from './phase1-spells';
+import { hasEmptyPreparedSlot, isDivinePreparedSource, isFocusCastBlocked, isWitchFamiliarSource, loadEntitySpells, spellCastsWithoutPreparedSlot, spellCatalogSourceIds, spellFitsSlot, spellManageMode, spellUsesSharedRankSlots, type Phase1SpellEntry, type Phase1SpellManageMode, type Phase1SpellSection } from './phase1-spells';
 import { wandNeedsOvercharge } from './phase1-item-spells';
 import { Phase1SpellbookModal, type SpellbookAssign } from './phase1-spellbook';
 import { findInventoryItem, flattenInvItems, inventoryContainerTargets, inventoryItemIsNested, inventoryItemToPhase1, loadEntityInventory, matchesInvItem, type Phase1InvItem } from './phase1-inventory';
@@ -1804,7 +1804,7 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
       setWandOvercharge(entry);
       return;
     }
-    if (entry.cantrip) {
+    if (entry.cantrip && entry.mode !== 'PREPARED' && entry.mode !== 'SPONTANEOUS') {
       logSpell(entry);
       if (closeModal) setSelected(null);
       return;
@@ -1868,7 +1868,7 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
       })} onRankSpent={(rank, spent) => runSpellAction(`rank-${section.key}-${rank}`, () => spellActions!.setRankSpent(section, rank, spent))} onFocusSpent={(spent) => runSpellAction(`focus-${section.key}`, () => spellActions!.setFocusSpent(section, spent))} onPreparedSpent={(entry, spent) => runSpellAction(`prepared-${entry.key}`, () => spellActions!.setPreparedSpent(entry, spent))} onInnateSpent={(entry, castsCurrent) => runSpellAction(`innate-${entry.key}`, () => spellActions!.setInnateSpent(entry, castsCurrent))} onRemoveFromList={(entry) => entry.spell && runSpellAction(`remove-${entry.key}`, () => spellActions!.removeFromList(entry.sourceName, entry.spell!.id, entry.rank))} onClearSlot={(entry) => entry.slotId && runSpellAction(`clear-${entry.key}`, () => spellActions!.clearSlot(entry.slotId!))} onPrepare={(entry) => entry.spell && runSpellAction(`prepare-${entry.key}`, () => spellActions!.prepareSlot(entry.sourceName, undefined, entry.spell!, entry.rank))} onAddStaffCharges={section.canAddStaffCharges ? () => setStaffChargePick(section) : undefined} onStaffCharges={(spent) => section.entries[0]?.itemId && runSpellAction(`staff-ch-${section.key}`, () => spellActions!.setItemCharges(section.entries[0].itemId!, spent))} entity={combatant.data} onApplyFont={spellActions && section.mode === 'PREPARED' && isDivinePreparedSource(section.source) ? (choice) => runSpellAction(`font-${section.key}-${choice}`, () => spellActions.applyDivineFont(section.source!.name, choice)) : undefined} />)}
       {data.data && !sections.length && <EmptyState>{needle ? 'No spells match this search.' : 'No spells found.'}</EmptyState>}
     </div>
-    {selected && selected.spell && <SpellModal entry={selected} entity={combatant.data} spellActions={spellActions} busy={Boolean(busyKey)} onCast={() => castAndLog(selected, `modal-cast-${selected.key}`, true)} onUncast={() => runSpellAction(`modal-uncast-${selected.key}`, () => {
+    {selected && selected.spell && <SpellModal entry={selected} entity={combatant.data} spellActions={spellActions} busy={Boolean(busyKey)} rankSpent={sections.find((section) => section.entries.some((entry) => entry.key === selected.key))?.slots.filter((slot) => slot.rank === selected.rank && slot.exhausted).length ?? 0} onCast={() => castAndLog(selected, `modal-cast-${selected.key}`, true)} onUncast={() => runSpellAction(`modal-uncast-${selected.key}`, () => {
       if (selected.mode === 'STAFF') return spellActions!.castStaff(selected, false);
       if (selected.mode === 'WAND') return spellActions!.castWand(selected, false);
       return spellActions!.setCast(selected, false);
@@ -2045,13 +2045,14 @@ function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats
     <div className='divide-y divide-white/[0.07]'>
       {ranks.map((rank) => {
         const entries = section.entries.filter((entry) => (entry.cantrip ? -1 : entry.rank) === rank);
-        const slots = rank < 0 ? [] : section.slots.filter((slot) => slot.rank === rank);
+        const slotRank = rank < 0 ? 0 : rank;
+        const slots = section.slots.filter((slot) => slot.rank === slotRank);
         const rankSpent = slots.filter((slot) => slot.exhausted).length;
-        const showRankCircles = rank >= 0 && slots.length > 0 && (section.mode === 'SPONTANEOUS' || section.mode === 'PREPARED');
+        const showRankCircles = slots.length > 0 && (section.mode === 'SPONTANEOUS' || section.mode === 'PREPARED');
         return <div key={rank}>
           <div className='flex h-8 items-center gap-2 bg-p1-inset px-3 text-xs font-semibold text-p1-muted'>
             <span>{rank < 0 ? 'Cantrips' : rankLabel(rank)}</span>
-            {showRankCircles && <SlotCircles count={slots.length} spent={rankSpent} editable={Boolean(spellActions)} title={`${rankLabel(rank)} slots spent`} onChange={(spent) => onRankSpent(rank, spent)} />}
+            {showRankCircles && <SlotCircles count={slots.length} spent={rankSpent} editable={Boolean(spellActions)} title={`${rank < 0 ? 'Cantrip' : rankLabel(rank)} slots spent`} onChange={(spent) => onRankSpent(slotRank, spent)} />}
             <span className='ml-auto border border-p1-border px-1.5 py-0.5 text-[9px] font-normal text-p1-muted'>{entries.length}</span>
           </div>
           <div className='divide-y divide-white/[0.06]'>
@@ -2073,6 +2074,7 @@ function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats
                 onPrepare={() => entry.spell && onPrepare(entry)}
                 emptySlotAvailable={hasEmptyPreparedSlot(section.entries, entry.rank)}
                 manageMode={manageMode}
+                rankSpent={rankSpent}
               />
             ))}
           </div>
@@ -2094,7 +2096,7 @@ function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats
   </section>;
 }
 
-function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCast, onUncast, onPreparedSpent, onInnateSpent, onRemoveFromList, onClearSlot, onPrepare, emptySlotAvailable, manageMode }: {
+function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCast, onUncast, onPreparedSpent, onInnateSpent, onRemoveFromList, onClearSlot, onPrepare, emptySlotAvailable, manageMode, rankSpent }: {
   entry: Phase1SpellEntry;
   entity: LivingEntity;
   spellActions?: Phase1SpellActions;
@@ -2110,6 +2112,7 @@ function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCa
   onPrepare: () => void;
   emptySlotAvailable: boolean;
   manageMode: Phase1SpellManageMode | null;
+  rankSpent: number;
 }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const innateSpent = entry.usesMax != null && entry.usesCurrent != null ? entry.usesMax - entry.usesCurrent : 0;
@@ -2132,9 +2135,13 @@ function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCa
   const canReturn = Boolean(spellActions) && entry.mode === 'PREPARED' && Boolean(entry.slotId);
   const focusBlocked = entry.mode === 'FOCUS' && isFocusCastBlocked(entry.spell, entity);
   const showCast = Boolean(spellActions) && entry.mode !== 'RITUAL' && entry.mode !== 'SPELLHEART' && (repertoireCast || Boolean(entry.slotId));
-  const castDisabled = busy || focusBlocked || (!entry.cantrip && !entry.available);
+  const castDisabled = busy || focusBlocked || !entry.available;
   const showMenu = canPrepare || canReturn || canRemove || showCast;
-  const showUncast = entry.mode === 'STAFF' || entry.mode === 'WAND' ? (entry.usesCurrent ?? 0) > 0 : entry.exhausted;
+  const showUncast = entry.mode === 'STAFF' || entry.mode === 'WAND'
+    ? (entry.usesCurrent ?? 0) > 0
+    : spellUsesSharedRankSlots(entry)
+      ? rankSpent > 0
+      : entry.exhausted;
   const returnLabel = manageMode === 'SLOTS-ONLY' ? 'Clear slot' : 'Return to spellbook';
   const removeLabel = entry.mode === 'SPONTANEOUS' ? 'Remove from repertoire' : entry.mode === 'RITUAL' ? 'Remove ritual' : 'Remove from spellbook';
   return <div className='flex min-h-10 items-center gap-2 px-3 py-1.5 hover:bg-p1-hover' onContextMenu={(event) => {
@@ -2296,7 +2303,7 @@ function SpellRowContextMenu({
   );
 }
 
-function SpellModal({ entry, entity, spellActions, busy, onCast, onUncast, onClose }: { entry: Phase1SpellEntry; entity: LivingEntity; spellActions?: Phase1SpellActions; busy: boolean; onCast: () => void; onUncast: () => void; onClose: () => void }) {
+function SpellModal({ entry, entity, spellActions, busy, rankSpent, onCast, onUncast, onClose }: { entry: Phase1SpellEntry; entity: LivingEntity; spellActions?: Phase1SpellActions; busy: boolean; rankSpent: number; onCast: () => void; onUncast: () => void; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     closeRef.current?.focus();
@@ -2318,10 +2325,16 @@ function SpellModal({ entry, entity, spellActions, busy, onCast, onUncast, onClo
             <div className='flex items-center gap-2'><ActionSymbol cost={spell.cast} size='1.75rem' /><h2 id={`spell-${spell.id}-title`} className='text-xl font-semibold leading-tight'>{spell.name}</h2></div>
             <div className='mt-2 flex flex-wrap gap-1.5'><Tag>{entry.cantrip ? 'Cantrip' : rankLabel(entry.rank)}</Tag><Tag>{spell.rarity}</Tag>{entry.traitNames.map((trait) => <Tag key={trait}>{trait}</Tag>)}</div>
           </div>
-          {showCast && (
+          {showCast && spellUsesSharedRankSlots(entry) && (
+            <div className='flex shrink-0 items-center gap-1.5'>
+              <button className='h-8 shrink-0 border border-p1-accent/50 bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink disabled:cursor-wait disabled:opacity-50' disabled={busy || focusBlocked || !entry.available} title={focusBlocked ? 'Focus spell rank is too high for your level' : undefined} onClick={onCast}>{busy ? 'Saving...' : entry.cantrip ? 'Cast' : `Cast ${rankLabel(entry.rank)}`}</button>
+              {rankSpent > 0 && <button className='h-8 shrink-0 border border-p1-border px-3 text-xs font-semibold text-p1-text hover:bg-p1-hover disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onUncast}>{busy ? 'Saving...' : 'Uncast'}</button>}
+            </div>
+          )}
+          {showCast && !spellUsesSharedRankSlots(entry) && (
             entry.exhausted
               ? <button className='h-8 shrink-0 border border-p1-border px-3 text-xs font-semibold text-p1-text hover:bg-p1-hover disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onUncast}>{busy ? 'Saving...' : 'Uncast'}</button>
-              : <button className='h-8 shrink-0 border border-p1-accent/50 bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink disabled:cursor-wait disabled:opacity-50' disabled={busy || focusBlocked || (!entry.cantrip && !entry.available)} title={focusBlocked ? 'Focus spell rank is too high for your level' : undefined} onClick={onCast}>{busy ? 'Saving...' : entry.cantrip ? 'Cast' : `Cast ${rankLabel(entry.rank)}`}</button>
+              : <button className='h-8 shrink-0 border border-p1-accent/50 bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink disabled:cursor-wait disabled:opacity-50' disabled={busy || focusBlocked || !entry.available} title={focusBlocked ? 'Focus spell rank is too high for your level' : undefined} onClick={onCast}>{busy ? 'Saving...' : `Cast ${rankLabel(entry.rank)}`}</button>
           )}
           <button ref={closeRef} className='icon-button shrink-0' onClick={onClose} title='Close spell details'><X size={18} /></button>
         </header>
