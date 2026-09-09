@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, ExternalLink, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, EyeOff, ExternalLink, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -92,6 +92,13 @@ export function Phase1IndexPage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [limitModalOpen, setLimitModalOpen] = useState(false);
+  const [emailVisible, setEmailVisible] = useState(() => {
+    try {
+      return sessionStorage.getItem('phase1-show-account-email') !== '0';
+    } catch {
+      return true;
+    }
+  });
   const campaigns = useQuery({
     queryKey: ['phase1-campaigns', session?.user.id],
     enabled: Boolean(session),
@@ -171,9 +178,30 @@ export function Phase1IndexPage() {
             {createError && <p className='mt-2 text-xs text-p1-danger-soft'>{createError}</p>}
           </div>
           <div className='flex flex-col items-end gap-2'>
-            <span className='max-w-64 truncate text-xs text-p1-muted' title={session.user.email ?? undefined}>
-              {session.user.email}
-            </span>
+            <div className='flex items-center gap-1'>
+              {emailVisible && (
+                <span className='max-w-64 truncate text-xs text-p1-muted' title={session.user.email ?? undefined}>
+                  {session.user.email}
+                </span>
+              )}
+              <button
+                type='button'
+                className='icon-button'
+                title={emailVisible ? 'Hide email' : 'Show email'}
+                aria-label={emailVisible ? 'Hide email' : 'Show email'}
+                onClick={() => {
+                  const next = !emailVisible;
+                  setEmailVisible(next);
+                  try {
+                    sessionStorage.setItem('phase1-show-account-email', next ? '1' : '0');
+                  } catch {
+                    /* ignore */
+                  }
+                }}
+              >
+                {emailVisible ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
             <div className='flex items-center gap-2'>
               <button type='button' className='toolbar-button' disabled={creating} title='Create campaign' onClick={() => void handleCreateCampaign()}>
                 <Plus size={15} />
