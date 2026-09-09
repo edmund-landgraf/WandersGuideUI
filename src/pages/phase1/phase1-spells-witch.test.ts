@@ -49,5 +49,35 @@ describe('witch familiar spell load', () => {
       new Map(),
     );
     expect(entries.map((entry) => entry.spell?.name)).toEqual(['Acid Grip']);
+    expect(entries[0]?.slotId).toBeUndefined();
+    expect(entries[0]?.available).toBe(true);
+  });
+
+  it('lets sorcerer repertoire spells be cast even when that rank has no slots yet', () => {
+    const acidGrip = spell(500, 'Acid Grip');
+    const entries = buildCastingSourceEntries(
+      { name: 'Sorcerer', type: 'SPONTANEOUS-REPERTOIRE' },
+      'SPONTANEOUS',
+      [],
+      [{ spell_id: 500, rank: 1, source: 'Sorcerer' }],
+      new Map([[500, acidGrip]]),
+      new Map(),
+    );
+    expect(entries[0]?.available).toBe(true);
+    expect(entries[0]?.exhausted).toBe(false);
+  });
+
+  it('marks sorcerer rank spells exhausted only after those rank slots are spent', () => {
+    const acidGrip = spell(500, 'Acid Grip');
+    const entries = buildCastingSourceEntries(
+      { name: 'Sorcerer', type: 'SPONTANEOUS-REPERTOIRE' },
+      'SPONTANEOUS',
+      [{ id: 'slot-1', rank: 1, source: 'Sorcerer', spell_id: null, exhausted: true }],
+      [{ spell_id: 500, rank: 1, source: 'Sorcerer' }],
+      new Map([[500, acidGrip]]),
+      new Map(),
+    );
+    expect(entries[0]?.available).toBe(false);
+    expect(entries[0]?.exhausted).toBe(true);
   });
 });

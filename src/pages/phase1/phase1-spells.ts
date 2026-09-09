@@ -104,8 +104,9 @@ export function buildCastingSourceEntries(
       const traitNames = namesFor(spell, traitById);
       const cantrip = isCantrip(traitNames, record.rank);
       const rankSlots = sourceSlots.filter((slot) => slot.rank === record.rank);
-      const exhausted = cantrip ? false : !rankSlots.some((slot) => !slot.exhausted);
-      const available = cantrip || rankSlots.some((slot) => !slot.exhausted);
+      const openSlot = rankSlots.some((slot) => !slot.exhausted);
+      const exhausted = cantrip ? false : rankSlots.length > 0 && !openSlot;
+      const available = cantrip || rankSlots.length === 0 || openSlot;
       return [makeEntry(spell, record.rank, traitNames, source.name, mode, cantrip, available, exhausted, index)];
     });
   }
@@ -127,13 +128,19 @@ export function buildCastingSourceEntries(
     if (!spell) return [];
     const traitNames = namesFor(spell, traitById);
     const cantrip = isCantrip(traitNames, record.rank);
-    return [makeEntry(spell, record.rank, traitNames, source.name, mode, cantrip, false, false, sourceSlots.length + index)];
+    return [makeEntry(spell, record.rank, traitNames, source.name, mode, cantrip, cantrip, false, sourceSlots.length + index)];
   });
   return [...prepared, ...unprepared];
 }
 
 export function spellCatalogSourceIds(enabled?: number[] | null) {
   return uniq([COMMON_CORE_ID, ...(enabled ?? [])]);
+}
+
+/** Cantrips, spontaneous repertoire, focus, innate, staff, and wand do not need a filled prepared slot. */
+export function spellCastsWithoutPreparedSlot(entry: Pick<Phase1SpellEntry, 'cantrip' | 'mode'>) {
+  if (entry.cantrip) return true;
+  return entry.mode !== 'PREPARED' && entry.mode !== 'RITUAL' && entry.mode !== 'SPELLHEART';
 }
 
 export function isFocusCastBlocked(spell: Spell | undefined, entity: LivingEntity | null | undefined) {

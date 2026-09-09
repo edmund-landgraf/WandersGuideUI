@@ -9,7 +9,7 @@ import type { Phase1EntityCombatant } from './phase1-entity';
 import { StatDetailModal, type Phase1StatKey, type Phase1StatTarget } from './phase1-stat-modal';
 import { loadEntityDetails, type Phase1ProfRow } from './phase1-details';
 import { loadEntitySkillsActions, type Phase1ActionGroup, type Phase1Skill } from './phase1-skills';
-import { hasEmptyPreparedSlot, isDivinePreparedSource, isFocusCastBlocked, isWitchFamiliarSource, loadEntitySpells, spellCatalogSourceIds, spellFitsSlot, spellManageMode, type Phase1SpellEntry, type Phase1SpellManageMode, type Phase1SpellSection } from './phase1-spells';
+import { hasEmptyPreparedSlot, isDivinePreparedSource, isFocusCastBlocked, isWitchFamiliarSource, loadEntitySpells, spellCastsWithoutPreparedSlot, spellCatalogSourceIds, spellFitsSlot, spellManageMode, type Phase1SpellEntry, type Phase1SpellManageMode, type Phase1SpellSection } from './phase1-spells';
 import { wandNeedsOvercharge } from './phase1-item-spells';
 import { Phase1SpellbookModal, type SpellbookAssign } from './phase1-spellbook';
 import { findInventoryItem, flattenInvItems, inventoryContainerTargets, inventoryItemIsNested, inventoryItemToPhase1, loadEntityInventory, matchesInvItem, type Phase1InvItem } from './phase1-inventory';
@@ -1804,6 +1804,11 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
       setWandOvercharge(entry);
       return;
     }
+    if (entry.cantrip) {
+      logSpell(entry);
+      if (closeModal) setSelected(null);
+      return;
+    }
     const draft = spellDraft(entry);
     const cast = () => runSpellAction(key, async () => {
       if (entry.mode === 'STAFF') await spellActions!.castStaff(entry, true, 'NORMAL');
@@ -1860,7 +1865,7 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
         if (entry.mode === 'STAFF') return spellActions!.castStaff(entry, false);
         if (entry.mode === 'WAND') return spellActions!.castWand(entry, false);
         return spellActions!.setCast(entry, false);
-      })} onRankSpent={(rank, spent) => runSpellAction(`rank-${section.key}-${rank}`, () => spellActions!.setRankSpent(section, rank, spent))} onFocusSpent={(spent) => runSpellAction(`focus-${section.key}`, () => spellActions!.setFocusSpent(section, spent))} onPreparedSpent={(entry, spent) => runSpellAction(`prepared-${entry.key}`, () => spellActions!.setPreparedSpent(entry, spent))} onInnateSpent={(entry, castsCurrent) => runSpellAction(`innate-${entry.key}`, () => spellActions!.setInnateSpent(entry, castsCurrent))} onRemoveFromList={(entry) => entry.spell && runSpellAction(`remove-${entry.key}`, () => spellActions!.removeFromList(entry.sourceName, entry.spell!.id, entry.rank))} onClearSlot={(entry) => entry.slotId && runSpellAction(`clear-${entry.key}`, () => spellActions!.clearSlot(entry.slotId!))} onPrepare={(entry) => entry.spell && runSpellAction(`prepare-${entry.key}`, () => spellActions!.prepareSlot(entry.sourceName, undefined, entry.spell!, entry.rank))} onAddStaffCharges={section.canAddStaffCharges ? () => setStaffChargePick(section) : undefined} onStaffCharges={(spent) => section.entries[0]?.itemId && runSpellAction(`staff-ch-${section.key}`, () => spellActions!.setItemCharges(section.entries[0].itemId!, spent))} entity={combatant.data} onApplyFont={spellActions && section.mode === 'PREPARED' && isDivinePreparedSource(section.source) ? (choice) => runSpellAction(`font-${section.key}-${choice}`, () => spellActions.applyDivineFont(section.source!.name, choice)) : undefined} onLogCantrip={onLogAction ? logSpell : undefined} />)}
+      })} onRankSpent={(rank, spent) => runSpellAction(`rank-${section.key}-${rank}`, () => spellActions!.setRankSpent(section, rank, spent))} onFocusSpent={(spent) => runSpellAction(`focus-${section.key}`, () => spellActions!.setFocusSpent(section, spent))} onPreparedSpent={(entry, spent) => runSpellAction(`prepared-${entry.key}`, () => spellActions!.setPreparedSpent(entry, spent))} onInnateSpent={(entry, castsCurrent) => runSpellAction(`innate-${entry.key}`, () => spellActions!.setInnateSpent(entry, castsCurrent))} onRemoveFromList={(entry) => entry.spell && runSpellAction(`remove-${entry.key}`, () => spellActions!.removeFromList(entry.sourceName, entry.spell!.id, entry.rank))} onClearSlot={(entry) => entry.slotId && runSpellAction(`clear-${entry.key}`, () => spellActions!.clearSlot(entry.slotId!))} onPrepare={(entry) => entry.spell && runSpellAction(`prepare-${entry.key}`, () => spellActions!.prepareSlot(entry.sourceName, undefined, entry.spell!, entry.rank))} onAddStaffCharges={section.canAddStaffCharges ? () => setStaffChargePick(section) : undefined} onStaffCharges={(spent) => section.entries[0]?.itemId && runSpellAction(`staff-ch-${section.key}`, () => spellActions!.setItemCharges(section.entries[0].itemId!, spent))} entity={combatant.data} onApplyFont={spellActions && section.mode === 'PREPARED' && isDivinePreparedSource(section.source) ? (choice) => runSpellAction(`font-${section.key}-${choice}`, () => spellActions.applyDivineFont(section.source!.name, choice)) : undefined} />)}
       {data.data && !sections.length && <EmptyState>{needle ? 'No spells match this search.' : 'No spells found.'}</EmptyState>}
     </div>
     {selected && selected.spell && <SpellModal entry={selected} entity={combatant.data} spellActions={spellActions} busy={Boolean(busyKey)} onCast={() => castAndLog(selected, `modal-cast-${selected.key}`, true)} onUncast={() => runSpellAction(`modal-uncast-${selected.key}`, () => {
@@ -1957,7 +1962,7 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
   </div>;
 }
 
-function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats, onOpen, onOpenBook, onOpenProf, onCast, onUncast, onRankSpent, onFocusSpent, onPreparedSpent, onInnateSpent, onRemoveFromList, onClearSlot, onPrepare, onAddStaffCharges, onStaffCharges, onApplyFont, onLogCantrip, entity }: {
+function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats, onOpen, onOpenBook, onOpenProf, onCast, onUncast, onRankSpent, onFocusSpent, onPreparedSpent, onInnateSpent, onRemoveFromList, onClearSlot, onPrepare, onAddStaffCharges, onStaffCharges, onApplyFont, entity }: {
   section: Phase1SpellSection;
   rankFilter: number | 'ALL';
   spellActions?: Phase1SpellActions;
@@ -1978,7 +1983,6 @@ function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats
   onAddStaffCharges?: () => void;
   onStaffCharges?: (spent: number) => void;
   onApplyFont?: (choice: 'heal' | 'harm') => void;
-  onLogCantrip?: (entry: Phase1SpellEntry) => void;
   entity: LivingEntity;
 }) {
   const slotRanks = section.slots.map((slot) => (slot.rank === 0 ? -1 : slot.rank));
@@ -2069,7 +2073,6 @@ function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats
                 onPrepare={() => entry.spell && onPrepare(entry)}
                 emptySlotAvailable={hasEmptyPreparedSlot(section.entries, entry.rank)}
                 manageMode={manageMode}
-                onLogCantrip={onLogCantrip}
               />
             ))}
           </div>
@@ -2091,7 +2094,7 @@ function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats
   </section>;
 }
 
-function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCast, onUncast, onPreparedSpent, onInnateSpent, onRemoveFromList, onClearSlot, onPrepare, emptySlotAvailable, manageMode, onLogCantrip }: {
+function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCast, onUncast, onPreparedSpent, onInnateSpent, onRemoveFromList, onClearSlot, onPrepare, emptySlotAvailable, manageMode }: {
   entry: Phase1SpellEntry;
   entity: LivingEntity;
   spellActions?: Phase1SpellActions;
@@ -2107,13 +2110,11 @@ function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCa
   onPrepare: () => void;
   emptySlotAvailable: boolean;
   manageMode: Phase1SpellManageMode | null;
-  onLogCantrip?: (entry: Phase1SpellEntry) => void;
 }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const innateSpent = entry.usesMax != null && entry.usesCurrent != null ? entry.usesMax - entry.usesCurrent : 0;
-  const cantripExecute = entry.cantrip && entry.spell && onLogCantrip && isExecutableActionCost(entry.spell.cast)
-    ? () => onLogCantrip(entry)
-    : undefined;
+  const repertoireCast = spellCastsWithoutPreparedSlot(entry);
+  const cantripExecute = entry.spell && repertoireCast ? onCast : undefined;
   const onNameClick = useClickVsDoubleClick(() => onOpen(entry), cantripExecute);
   if (entry.empty || !entry.spell) {
     return (
@@ -2129,9 +2130,10 @@ function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCa
   const canRemove = Boolean(spellActions) && (entry.mode === 'PREPARED' || entry.mode === 'SPONTANEOUS' || entry.mode === 'RITUAL');
   const canPrepare = Boolean(spellActions) && entry.mode === 'PREPARED' && !entry.slotId;
   const canReturn = Boolean(spellActions) && entry.mode === 'PREPARED' && Boolean(entry.slotId);
-  const showMenu = canPrepare || canReturn || canRemove;
   const focusBlocked = entry.mode === 'FOCUS' && isFocusCastBlocked(entry.spell, entity);
-  const showCast = Boolean(spellActions) && !entry.cantrip && entry.mode !== 'RITUAL' && entry.mode !== 'SPELLHEART' && (entry.mode !== 'PREPARED' || Boolean(entry.slotId));
+  const showCast = Boolean(spellActions) && entry.mode !== 'RITUAL' && entry.mode !== 'SPELLHEART' && (repertoireCast || Boolean(entry.slotId));
+  const castDisabled = busy || focusBlocked || (!entry.cantrip && !entry.available);
+  const showMenu = canPrepare || canReturn || canRemove || showCast;
   const showUncast = entry.mode === 'STAFF' || entry.mode === 'WAND' ? (entry.usesCurrent ?? 0) > 0 : entry.exhausted;
   const returnLabel = manageMode === 'SLOTS-ONLY' ? 'Clear slot' : 'Return to spellbook';
   const removeLabel = entry.mode === 'SPONTANEOUS' ? 'Remove from repertoire' : entry.mode === 'RITUAL' ? 'Remove ritual' : 'Remove from spellbook';
@@ -2146,7 +2148,7 @@ function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCa
     {entry.mode === 'INNATE' && !entry.cantrip && entry.usesMax != null && entry.usesMax > 0 && (
       <SlotCircles count={entry.usesMax} spent={innateSpent} editable={Boolean(spellActions)} title={`${entry.spell.name} uses spent`} onChange={onInnateSpent} />
     )}
-    <button className='flex min-w-0 flex-1 items-center gap-2 text-left' onClick={onNameClick} title={cantripExecute ? 'Click for info, double-click to log' : undefined}>
+    <button className='flex min-w-0 flex-1 items-center gap-2 text-left' onClick={onNameClick} title={cantripExecute ? 'Click for info, double-click to cast' : undefined}>
       <ActionSymbol cost={entry.spell.cast} />
       <span className='min-w-0 flex-1'><span className='block truncate text-sm font-medium'>{entry.itemKind ? `${entry.sourceName} — ${entry.spell.name}` : entry.spell.name}</span><span className='mt-0.5 block truncate text-[9px] uppercase text-p1-faint'>{entry.traitNames.join(' | ') || entry.spell.traditions.join(' | ')}</span></span>
       {entry.mode !== 'INNATE' && entry.usesMax != null && <span className='text-[10px] text-p1-muted'>{entry.usesCurrent}/{entry.usesMax}</span>}
@@ -2156,7 +2158,7 @@ function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCa
         {entry.mode === 'PREPARED' && entry.slotId && (
           <button className='h-7 border border-p1-border px-2.5 text-[10px] font-semibold text-p1-muted hover:bg-p1-hover disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onClearSlot}>Clear</button>
         )}
-        <button className='h-7 border border-p1-accent/40 px-2.5 text-[10px] font-semibold text-p1-accent-soft hover:bg-p1-accent/10 disabled:cursor-wait disabled:opacity-50' disabled={busy || focusBlocked || !entry.available} title={focusBlocked ? 'Focus spell rank is too high for your level' : undefined} onClick={onCast}>{busy ? 'Saving...' : 'Cast'}</button>
+        <button className='h-7 border border-p1-accent/40 px-2.5 text-[10px] font-semibold text-p1-accent-soft hover:bg-p1-accent/10 disabled:cursor-wait disabled:opacity-50' disabled={castDisabled} title={focusBlocked ? 'Focus spell rank is too high for your level' : undefined} onClick={onCast}>{busy ? 'Saving...' : 'Cast'}</button>
         {showUncast && <button className='h-7 border border-p1-border px-2.5 text-[10px] font-semibold text-p1-muted hover:bg-p1-hover disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onUncast}>Uncast</button>}
       </div>
     )}
@@ -2164,6 +2166,8 @@ function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCa
       <SpellRowContextMenu
         x={menu.x}
         y={menu.y}
+        canCast={showCast}
+        castDisabled={castDisabled}
         canPrepare={canPrepare}
         prepareDisabled={!emptySlotAvailable || busy}
         prepareTitle={!emptySlotAvailable ? `No empty ${entry.rank === 0 ? 'cantrip' : rankLabel(entry.rank)} slots` : undefined}
@@ -2172,6 +2176,7 @@ function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCa
         canRemove={canRemove}
         removeLabel={removeLabel}
         onClose={() => setMenu(null)}
+        onCast={onCast}
         onPrepare={onPrepare}
         onReturn={onClearSlot}
         onRemove={onRemoveFromList}
@@ -2183,6 +2188,8 @@ function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCa
 function SpellRowContextMenu({
   x,
   y,
+  canCast,
+  castDisabled,
   canPrepare,
   prepareDisabled,
   prepareTitle,
@@ -2191,12 +2198,15 @@ function SpellRowContextMenu({
   canRemove,
   removeLabel,
   onClose,
+  onCast,
   onPrepare,
   onReturn,
   onRemove,
 }: {
   x: number;
   y: number;
+  canCast: boolean;
+  castDisabled: boolean;
   canPrepare: boolean;
   prepareDisabled: boolean;
   prepareTitle?: string;
@@ -2205,6 +2215,7 @@ function SpellRowContextMenu({
   canRemove: boolean;
   removeLabel: string;
   onClose: () => void;
+  onCast: () => void;
   onPrepare: () => void;
   onReturn: () => void;
   onRemove: () => void;
@@ -2217,11 +2228,26 @@ function SpellRowContextMenu({
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
   const left = Math.min(x, window.innerWidth - 220);
-  const top = Math.min(y, window.innerHeight - 140);
+  const top = Math.min(y, window.innerHeight - 180);
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
       <div role='menu' className='fixed z-[110] min-w-48 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        {canCast && (
+          <button
+            type='button'
+            role='menuitem'
+            className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:opacity-40'
+            disabled={castDisabled}
+            onClick={() => {
+              if (castDisabled) return;
+              onCast();
+              onClose();
+            }}
+          >
+            <Sparkles size={14} /> Cast
+          </button>
+        )}
         {canPrepare && (
           <button
             type='button'
@@ -2283,7 +2309,7 @@ function SpellModal({ entry, entity, spellActions, busy, onCast, onUncast, onClo
   const spell = entry.spell;
   if (!spell) return null;
   const focusBlocked = entry.mode === 'FOCUS' && isFocusCastBlocked(spell, entity);
-  const showCast = spellActions && !entry.cantrip && entry.mode !== 'RITUAL' && entry.mode !== 'SPELLHEART';
+  const showCast = spellActions && entry.mode !== 'RITUAL' && entry.mode !== 'SPELLHEART';
   return createPortal(
     <div data-entity-modal className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]' role='presentation' onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section role='dialog' aria-modal='true' aria-labelledby={`spell-${spell.id}-title`} className='flex max-h-[min(84vh,840px)] w-full max-w-3xl flex-col border border-p1-border bg-p1-surface shadow-2xl'>
@@ -2295,7 +2321,7 @@ function SpellModal({ entry, entity, spellActions, busy, onCast, onUncast, onClo
           {showCast && (
             entry.exhausted
               ? <button className='h-8 shrink-0 border border-p1-border px-3 text-xs font-semibold text-p1-text hover:bg-p1-hover disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onUncast}>{busy ? 'Saving...' : 'Uncast'}</button>
-              : <button className='h-8 shrink-0 border border-p1-accent/50 bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink disabled:cursor-wait disabled:opacity-50' disabled={busy || focusBlocked || !entry.available} title={focusBlocked ? 'Focus spell rank is too high for your level' : undefined} onClick={onCast}>{busy ? 'Saving...' : `Cast ${rankLabel(entry.rank)}`}</button>
+              : <button className='h-8 shrink-0 border border-p1-accent/50 bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink disabled:cursor-wait disabled:opacity-50' disabled={busy || focusBlocked || (!entry.cantrip && !entry.available)} title={focusBlocked ? 'Focus spell rank is too high for your level' : undefined} onClick={onCast}>{busy ? 'Saving...' : entry.cantrip ? 'Cast' : `Cast ${rankLabel(entry.rank)}`}</button>
           )}
           <button ref={closeRef} className='icon-button shrink-0' onClick={onClose} title='Close spell details'><X size={18} /></button>
         </header>
