@@ -150,6 +150,7 @@ export default function Layout(props: { children: React.ReactNode }) {
                     onClose={() => setUserMenuOpened(false)}
                     onOpen={() => setUserMenuOpened(true)}
                     withinPortal
+                    zIndex={10000}
                   >
                     <Menu.Target>
                       <UnstyledButton

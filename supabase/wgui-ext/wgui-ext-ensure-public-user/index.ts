@@ -1,7 +1,7 @@
 // @ts-ignore
 import { serve } from 'std/server';
 import type { PublicUser } from '../_shared/content';
-import { connect, createServiceClient, fetchData, insertData } from '../_shared/helpers.ts';
+import { connect, createServiceClient, fetchData } from '../_shared/helpers.ts';
 import { HttpError } from '../_shared/http-errors.ts';
 import { requireCallerId } from '../_wgui-ext/shared.ts';
 
@@ -42,12 +42,14 @@ serve(async (req: Request) => {
     const {
       data: { user },
     } = await client.auth.getUser(token);
-    const created = await insertData<PublicUser>(admin, 'public_user', {
+    // insertData().select() can fail after public_user column grants were tightened even
+    // when the insert itself succeeded. Write, then re-read the caller's row.
+    const { error: insertError } = await admin.from('public_user').insert({
       user_id: userId,
       display_name: displayNameFromAuthUser(user ?? {}),
     });
-    if (created) {
-      return { status: 'success', data: created };
+    if (insertError && insertError.code !== '23505') {
+      throw insertError;
     }
 
     const retry = await fetchData<PublicUser>(admin, 'public_user', [

@@ -26,16 +26,25 @@ export async function phase1Request<T>(functionName: string, body: Record<string
   return envelope.data as T;
 }
 
+function isMissingEdgeFunction(error: unknown, functionName: string): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!message.startsWith(functionName + ':')) return false;
+  const detail = message.slice(functionName.length + 2);
+  if (/user not found/i.test(detail)) return false;
+  return /404|function not found|requested function|failed to send a request to the edge function/i.test(detail);
+}
+
 /**
  * Auth can leave a session without a `public_user` row. Stock create-campaign then
- * returns "User not found". Best-effort: older stacks without this endpoint still hit the
- * stock lookup next.
+ * returns "User not found". Swallow only a missing endpoint so an older stack can still
+ * try the stock write; real ensure failures must surface.
  */
 export async function ensurePhase1PublicUser(accessToken?: string): Promise<void> {
   try {
     await phase1Request('wgui-ext-ensure-public-user', {}, accessToken);
-  } catch {
-    // Endpoint missing or already healthy — callers proceed to the stock write.
+  } catch (error) {
+    if (isMissingEdgeFunction(error, 'wgui-ext-ensure-public-user')) return;
+    throw error;
   }
 }
 

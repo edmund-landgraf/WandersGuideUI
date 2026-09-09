@@ -101,16 +101,21 @@ export function Phase1IndexPage() {
   const ownedCampaigns = (campaigns.data ?? []).filter((campaign) => campaign.user_id === session?.user.id);
 
   async function createCampaign() {
-    await ensurePhase1PublicUser();
-    return phase1Request<Campaign>('create-campaign', {
-      name: 'My Campaign',
-      description: 'A new adventure begins...',
-      meta_data: {
-        settings: {
-          show_party_member_status: 'STATUS',
+    const accessToken = session?.access_token;
+    await ensurePhase1PublicUser(accessToken);
+    return phase1Request<Campaign>(
+      'create-campaign',
+      {
+        name: 'My Campaign',
+        description: 'A new adventure begins...',
+        meta_data: {
+          settings: {
+            show_party_member_status: 'STATUS',
+          },
         },
       },
-    });
+      accessToken
+    );
   }
 
   async function handleCreateCampaign() {
@@ -165,12 +170,17 @@ export function Phase1IndexPage() {
             <p className='mt-2 text-sm text-p1-muted'>Choose an owned or joined campaign, or open Characters from the header.</p>
             {createError && <p className='mt-2 text-xs text-p1-danger-soft'>{createError}</p>}
           </div>
-          <div className='flex items-center gap-2'>
-            <button type='button' className='toolbar-button' disabled={creating} title='Create campaign' onClick={() => void handleCreateCampaign()}>
-              <Plus size={15} />
-              {creating ? 'Creating…' : 'Create campaign'}
-            </button>
-            <button className='icon-button' title='Sign out' onClick={() => supabase.auth.signOut()}><LogOut size={17} /></button>
+          <div className='flex flex-col items-end gap-2'>
+            <span className='max-w-64 truncate text-xs text-p1-muted' title={session.user.email ?? undefined}>
+              {session.user.email}
+            </span>
+            <div className='flex items-center gap-2'>
+              <button type='button' className='toolbar-button' disabled={creating} title='Create campaign' onClick={() => void handleCreateCampaign()}>
+                <Plus size={15} />
+                {creating ? 'Creating…' : 'Create campaign'}
+              </button>
+              <button className='icon-button' title='Sign out' onClick={() => supabase.auth.signOut()}><LogOut size={17} /></button>
+            </div>
           </div>
         </div>
         {campaigns.isLoading && <EmptyState>Loading campaigns...</EmptyState>}
@@ -604,11 +614,16 @@ export function Phase1CharactersPage() {
     try {
       const images = getAllBackgroundImages();
       const randomImageUrl = images[Math.floor(Math.random() * images.length)]?.url;
-      await ensurePhase1PublicUser();
-      const character = await phase1Request<Character>('create-character', {
-        meta_data: { reset_hp: true },
-        details: { background_image_url: randomImageUrl },
-      });
+      const accessToken = session?.access_token;
+      await ensurePhase1PublicUser(accessToken);
+      const character = await phase1Request<Character>(
+        'create-character',
+        {
+          meta_data: { reset_hp: true },
+          details: { background_image_url: randomImageUrl },
+        },
+        accessToken
+      );
       await queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] });
       navigate(`/builder/${character.id}`);
     } catch (error) {
@@ -703,8 +718,9 @@ export function Phase1CharactersPage() {
       const obj = JSON.parse(await getFileContents(file));
       if (obj.version !== 4 || !obj.character) throw new Error('Invalid JSON file');
       const { id: _id, ...character } = obj.character as Character & { id?: number };
-      await ensurePhase1PublicUser();
-      const created = await phase1Request<Character>('create-character', character);
+      const accessToken = session?.access_token;
+      await ensurePhase1PublicUser(accessToken);
+      const created = await phase1Request<Character>('create-character', character, accessToken);
       await queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] });
       setJoinStatus(`Imported “${created.name}”.`);
     } catch (error) {
@@ -4498,9 +4514,10 @@ function CampaignWorkspaceRow({ campaign, canDelete, onOpen, onDeleted }: { camp
   const [visible, setVisible] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [pendingRename, setPendingRename] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const hasKey = Boolean(campaign.join_key);
 
   async function revealAndCopy(event: ReactMouseEvent) {
@@ -4514,22 +4531,38 @@ function CampaignWorkspaceRow({ campaign, canDelete, onOpen, onDeleted }: { camp
     if (!canDelete) return;
     event.preventDefault();
     event.stopPropagation();
-    setDeleteError(null);
+    setActionError(null);
     setMenu({ x: event.clientX, y: event.clientY });
   }
 
+  async function confirmRename(name: string) {
+    const nextName = name.trim();
+    if (!nextName || nextName === campaign.name || busy) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      await phase1Request('create-campaign', { ...campaign, name: nextName });
+      setPendingRename(false);
+      onDeleted();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not rename campaign.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function confirmDelete() {
-    if (deleting) return;
-    setDeleting(true);
-    setDeleteError(null);
+    if (busy) return;
+    setBusy(true);
+    setActionError(null);
     try {
       await phase1Request('delete-content', { id: campaign.id, type: 'campaign' });
       setPendingDelete(false);
       onDeleted();
     } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : 'Could not delete campaign.');
+      setActionError(error instanceof Error ? error.message : 'Could not delete campaign.');
     } finally {
-      setDeleting(false);
+      setBusy(false);
     }
   }
 
@@ -4538,7 +4571,7 @@ function CampaignWorkspaceRow({ campaign, canDelete, onOpen, onDeleted }: { camp
       <button type='button' className='min-w-0 text-left' onClick={onOpen} onContextMenu={openMenu}>
         <div className='font-semibold'>{campaign.name}</div>
         <div className='mt-1 line-clamp-1 text-sm text-p1-muted'>{campaign.description || 'No campaign description'}</div>
-        {deleteError && <div className='mt-1 text-xs text-p1-danger-soft'>{deleteError}</div>}
+        {actionError && <div className='mt-1 text-xs text-p1-danger-soft'>{actionError}</div>}
       </button>
       <div className='flex items-center gap-2'>
         {hasKey && (
@@ -4556,19 +4589,33 @@ function CampaignWorkspaceRow({ campaign, canDelete, onOpen, onDeleted }: { camp
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
+          onRename={() => {
+            setMenu(null);
+            setPendingRename(true);
+          }}
           onDelete={() => {
             setMenu(null);
             setPendingDelete(true);
           }}
         />
       )}
+      {pendingRename && (
+        <RenameDialog
+          title='Rename campaign'
+          initialName={campaign.name}
+          onCancel={() => {
+            if (!busy) setPendingRename(false);
+          }}
+          onConfirm={(name) => { void confirmRename(name); }}
+        />
+      )}
       {pendingDelete && (
         <ConfirmDialog
           title='Delete campaign'
           message={`Are you sure you want to delete "${campaign.name}"? This cannot be undone.`}
-          confirmLabel={deleting ? 'Deleting…' : 'Delete'}
+          confirmLabel={busy ? 'Deleting…' : 'Delete'}
           onCancel={() => {
-            if (!deleting) setPendingDelete(false);
+            if (!busy) setPendingDelete(false);
           }}
           onConfirm={() => void confirmDelete()}
         />

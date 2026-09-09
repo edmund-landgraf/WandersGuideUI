@@ -32,8 +32,12 @@ export function Phase1Shell() {
           data: { session },
         } = await supabase.auth.getSession();
         if (session) {
-          await ensurePhase1PublicUser(session.access_token);
-          user = await getPublicUser();
+          try {
+            await ensurePhase1PublicUser(session.access_token);
+            user = await getPublicUser();
+          } catch {
+            // Create/import still call ensure; a failed backfill must not block the shell.
+          }
         }
       }
       applyDisplayPrefsFromUser(user);

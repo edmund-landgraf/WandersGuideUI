@@ -931,19 +931,19 @@ export default function DiceRoller(props: {
         </Stack>
         </Box>
       </Drawer>
-      <Portal
-        style={{
-          zIndex: OVERLAY_INDEX,
-        }}
-      >
+      <Portal>
         <Box
           style={{
-            position: 'absolute',
+            position: 'fixed',
             top: 0,
             right: 0,
-            zIndex: diceOverlay ? OVERLAY_INDEX : -1 * OVERLAY_INDEX,
+            zIndex: OVERLAY_INDEX,
             height: '100dvh',
             width: isTablet ? '100dvw' : `calc(100dvw - min(100dvw, 400px))`,
+            // Negative z-index still lives in this portal's stacking context, so the
+            // idle tray kept eating clicks on the header (Logout) after the first roll.
+            pointerEvents: diceOverlay ? 'auto' : 'none',
+            visibility: diceOverlay ? 'visible' : 'hidden',
           }}
           onClick={() => {
             closeDiceTray();
