@@ -60,24 +60,35 @@ export async function getJsonV4Content(entity: LivingEntity, inputStoreID?: Stor
   // If we weren't provided a store, execute all operations (to update the variables)
   // -- If a store is provided, we assume current variables should be left untouched.
   if (!inputStoreID) {
+    // Export must run on the main thread: workers have no localStorage, and the
+    // operations worker otherwise fails with "localStorage is not defined" while
+    // the download still proceeds. silent: don't pop the operations error modal
+    // on a recoverable export.
+    const exportOps = { directExecution: true, silent: true };
     if (isCharacter(entity)) {
-      await executeOperations({
-        type: 'CHARACTER',
-        data: {
-          character: entity,
-          content,
-          context: 'CHARACTER-BUILDER',
+      await executeOperations(
+        {
+          type: 'CHARACTER',
+          data: {
+            character: entity,
+            content,
+            context: 'CHARACTER-BUILDER',
+          },
         },
-      });
+        exportOps
+      );
     } else if (isCreature(entity)) {
-      await executeOperations({
-        type: 'CREATURE',
-        data: {
-          id: STORE_ID,
-          creature: entity,
-          content,
+      await executeOperations(
+        {
+          type: 'CREATURE',
+          data: {
+            id: STORE_ID,
+            creature: entity,
+            content,
+          },
         },
-      });
+        exportOps
+      );
     }
   }
 

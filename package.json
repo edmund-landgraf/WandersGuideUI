@@ -24,7 +24,11 @@
     "validate:content": "esbuild scripts/validate-content.ts --bundle --platform=node --format=esm --target=node20 --outfile=scripts/.dist/validate.mjs && node scripts/.dist/validate.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "stack:up": "node scripts/wgui-ext.mjs up",
+    "stack:restart": "node scripts/wgui-ext.mjs restart",
+    "stack:config": "node scripts/wgui-ext.mjs config",
+    "test:wgui-ext": "node scripts/wgui-ext.mjs test"
   },
   "dependencies": {
     "@mantine/carousel": "^9.0.0",

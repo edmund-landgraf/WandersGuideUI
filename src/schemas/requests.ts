@@ -56,6 +56,11 @@ export const RequestTypeSchema = z.enum([
   'remove-from-campaign',
   'vector-db-populate-collection',
   'vector-db-query-collection',
+  // Campaign-scoped reads that the stock owner-only policies cannot serve to a player.
+  'wgui-ext-find-encounter',
+  'wgui-ext-find-campaign-characters',
+  'wgui-ext-ensure-public-user',
+  'wgui-ext-join-campaign',
 ]);
 export type RequestType = z.infer<typeof RequestTypeSchema>;
 

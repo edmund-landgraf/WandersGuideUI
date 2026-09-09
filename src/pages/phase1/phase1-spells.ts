@@ -79,6 +79,11 @@ export type Phase1SpellLoad = {
   list: Array<{ spell_id: number; rank: number; source: string }>;
 };
 
+/** True when a prepared section still has an unfilled slot of this spell rank (including cantrips at 0). */
+export function hasEmptyPreparedSlot(entries: Array<{ empty?: boolean; rank: number; mode?: Phase1SpellMode }>, rank: number) {
+  return entries.some((entry) => entry.empty && entry.rank === rank && (entry.mode == null || entry.mode === 'PREPARED'));
+}
+
 export function keepPreparedListSection(sourceType: string, entries: number, slots: number, hasFamiliarList: boolean) {
   return entries > 0 || slots > 0 || hasFamiliarList || sourceType === 'PREPARED-LIST';
 }

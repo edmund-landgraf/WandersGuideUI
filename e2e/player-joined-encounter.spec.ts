@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { ensureUser, invokeEdge, pageAccessToken, signInPhase1, uniqueUser } from './auth';
 
-type EncounterRow = { id: number; combatants?: { list: unknown[] } };
+type EncounterRow = { id: number; icon?: string; color?: string; combatants?: { list: unknown[] } };
 
-test('joined player can see the encounter their PC is on', async ({ browser, request }) => {
+test('joined player opens the GM-identical view of the encounter their PC is on', async ({ browser, request }) => {
   test.setTimeout(360_000);
 
   const gm = process.env.E2E_GM_EMAIL
@@ -76,12 +76,39 @@ test('joined player can see the encounter their PC is on', async ({ browser, req
       },
     }, gmToken);
 
+    // A second fight the player's PC is NOT on. It must stay hidden from them.
+    await invokeEdge(request, 'create-encounter', {
+      id: -1,
+      campaign_id: campaignId,
+      name: 'E2E Prep Fight',
+      icon: encounter.icon,
+      color: encounter.color,
+      combatants: { list: [] },
+      meta_data: {},
+    }, gmToken);
+
     await playerPage.goto(`/phase1/campaign/${campaignId}`);
     await expect(playerPage.locator('aside').getByText('Player')).toBeVisible({ timeout: 30_000 });
-    await expect(playerPage.getByRole('heading', { name: 'No encounter selected' })).toHaveCount(0);
+
+    // The player lands straight in the encounter workspace — the same one the GM uses,
+    // not a reduced player-only view.
+    await expect(playerPage).toHaveURL(new RegExp(`/phase1/campaign/${campaignId}/encounters/${encounterId}`), {
+      timeout: 30_000,
+    });
     await expect(playerPage.locator('aside').getByText('E2E Fight')).toBeVisible();
-    await expect(playerPage.getByText('No encounters are visible for this campaign.')).toHaveCount(0);
+    await expect(playerPage.getByText('None of your characters are in an encounter yet.')).toHaveCount(0);
     await expect(playerPage.getByText('No combatants in this encounter.')).toHaveCount(0);
+    await expect(playerPage.getByText('E2E Player')).toBeVisible();
+
+    // Only fights their PC is on: prep fights stay with the GM.
+    await expect(playerPage.locator('aside').getByText('E2E Prep Fight')).toHaveCount(0);
+
+    // Same payload for both roles.
+    const gmView = await invokeEdge<EncounterRow[]>(request, 'wgui-ext-find-encounter', { campaign_id: campaignId }, gmToken);
+    const playerView = await invokeEdge<EncounterRow[]>(request, 'wgui-ext-find-encounter', { campaign_id: campaignId }, playerToken);
+    expect(gmView.length).toBe(2);
+    expect(playerView.length).toBe(1);
+    expect(playerView[0]).toEqual(gmView.find((row) => row.id === encounterId));
   } finally {
     await gmContext.close();
     await playerContext.close();

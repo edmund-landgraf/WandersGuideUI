@@ -30,16 +30,30 @@ let notifiedSessionExpired = false;
  * The auth listener in App.tsx handles the common case; this is the safety net for
  * requests that raced the sign-out event. Tells the user instead of failing silently.
  */
+function readUserDataCache(): string | null {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    return localStorage.getItem('user-data');
+  } catch {
+    return null;
+  }
+}
+
 async function checkForExpiredSession() {
   if (notifiedSessionExpired) return;
-  const hadUser = !!localStorage.getItem('user-data');
+  const hadUser = !!readUserDataCache();
   if (!hadUser) return;
   const {
     data: { session },
   } = await supabase.auth.getSession();
   if (session) return;
   notifiedSessionExpired = true;
-  localStorage.removeItem('user-data');
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.removeItem('user-data');
+  } catch {
+    // Workers and locked-down storage cannot clear the cache.
+  }
+  if (typeof document === 'undefined') return;
   showNotification({
     id: 'session-expired',
     title: 'Session expired',

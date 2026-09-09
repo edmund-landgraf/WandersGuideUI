@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Spell } from '@schemas/content';
 import {
   applyDivineFontToSpellState,
+  hasEmptyPreparedSlot,
   isDivinePreparedSource,
   isWitchFamiliarSource,
   keepPreparedListSection,
@@ -104,5 +105,20 @@ describe('preparing a spell into a slot', () => {
     expect(spellFitsSlot(magicMissile, 0)).toBe(false);
     expect(spellFitsSlot(shield, 0)).toBe(true);
     expect(spellFitsSlot(shield, 1)).toBe(false);
+  });
+
+  it('only prepares when an empty slot of that rank remains', () => {
+    const open = [
+      { empty: true, rank: 1, mode: 'PREPARED' as const },
+      { empty: false, rank: 1, mode: 'PREPARED' as const },
+    ];
+    const full = [
+      { empty: false, rank: 1, mode: 'PREPARED' as const },
+      { empty: false, rank: 1, mode: 'PREPARED' as const },
+      { empty: true, rank: 2, mode: 'PREPARED' as const },
+    ];
+    expect(hasEmptyPreparedSlot(open, 1)).toBe(true);
+    expect(hasEmptyPreparedSlot(full, 1)).toBe(false);
+    expect(hasEmptyPreparedSlot(full, 2)).toBe(true);
   });
 });

@@ -8,7 +8,7 @@ import { CampaignSignIn } from '@auth/CampaignSignIn';
 import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
 import { supabase } from '../../supabase-client';
-import { phase1Request, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, visibleCampaignEncounters } from './phase1-api';
+import { phase1Request, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, visibleCampaignEncounters } from './phase1-api';
 import { loadEntityAbilities, type Phase1Ability } from './phase1-abilities';
 import { calculateEntityStatus, type Phase1CreatureStatus } from './phase1-stats';
 import type { Phase1EntityCombatant } from './phase1-entity';
@@ -101,6 +101,7 @@ export function Phase1IndexPage() {
   const ownedCampaigns = (campaigns.data ?? []).filter((campaign) => campaign.user_id === session?.user.id);
 
   async function createCampaign() {
+    await ensurePhase1PublicUser();
     return phase1Request<Campaign>('create-campaign', {
       name: 'My Campaign',
       description: 'A new adventure begins...',
@@ -264,7 +265,15 @@ export function Phase1CharactersPage() {
     enabled: Boolean(session),
     queryFn: () => loadPhase1Campaigns(session!.user.id, session!.access_token),
   });
-  const campaignById = useMemo(() => new Map((campaigns.data ?? []).map((campaign) => [campaign.id, campaign])), [campaigns.data]);
+  const campaignById = useMemo(
+    () =>
+      new Map(
+        (campaigns.data ?? [])
+          .map((campaign) => [numericId(campaign.id), campaign] as const)
+          .filter((entry): entry is readonly [number, Campaign] => entry[0] !== null)
+      ),
+    [campaigns.data]
+  );
   const assignableCampaigns = useMemo(
     () => (campaigns.data ?? []).filter((campaign) => campaign.user_id === session?.user.id).slice(0, 6),
     [campaigns.data, session?.user.id]
@@ -282,7 +291,7 @@ export function Phase1CharactersPage() {
       let skippedSame = 0;
       const eligible: Character[] = [];
       for (const character of roster) {
-        if (character.campaign_id === campaign.id) {
+        if (numericId(character.campaign_id) === numericId(campaign.id)) {
           skippedSame += 1;
           continue;
         }
@@ -294,11 +303,13 @@ export function Phase1CharactersPage() {
       let firstError: string | undefined;
       for (const character of eligible) {
         try {
-          await phase1Request('update-character', { id: character.id, campaign_id: campaign.id });
+          const id = numericId(character.id);
+          if (id == null) throw new Error('Character is missing an id.');
+          await joinPhase1CharacterByKey(id, key);
           assigned += 1;
         } catch (error) {
           failed += 1;
-          if (!firstError) firstError = error instanceof Error ? error.message : 'update-character failed';
+          if (!firstError) firstError = error instanceof Error ? error.message : 'join-campaign failed';
         }
       }
 
@@ -321,6 +332,20 @@ export function Phase1CharactersPage() {
     },
   });
 
+  function rememberCharacterCampaign(characterId: number, campaign: Campaign | null) {
+    const campaignId = campaign ? numericId(campaign.id) : null;
+    queryClient.setQueryData<Character[]>(['phase1-characters', session?.user.id], (roster) =>
+      (roster ?? []).map((item) => (numericId(item.id) === characterId ? { ...item, campaign_id: campaignId } : item))
+    );
+    if (campaign && campaignId != null) {
+      queryClient.setQueryData<Campaign[]>(['phase1-campaigns', session?.user.id], (current) => {
+        const list = current ?? [];
+        if (list.some((item) => numericId(item.id) === campaignId)) return list;
+        return [...list, campaign];
+      });
+    }
+  }
+
   async function invalidateCharacterCampaigns() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] }),
@@ -329,8 +354,17 @@ export function Phase1CharactersPage() {
   }
 
   async function assignCharacterToCampaign(character: Character, campaign: Campaign) {
-    if (character.campaign_id === campaign.id) return { already: true as const, campaign };
-    await phase1Request('update-character', { id: character.id, campaign_id: campaign.id });
+    const campaignId = numericId(campaign.id);
+    if (campaignId == null) throw new Error('Campaign is missing an id.');
+    if (numericId(character.campaign_id) === campaignId) return { already: true as const, campaign };
+    const updated = await phase1Request<Character | Character[]>('update-character', {
+      id: character.id,
+      campaign_id: campaignId,
+    });
+    const saved = asRecordList(updated)[0];
+    if (numericId(saved?.campaign_id) !== campaignId) {
+      throw new Error('Could not assign that campaign. Try joining with the campaign key instead.');
+    }
     return { already: false as const, campaign };
   }
 
@@ -345,24 +379,15 @@ export function Phase1CharactersPage() {
       return;
     }
     try {
-      const found = await phase1Request<Campaign | Campaign[]>('find-campaign', { join_key: trimmed });
-      const campaign = Array.isArray(found) ? found[0] : found;
-      if (!campaign) {
-        setJoinResult({
-          ok: false,
-          title: 'Could not join campaign',
-          message: 'Invalid join key. Please ask your GM for a valid key.',
-        });
-        return;
-      }
-      const result = await assignCharacterToCampaign(character, campaign);
+      const result = await joinPhase1CharacterByKey(numericId(character.id) ?? character.id, trimmed);
+      rememberCharacterCampaign(numericId(result.character.id) ?? character.id, result.campaign);
       await invalidateCharacterCampaigns();
       setJoinResult({
         ok: true,
         title: 'Joined campaign',
         message: result.already
-          ? `${character.name} is already in the ${campaign.name} campaign.`
-          : `${character.name} successfully added to the ${campaign.name} campaign.`,
+          ? `${character.name} is already in the ${result.campaign.name} campaign.`
+          : `${character.name} successfully added to the ${result.campaign.name} campaign.`,
       });
     } catch (error) {
       setJoinResult({
@@ -374,8 +399,8 @@ export function Phase1CharactersPage() {
   }
 
   async function unassignCharacterFromCampaign(character: Character) {
-    if (character.campaign_id == null) return;
-    const campaign = campaignById.get(character.campaign_id);
+    if (numericId(character.campaign_id) == null) return;
+    const campaign = campaignById.get(numericId(character.campaign_id)!);
     const isOwnCampaign = campaign?.user_id === session?.user.id;
     if (isOwnCampaign) {
       await phase1Request('remove-from-campaign', { character_id: character.id, campaign_id: character.campaign_id });
@@ -391,6 +416,7 @@ export function Phase1CharactersPage() {
   async function assignCharacterFromPicker(character: Character, campaign: Campaign) {
     try {
       const result = await assignCharacterToCampaign(character, campaign);
+      rememberCharacterCampaign(numericId(character.id) ?? character.id, campaign);
       await invalidateCharacterCampaigns();
       setAssignPicker(null);
       setJoinResult({
@@ -578,6 +604,7 @@ export function Phase1CharactersPage() {
     try {
       const images = getAllBackgroundImages();
       const randomImageUrl = images[Math.floor(Math.random() * images.length)]?.url;
+      await ensurePhase1PublicUser();
       const character = await phase1Request<Character>('create-character', {
         meta_data: { reset_hp: true },
         details: { background_image_url: randomImageUrl },
@@ -676,6 +703,7 @@ export function Phase1CharactersPage() {
       const obj = JSON.parse(await getFileContents(file));
       if (obj.version !== 4 || !obj.character) throw new Error('Invalid JSON file');
       const { id: _id, ...character } = obj.character as Character & { id?: number };
+      await ensurePhase1PublicUser();
       const created = await phase1Request<Character>('create-character', character);
       await queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] });
       setJoinStatus(`Imported “${created.name}”.`);
@@ -810,7 +838,8 @@ export function Phase1CharactersPage() {
             const identity = [character.details?.ancestry?.name, character.details?.class?.name].filter(Boolean).join(' · ');
             const portraitUrl = character.details?.image_url?.trim();
             const sheetArtUrl = character.details?.background_image_url?.trim();
-            const assignedCampaign = character.campaign_id != null ? campaignById.get(character.campaign_id) : undefined;
+            const assignedCampaign =
+              numericId(character.campaign_id) != null ? campaignById.get(numericId(character.campaign_id)!) : undefined;
             return (
               <div
                 key={character.id}
@@ -875,7 +904,7 @@ export function Phase1CharactersPage() {
                     >
                       <span className='truncate'>{assignedCampaign.name}</span>
                     </button>
-                  ) : character.campaign_id != null ? null : (
+                  ) : numericId(character.campaign_id) != null ? null : (
                     <button
                       type='button'
                       className='toolbar-button h-8 px-2 text-xs'
@@ -916,7 +945,7 @@ export function Phase1CharactersPage() {
               setJoinOtherPicker(target);
             }}
             onUnassign={
-              characterMenu.character.campaign_id == null
+              numericId(characterMenu.character.campaign_id) == null
                 ? undefined
                 : () => {
                     const target = characterMenu.character;
@@ -1437,24 +1466,27 @@ export function Phase1CampaignPage() {
   const campaignKey = ['phase1-campaign', campaignId, session?.user.id] as const;
   const encountersKey = ['phase1-encounters', campaignId, session?.user.id] as const;
   const playersKey = ['phase1-players', campaignId, session?.user.id] as const;
-  const campaign = useQuery({ queryKey: campaignKey, enabled, queryFn: async () => (await phase1Request<Campaign[]>('find-campaign', { id: campaignId }))[0] ?? null });
+  const campaign = useQuery({
+    queryKey: campaignKey,
+    enabled,
+    queryFn: async () => asRecordList(await phase1Request<Campaign | Campaign[]>('find-campaign', { id: campaignId }))[0] ?? null,
+  });
   const players = useQuery({
     queryKey: playersKey,
     enabled,
+    refetchInterval: 4000,
     queryFn: () => loadPhase1CampaignPlayers(campaignId, session!.user.id, session!.access_token),
   });
   const encounters = useQuery({
     queryKey: encountersKey,
     enabled,
-    queryFn: async () => {
-      const campaignRow = queryClient.getQueryData<Campaign | null>(campaignKey);
-      const ownerId = campaignRow?.user_id ?? (await phase1Request<Campaign[]>('find-campaign', { id: campaignId }))[0]?.user_id;
-      return overlayDiceRollMeta(
-        overlayInitiativeLogs(await loadPhase1CampaignEncounters(campaignId, ownerId, session!.access_token), initiativeLogsRef.current),
+    refetchInterval: 4000,
+    queryFn: async () =>
+      overlayDiceRollMeta(
+        overlayInitiativeLogs(await loadPhase1CampaignEncounters(campaignId, session!.access_token), initiativeLogsRef.current),
         diceLogsRef.current,
         diceStatesRef.current,
-      );
-    },
+      ),
   });
   const updateEncounter = useMutation<boolean, Error, Encounter, { previous?: Encounter[] }>({
     mutationKey: ['phase1-update-encounter', campaignId],
@@ -2588,7 +2620,7 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
               <span className='mt-0.5 block text-[11px] text-p1-faint'>{encounter.combatants.list.length} combatants</span>
             </Link>
           ))}
-          {encounters.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>{standalone ? 'No standalone encounters yet.' : 'No encounters are visible for this campaign.'}</p>}
+          {encounters.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>{standalone ? 'No standalone encounters yet.' : isGm ? 'No encounters in this campaign yet.' : 'None of your characters are in an encounter yet.'}</p>}
         </nav>
       )}
       {!standalone && isGm && campaign && (
@@ -3623,20 +3655,21 @@ function EncounterHeader({ encounter, combatants, count, isGm, noteLink, tab, on
   const difficulty = encounter && shouldDisplayEncounterDifficulty(combatants) ? calculateDifficulty(encounter, combatants) : null;
   return (
     <div className='sticky top-0 z-10 border-b border-p1-border bg-p1-surface/95 px-5 py-4 backdrop-blur'>
-      <div className='flex items-center gap-5'>
-        <div className='min-w-0 flex-1'><Eyebrow>{isGm ? 'GM encounter' : 'Assigned encounter'}</Eyebrow><h2 className='mt-1 truncate text-xl font-semibold'>{encounter ? encounterDisplayName(encounter.name) : 'No encounter selected'}</h2>{noteLink ? <Link to={noteLink.href} className='mt-1 block truncate text-xs text-p1-accent hover:underline'>See campaign Notes page: {encounterDisplayName(noteLink.name)}</Link> : <p className='mt-1 truncate text-xs text-p1-faint'>{encounter?.meta_data.description || `${count} combatants`}</p>}
-          <div className='mt-3 flex gap-1'>
-            {(['combat', 'dice'] as const).map((item) => (
-              <button
-                key={item}
-                type='button'
-                className={`border-b-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide ${tab === item ? 'border-p1-accent text-p1-accent-soft' : 'border-transparent text-p1-faint hover:text-p1-text'}`}
-                onClick={() => onTab(item)}
-              >
-                {item === 'combat' ? 'Combat' : 'Dice Rolls'}
-              </button>
-            ))}
-          </div>
+      <Eyebrow>{isGm ? 'GM encounter' : 'Assigned encounter'}</Eyebrow>
+      <h2 className='mt-1 text-xl font-semibold'>{encounter ? encounterDisplayName(encounter.name) : 'No encounter selected'}</h2>
+      {noteLink ? <Link to={noteLink.href} className='mt-1 block text-xs text-p1-accent hover:underline'>See campaign Notes page: {encounterDisplayName(noteLink.name)}</Link> : <p className='mt-1 text-xs text-p1-faint'>{encounter?.meta_data.description || `${count} combatants`}</p>}
+      <div className='mt-3 flex flex-wrap items-center gap-2'>
+        <div className='mr-auto flex gap-1'>
+          {(['combat', 'dice'] as const).map((item) => (
+            <button
+              key={item}
+              type='button'
+              className={`border-b-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide ${tab === item ? 'border-p1-accent text-p1-accent-soft' : 'border-transparent text-p1-faint hover:text-p1-text'}`}
+              onClick={() => onTab(item)}
+            >
+              {item === 'combat' ? 'Combat' : 'Dice Rolls'}
+            </button>
+          ))}
         </div>
         {difficulty && (
           <button type='button' className='xp-challenge' title='Open XP budget math' onClick={() => setXpOpen(true)}>

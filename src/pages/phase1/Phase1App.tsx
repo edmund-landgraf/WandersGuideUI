@@ -9,6 +9,8 @@ import { Phase1AuthCallback } from '@auth/Phase1AuthCallback';
 import { ContentLinkProvider } from './phase1-content-links';
 import { CloseStackOnNavigate, ContentStackModal } from './phase1-content-stack';
 import { getPublicUser } from '@auth/user-manager';
+import { supabase } from '../../supabase-client';
+import { ensurePhase1PublicUser } from './phase1-api';
 import { applyDisplayPrefsFromUser } from './display-prefs';
 import { applyPhase1CssTheme, readStoredPhase1CssTheme } from './phase1-css-theme';
 import { applyPhase1Theme, readStoredPhase1Theme } from './phase1-theme';
@@ -23,11 +25,21 @@ export function Phase1Shell() {
   useEffect(() => {
     applyPhase1Theme(readStoredPhase1Theme());
     applyPhase1CssTheme(readStoredPhase1CssTheme());
-    void getPublicUser().then((user) => {
+    void (async () => {
+      let user = await getPublicUser();
+      if (!user) {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session) {
+          await ensurePhase1PublicUser(session.access_token);
+          user = await getPublicUser();
+        }
+      }
       applyDisplayPrefsFromUser(user);
       applyPhase1Theme(readStoredPhase1Theme());
       applyPhase1CssTheme(readStoredPhase1CssTheme());
-    });
+    })();
   }, []);
   return (
     <ContentLinkProvider>

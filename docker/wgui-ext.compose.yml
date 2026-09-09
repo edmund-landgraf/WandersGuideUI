@@ -1,0 +1,45 @@
+# Injects the wgui-ext edge functions into the wanderers-guide stack without putting a
+# single file in that checkout.
+#
+# main/index.ts derives the service path from the request URL
+# (`/home/deno/functions/${serviceName}`) and uses a fixed absolute import map, so a
+# directory present at that path is a working endpoint.
+#
+# Bind-mounting the three directories straight in does not work: the stack mounts the
+# whole of /home/deno/functions read-only, and Docker cannot create a nested mountpoint
+# inside a read-only mount ("read-only file system" at container init). Making that parent
+# writable instead would have Docker create the empty mountpoints in the wanderers-guide
+# checkout, dirtying its git status — the one thing this arrangement exists to avoid.
+#
+# So /home/deno/functions becomes a tmpfs that an entrypoint fills from two read-only
+# mounts: their tree first, ours second. Nothing is ever written to either source, the
+# merge is rebuilt on every container start, and the runtime sees one ordinary directory.
+#
+# Always used together with the stack's docker-compose.yml — see scripts/wgui-ext.mjs,
+# which sets the two *_DIR variables and --project-directory for you. Because the merge
+# happens at start and the runtime caches isolates, a code change needs
+# `npm run stack:restart`.
+
+services:
+  functions:
+    # !override drops the stack's own /home/deno/functions bind, which would otherwise
+    # collide with the tmpfs below.
+    volumes: !override
+      - ${WG_FUNCTIONS_DIR}:/wgui-ext/base:ro
+      - ${WGUI_EXT_DIR}:/wgui-ext/overlay:ro
+    tmpfs:
+      - /home/deno/functions:size=64m,mode=0755
+    entrypoint:
+      - sh
+      - -c
+      - >
+        set -e;
+        cp -a /wgui-ext/base/. /home/deno/functions/;
+        cp -a /wgui-ext/overlay/_wgui-ext
+        /wgui-ext/overlay/wgui-ext-find-encounter
+        /wgui-ext/overlay/wgui-ext-find-campaign-characters
+        /wgui-ext/overlay/wgui-ext-ensure-public-user
+        /wgui-ext/overlay/wgui-ext-join-campaign
+        /home/deno/functions/;
+        exec edge-runtime "$$@"
+      - edge-runtime

@@ -159,22 +159,24 @@ function execInWorker(execution: OperationExecution, charStore?: VariableStore):
   });
 }
 
+type ExecuteOperationsOptions = { directExecution?: boolean; silent?: boolean };
+
 export async function executeOperations<T = OperationCharacterResultPackage | OperationCreatureResultPackage>(
   execution: OperationExecution,
-  options?: { directExecution?: boolean }
+  options?: ExecuteOperationsOptions
 ) {
   try {
     return await runExecuteOperations<T>(execution, options);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    appendCommonLog('operations', message);
+    if (!options?.silent) appendCommonLog('operations', message);
     throw error;
   }
 }
 
 async function runExecuteOperations<T = OperationCharacterResultPackage | OperationCreatureResultPackage>(
   execution: OperationExecution,
-  options?: { directExecution?: boolean }
+  options?: ExecuteOperationsOptions
 ) {
   let results: OperationResultData | null = null;
 

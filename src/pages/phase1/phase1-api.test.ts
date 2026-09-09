@@ -40,4 +40,13 @@ describe('visibleCampaignEncounters', () => {
     });
     expect(encounterIncludesOwnCharacter(row, new Set([44]))).toBe(true);
   });
+
+  it('matches a PC stored only on combatant.data.id', () => {
+    const row = encounter({
+      id: 9,
+      campaign_id: 21,
+      combatants: { list: [{ _id: 'c1', type: 'CHARACTER', ally: true, data: { id: 44, name: 'Kikkery' } as Encounter['combatants']['list'][number]['data'] }] },
+    });
+    expect(encounterIncludesOwnCharacter(row, new Set([44]))).toBe(true);
+  });
 });

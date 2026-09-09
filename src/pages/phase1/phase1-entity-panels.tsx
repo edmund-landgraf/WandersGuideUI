@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Activity, BookOpen, Calculator, ChevronDown, ChevronRight, Copy, Crosshair, Eye, Footprints, History, ListChecks, Package, Pencil, Plus, Search, Shield, Sparkles, Swords, Trash2, WandSparkles, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -9,7 +9,7 @@ import type { Phase1EntityCombatant } from './phase1-entity';
 import { StatDetailModal, type Phase1StatKey, type Phase1StatTarget } from './phase1-stat-modal';
 import { loadEntityDetails, type Phase1ProfRow } from './phase1-details';
 import { loadEntitySkillsActions, type Phase1ActionGroup, type Phase1Skill } from './phase1-skills';
-import { isDivinePreparedSource, isFocusCastBlocked, isWitchFamiliarSource, loadEntitySpells, spellCatalogSourceIds, spellFitsSlot, spellManageMode, type Phase1SpellEntry, type Phase1SpellSection } from './phase1-spells';
+import { hasEmptyPreparedSlot, isDivinePreparedSource, isFocusCastBlocked, isWitchFamiliarSource, loadEntitySpells, spellCatalogSourceIds, spellFitsSlot, spellManageMode, type Phase1SpellEntry, type Phase1SpellManageMode, type Phase1SpellSection } from './phase1-spells';
 import { wandNeedsOvercharge } from './phase1-item-spells';
 import { Phase1SpellbookModal, type SpellbookAssign } from './phase1-spellbook';
 import { findInventoryItem, flattenInvItems, inventoryContainerTargets, inventoryItemIsNested, inventoryItemToPhase1, loadEntityInventory, matchesInvItem, type Phase1InvItem } from './phase1-inventory';
@@ -1633,6 +1633,44 @@ export function fallbackStatus(entity: LivingEntity): Phase1CreatureStatus {
     resistances: [], weaknesses: [], immunities: [], recallKnowledge: null,
   };
 }
+
+type OverflowSnapshot = { el: HTMLElement; top: number; left: number };
+
+function snapshotOverflow(start: Element | null): OverflowSnapshot[] {
+  const snaps: OverflowSnapshot[] = [];
+  const seen = new Set<HTMLElement>();
+  const add = (el: Element | null | undefined) => {
+    if (!(el instanceof HTMLElement) || seen.has(el)) return;
+    seen.add(el);
+    snaps.push({ el, top: el.scrollTop, left: el.scrollLeft });
+  };
+  let node: HTMLElement | null = start instanceof HTMLElement ? start : start?.parentElement ?? null;
+  while (node) {
+    const { overflow, overflowY, overflowX } = getComputedStyle(node);
+    if (/(auto|scroll)/.test(`${overflow}${overflowY}${overflowX}`)) add(node);
+    node = node.parentElement;
+  }
+  add(document.scrollingElement);
+  add(document.documentElement);
+  add(document.body);
+  return snaps;
+}
+
+function restoreOverflow(snaps: OverflowSnapshot[] | null) {
+  if (!snaps?.length) return;
+  const apply = () => {
+    for (const snap of snaps) {
+      snap.el.scrollTop = snap.top;
+      snap.el.scrollLeft = snap.left;
+    }
+  };
+  apply();
+  requestAnimationFrame(() => {
+    apply();
+    requestAnimationFrame(apply);
+  });
+}
+
 export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatant: PopulatedCombatant; spellActions?: Phase1SpellActions; onLogAction?: LogActionFn }) {
   const [query, setQuery] = useState('');
   const [rankFilter, setRankFilterState] = useState<number | 'ALL'>(persistedSpellsRankFilter);
@@ -1646,12 +1684,21 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
   const [staffCastPick, setStaffCastPick] = useState<Phase1SpellEntry | null>(null);
   const [wandOvercharge, setWandOvercharge] = useState<Phase1SpellEntry | null>(null);
   const detailsAvailable = hasFullEntityDetails(combatant);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const scrollLockRef = useRef<OverflowSnapshot[] | null>(null);
   const data = useQuery({
     queryKey: ['phase1-entity-spells', 'isolated-store', combatant.type, combatant._id, JSON.stringify(combatant.data.spells ?? null), JSON.stringify((combatant.data.inventory?.items ?? []).map((item) => ({ id: item.id, eq: item.is_equipped, ch: item.item.meta_data?.charges, hp: item.item.meta_data?.hp })))],
     enabled: detailsAvailable && combatant.access?.details_revealed !== false,
     queryFn: () => loadEntitySpells(combatant as Phase1EntityCombatant),
     staleTime: Number.POSITIVE_INFINITY,
+    placeholderData: keepPreviousData,
   });
+  useLayoutEffect(() => {
+    const snaps = scrollLockRef.current;
+    if (!snaps) return;
+    restoreOverflow(snaps);
+    if (!data.isFetching) scrollLockRef.current = null;
+  }, [data.data, data.isFetching]);
   const setRankFilter = (rank: number | 'ALL') => {
     persistedSpellsRankFilter = rank;
     setRankFilterState(rank);
@@ -1712,6 +1759,7 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
 
   async function runSpellAction(key: string, action: () => Promise<void>, closeModal = false) {
     if (!spellActions || busyKey) return;
+    if (!scrollLockRef.current) scrollLockRef.current = snapshotOverflow(panelRef.current);
     setBusyKey(key);
     setSpellError('');
     try {
@@ -1719,8 +1767,10 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
       if (closeModal) setSelected(null);
     } catch (error) {
       setSpellError(error instanceof Error ? error.message : 'Spell update could not be saved.');
+      scrollLockRef.current = null;
     } finally {
       setBusyKey(null);
+      restoreOverflow(scrollLockRef.current);
     }
   }
 
@@ -1767,7 +1817,7 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
     onLogAction(draft, cast);
   }
 
-  return <>
+  return <div ref={panelRef}>
     {sourceTabs.length > 1 && (
       <div className='mb-2.5 flex overflow-x-auto border-b border-p1-border'>
         <InnerTab active={activeSource === 'ALL'} onClick={() => setSourceKey('ALL')}>All</InnerTab>
@@ -1803,14 +1853,14 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
     </div>
     {spellError && <div className='mt-2 border border-p1-danger/40 bg-p1-danger/10 px-3 py-2 text-xs text-p1-danger-soft'>{spellError}</div>}
     {!detailsAvailable && <EmptyState>Private character details are unavailable in this account context.</EmptyState>}
-    {data.isLoading && <EmptyState>Loading spellcasting...</EmptyState>}
+    {data.isLoading && !data.data && <EmptyState>Loading spellcasting...</EmptyState>}
     {data.isError && <ErrorState error={data.error} />}
     <div className='mt-3 space-y-3'>
       {sections.map((section) => <SpellSection key={section.key} section={section} rankFilter={activeRank} spellActions={spellActions} busyKey={busyKey} canOpenStats={detailsAvailable && combatant.access?.details_revealed !== false} onOpen={setSelected} onOpenBook={(opts) => openBook(section, opts)} onOpenProf={setOpenProf} onCast={(entry) => castAndLog(entry, `cast-${entry.key}`)} onUncast={(entry) => runSpellAction(`uncast-${entry.key}`, () => {
         if (entry.mode === 'STAFF') return spellActions!.castStaff(entry, false);
         if (entry.mode === 'WAND') return spellActions!.castWand(entry, false);
         return spellActions!.setCast(entry, false);
-      })} onRankSpent={(rank, spent) => runSpellAction(`rank-${section.key}-${rank}`, () => spellActions!.setRankSpent(section, rank, spent))} onFocusSpent={(spent) => runSpellAction(`focus-${section.key}`, () => spellActions!.setFocusSpent(section, spent))} onPreparedSpent={(entry, spent) => runSpellAction(`prepared-${entry.key}`, () => spellActions!.setPreparedSpent(entry, spent))} onInnateSpent={(entry, castsCurrent) => runSpellAction(`innate-${entry.key}`, () => spellActions!.setInnateSpent(entry, castsCurrent))} onRemoveFromList={(entry) => entry.spell && runSpellAction(`remove-${entry.key}`, () => spellActions!.removeFromList(entry.sourceName, entry.spell!.id, entry.rank))} onClearSlot={(entry) => entry.slotId && runSpellAction(`clear-${entry.key}`, () => spellActions!.clearSlot(entry.slotId!))} onAddStaffCharges={section.canAddStaffCharges ? () => setStaffChargePick(section) : undefined} onStaffCharges={(spent) => section.entries[0]?.itemId && runSpellAction(`staff-ch-${section.key}`, () => spellActions!.setItemCharges(section.entries[0].itemId!, spent))} entity={combatant.data} onApplyFont={spellActions && section.mode === 'PREPARED' && isDivinePreparedSource(section.source) ? (choice) => runSpellAction(`font-${section.key}-${choice}`, () => spellActions.applyDivineFont(section.source!.name, choice)) : undefined} onLogCantrip={onLogAction ? logSpell : undefined} />)}
+      })} onRankSpent={(rank, spent) => runSpellAction(`rank-${section.key}-${rank}`, () => spellActions!.setRankSpent(section, rank, spent))} onFocusSpent={(spent) => runSpellAction(`focus-${section.key}`, () => spellActions!.setFocusSpent(section, spent))} onPreparedSpent={(entry, spent) => runSpellAction(`prepared-${entry.key}`, () => spellActions!.setPreparedSpent(entry, spent))} onInnateSpent={(entry, castsCurrent) => runSpellAction(`innate-${entry.key}`, () => spellActions!.setInnateSpent(entry, castsCurrent))} onRemoveFromList={(entry) => entry.spell && runSpellAction(`remove-${entry.key}`, () => spellActions!.removeFromList(entry.sourceName, entry.spell!.id, entry.rank))} onClearSlot={(entry) => entry.slotId && runSpellAction(`clear-${entry.key}`, () => spellActions!.clearSlot(entry.slotId!))} onPrepare={(entry) => entry.spell && runSpellAction(`prepare-${entry.key}`, () => spellActions!.prepareSlot(entry.sourceName, undefined, entry.spell!, entry.rank))} onAddStaffCharges={section.canAddStaffCharges ? () => setStaffChargePick(section) : undefined} onStaffCharges={(spent) => section.entries[0]?.itemId && runSpellAction(`staff-ch-${section.key}`, () => spellActions!.setItemCharges(section.entries[0].itemId!, spent))} entity={combatant.data} onApplyFont={spellActions && section.mode === 'PREPARED' && isDivinePreparedSource(section.source) ? (choice) => runSpellAction(`font-${section.key}-${choice}`, () => spellActions.applyDivineFont(section.source!.name, choice)) : undefined} onLogCantrip={onLogAction ? logSpell : undefined} />)}
       {data.data && !sections.length && <EmptyState>{needle ? 'No spells match this search.' : 'No spells found.'}</EmptyState>}
     </div>
     {selected && selected.spell && <SpellModal entry={selected} entity={combatant.data} spellActions={spellActions} busy={Boolean(busyKey)} onCast={() => castAndLog(selected, `modal-cast-${selected.key}`, true)} onUncast={() => runSpellAction(`modal-uncast-${selected.key}`, () => {
@@ -1904,10 +1954,10 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
           : undefined}
       />
     )}
-  </>;
+  </div>;
 }
 
-function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats, onOpen, onOpenBook, onOpenProf, onCast, onUncast, onRankSpent, onFocusSpent, onPreparedSpent, onInnateSpent, onRemoveFromList, onClearSlot, onAddStaffCharges, onStaffCharges, onApplyFont, onLogCantrip, entity }: {
+function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats, onOpen, onOpenBook, onOpenProf, onCast, onUncast, onRankSpent, onFocusSpent, onPreparedSpent, onInnateSpent, onRemoveFromList, onClearSlot, onPrepare, onAddStaffCharges, onStaffCharges, onApplyFont, onLogCantrip, entity }: {
   section: Phase1SpellSection;
   rankFilter: number | 'ALL';
   spellActions?: Phase1SpellActions;
@@ -1924,6 +1974,7 @@ function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats
   onInnateSpent: (entry: Phase1SpellEntry, castsCurrent: number) => void;
   onRemoveFromList: (entry: Phase1SpellEntry) => void;
   onClearSlot: (entry: Phase1SpellEntry) => void;
+  onPrepare: (entry: Phase1SpellEntry) => void;
   onAddStaffCharges?: () => void;
   onStaffCharges?: (spent: number) => void;
   onApplyFont?: (choice: 'heal' | 'harm') => void;
@@ -2015,6 +2066,9 @@ function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats
                 onInnateSpent={(castsCurrent) => onInnateSpent(entry, castsCurrent)}
                 onRemoveFromList={() => onRemoveFromList(entry)}
                 onClearSlot={() => onClearSlot(entry)}
+                onPrepare={() => entry.spell && onPrepare(entry)}
+                emptySlotAvailable={hasEmptyPreparedSlot(section.entries, entry.rank)}
+                manageMode={manageMode}
                 onLogCantrip={onLogCantrip}
               />
             ))}
@@ -2037,7 +2091,7 @@ function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats
   </section>;
 }
 
-function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCast, onUncast, onPreparedSpent, onInnateSpent, onRemoveFromList, onClearSlot, onLogCantrip }: {
+function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCast, onUncast, onPreparedSpent, onInnateSpent, onRemoveFromList, onClearSlot, onPrepare, emptySlotAvailable, manageMode, onLogCantrip }: {
   entry: Phase1SpellEntry;
   entity: LivingEntity;
   spellActions?: Phase1SpellActions;
@@ -2050,8 +2104,12 @@ function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCa
   onInnateSpent: (castsCurrent: number) => void;
   onRemoveFromList: () => void;
   onClearSlot: () => void;
+  onPrepare: () => void;
+  emptySlotAvailable: boolean;
+  manageMode: Phase1SpellManageMode | null;
   onLogCantrip?: (entry: Phase1SpellEntry) => void;
 }) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const innateSpent = entry.usesMax != null && entry.usesCurrent != null ? entry.usesMax - entry.usesCurrent : 0;
   const cantripExecute = entry.cantrip && entry.spell && onLogCantrip && isExecutableActionCost(entry.spell.cast)
     ? () => onLogCantrip(entry)
@@ -2069,13 +2127,18 @@ function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCa
     );
   }
   const canRemove = Boolean(spellActions) && (entry.mode === 'PREPARED' || entry.mode === 'SPONTANEOUS' || entry.mode === 'RITUAL');
+  const canPrepare = Boolean(spellActions) && entry.mode === 'PREPARED' && !entry.slotId;
+  const canReturn = Boolean(spellActions) && entry.mode === 'PREPARED' && Boolean(entry.slotId);
+  const showMenu = canPrepare || canReturn || canRemove;
   const focusBlocked = entry.mode === 'FOCUS' && isFocusCastBlocked(entry.spell, entity);
   const showCast = Boolean(spellActions) && !entry.cantrip && entry.mode !== 'RITUAL' && entry.mode !== 'SPELLHEART' && (entry.mode !== 'PREPARED' || Boolean(entry.slotId));
   const showUncast = entry.mode === 'STAFF' || entry.mode === 'WAND' ? (entry.usesCurrent ?? 0) > 0 : entry.exhausted;
+  const returnLabel = manageMode === 'SLOTS-ONLY' ? 'Clear slot' : 'Return to spellbook';
+  const removeLabel = entry.mode === 'SPONTANEOUS' ? 'Remove from repertoire' : entry.mode === 'RITUAL' ? 'Remove ritual' : 'Remove from spellbook';
   return <div className='flex min-h-10 items-center gap-2 px-3 py-1.5 hover:bg-p1-hover' onContextMenu={(event) => {
-    if (!canRemove) return;
+    if (!showMenu) return;
     event.preventDefault();
-    onRemoveFromList();
+    setMenu({ x: event.clientX, y: event.clientY });
   }}>
     {entry.mode === 'PREPARED' && !entry.cantrip && entry.slotId && (
       <SlotCircles count={1} spent={entry.exhausted ? 1 : 0} editable={Boolean(spellActions)} title={`${entry.spell.name} slot`} onChange={(spent) => onPreparedSpent(spent > 0)} />
@@ -2097,7 +2160,114 @@ function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCa
         {showUncast && <button className='h-7 border border-p1-border px-2.5 text-[10px] font-semibold text-p1-muted hover:bg-p1-hover disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onUncast}>Uncast</button>}
       </div>
     )}
+    {menu && (
+      <SpellRowContextMenu
+        x={menu.x}
+        y={menu.y}
+        canPrepare={canPrepare}
+        prepareDisabled={!emptySlotAvailable || busy}
+        prepareTitle={!emptySlotAvailable ? `No empty ${entry.rank === 0 ? 'cantrip' : rankLabel(entry.rank)} slots` : undefined}
+        canReturn={canReturn}
+        returnLabel={returnLabel}
+        canRemove={canRemove}
+        removeLabel={removeLabel}
+        onClose={() => setMenu(null)}
+        onPrepare={onPrepare}
+        onReturn={onClearSlot}
+        onRemove={onRemoveFromList}
+      />
+    )}
   </div>;
+}
+
+function SpellRowContextMenu({
+  x,
+  y,
+  canPrepare,
+  prepareDisabled,
+  prepareTitle,
+  canReturn,
+  returnLabel,
+  canRemove,
+  removeLabel,
+  onClose,
+  onPrepare,
+  onReturn,
+  onRemove,
+}: {
+  x: number;
+  y: number;
+  canPrepare: boolean;
+  prepareDisabled: boolean;
+  prepareTitle?: string;
+  canReturn: boolean;
+  returnLabel: string;
+  canRemove: boolean;
+  removeLabel: string;
+  onClose: () => void;
+  onPrepare: () => void;
+  onReturn: () => void;
+  onRemove: () => void;
+}) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+  const left = Math.min(x, window.innerWidth - 220);
+  const top = Math.min(y, window.innerHeight - 140);
+  return createPortal(
+    <>
+      <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
+      <div role='menu' className='fixed z-[110] min-w-48 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        {canPrepare && (
+          <button
+            type='button'
+            role='menuitem'
+            className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:opacity-40'
+            disabled={prepareDisabled}
+            title={prepareTitle}
+            onClick={() => {
+              if (prepareDisabled) return;
+              onPrepare();
+              onClose();
+            }}
+          >
+            <BookOpen size={14} /> Prepare
+          </button>
+        )}
+        {canReturn && (
+          <button
+            type='button'
+            role='menuitem'
+            className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover'
+            onClick={() => {
+              onReturn();
+              onClose();
+            }}
+          >
+            {returnLabel}
+          </button>
+        )}
+        {canRemove && (
+          <button
+            type='button'
+            role='menuitem'
+            className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover'
+            onClick={() => {
+              onRemove();
+              onClose();
+            }}
+          >
+            <Trash2 size={14} /> {removeLabel}
+          </button>
+        )}
+      </div>
+    </>,
+    document.body,
+  );
 }
 
 function SpellModal({ entry, entity, spellActions, busy, onCast, onUncast, onClose }: { entry: Phase1SpellEntry; entity: LivingEntity; spellActions?: Phase1SpellActions; busy: boolean; onCast: () => void; onUncast: () => void; onClose: () => void }) {

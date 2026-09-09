@@ -10,4 +10,12 @@ describe('executeOperations rejection', () => {
       message: 'Unknown operation execution type',
     });
   });
+
+  it('does not log when silent is set', async () => {
+    const before = getCommonLog().length;
+    await expect(executeOperations({ type: 'UNKNOWN' } as never, { silent: true })).rejects.toThrow(
+      'Unknown operation execution type'
+    );
+    expect(getCommonLog()).toHaveLength(before);
+  });
 });
