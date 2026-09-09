@@ -43,3 +43,6 @@ playwright/.cache
 
 # validate-content build output
 scripts/.dist/
+
+# Local video files
+/videos
