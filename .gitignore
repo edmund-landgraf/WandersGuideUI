@@ -46,3 +46,6 @@ scripts/.dist/
 
 # Local video files
 /videos
+
+# Local-only copies of upstream wanderers-guide patches (amba VPS; not this repo)
+/local/
