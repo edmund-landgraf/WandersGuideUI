@@ -3,7 +3,7 @@ import type { ObjectWithUUID } from '@operations/operation-utils';
 import { hasOperationSelection } from '@operations/operation-utils';
 import type { OperationResult } from '@schemas/operations';
 import { Phase1PickerModal } from './phase1-picker-modal';
-import { useContentLinks } from './phase1-content-links';
+import { useContentLinks, type ContentLinkRef } from './phase1-content-links';
 import { setOverflowTitle } from './phase1-overflow-title';
 
 export function Phase1OperationResults({
@@ -66,10 +66,7 @@ function OperationSelectControl({ result, onChange }: { result: OperationResult;
                 className='block w-full truncate text-left text-p1-accent hover:underline'
                 data-full-title={selected.name ?? 'Selected'}
                 onMouseEnter={setOverflowTitle}
-                onClick={() => {
-                  const type = selected._content_type || options[0]?._content_type;
-                  if (type && selected.id != null) open(`link_${type}_${selected.id}`);
-                }}
+                onClick={() => previewSelection(open, selected, options[0]?._content_type)}
               >
                 {selected.name ?? 'Selected'}
               </button>
@@ -102,16 +99,27 @@ function OperationSelectControl({ result, onChange }: { result: OperationResult;
                 onChange(selection.id, option._select_uuid);
                 setOpenPicker(false);
               }}
-              onPreview={() => {
-                const type = option._content_type;
-                if (type && option.id != null) open(`link_${type}_${option.id}`);
-              }}
+              onPreview={() => previewSelection(open, option)}
             />
           )}
         />
       )}
     </div>
   );
+}
+
+function previewSelection(
+  open: (href: string, extra?: { title?: string; description?: string }) => void,
+  option: ObjectWithUUID,
+  fallbackType?: ContentLinkRef['type']
+) {
+  const type = option._content_type || fallbackType;
+  if (!type || option.id == null) return;
+  const custom = option._custom_select as { title?: string; description?: string } | undefined;
+  const description =
+    (typeof option.description === 'string' && option.description) || custom?.description || undefined;
+  const title = option.name ?? custom?.title;
+  open(`link_${type}_${option.id}`, { title, description });
 }
 
 function SelectOptionRow({

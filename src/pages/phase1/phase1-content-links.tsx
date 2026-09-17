@@ -5,11 +5,13 @@ import type { AbilityBlockType, ContentType } from '@schemas/content';
 export type ContentLinkRef = {
   type: ContentType | AbilityBlockType | 'condition';
   id: string;
+  title?: string;
+  description?: string;
 };
 
 type ContentLinkContextValue = {
   stack: ContentLinkRef[];
-  open: (href: string) => void;
+  open: (href: string, extra?: { title?: string; description?: string }) => void;
   back: () => void;
   close: () => void;
 };
@@ -26,13 +28,18 @@ export const CONTENT_STACK_SELECTOR = '[data-content-stack-modal]';
 export function ContentLinkProvider({ children }: { children: ReactNode }) {
   const [stack, setStack] = useState<ContentLinkRef[]>([]);
 
-  const open = useCallback((href: string) => {
+  const open = useCallback((href: string, extra?: { title?: string; description?: string }) => {
     const data = getContentDataFromHref(href);
     if (!data) return;
+    const entry: ContentLinkRef = {
+      ...data,
+      title: extra?.title,
+      description: extra?.description,
+    };
     setStack((current) => {
       const top = current[current.length - 1];
-      if (top && top.type === data.type && top.id === data.id) return current;
-      return [...current, data];
+      if (top && top.type === entry.type && top.id === entry.id) return current;
+      return [...current, entry];
     });
   }, []);
 

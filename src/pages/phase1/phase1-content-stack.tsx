@@ -156,7 +156,7 @@ type CatalogView = {
 async function loadCatalogContent(entry: ContentLinkRef): Promise<CatalogView | null> {
   if (entry.type === 'condition') {
     const condition = getConditionByName(entry.id);
-    if (!condition) return null;
+    if (!condition) return inlineView(entry) ?? null;
     return {
       title: condition.name,
       tags: ['Condition'],
@@ -166,11 +166,14 @@ async function loadCatalogContent(entry: ContentLinkRef): Promise<CatalogView | 
   }
 
   const id = Number(entry.id);
-  if (!Number.isFinite(id)) return null;
+  if (!Number.isFinite(id)) {
+    return variableView(entry.id) ?? inlineView(entry);
+  }
 
   const contentType = convertToContentType(entry.type);
-  const record = await fetchContentById<Record<string, unknown>>(contentType, id);
-  if (!record) return null;
+  const record =
+    cachedRecord(contentType, id) ?? (await fetchContentById<Record<string, unknown>>(contentType, id));
+  if (!record) return variableView(entry.id) ?? inlineView(entry);
 
   const traitNames = await traitNamesFor(record.traits);
 
@@ -274,6 +277,84 @@ async function loadCatalogContent(entry: ContentLinkRef): Promise<CatalogView | 
     facts: [],
     description,
   };
+}
+
+function cachedRecord(type: ReturnType<typeof convertToContentType>, id: number): Record<string, unknown> | null {
+  const match = getCachedContent<Record<string, unknown> & { id: number }>(type).find((record) => record.id === id);
+  return match ?? null;
+}
+
+function inlineView(entry: ContentLinkRef): CatalogView | null {
+  if (!entry.title && !entry.description) return null;
+  return {
+    title: entry.title || 'Details',
+    tags: [],
+    facts: [],
+    description: entry.description || 'No description given.',
+  };
+}
+
+function variableView(id: string): CatalogView | null {
+  const name = id.trim();
+  if (!name) return null;
+  const attribute = attributeDescription(name);
+  if (attribute) {
+    return { title: attribute.title, tags: ['Attribute'], facts: [], description: attribute.description };
+  }
+  if (
+    /^(SKILL_|SAVE_|WEAPON_|ARMOR_|SPELL_|LORE_|PERCEPTION|CLASS_DC|SPEED)/i.test(name)
+  ) {
+    const title = name
+      .replace(/^(SKILL_|SAVE_|WEAPON_|ARMOR_|SPELL_)/i, '')
+      .replaceAll('_', ' ')
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+    return {
+      title,
+      tags: [variableKind(name)],
+      facts: [],
+      description: `${title} is a character statistic, not a catalog entry. Choose it here to apply this builder option.`,
+    };
+  }
+  return null;
+}
+
+function variableKind(name: string) {
+  if (name.startsWith('SKILL_') || name.startsWith('LORE_')) return 'Skill';
+  if (name.startsWith('SAVE_')) return 'Saving Throw';
+  if (name.startsWith('WEAPON_')) return 'Weapon';
+  if (name.startsWith('ARMOR_')) return 'Armor';
+  if (name.startsWith('SPELL_')) return 'Spell Tradition';
+  if (name === 'PERCEPTION') return 'Perception';
+  return 'Statistic';
+}
+
+function attributeDescription(name: string): { title: string; description: string } | null {
+  const descriptions: Record<string, string> = {
+    ATTRIBUTE_STR:
+      'Strength measures your character’s physical power. Strength is important if your character plans to engage in hand-to-hand combat. Your Strength modifier gets added to melee damage rolls and determines how much your character can carry.',
+    ATTRIBUTE_DEX:
+      'Dexterity measures your character’s agility, balance, and reflexes. Dexterity is important if your character plans to make attacks with ranged weapons or use stealth to surprise foes. Your Dexterity modifier is also added to your character’s AC and Reflex saving throws.',
+    ATTRIBUTE_CON:
+      'Constitution measures your character’s health and stamina. Constitution is important for all characters, especially those who fight in close range. Your Constitution modifier is added to your Hit Points and Fortitude saving throws.',
+    ATTRIBUTE_INT:
+      'Intelligence measures how well your character can learn and reason. A high Intelligence allows your character to analyze situations and understand patterns, and it means they can become trained in additional skills and might be able to master additional languages.',
+    ATTRIBUTE_WIS:
+      'Wisdom measures your character’s common sense, awareness, and intuition. High Wisdom helps your character detect hidden things and resist mental effects. Your Wisdom modifier is added to your Perception and Will saving throws.',
+    ATTRIBUTE_CHA:
+      'Charisma measures your character’s personal magnetism and strength of personality. A high Charisma modifier helps you build relationships and influence the thoughts and moods of others with social skills.',
+  };
+  const description = descriptions[name];
+  if (!description) return null;
+  const title = name.replace(/^ATTRIBUTE_/, '');
+  const labels: Record<string, string> = {
+    STR: 'Strength',
+    DEX: 'Dexterity',
+    CON: 'Constitution',
+    INT: 'Intelligence',
+    WIS: 'Wisdom',
+    CHA: 'Charisma',
+  };
+  return { title: labels[title] ?? title, description };
 }
 
 async function traitNamesFor(traits: unknown): Promise<string[]> {
