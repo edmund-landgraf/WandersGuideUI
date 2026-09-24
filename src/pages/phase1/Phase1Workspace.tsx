@@ -4556,20 +4556,23 @@ function PageError({ error }: { error: Error }) { return <div className='min-h-s
 function LoadingScreen({ label }: { label: string }) { return <div className='grid min-h-screen place-items-center bg-p1-page text-sm text-p1-muted'>{label}...</div>; }
 
 function populateCombatants(combatants: Combatant[], players: Character[]): PopulatedCombatant[] {
-  return combatants.map((combatant) => {
+  const populated: PopulatedCombatant[] = [];
+  for (const combatant of combatants) {
     const characterId = numericId(combatant.character);
     const data = combatant.type === 'CHARACTER' ? players.find((player) => numericId(player.id) === characterId) ?? combatant.data : combatant.creature ?? combatant.data;
-    if (!data) return null;
+    if (!data) continue;
     const allied = combatant.type === 'CHARACTER' || combatant.ally === true;
-    return {
+    const access = (combatant as Combatant & { access?: { can_edit?: boolean; details_revealed?: boolean } }).access;
+    populated.push({
       ...combatant,
       data,
       access: {
-        can_edit: combatant.access?.can_edit ?? false,
-        details_revealed: allied || combatant.access?.details_revealed !== false,
+        can_edit: access?.can_edit ?? false,
+        details_revealed: allied || access?.details_revealed !== false,
       },
-    };
-  }).filter((combatant): combatant is PopulatedCombatant => Boolean(combatant));
+    });
+  }
+  return populated;
 }
 function EncounterListRow({ encounter, onOpen, onChanged }: { encounter: Encounter; onOpen: () => void; onChanged: () => void }) {
   const counts = encounterSideCounts(encounter);
