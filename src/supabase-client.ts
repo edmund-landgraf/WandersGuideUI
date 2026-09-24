@@ -24,7 +24,13 @@ if (isUnsetEnv(supabaseUrl) || isUnsetEnv(supabaseKey)) {
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    // Chrome incognito can leave navigator.locks stuck. auth-js then treats a live
+    // session as signed-out inside later requests, and find-campaign returns [].
+    lock: async (_name, _acquireTimeout, fn) => await fn(),
+  },
+});
 
 /** User JWT for edge functions. The SDK can invoke with the anon key right after OAuth, before storage catches up. */
 export async function supabaseInvokeHeaders(accessToken?: string): Promise<Record<string, string> | undefined> {

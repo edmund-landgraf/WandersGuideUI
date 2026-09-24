@@ -3,7 +3,7 @@ import { serve } from 'std/server';
 import type { Encounter } from '../_shared/content';
 import { connect, createServiceClient, fetchData } from '../_shared/helpers.ts';
 import { HttpError } from '../_shared/http-errors.ts';
-import { authorizeCampaign, encounterIncludesCharacter } from '../_wgui-ext/shared.ts';
+import { authorizeCampaign, encounterIncludesCharacter, sameNumericId } from '../_wgui-ext/shared.ts';
 
 interface FindCampaignEncountersBody {
   campaign_id?: number;
@@ -47,7 +47,7 @@ serve(async (req: Request) => {
 
     // Belt and braces: fetchData drops an undefined filter, so re-assert the scope the
     // caller was actually authorized for.
-    const scoped = results.filter((encounter) => encounter.campaign_id === campaign_id);
+    const scoped = results.filter((encounter) => sameNumericId(encounter.campaign_id, campaign_id));
 
     const visible = access.isGm
       ? scoped

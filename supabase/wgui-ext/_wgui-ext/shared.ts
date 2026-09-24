@@ -54,6 +54,19 @@ function toId(value: unknown): number | null {
   return null;
 }
 
+/** Auth ids are UUIDs; stored copies sometimes differ only by case or surrounding space. */
+export function sameUserId(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/** Campaign and character ids arrive as numbers from Postgres and as strings from JSON. */
+export function sameNumericId(a: unknown, b: unknown): boolean {
+  const left = toId(a);
+  const right = toId(b);
+  return left !== null && left === right;
+}
+
 /**
  * The authenticated caller's user id.
  *
@@ -125,7 +138,7 @@ export async function authorizeCampaign(
     characters.map((character) => toId(character.id)).filter((id): id is number => id !== null)
   );
 
-  const isGm = campaign.user_id === userId;
+  const isGm = sameUserId(campaign.user_id, userId);
   if (!isGm && characterIds.size === 0) {
     throw new HttpError(403, 'You do not have access to this campaign.', 'CAMPAIGN_FORBIDDEN');
   }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Character, Encounter } from '@schemas/content';
-import { encounterIncludesOwnCharacter, ownCharacterIds, visibleCampaignEncounters } from './phase1-api';
+import { encounterIncludesOwnCharacter, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
 
 function encounter(partial: Partial<Encounter> & Pick<Encounter, 'id' | 'campaign_id' | 'combatants'>): Encounter {
   return {
@@ -13,6 +13,14 @@ function encounter(partial: Partial<Encounter> & Pick<Encounter, 'id' | 'campaig
     ...partial,
   };
 }
+
+describe('sameUserId', () => {
+  it('treats UUID case and surrounding space as the same account', () => {
+    expect(sameUserId('AbC', ' abc ')).toBe(true);
+    expect(sameUserId('abc', 'def')).toBe(false);
+    expect(sameUserId(undefined, 'abc')).toBe(false);
+  });
+});
 
 describe('visibleCampaignEncounters', () => {
   const fight = encounter({

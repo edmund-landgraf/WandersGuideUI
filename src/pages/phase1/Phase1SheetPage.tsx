@@ -23,7 +23,7 @@ import { PHASE1_SHEET_ART_TONE_EVENT, persistSheetArtTone, readStoredSheetArtTon
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { isPlayable } from '@utils/character';
-import { phase1Request } from './phase1-api';
+import { phase1Request, sameUserId } from './phase1-api';
 import {
   AbilitiesPanel,
   DetailsPanel,
@@ -69,7 +69,7 @@ export function Phase1SheetPage() {
   const characterId = Number(rawId);
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const view = searchParams.get('view') === 'builder' ? 'builder' : 'sheet';
+  const requestedBuilder = searchParams.get('view') === 'builder';
   const [tab, setTab] = useState<SheetTab>('Skills');
   const [restOpen, setRestOpen] = useState(false);
   const [portraitOpen, setPortraitOpen] = useState(false);
@@ -94,12 +94,10 @@ export function Phase1SheetPage() {
     queryFn: async () => firstRecord(await phase1Request<Campaign | Campaign[]>('find-campaign', { id: character!.campaign_id })),
   });
 
-  const canEdit = Boolean(
-    session &&
-      character &&
-      (character.user_id === session.user.id || campaignQuery.data?.user_id === session.user.id)
-  );
+  const isOwner = Boolean(session && sameUserId(character?.user_id, session.user.id));
+  const canEdit = Boolean(isOwner || (session && character && sameUserId(campaignQuery.data?.user_id, session.user.id)));
   const isAnonymousPublicView = Boolean(!session && character && (character.options?.is_public ?? true));
+  const view = requestedBuilder && isOwner ? 'builder' : 'sheet';
 
   const combatant = useMemo(() => (character ? characterAsCombatant(character, canEdit) : null), [character, canEdit]);
 
@@ -121,7 +119,7 @@ export function Phase1SheetPage() {
       character?.details?.class?.id,
       character?.details?.class_2?.id,
     ],
-    enabled: Boolean(character) && canEdit && view === 'sheet',
+    enabled: Boolean(character) && isOwner && view === 'sheet',
     queryFn: () => computePhase1BuilderChoiceCounts(character!),
     staleTime: Number.POSITIVE_INFINITY,
   });
@@ -220,7 +218,7 @@ export function Phase1SheetPage() {
   const choiceCounts = choiceCountsQuery.data;
   const remainingChoices = choiceCounts ? Math.max(0, choiceCounts.max - choiceCounts.current) : 0;
   const showBuilderReminder =
-    canEdit &&
+    isOwner &&
     view === 'sheet' &&
     (remainingChoices > 0 || (choiceCountsQuery.isSuccess && !isPlayable(character)));
   const sheetArtUrl = character.details?.background_image_url;
@@ -444,7 +442,7 @@ export function Phase1SheetPage() {
               >
                 <User size={14} /> Sheet
               </button>
-            ) : canEdit ? (
+            ) : isOwner ? (
               <button
                 type='button'
                 className='toolbar-button'

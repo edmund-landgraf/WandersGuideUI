@@ -87,6 +87,12 @@ export function asRecordList<T>(value: T | T[] | null | undefined): T[] {
   return Array.isArray(value) ? value : [value];
 }
 
+/** Auth ids are UUIDs; stored copies sometimes differ only by case or surrounding space. */
+export function sameUserId(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
 export function numericId(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value);
@@ -144,15 +150,34 @@ async function findCharacterList(body: Record<string, unknown>, accessToken?: st
   }
 }
 
+function jwtExpired(token: string): boolean {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return true;
+    const json = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))) as { exp?: number };
+    return typeof json.exp === 'number' && json.exp * 1000 < Date.now() + 15_000;
+  } catch {
+    return false;
+  }
+}
+
+/** Refresh when the caller has no token yet, or the one it captured is about to expire. */
+async function usableAccessToken(accessToken?: string): Promise<string | undefined> {
+  if (accessToken && !jwtExpired(accessToken)) return accessToken;
+  const { data } = await supabase.auth.refreshSession();
+  return data.session?.access_token || accessToken;
+}
+
 export async function loadPhase1Campaigns(userId: string, accessToken?: string): Promise<Campaign[]> {
-  const owned = asRecordList(await phase1Request<Campaign | Campaign[]>('find-campaign', { user_id: userId }, accessToken));
-  const characters = asRecordList(await phase1Request<Character | Character[]>('find-character', { user_id: userId }, accessToken));
+  const token = await usableAccessToken(accessToken);
+  const owned = asRecordList(await phase1Request<Campaign | Campaign[]>('find-campaign', { user_id: userId }, token));
+  const characters = asRecordList(await phase1Request<Character | Character[]>('find-character', { user_id: userId }, token));
   const joinedIds = [...new Set(characters.map(campaignIdOf).filter((id): id is number => id !== null))];
   const joined = (
     await Promise.all(
       joinedIds.map(async (id) => {
         try {
-          return asRecordList(await phase1Request<Campaign | Campaign[]>('find-campaign', { id }, accessToken));
+          return asRecordList(await phase1Request<Campaign | Campaign[]>('find-campaign', { id }, token));
         } catch {
           return [];
         }
