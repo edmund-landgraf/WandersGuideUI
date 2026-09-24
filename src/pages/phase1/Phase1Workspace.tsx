@@ -9,6 +9,7 @@ import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
 import { supabase } from '../../supabase-client';
 import { phase1Request, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
+import { isEnemyCreature, playerAllyRoundLog, playerEnemyLabel, playerVisibleCombatants } from './phase1-player-combat';
 import { loadEntityAbilities, type Phase1Ability } from './phase1-abilities';
 import { calculateEntityStatus, type Phase1CreatureStatus } from './phase1-stats';
 import type { Phase1EntityCombatant } from './phase1-entity';
@@ -1865,18 +1866,33 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   function addCreature(creature: Creature, ally: boolean) {
     if (!selectedEncounter) return;
     const id = crypto.randomUUID();
-    updateRoster([
-      ...selectedEncounter.combatants.list,
-      {
-        _id: id,
-        type: 'CREATURE',
-        ally,
-        initiative: undefined,
-        creature: structuredClone(creature),
-        character: undefined,
-        data: undefined,
-      },
-    ]);
+    const list = selectedEncounter.combatants.list;
+    let incoming: Combatant = {
+      _id: id,
+      type: 'CREATURE',
+      ally,
+      initiative: undefined,
+      creature: structuredClone(creature),
+      character: undefined,
+      data: undefined,
+    };
+    const sourceName = creatureCombatantName(incoming) ?? 'Creature';
+    const { base } = creatureNameParts(sourceName);
+    const sameType = list.filter((item) => {
+      const name = creatureCombatantName(item);
+      return Boolean(name && creatureNameParts(name).base === base);
+    });
+    const only = sameType.length === 1 ? sameType[0] : undefined;
+    const onlyName = only ? creatureCombatantName(only) : undefined;
+    const firstOfType = Boolean(only && onlyName && creatureNameParts(onlyName).number === null);
+    let nextList = list;
+    if (firstOfType && only) {
+      nextList = list.map((item) => (item._id === only._id ? withCreatureName(item, `${base} (1)`) : item));
+      incoming = withCreatureName(incoming, `${base} (2)`);
+    } else if (sameType.length > 0) {
+      incoming = withCreatureName(incoming, nextCreatureCloneName(incoming, list));
+    }
+    updateRoster([...nextList, incoming]);
     setSelectedId(id);
   }
 
@@ -2418,12 +2434,12 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               <div className='p-5'>
                 {encounterTab === 'combat' ? (
                   <>
-                    <CombatantGrid combatants={orderedCombatants} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={initiativeRollNonce} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} />
-                    <InitiativeRoundLogPanel log={selectedEncounter?.meta_data.initiative_log ?? []} canEdit={isGm && !rosterSaving} canClear={isGm && !rosterSaving} onClear={clearInitiativeLog} onUpdateNote={updateRoundNote} />
+                    <CombatantGrid combatants={orderedCombatants} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={initiativeRollNonce} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} playerView={!isGm} />
+                    <InitiativeRoundLogPanel log={isGm ? (selectedEncounter?.meta_data.initiative_log ?? []) : playerAllyRoundLog(selectedEncounter?.meta_data.initiative_log ?? [])} canEdit={isGm && !rosterSaving} canClear={isGm && !rosterSaving} onClear={clearInitiativeLog} onUpdateNote={updateRoundNote} />
                   </>
                 ) : (
                   <>
-                    <CombatantGrid combatants={diceGridRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onSingleCheck={canSingleCheck ? rollSingleCheck : undefined} onSingleChallenge={isGm && !rosterSaving && ambaChallenges.length > 0 ? rollSingleChallenge : undefined} challenges={ambaChallenges} dice={{ challengeId: diceState?.challenge_id, checkStat: diceStat, columnLabel: checkStatLabel(diceStat), dc: diceDc, results: diceState?.results ?? {}, emptyMessage: diceGridRows.length === 0 ? 'No matching combatants for this filter.' : 'Right-click a combatant to roll a check. Group rolls still use the toolbar.' }} />
+                    <CombatantGrid combatants={diceGridRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onSingleCheck={canSingleCheck ? rollSingleCheck : undefined} onSingleChallenge={isGm && !rosterSaving && ambaChallenges.length > 0 ? rollSingleChallenge : undefined} challenges={ambaChallenges} dice={{ challengeId: diceState?.challenge_id, checkStat: diceStat, columnLabel: checkStatLabel(diceStat), dc: diceDc, results: diceState?.results ?? {}, emptyMessage: diceGridRows.length === 0 ? 'No matching combatants for this filter.' : 'Right-click a combatant to roll a check. Group rolls still use the toolbar.' }} playerView={!isGm} />
                     <DiceRollLogPanel log={selectedEncounter?.meta_data.dice_roll_log ?? []} canClear={isGm && !rosterSaving} canEdit={isGm && !rosterSaving} onClear={clearDiceRollLog} onRemove={removeDiceRollLog} onUpdateNote={updateDiceRollNote} />
                   </>
                 )}
@@ -2489,7 +2505,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
         {!viewingNotes && !viewingSettings && (
           <>
             <ResizeRail onResize={(delta) => setDetailWidth((width) => clamp(width - delta, DETAIL_WIDTH_MIN, DETAIL_WIDTH_MAX))} />
-            <Inspector combatant={selected} width={detailWidth} activeTab={normalizeDetailTab(activeTab)} onTab={setActiveTab} hasMatchingCampaignNote={Boolean(encounterNote)} status={selected ? statuses.data?.[selected._id] : undefined} statusLoading={statuses.isLoading} canManageSpells={canManageSpells} spellActions={spellActions} onChangeConditions={canManageSpells ? persistConditions : undefined} onSaveGmNotes={isGm && selected?.type === 'CREATURE' ? persistGmNotes : undefined} onPersistHpCurrent={selected && canManageSpells ? (raw, note) => persistHpCurrent(selected, raw, note, statuses.data?.[selected._id]?.maxHp ?? statsFor(selected.data).maxHp) : undefined} onPersistTempHp={selected && canManageSpells ? (raw, note) => persistTempHp(selected, raw, note) : undefined} initiativeLog={selectedEncounter?.meta_data.initiative_log ?? []} canEditRoundNotes={isGm && !rosterSaving} onUpdateRoundNote={updateRoundNote} onLogAction={selected && canManageSpells ? persistLogAction : undefined} onDeleteLogEntry={selected && canManageSpells ? persistDeleteLogEntry : undefined} />
+            <Inspector combatant={selected && (isGm || !isEnemyCreature(selected)) ? selected : null} width={detailWidth} activeTab={normalizeDetailTab(activeTab)} onTab={setActiveTab} hasMatchingCampaignNote={Boolean(encounterNote)} status={selected ? statuses.data?.[selected._id] : undefined} statusLoading={statuses.isLoading} canManageSpells={canManageSpells} spellActions={spellActions} onChangeConditions={canManageSpells ? persistConditions : undefined} onSaveGmNotes={isGm && selected?.type === 'CREATURE' ? persistGmNotes : undefined} onPersistHpCurrent={selected && canManageSpells ? (raw, note) => persistHpCurrent(selected, raw, note, statuses.data?.[selected._id]?.maxHp ?? statsFor(selected.data).maxHp) : undefined} onPersistTempHp={selected && canManageSpells ? (raw, note) => persistTempHp(selected, raw, note) : undefined} initiativeLog={selectedEncounter?.meta_data.initiative_log ?? []} canEditRoundNotes={isGm && !rosterSaving} onUpdateRoundNote={updateRoundNote} onLogAction={selected && canManageSpells ? persistLogAction : undefined} onDeleteLogEntry={selected && canManageSpells ? persistDeleteLogEntry : undefined} />
           </>
         )}
       </div>
@@ -2776,11 +2792,11 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
                 )}
                 <button
                   type='button'
-                  onClick={() => onSelectCombatant(combatant._id)}
+                  onClick={() => { if (isGm || !isEnemyCreature(combatant)) onSelectCombatant(combatant._id); }}
                   className='flex min-w-0 flex-1 items-center gap-2 text-left'
                 >
                   <Skull size={15} className='shrink-0' />
-                  <span className='min-w-0 flex-1 truncate'>{combatant.data.name}</span>
+                  <span className='min-w-0 flex-1 truncate'>{!isGm && isEnemyCreature(combatant) ? playerEnemyLabel(combatant.data.name) : combatant.data.name}</span>
                   <span className='shrink-0 text-[10px] uppercase text-p1-faint'>{combatant.out === 'dead' ? 'Dead' : 'Incap.'}</span>
                 </button>
               </div>
@@ -3953,7 +3969,7 @@ function SortGlyph({ dir }: { dir: 'asc' | 'desc' | null }) {
   return <ArrowUpDown size={12} className='opacity-50' />;
 }
 
-function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedId, onSelect, statuses, calculating, canManageRoster, canManageCombatant, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature, onRestoreCombatant, onMarkOut, onRequestRemoveFromCampaign, onUpdateInitiative, onUpdateHp, onSingleCheck, onSingleChallenge, challenges, dice }: { combatants: PopulatedCombatant[]; encounterId: number | null; initiativeRollNonce: number; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; canManageCombatant: (combatant: PopulatedCombatant) => boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void; onRestoreCombatant: (combatantId: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onRequestRemoveFromCampaign?: (characterId: number, name: string) => void; onUpdateInitiative: (combatantId: string, initiative: number) => void; onUpdateHp: (combatantId: string, raw: string, note: string | null) => void; onSingleCheck?: (combatantId: string, stat: string, x: number, y: number) => void; onSingleChallenge?: (combatantId: string, challengeId: string, x: number, y: number, preferredStat?: string) => void; challenges?: Array<{ id: string; title: string }>; dice?: { challengeId?: string; checkStat?: string; columnLabel: string; dc: number | null; results: Record<string, DiceCheckResult>; emptyMessage: string } }) {
+function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedId, onSelect, statuses, calculating, canManageRoster, canManageCombatant, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature, onRestoreCombatant, onMarkOut, onRequestRemoveFromCampaign, onUpdateInitiative, onUpdateHp, onSingleCheck, onSingleChallenge, challenges, dice, playerView = false }: { combatants: PopulatedCombatant[]; encounterId: number | null; initiativeRollNonce: number; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; canManageCombatant: (combatant: PopulatedCombatant) => boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void; onRestoreCombatant: (combatantId: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onRequestRemoveFromCampaign?: (characterId: number, name: string) => void; onUpdateInitiative: (combatantId: string, initiative: number) => void; onUpdateHp: (combatantId: string, raw: string, note: string | null) => void; onSingleCheck?: (combatantId: string, stat: string, x: number, y: number) => void; onSingleChallenge?: (combatantId: string, challengeId: string, x: number, y: number, preferredStat?: string) => void; challenges?: Array<{ id: string; title: string }>; dice?: { challengeId?: string; checkStat?: string; columnLabel: string; dc: number | null; results: Record<string, DiceCheckResult>; emptyMessage: string }; playerView?: boolean }) {
   const [encounterActive, setEncounterActive] = useState(false);
   const [gridSort, setGridSort] = useState<GridSort>(() => (
     dice ? null : combatants.some((combatant) => initiativeValue(combatant) != null) ? { key: 'init', dir: 'desc' } : null
@@ -3963,7 +3979,8 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
   const [checkMods, setCheckMods] = useState<Record<string, number | null>>({});
   const [checkModsLoading, setCheckModsLoading] = useState(false);
   const checkStat = dice?.checkStat;
-  const combatantIds = combatants.map((combatant) => combatant._id).join(',');
+  const gridCombatants = playerView ? playerVisibleCombatants(combatants) : combatants;
+  const combatantIds = gridCombatants.map((combatant) => combatant._id).join(',');
   useEffect(() => {
     setGridSort(dice ? null : combatants.some((combatant) => initiativeValue(combatant) != null) ? { key: 'init', dir: 'desc' } : null);
   }, [encounterId]);
@@ -3978,10 +3995,10 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
     }
     let cancelled = false;
     setCheckModsLoading(true);
-    void loadAllCheckOptions(combatants).then((optionsById) => {
+    void loadAllCheckOptions(gridCombatants).then((optionsById) => {
       if (cancelled) return;
       const next: Record<string, number | null> = {};
-      for (const combatant of combatants) {
+      for (const combatant of gridCombatants) {
         const options = optionsById[combatant._id] ?? [];
         const resolved = defaultStatForCombatant(options, checkStat);
         const option = resolved ? options.find((item) => item.value === resolved) : undefined;
@@ -3995,12 +4012,12 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
     };
   }, [dice ? 'dice' : 'combat', checkStat, combatantIds, encounterId]);
   const rows = gridSort
-    ? [...combatants].sort((a, b) => (
+    ? [...gridCombatants].sort((a, b) => (
       gridSort.key === 'name'
         ? (gridSort.dir === 'asc' ? compareCombatantNames(a, b) : compareCombatantNames(b, a))
         : compareCombatantInitiative(a, b, gridSort.dir)
     ))
-    : combatants;
+    : gridCombatants;
   function dropOnEncounter(event: ReactDragEvent<HTMLDivElement>) {
     const payload = readCombatantDrag(event);
     setEncounterActive(false);
@@ -4018,7 +4035,7 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
   return (
     <div className={`overflow-x-auto border bg-p1-inset transition-colors ${encounterActive ? 'border-p1-accent bg-p1-accent/[0.04]' : 'border-p1-border'}`} onDragOver={(event) => { if (canManageRoster && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setEncounterActive(true); } }} onDragLeave={() => setEncounterActive(false)} onDrop={dropOnEncounter}>
       <table className='w-full min-w-[1020px] table-fixed border-collapse text-sm'>
-        <thead className='border-b border-p1-border bg-p1-header text-[10px] uppercase text-p1-faint'><tr>{!dice && <th className='w-20 px-0 text-left'><button type='button' className='inline-flex w-full items-center gap-1 px-3 py-3 uppercase hover:text-p1-muted' onClick={() => setGridSort((value) => cycleGridSort(value, 'init'))} aria-label='Cycle initiative sort' title={gridSort?.key === 'init' && gridSort.dir === 'desc' ? 'Sorted high to low. Click for low to high.' : gridSort?.key === 'init' && gridSort.dir === 'asc' ? 'Sorted low to high. Click to clear sort.' : 'Click to sort by initiative, high to low.'}>Init<SortGlyph dir={gridSort?.key === 'init' ? gridSort.dir : null} /></button></th>}<th className='px-0 text-left'><button type='button' className='inline-flex w-full items-center gap-1 px-3 py-3 uppercase hover:text-p1-muted' onClick={() => setGridSort((value) => cycleGridSort(value, 'name'))} aria-label='Cycle combatant name sort' title={gridSort?.key === 'name' && gridSort.dir === 'asc' ? 'Sorted A–Z. Click for Z–A.' : gridSort?.key === 'name' && gridSort.dir === 'desc' ? 'Sorted Z–A. Click to clear sort.' : 'Click to sort by name A–Z.'}>Combatant<SortGlyph dir={gridSort?.key === 'name' ? gridSort.dir : null} /></button></th><th className='w-44 px-3 text-left'>Conditions</th><th className='w-64 px-3 text-left'>Defenses</th>{dice && <th className='w-24 px-3 text-left'>Check</th>}<th className='w-32 px-3 text-left'>{dice ? 'Roll / DC' : 'HP'}</th>{dice && <th className='w-72 px-3 text-left'>{dice.columnLabel}{dice.dc != null ? ` vs DC ${dice.dc}` : ''}</th>}<th className='w-16 px-3 text-center'>Open</th></tr></thead>
+        <thead className='border-b border-p1-border bg-p1-header text-[10px] uppercase text-p1-faint'><tr>{!dice && <th className='w-20 px-0 text-left'><button type='button' className='inline-flex w-full items-center gap-1 px-3 py-3 uppercase hover:text-p1-muted' onClick={() => setGridSort((value) => cycleGridSort(value, 'init'))} aria-label='Cycle initiative sort' title={gridSort?.key === 'init' && gridSort.dir === 'desc' ? 'Sorted high to low. Click for low to high.' : gridSort?.key === 'init' && gridSort.dir === 'asc' ? 'Sorted low to high. Click to clear sort.' : 'Click to sort by initiative, high to low.'}>Init<SortGlyph dir={gridSort?.key === 'init' ? gridSort.dir : null} /></button></th>}<th className='px-0 text-left'><button type='button' className='inline-flex w-full items-center gap-1 px-3 py-3 uppercase hover:text-p1-muted' onClick={() => setGridSort((value) => cycleGridSort(value, 'name'))} aria-label='Cycle combatant name sort' title={gridSort?.key === 'name' && gridSort.dir === 'asc' ? 'Sorted A–Z. Click for Z–A.' : gridSort?.key === 'name' && gridSort.dir === 'desc' ? 'Sorted Z–A. Click to clear sort.' : 'Click to sort by name A–Z.'}>Combatant<SortGlyph dir={gridSort?.key === 'name' ? gridSort.dir : null} /></button></th><th className='w-44 px-3 text-left'>Conditions</th><th className='w-64 px-3 text-left'>Defenses</th>{dice && <th className='w-24 px-3 text-left'>Check</th>}<th className='w-32 px-3 text-left'>{dice ? 'Roll / DC' : 'HP'}</th>{dice && <th className='w-72 px-3 text-left'>{dice.columnLabel}{dice.dc != null ? ` vs DC ${dice.dc}` : ''}</th>}{!playerView && <th className='w-16 px-3 text-center'>Open</th>}</tr></thead>
         <tbody>
           {rows.map((combatant) => {
             const detailsVisible = combatant.access?.details_revealed !== false;
@@ -4030,8 +4047,11 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
             const outcomeTone = dice ? outcomeRowClass(result?.outcome) : '';
             const rowTone = outcomeTone || (combatant._id === selectedId ? 'bg-p1-accent/[0.07]' : 'hover:bg-p1-hover');
             const critInk = result?.outcome === 'critical-success';
+            const enemyPlayerRow = playerView && isEnemyCreature(combatant);
+            const canOpen = !enemyPlayerRow;
+            const displayName = enemyPlayerRow ? playerEnemyLabel(combatant.data.name) : combatant.data.name;
             return (
-              <tr key={combatant._id} onClick={(event) => { if ((event.target as HTMLElement).closest('button, input, textarea, a, [draggable="true"]')) return; openCombatant(combatant, onSelect); }} onContextMenu={(event) => { if (!canManageRoster || (combatant.type !== 'CREATURE' && combatant.type !== 'CHARACTER')) return; event.preventDefault(); setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY }); }} className={`cursor-pointer border-b border-p1-border last:border-0 ${rowTone}`}>
+              <tr key={combatant._id} onClick={(event) => { if (!canOpen) return; if ((event.target as HTMLElement).closest('button, input, textarea, a, [draggable="true"]')) return; openCombatant(combatant, onSelect); }} onContextMenu={(event) => { if (!canManageRoster || (combatant.type !== 'CREATURE' && combatant.type !== 'CHARACTER')) return; event.preventDefault(); setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY }); }} className={`border-b border-p1-border last:border-0 ${canOpen ? 'cursor-pointer' : ''} ${rowTone}`}>
                 {!dice && <td className='px-3 py-3'><InitiativeCell key={`${combatant._id}:${combatant.initiative ?? ''}:${combatant.initiative_roll?.die ?? ''}`} combatant={combatant} canEdit={canManageRoster} onUpdate={(initiative) => onUpdateInitiative(combatant._id, initiative)} /></td>}
                 <td className='px-3 py-3'>
                   <div className={`flex w-full items-center gap-3 text-left ${critInk ? 'text-[#152214]' : ''}`}>
@@ -4047,11 +4067,11 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                         <GripVertical size={14} />
                       </span>
                     )}
-                    <button type='button' className='flex min-w-0 flex-1 items-center gap-3 text-left' onClick={() => openCombatant(combatant, onSelect)}>
+                    <button type='button' className='flex min-w-0 flex-1 items-center gap-3 text-left' onClick={() => { if (canOpen) openCombatant(combatant, onSelect); }}>
                       <EntityIcon type={combatant.type} />
                       <span className='min-w-0'>
-                        <span className='block truncate font-semibold'>{combatant.data.name}</span>
-                        <span className={`block text-xs ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}>Level {combatant.data.level} | {combatant.ally ? 'Ally' : 'Enemy'}</span>
+                        <span className='block truncate font-semibold'>{displayName}</span>
+                        {!enemyPlayerRow && <span className={`block text-xs ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}>Level {combatant.data.level} | {combatant.ally ? 'Ally' : 'Enemy'}</span>}
                       </span>
                     </button>
                   </div>
@@ -4063,10 +4083,10 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                         {result ? outcomeLabel(result.outcome) : 'Not rolled'}
                       </span>
                     )}
-                    <CombatantConditionPills conditions={detailsVisible ? compiledConditions(combatant.data.details?.conditions ?? []) : []} onOpen={() => openCombatant(combatant, onSelect)} maxVisible={dice ? 5 : 2} />
+                    <CombatantConditionPills conditions={detailsVisible ? compiledConditions(combatant.data.details?.conditions ?? []) : []} onOpen={canOpen ? () => openCombatant(combatant, onSelect) : undefined} maxVisible={dice ? 5 : 2} />
                   </div>
                 </td>
-                <td className={`px-3 py-3 text-xs ${critInk ? 'text-[#234028]' : 'text-p1-muted'}`}>{!detailsVisible ? <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>Not revealed</span> : stats ? <>{stats.ac} AC <span className={`px-1 ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}>|</span> Fort {signed(stats.fortitude)}, Ref {signed(stats.reflex)}, Will {signed(stats.will)}</> : calculating ? <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>Calculating...</span> : <span className='text-p1-danger-soft'>Unavailable</span>}</td>
+                <td className={`px-3 py-3 text-xs ${critInk ? 'text-[#234028]' : 'text-p1-muted'}`}>{enemyPlayerRow ? <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>—</span> : !detailsVisible ? <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>Not revealed</span> : stats ? <>{stats.ac} AC <span className={`px-1 ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}>|</span> Fort {signed(stats.fortitude)}, Ref {signed(stats.reflex)}, Will {signed(stats.will)}</> : calculating ? <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>Calculating...</span> : <span className='text-p1-danger-soft'>Unavailable</span>}</td>
                 {dice && (
                   <td className={`px-3 py-3 text-sm ${critInk ? 'text-[#234028]' : 'text-p1-text'}`}>
                     {!checkStat ? (
@@ -4087,6 +4107,8 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                       <span className='px-2 text-p1-faint'>/</span>
                       {dice.dc ?? '—'}
                     </span>
+                  ) : enemyPlayerRow ? (
+                    <span className='inline-flex h-9 min-w-24 items-center justify-center border border-p1-border bg-p1-raised text-p1-faint'>—</span>
                   ) : !detailsVisible ? (
                     <span className='inline-flex h-9 min-w-24 items-center justify-center border border-p1-border bg-p1-raised text-p1-faint'>Hidden</span>
                   ) : (
@@ -4108,11 +4130,11 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                     {result ? formatCheckRoll(result, result.total, dice.dc ?? undefined) : <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>Not rolled</span>}
                   </td>
                 )}
-                <td className='px-3 text-center'><button className='icon-button mx-auto' title={`Open ${combatant.data.name}`} onClick={() => openCombatant(combatant, onSelect)}><PanelRight size={16} /></button></td>
+                {!playerView && <td className='px-3 text-center'><button className='icon-button mx-auto' title={`Open ${combatant.data.name}`} onClick={() => openCombatant(combatant, onSelect)}><PanelRight size={16} /></button></td>}
               </tr>
             );
           })}
-          {rows.length === 0 && <tr><td colSpan={dice ? 7 : 6} className='p-12 text-center text-sm text-p1-faint'>{dice?.emptyMessage ?? 'No combatants in this encounter.'}</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={playerView ? (dice ? 6 : 5) : (dice ? 7 : 6)} className='p-12 text-center text-sm text-p1-faint'>{playerView ? 'No combatants in this encounter.' : (dice?.emptyMessage ?? 'No combatants in this encounter.')}</td></tr>}
         </tbody>
       </table>
       {menu && dice && (() => {
@@ -4288,8 +4310,8 @@ function sortRoundLogEntries(entries: InitiativeRoundLog['entries']) {
   });
 }
 
-function InitiativeRoundLogPanel({ log, canEdit, canClear, onClear, onUpdateNote }: { log: InitiativeRoundLog[]; canEdit?: boolean; canClear?: boolean; onClear?: () => void; onUpdateNote?: (round: InitiativeRoundLog, entry: InitiativeRoundLogEntry, note: string) => void }) {
-  const [open, setOpen] = useState(true);
+function InitiativeRoundLogPanel({ log, canEdit, canClear, onClear, onUpdateNote, expandable = true }: { log: InitiativeRoundLog[]; canEdit?: boolean; canClear?: boolean; onClear?: () => void; onUpdateNote?: (round: InitiativeRoundLog, entry: InitiativeRoundLogEntry, note: string) => void; expandable?: boolean }) {
+  const [open, setOpen] = useState(expandable);
   const [confirmOpen, setConfirmOpen] = useState(false);
   function handleClear() {
     if (!canClear || !onClear) return;
@@ -4304,14 +4326,15 @@ function InitiativeRoundLogPanel({ log, canEdit, canClear, onClear, onUpdateNote
       <div className='flex items-center gap-2 border-b border-p1-border px-4 py-3'>
         <button
           type='button'
-          className='flex min-w-0 flex-1 items-center gap-2 text-left hover:text-p1-text'
-          onClick={() => setOpen((value) => !value)}
+          className={`flex min-w-0 flex-1 items-center gap-2 text-left ${expandable ? 'hover:text-p1-text' : 'cursor-default'}`}
+          onClick={() => { if (expandable) setOpen((value) => !value); }}
           aria-expanded={open}
+          disabled={!expandable}
         >
           <History size={15} className='text-p1-muted' />
           <span className='text-sm font-semibold'>Round log</span>
           <span className='text-xs text-p1-faint'>{log.length} round{log.length === 1 ? '' : 's'}</span>
-          <ChevronDown size={14} className={`ml-auto text-p1-faint transition-transform ${open ? 'rotate-180' : ''}`} />
+          {expandable && <ChevronDown size={14} className={`ml-auto text-p1-faint transition-transform ${open ? 'rotate-180' : ''}`} />}
         </button>
         {canClear && onClear && (
           <button type='button' className='toolbar-button shrink-0' title='Clear all logged rounds' onClick={handleClear}>
@@ -4378,24 +4401,26 @@ function conditionLabel(condition: Condition) {
   return condition.value != null ? `${condition.name} ${condition.value}` : condition.name;
 }
 
-function CombatantConditionPills({ conditions, onOpen, maxVisible = CONDITION_PILL_MAX }: { conditions: Condition[]; onOpen: () => void; maxVisible?: number }) {
+function CombatantConditionPills({ conditions, onOpen, maxVisible = CONDITION_PILL_MAX }: { conditions: Condition[]; onOpen?: () => void; maxVisible?: number }) {
   if (conditions.length === 0) return null;
   const visible = conditions.slice(0, maxVisible);
   const extra = conditions.slice(maxVisible);
+  const Pill = onOpen ? 'button' : 'span';
   return (
     <div className='flex flex-wrap items-center gap-1'>
       {visible.map((condition) => (
-        <button
+        <Pill
           key={`${condition.name}-${condition.source ?? 'direct'}`}
-          type='button'
-          className={`${CONDITION_PILL_CLASS} hover:border-p1-border hover:bg-p1-hover`}
+          type={onOpen ? 'button' : undefined}
+          className={`${CONDITION_PILL_CLASS} ${onOpen ? 'hover:border-p1-border hover:bg-p1-hover' : ''}`}
           title={condition.source ? `${conditionLabel(condition)} from ${condition.source}` : conditionLabel(condition)}
           onClick={onOpen}
         >
           {conditionLabel(condition)}
-        </button>
+        </Pill>
       ))}
       {extra.length > 0 && (
+        onOpen ? (
         <button
           type='button'
           className='inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full border border-p1-border bg-p1-hover px-1.5 text-[9px] font-semibold text-p1-muted hover:border-p1-border hover:text-p1-text'
@@ -4404,6 +4429,14 @@ function CombatantConditionPills({ conditions, onOpen, maxVisible = CONDITION_PI
         >
           +{extra.length}
         </button>
+        ) : (
+        <span
+          className='inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full border border-p1-border bg-p1-hover px-1.5 text-[9px] font-semibold text-p1-muted'
+          title={extra.map(conditionLabel).join(', ')}
+        >
+          +{extra.length}
+        </span>
+        )
       )}
     </div>
   );
@@ -4526,7 +4559,16 @@ function populateCombatants(combatants: Combatant[], players: Character[]): Popu
   return combatants.map((combatant) => {
     const characterId = numericId(combatant.character);
     const data = combatant.type === 'CHARACTER' ? players.find((player) => numericId(player.id) === characterId) ?? combatant.data : combatant.creature ?? combatant.data;
-    return data ? { ...combatant, data } : null;
+    if (!data) return null;
+    const allied = combatant.type === 'CHARACTER' || combatant.ally === true;
+    return {
+      ...combatant,
+      data,
+      access: {
+        can_edit: combatant.access?.can_edit ?? false,
+        details_revealed: allied || combatant.access?.details_revealed !== false,
+      },
+    };
   }).filter((combatant): combatant is PopulatedCombatant => Boolean(combatant));
 }
 function EncounterListRow({ encounter, onOpen, onChanged }: { encounter: Encounter; onOpen: () => void; onChanged: () => void }) {

@@ -223,6 +223,24 @@ export async function loadPhase1CampaignPlayers(campaignId: number, userId: stri
  * with an empty list, which is the pre-extension behaviour — better than error-paging
  * both roles.
  */
+/**
+ * A character sheet the viewer may open: their own row, a public row, or a fellow
+ * party member from the campaign roster. Party members are read-only unless the
+ * caller also owns the character or the campaign.
+ */
+export async function loadPhase1SheetCharacter(characterId: number, userId: string | undefined, accessToken?: string): Promise<Character | null> {
+  const direct = (await findCharacterList({ id: characterId }, accessToken))[0];
+  if (direct) return direct;
+  if (!userId) return null;
+  const campaigns = await loadPhase1Campaigns(userId, accessToken);
+  for (const campaign of campaigns) {
+    const roster = await loadPhase1CampaignPlayers(campaign.id, userId, accessToken);
+    const match = roster.find((character) => numericId(character.id) === characterId);
+    if (match) return match;
+  }
+  return null;
+}
+
 export async function loadPhase1CampaignEncounters(campaignId: number, accessToken?: string): Promise<Encounter[]> {
   let results: Encounter[];
   try {

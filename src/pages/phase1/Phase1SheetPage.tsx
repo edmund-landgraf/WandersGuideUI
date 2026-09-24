@@ -23,7 +23,7 @@ import { PHASE1_SHEET_ART_TONE_EVENT, persistSheetArtTone, readStoredSheetArtTon
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { isPlayable } from '@utils/character';
-import { phase1Request, sameUserId } from './phase1-api';
+import { loadPhase1SheetCharacter, phase1Request, sameUserId } from './phase1-api';
 import {
   AbilitiesPanel,
   DetailsPanel,
@@ -83,7 +83,7 @@ export function Phase1SheetPage() {
   const characterQuery = useQuery({
     queryKey: characterKey,
     enabled: Number.isFinite(characterId) && session !== undefined,
-    queryFn: async () => firstRecord(await phase1Request<Character | Character[]>('find-character', { id: characterId })),
+    queryFn: () => loadPhase1SheetCharacter(characterId, session?.user.id, session?.access_token),
     retry: false,
   });
   const character = characterQuery.data ?? null;
@@ -369,7 +369,7 @@ export function Phase1SheetPage() {
         <Link to='/phase1/characters' className='text-sm text-p1-muted hover:text-p1-text'>Characters</Link>
         <span className='text-p1-faint'>/</span>
         <span className='truncate text-sm text-p1-muted'>{view === 'builder' ? 'Character builder' : 'Character sheet'}</span>
-        {isAnonymousPublicView && (
+        {(isAnonymousPublicView || (character && session && !canEdit)) && (
           <span className='shrink-0 border border-p1-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-p1-muted'>
             Read only
           </span>
