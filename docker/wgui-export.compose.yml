@@ -1,0 +1,21 @@
+# Injects wgui-export-character into the wanderers-guide functions container.
+# Combat stays docker/wgui-ext.compose.yml / npm run stack:up.
+
+services:
+  functions:
+    volumes: !override
+      - ${WG_FUNCTIONS_DIR}:/wgui-export/base:ro
+      - ${WGUI_EXPORT_DIR}:/wgui-export/overlay:ro
+    tmpfs:
+      - /home/deno/functions:size=128m,mode=0755
+    entrypoint:
+      - sh
+      - -c
+      - >
+        set -e;
+        cp -a /wgui-export/base/. /home/deno/functions/;
+        cp -a /wgui-export/overlay/_wgui-export
+        /wgui-export/overlay/wgui-export-character
+        /home/deno/functions/;
+        exec edge-runtime "$$@"
+      - edge-runtime

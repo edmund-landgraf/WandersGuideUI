@@ -49,3 +49,6 @@ scripts/.dist/
 
 # Local-only copies of upstream wanderers-guide patches (amba VPS; not this repo)
 /local/
+
+# Generated character-export compile graph
+supabase/wgui-export/wgui-export-character/compile.bundle.js
