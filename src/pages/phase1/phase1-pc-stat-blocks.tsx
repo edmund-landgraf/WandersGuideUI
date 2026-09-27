@@ -198,7 +198,7 @@ export function Phase1PcStatBlocksModal({
         </div>
         <div className='pc-stat-blocks-modal-body'>
           {query.isLoading ? <p className='pc-stat-card-empty'>Loading…</p> : null}
-          {!query.isLoading && cards.length === 0 ? <p className='pc-stat-card-empty'>No player characters in this campaign.</p> : null}
+          {!query.isLoading && cards.length === 0 ? <p className='pc-stat-card-empty'>No player characters in this encounter.</p> : null}
           {cards.length > 0 ? (
             <div className='pc-stat-blocks-grid'>
               {pageCards.map((card) => (

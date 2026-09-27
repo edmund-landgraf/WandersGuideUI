@@ -2473,7 +2473,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               )}
               {statBlocksOpen && (
                 <Phase1PcStatBlocksModal
-                  characters={players.length > 0 ? players : combatants.filter((combatant) => combatant.type === 'CHARACTER').map((combatant) => combatant.data as Character)}
+                  characters={activeCombatants.filter((combatant) => combatant.type === 'CHARACTER').map((combatant) => combatant.data as Character)}
                   onClose={() => setStatBlocksOpen(false)}
                 />
               )}
