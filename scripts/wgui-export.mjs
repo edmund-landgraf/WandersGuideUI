@@ -2,6 +2,9 @@
 // Mounts only wgui-export-character onto the wanderers-guide stack.
 // Combat stays scripts/wgui-ext.mjs / npm run stack:up.
 //
+// TODO: export:up and stack:up each replace the functions entrypoint, so the last one
+// wins and the other overlay disappears (players then see no encounters). Mount both.
+//
 //   node scripts/wgui-export.mjs up
 //   node scripts/wgui-export.mjs restart
 //   node scripts/wgui-export.mjs test

@@ -78,6 +78,20 @@ function Launcher() {
               ))}
             </div>
           </a>
+          <a
+            href='https://groupfinder.gg/library/wanderers-guide-extended'
+            target='_blank'
+            rel='noopener'
+            style={{ display: 'inline-block' }}
+          >
+            <img
+              src='https://groupfinder.gg/images/badges/gf-badge-red.svg'
+              alt="Groupfinder library listing for Wanderer's Guide Extended"
+              width={200}
+              height={55}
+              style={{ width: 200, height: 55, border: 0, display: 'block' }}
+            />
+          </a>
         </section>
       </main>
     </div>

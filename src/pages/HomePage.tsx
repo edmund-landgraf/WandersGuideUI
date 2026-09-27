@@ -91,6 +91,22 @@ export function Component() {
             iconURL='https://i.imgur.com/qE8Q9xv.jpg'
           />
         </SimpleGrid>
+        <Center mt={24}>
+          <a
+            href='https://groupfinder.gg/library/adventure-maker-by-act-amba'
+            target='_blank'
+            rel='noopener'
+            style={{ display: 'inline-block' }}
+          >
+            <img
+              src='https://groupfinder.gg/images/badges/gf-badge-light.svg'
+              alt='Groupfinder library listing for Adventure Maker By Act (Amba)'
+              width={200}
+              height={55}
+              style={{ width: 200, height: 55, border: 0, display: 'block' }}
+            />
+          </a>
+        </Center>
       </Stack>
       <BackgroundImage
         src={background?.url ?? ''}

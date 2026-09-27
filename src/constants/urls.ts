@@ -1,5 +1,5 @@
 export const PATREON_URL = 'https://www.patreon.com/wanderersguide';
-export const DISCORD_URL = 'https://discord.gg/FxsFZVvedr';
+export const DISCORD_URL = 'https://discord.com/invite/FxsFZVvedr';
 export const LEGACY_URL = 'https://legacy.wanderersguide.app/';
 export const DOCS_URL = import.meta.env.DEV
   ? 'http://localhost:3210/'

@@ -13,6 +13,9 @@
 //   node scripts/wgui-ext.mjs config   print the merged compose config (mount smoke test)
 //
 // WG_DIR overrides the wanderers-guide checkout location (default: ../wanderers-guide).
+//
+// TODO: stack:up and export:up each replace the functions entrypoint, so the last one
+// wins and the other overlay disappears (players then see no encounters). Mount both.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';

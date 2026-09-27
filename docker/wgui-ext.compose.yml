@@ -19,6 +19,10 @@
 # which sets the two *_DIR variables and --project-directory for you. Because the merge
 # happens at start and the runtime caches isolates, a code change needs
 # `npm run stack:restart`.
+#
+# TODO: this override and docker/wgui-export.compose.yml each replace the functions
+# entrypoint. Whichever of stack:up / export:up ran last is the only overlay mounted.
+# Mount both so campaign encounters and character export stay up together.
 
 services:
   functions:
