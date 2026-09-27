@@ -59,7 +59,7 @@ import { maxCombatantStats, maxEntityStats, resetCombatant, resetEntityCombatSta
 import { CombatantChangeLogFooter, EditableValueWithNote, GridHpEditPopover, RoundNoteField } from './phase1-change-log-ui';
 import { PhaseViewSwitch } from '../phase-switch/PhaseViewSwitch';
 import { ConfirmDialog, SettingsSurface } from './phase1-campaign-settings';
-import { Phase1DiceButton, Phase1DiceModal } from './phase1-dice';
+import { Phase1PcStatBlocksModal } from './phase1-pc-stat-blocks';
 import { CAMPAIGN_SLOT_CAP, CHARACTER_SLOT_CAP, GUIDE_BLUE } from '@constants/data';
 import { PATREON_URL } from '@constants/urls';
 import { getCachedPublicUser, getPublicUser } from '@auth/user-manager';
@@ -1746,7 +1746,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const [creaturePickerOpen, setCreaturePickerOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [pendingCampaignRemove, setPendingCampaignRemove] = useState<{ id: number; name: string } | null>(null);
-  const [diceOpen, setDiceOpen] = useState(false);
+  const [statBlocksOpen, setStatBlocksOpen] = useState(false);
   const [encounterTab, setEncounterTab] = useState<'combat' | 'dice'>('combat');
   const [checkOpen, setCheckOpen] = useState(false);
   const [checkToast, setCheckToast] = useState<{ log: DiceRollLog; x: number; y: number } | null>(null);
@@ -2388,7 +2388,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
             <NoteSurface note={selectedNote} isGm={isGm} encounterLink={noteEncounter ? { href: phase1EncounterPath(noteEncounter.id, campaign?.id), name: noteEncounter.name } : undefined} />
           ) : (
             <>
-              <EncounterHeader encounter={selectedEncounter} combatants={activeCombatants} count={activeCombatants.length} isGm={isGm} noteLink={!standalone && encounterNote && campaign ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} tab={encounterTab} onTab={setEncounterTab} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} canRollInitiative={isGm && activeCombatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && activeCombatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} onOpenDice={() => setDiceOpen(true)} />
+              <EncounterHeader encounter={selectedEncounter} combatants={activeCombatants} count={activeCombatants.length} isGm={isGm} noteLink={!standalone && encounterNote && campaign ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} tab={encounterTab} onTab={setEncounterTab} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} canRollInitiative={isGm && activeCombatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && activeCombatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} onOpenStatBlocks={() => setStatBlocksOpen(true)} />
               {rosterError && <div className='border-b border-p1-danger/40 bg-p1-danger/10 px-5 py-2 text-xs text-p1-danger-soft'>Roster update failed: {rosterError.message}</div>}
               {encounterTab === 'dice' && (
                 <DiceRollToolbar
@@ -2471,10 +2471,10 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
                   onClose={() => setCreaturePickerOpen(false)}
                 />
               )}
-              {diceOpen && (
-                <Phase1DiceModal
-                  hint='Table rolls stay in this window until you close it. 3D dice remain on the original sheet.'
-                  onClose={() => setDiceOpen(false)}
+              {statBlocksOpen && (
+                <Phase1PcStatBlocksModal
+                  characters={players.length > 0 ? players : combatants.filter((combatant) => combatant.type === 'CHARACTER').map((combatant) => combatant.data as Character)}
+                  onClose={() => setStatBlocksOpen(false)}
                 />
               )}
               {resetOpen && (
@@ -3785,7 +3785,7 @@ function EncounterDifficultyModal({ difficulty, onClose }: { difficulty: Encount
   );
 }
 
-function EncounterHeader({ encounter, combatants, count, isGm, noteLink, tab, onTab, canAddCreature, onAddCreature, canRollInitiative, onRollInitiative, canClearInitiative, onClearInitiative, canMaxStats, onMaxStats, canReset, onReset, onOpenDice }: { encounter: Encounter | null; combatants: PopulatedCombatant[]; count: number; isGm: boolean; noteLink?: { href: string; name: string }; tab: 'combat' | 'dice'; onTab: (tab: 'combat' | 'dice') => void; canAddCreature?: boolean; onAddCreature?: () => void; canRollInitiative?: boolean; onRollInitiative?: () => void; canClearInitiative?: boolean; onClearInitiative?: () => void; canMaxStats?: boolean; onMaxStats?: () => void; canReset?: boolean; onReset?: () => void; onOpenDice?: () => void }) {
+function EncounterHeader({ encounter, combatants, count, isGm, noteLink, tab, onTab, canAddCreature, onAddCreature, canRollInitiative, onRollInitiative, canClearInitiative, onClearInitiative, canMaxStats, onMaxStats, canReset, onReset, onOpenStatBlocks }: { encounter: Encounter | null; combatants: PopulatedCombatant[]; count: number; isGm: boolean; noteLink?: { href: string; name: string }; tab: 'combat' | 'dice'; onTab: (tab: 'combat' | 'dice') => void; canAddCreature?: boolean; onAddCreature?: () => void; canRollInitiative?: boolean; onRollInitiative?: () => void; canClearInitiative?: boolean; onClearInitiative?: () => void; canMaxStats?: boolean; onMaxStats?: () => void; canReset?: boolean; onReset?: () => void; onOpenStatBlocks?: () => void }) {
   const [xpOpen, setXpOpen] = useState(false);
   const difficulty = encounter && shouldDisplayEncounterDifficulty(combatants) ? calculateDifficulty(encounter, combatants) : null;
   return (
@@ -3815,7 +3815,7 @@ function EncounterHeader({ encounter, combatants, count, isGm, noteLink, tab, on
         {xpOpen && difficulty && <EncounterDifficultyModal difficulty={difficulty} onClose={() => setXpOpen(false)} />}
         {tab === 'combat' && (
           <>
-            <Phase1DiceButton onOpen={() => onOpenDice?.()} />
+            <button type='button' className='toolbar-button' title='PC stat blocks' onClick={() => onOpenStatBlocks?.()}><AlignLeft size={15} /> Stat blocks</button>
             {isGm && <button className='toolbar-button' disabled={!canAddCreature} title={canAddCreature ? 'Add a creature from the catalog' : 'Wait for the roster to finish saving'} onClick={onAddCreature}><Swords size={15} /> Add creature</button>}
             <button className='toolbar-button' disabled={!canRollInitiative} title={!isGm ? 'GM only' : count === 0 ? 'Add combatants first' : 'Roll initiative'} onClick={onRollInitiative}><GiDiceTwentyFacesTwenty size={15} /> Roll initiative</button>
             <button className='toolbar-button' disabled={!canClearInitiative} title={!isGm ? 'GM only' : canClearInitiative ? 'Clear initiative and restore roster order' : 'No initiative to clear'} onClick={onClearInitiative}><Eraser size={15} /> Clear init</button>
