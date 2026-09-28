@@ -287,7 +287,7 @@ function replaceActionNodes(nodes: unknown[]): unknown[] {
   });
 }
 
-function serializeMarkdown(editor: { api: { markdown?: { serialize: () => string } }; children: { some: (match: (node: { type?: string }) => boolean) => boolean } }) {
+function serializeMarkdown(editor: { children: { type?: string }[] }) {
   const helper = createPlateEditor({
     plugins: notePlugins,
     value: replaceActionNodes(editor.children as unknown as unknown[]) as never,
