@@ -863,6 +863,7 @@ export const CampaignSchema = z.object({
       settings: z
         .object({
           show_party_member_status: z.enum(['OFF', 'STATUS', 'DETAILED']).optional(),
+          dice_3d: z.boolean().optional(),
         })
         .optional(),
       image_url: z.string().optional(),
@@ -986,7 +987,7 @@ export const DiceRollStateSchema = z.object({
   side: DiceRollSideSchema.optional(),
   title: z.string().optional(),
   dc: z.number().nullable().optional(),
-  stat: z.string().optional(),
+  stat: z.string().nullable().optional(),
   challenge_id: z.string().optional(),
   results: z.record(z.string(), DiceCheckResultSchema).optional(),
 });
@@ -1009,6 +1010,7 @@ export const DiceRollLogSchema = z.object({
   dc: z.number(),
   defaultStat: z.string(),
   entries: z.array(DiceRollLogEntrySchema),
+  initiated_by_user_id: z.string().optional(),
 });
 export type DiceRollLog = z.infer<typeof DiceRollLogSchema>;
 

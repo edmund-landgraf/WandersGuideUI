@@ -144,6 +144,7 @@ export function buildDiceRollLog(
   combatants: Array<Combatant & { data: LivingEntity }>,
   results: Record<string, DiceCheckResult>,
   challenge?: AmbaChallengeTable,
+  initiatedBy?: string,
 ): DiceRollLog {
   const entries: DiceRollLogEntry[] = combatants.map((combatant) => {
     const result = results[combatant._id];
@@ -166,7 +167,11 @@ export function buildDiceRollLog(
       note: noteForAmbaOutcome(challenge, result.outcome),
     };
   });
-  return { id: crypto.randomUUID(), title: title.trim(), dc, defaultStat, entries };
+  return { id: crypto.randomUUID(), title: title.trim(), dc, defaultStat, entries, initiated_by_user_id: initiatedBy };
+}
+
+export function playerPartyDiceCombatants<T extends { type?: string }>(combatants: T[]): T[] {
+  return combatants.filter((combatant) => combatant.type === 'CHARACTER');
 }
 
 function hasFullCharacterDetails(character: Character) {

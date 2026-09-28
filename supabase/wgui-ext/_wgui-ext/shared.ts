@@ -165,3 +165,68 @@ export function encounterIncludesCharacter(
     return id !== null && characterIds.has(id);
   });
 }
+
+type DiceLogLike = {
+  id?: string;
+  initiated_by_user_id?: string;
+  [key: string]: unknown;
+};
+
+type DiceStateLike = {
+  title?: string;
+  dc?: number | null;
+  stat?: string | null;
+  results?: unknown;
+  [key: string]: unknown;
+};
+
+/** Player patches may only add/remove/edit rolls they started. Untagged (legacy/GM) rows stay. */
+export function mergePlayerDiceRollLog(
+  existing: DiceLogLike[] | undefined,
+  incoming: DiceLogLike[] | undefined,
+  userId: string
+): DiceLogLike[] {
+  const current = Array.isArray(existing) ? existing : [];
+  const next = Array.isArray(incoming) ? incoming : [];
+  const incomingById = new Map<string, DiceLogLike>();
+  for (const entry of next) {
+    if (entry.id) incomingById.set(entry.id, entry);
+  }
+  const result: DiceLogLike[] = [];
+  const seen = new Set<string>();
+  for (const entry of current) {
+    if (entry.id && sameUserId(entry.initiated_by_user_id, userId)) {
+      const replacement = incomingById.get(entry.id);
+      if (replacement) {
+        result.push({ ...replacement, id: entry.id, initiated_by_user_id: userId });
+        seen.add(entry.id);
+      }
+      continue;
+    }
+    result.push(entry);
+    if (entry.id) seen.add(entry.id);
+  }
+  for (const entry of next) {
+    if (entry.id && seen.has(entry.id)) continue;
+    if (!sameUserId(entry.initiated_by_user_id, userId)) continue;
+    result.push({ ...entry, initiated_by_user_id: userId });
+    if (entry.id) seen.add(entry.id);
+  }
+  return result;
+}
+
+/** Players may change title, DC, check, and grid results. Side and challenge stay as the GM left them. */
+export function mergePlayerDiceRollState(
+  existing: DiceStateLike | undefined,
+  incoming: DiceStateLike | undefined
+): DiceStateLike | undefined {
+  if (!incoming || typeof incoming !== 'object') return existing;
+  const next: DiceStateLike = { ...(existing ?? {}) };
+  if ('title' in incoming) next.title = incoming.title;
+  if ('dc' in incoming) next.dc = incoming.dc ?? null;
+  if ('stat' in incoming) {
+    next.stat = incoming.stat ? incoming.stat : undefined;
+  }
+  if ('results' in incoming) next.results = incoming.results ?? {};
+  return next;
+}

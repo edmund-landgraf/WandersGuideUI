@@ -447,3 +447,104 @@ Deno.test({
     }
   },
 });
+
+Deno.test({
+  name: 'wgui-ext: a player can patch dice state and only delete rolls they initiated',
+  ignore: skip,
+  async fn() {
+    const gm = await createSignedInUser();
+    const player = await createSignedInUser();
+    const campaign = await seedCampaign(gm.userId);
+    const character = await seedCharacter(player.userId, campaign.id);
+    const encounter = await seedEncounter(gm.userId, campaign.id, [character.id]);
+
+    try {
+      const gmRoll = {
+        id: 'gm-roll',
+        title: 'Secret',
+        dc: 20,
+        defaultStat: 'PERCEPTION',
+        entries: [{ name: 'Ulysses', ally: true, calculation: 'd20', total: 12 }],
+      };
+      await admin.from('encounter').update({
+        meta_data: {
+          party_level: 1,
+          dice_roll_log: [gmRoll],
+          dice_roll_state: { title: 'Keep me', dc: 15, stat: 'PERCEPTION', side: 'enemies' },
+        },
+      }).eq('id', encounter.id);
+
+      const playerState = await callFunction(
+        'wgui-ext-patch-encounter-dice',
+        {
+          campaign_id: campaign.id,
+          encounter_id: encounter.id,
+          dice_roll_state: { title: 'Party check', dc: 17, stat: 'SAVE_WILL', results: {} },
+        },
+        { token: player.jwt }
+      );
+      assertEquals(playerState.body?.status, 'success');
+      assertEquals(playerState.body?.data?.dice_roll_state?.title, 'Party check');
+      assertEquals(playerState.body?.data?.dice_roll_state?.dc, 17);
+      assertEquals(playerState.body?.data?.dice_roll_state?.stat, 'SAVE_WILL');
+      assertEquals(playerState.body?.data?.dice_roll_state?.side, 'enemies');
+
+      const playerRoll = {
+        id: 'player-roll',
+        title: 'Mine',
+        dc: 17,
+        defaultStat: 'SAVE_WILL',
+        initiated_by_user_id: player.userId,
+        entries: [{ name: 'Ulysses', ally: true, calculation: 'd20', total: 18 }],
+      };
+      const appended = await callFunction(
+        'wgui-ext-patch-encounter-dice',
+        {
+          campaign_id: campaign.id,
+          encounter_id: encounter.id,
+          dice_roll_log: [gmRoll, playerRoll],
+        },
+        { token: player.jwt }
+      );
+      assertEquals(appended.body?.status, 'success');
+      assertEquals(appended.body?.data?.dice_roll_log?.length, 2);
+
+      const stripped = await callFunction(
+        'wgui-ext-patch-encounter-dice',
+        {
+          campaign_id: campaign.id,
+          encounter_id: encounter.id,
+          dice_roll_log: [],
+        },
+        { token: player.jwt }
+      );
+      assertEquals(stripped.body?.status, 'success');
+      assertEquals(stripped.body?.data?.dice_roll_log?.length, 1);
+      assertEquals(stripped.body?.data?.dice_roll_log?.[0]?.id, 'gm-roll');
+
+      const outsider = await createSignedInUser();
+      const stray = await seedCharacter(outsider.userId, campaign.id);
+      try {
+        const refused = await callFunction(
+          'wgui-ext-patch-encounter-dice',
+          {
+            campaign_id: campaign.id,
+            encounter_id: encounter.id,
+            dice_roll_state: { title: 'nope' },
+          },
+          { token: outsider.jwt }
+        );
+        assertEquals(refused.status, 403);
+      } finally {
+        await admin.from('character').delete().eq('id', stray.id);
+        await admin.auth.admin.deleteUser(outsider.userId);
+      }
+    } finally {
+      await admin.from('encounter').delete().eq('id', encounter.id);
+      await admin.from('character').delete().eq('id', character.id);
+      await admin.from('campaign').delete().eq('id', campaign.id);
+      await admin.auth.admin.deleteUser(gm.userId);
+      await admin.auth.admin.deleteUser(player.userId);
+    }
+  },
+});

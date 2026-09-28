@@ -251,18 +251,20 @@ function combatantLogSummary(entries: DiceRollLogEntry[]) {
   return `${count} ${noun} (${names.join(', ')})`;
 }
 
-export function DiceRollLogPanel({ log, canClear, canEdit, onClear, onRemove, onUpdateNote }: {
+export function DiceRollLogPanel({ log, canClear, canEdit, canRemoveEntry, onClear, onRemove, onUpdateNote }: {
   log: DiceRollLog[];
   canClear?: boolean;
   canEdit?: boolean;
+  canRemoveEntry?: (entry: DiceRollLog) => boolean;
   onClear?: () => void;
   onRemove?: (entry: DiceRollLog) => void;
   onUpdateNote?: (round: DiceRollLog, entry: DiceRollLogEntry, note: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [noteTarget, setNoteTarget] = useState<{ round: DiceRollLog; entry: DiceRollLogEntry } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; entry: DiceRollLog } | null>(null);
+  const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number } | null>(null);
   const newestKey = log.length ? roundKey(log[log.length - 1], log.length - 1) : null;
   const [expandedKey, setExpandedKey] = useState<string | null>(newestKey);
   const lastNewestKey = useRef(newestKey);
@@ -274,17 +276,22 @@ export function DiceRollLogPanel({ log, canClear, canEdit, onClear, onRemove, on
     if (!canClear || !onClear) return;
     setConfirmOpen(true);
   }
-  if (log.length === 0) {
-    return <p className='mt-5 text-center text-xs text-p1-faint'>No dice rolls logged yet.</p>;
+  function openHeaderMenu(event: ReactMouseEvent) {
+    if (!canClear || !onClear) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setMenu(null);
+    setHeaderMenu({ x: event.clientX, y: event.clientY });
   }
   const rounds = [...log].reverse();
   return (
     <section className='mt-5 border border-p1-border bg-p1-inset'>
-      <div className='flex items-center gap-2 border-b border-p1-border px-4 py-3'>
+      <div className='flex items-center gap-2 border-b border-p1-border px-4 py-3' onContextMenu={openHeaderMenu}>
         <button
           type='button'
           className='flex min-w-0 flex-1 items-center gap-2 text-left hover:text-p1-text'
           onClick={() => setOpen((value) => !value)}
+          onContextMenu={openHeaderMenu}
           aria-expanded={open}
         >
           <History size={15} className='text-p1-muted' />
@@ -293,7 +300,7 @@ export function DiceRollLogPanel({ log, canClear, canEdit, onClear, onRemove, on
           <ChevronDown size={14} className={`ml-auto text-p1-faint transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
         {canClear && onClear && (
-          <button type='button' className='toolbar-button shrink-0' title='Clear all logged checks' onClick={handleClear}>
+          <button type='button' className='toolbar-button shrink-0' title='Clear all logged checks' onClick={handleClear} onContextMenu={openHeaderMenu}>
             <Eraser size={14} /> Clear log
           </button>
         )}
@@ -301,7 +308,7 @@ export function DiceRollLogPanel({ log, canClear, canEdit, onClear, onRemove, on
       {confirmOpen && (
         <ConfirmDialog
           title='Clear roll log'
-          message={`This removes all ${log.length} logged checks. The current grid column is not cleared.`}
+          message={log.length === 0 ? 'There are no logged checks to remove.' : `This removes all ${log.length} logged checks. The current grid column is not cleared.`}
           confirmLabel='Clear log'
           onCancel={() => setConfirmOpen(false)}
           onConfirm={() => {
@@ -310,7 +317,9 @@ export function DiceRollLogPanel({ log, canClear, canEdit, onClear, onRemove, on
           }}
         />
       )}
-      {open && rounds.map((round, index) => (
+      {log.length === 0 ? (
+        <p className='px-4 py-6 text-center text-xs text-p1-faint'>No dice rolls logged yet.</p>
+      ) : open ? rounds.map((round, index) => (
         <DiceRollLogRound
           key={roundKey(round, index)}
           round={round}
@@ -319,10 +328,13 @@ export function DiceRollLogPanel({ log, canClear, canEdit, onClear, onRemove, on
             const key = roundKey(round, log.length - 1 - index);
             setExpandedKey((current) => (current === key ? null : key));
           }}
-          canRemove={Boolean(canClear && onRemove)}
+          canRemove={Boolean(onRemove && (canRemoveEntry ? canRemoveEntry(round) : canClear))}
           onContextMenu={(event) => {
-            if (!canClear || !onRemove) return;
+            const canRemoveThis = Boolean(onRemove && (canRemoveEntry ? canRemoveEntry(round) : canClear));
+            if (!canRemoveThis && !canClear) return;
             event.preventDefault();
+            event.stopPropagation();
+            setHeaderMenu(null);
             setMenu({ x: event.clientX, y: event.clientY, entry: round });
           }}
           canEdit={Boolean(canEdit && onUpdateNote)}
@@ -331,7 +343,7 @@ export function DiceRollLogPanel({ log, canClear, canEdit, onClear, onRemove, on
             setNoteTarget({ round, entry });
           }}
         />
-      ))}
+      )) : null}
       {noteTarget && (
         <DiceRollNoteModal
           round={noteTarget.round}
@@ -348,9 +360,24 @@ export function DiceRollLogPanel({ log, canClear, canEdit, onClear, onRemove, on
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
-          onRemove={() => {
-            onRemove?.(menu.entry);
+          onRemove={onRemove && (canRemoveEntry ? canRemoveEntry(menu.entry) : canClear) ? () => {
+            onRemove(menu.entry);
             setMenu(null);
+          } : undefined}
+          onClearAll={canClear && onClear ? () => {
+            setMenu(null);
+            handleClear();
+          } : undefined}
+        />
+      )}
+      {headerMenu && (
+        <LogHeaderContextMenu
+          x={headerMenu.x}
+          y={headerMenu.y}
+          onClose={() => setHeaderMenu(null)}
+          onClearAll={() => {
+            setHeaderMenu(null);
+            handleClear();
           }}
         />
       )}
@@ -362,7 +389,6 @@ function DiceRollLogRound({
   round,
   expanded,
   onToggle,
-  canRemove,
   onContextMenu,
   canEdit,
   onEditNote,
@@ -378,13 +404,14 @@ function DiceRollLogRound({
   return (
     <div
       className='border-b border-p1-border last:border-0'
-      onContextMenu={canRemove ? onContextMenu : undefined}
+      onContextMenu={onContextMenu}
     >
       <button
         type='button'
         className='flex w-full items-start gap-2 px-4 py-3 text-left hover:bg-p1-hover'
         aria-expanded={expanded}
         onClick={onToggle}
+        onContextMenu={onContextMenu}
       >
         <div className='min-w-0 flex-1'>
           {round.title ? <p className='text-sm font-semibold text-p1-text'>{round.title}</p> : null}
@@ -560,7 +587,7 @@ export function DiceCheckResultToast({
   );
 }
 
-function LogEntryContextMenu({ x, y, onClose, onRemove }: { x: number; y: number; onClose: () => void; onRemove: () => void }) {
+function LogHeaderContextMenu({ x, y, onClose, onClearAll }: { x: number; y: number; onClose: () => void; onClearAll: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -568,15 +595,45 @@ function LogEntryContextMenu({ x, y, onClose, onRemove }: { x: number; y: number
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
-  const left = Math.min(x, window.innerWidth - 176);
+  const left = Math.min(x, window.innerWidth - 200);
   const top = Math.min(y, window.innerHeight - 56);
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
-      <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
-        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onRemove}>
-          <Trash2 size={14} /> Clear this check
+      <div role='menu' className='fixed z-[110] min-w-48 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onClearAll}>
+          <Eraser size={14} /> Clear all dice logs
         </button>
+      </div>
+    </>,
+    document.body
+  );
+}
+
+function LogEntryContextMenu({ x, y, onClose, onRemove, onClearAll }: { x: number; y: number; onClose: () => void; onRemove?: () => void; onClearAll?: () => void }) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+  const left = Math.min(x, window.innerWidth - 200);
+  const top = Math.min(y, window.innerHeight - 88);
+  return createPortal(
+    <>
+      <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
+      <div role='menu' className='fixed z-[110] min-w-48 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        {onRemove && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onRemove}>
+            <Trash2 size={14} /> Clear this check
+          </button>
+        )}
+        {onClearAll && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onClearAll}>
+            <Eraser size={14} /> Clear all dice logs
+          </button>
+        )}
       </div>
     </>,
     document.body

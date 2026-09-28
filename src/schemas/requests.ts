@@ -61,6 +61,7 @@ export const RequestTypeSchema = z.enum([
   'wgui-ext-find-campaign-characters',
   'wgui-ext-ensure-public-user',
   'wgui-ext-join-campaign',
+  'wgui-ext-patch-encounter-dice',
 ]);
 export type RequestType = z.infer<typeof RequestTypeSchema>;
 

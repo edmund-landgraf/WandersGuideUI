@@ -44,6 +44,7 @@ services:
         /wgui-ext/overlay/wgui-ext-find-campaign-characters
         /wgui-ext/overlay/wgui-ext-ensure-public-user
         /wgui-ext/overlay/wgui-ext-join-campaign
+        /wgui-ext/overlay/wgui-ext-patch-encounter-dice
         /home/deno/functions/;
         exec edge-runtime "$$@"
       - edge-runtime
