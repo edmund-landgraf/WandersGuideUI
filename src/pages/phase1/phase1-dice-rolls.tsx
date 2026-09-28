@@ -260,18 +260,12 @@ export function DiceRollLogPanel({ log, canClear, canEdit, canRemoveEntry, onCle
   onRemove?: (entry: DiceRollLog) => void;
   onUpdateNote?: (round: DiceRollLog, entry: DiceRollLogEntry, note: string) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [noteTarget, setNoteTarget] = useState<{ round: DiceRollLog; entry: DiceRollLogEntry } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; entry: DiceRollLog } | null>(null);
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number } | null>(null);
-  const newestKey = log.length ? roundKey(log[log.length - 1], log.length - 1) : null;
-  const [expandedKey, setExpandedKey] = useState<string | null>(newestKey);
-  const lastNewestKey = useRef(newestKey);
-  if (newestKey && newestKey !== lastNewestKey.current) {
-    lastNewestKey.current = newestKey;
-    setExpandedKey(newestKey);
-  }
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   function handleClear() {
     if (!canClear || !onClear) return;
     setConfirmOpen(true);
@@ -317,9 +311,9 @@ export function DiceRollLogPanel({ log, canClear, canEdit, canRemoveEntry, onCle
           }}
         />
       )}
-      {log.length === 0 ? (
+      {open && (log.length === 0 ? (
         <p className='px-4 py-6 text-center text-xs text-p1-faint'>No dice rolls logged yet.</p>
-      ) : open ? rounds.map((round, index) => (
+      ) : rounds.map((round, index) => (
         <DiceRollLogRound
           key={roundKey(round, index)}
           round={round}
@@ -417,6 +411,7 @@ function DiceRollLogRound({
           {round.title ? <p className='text-sm font-semibold text-p1-text'>{round.title}</p> : null}
           <h3 className={`${round.title ? 'mt-0.5' : ''} text-[10px] font-semibold uppercase tracking-wide text-p1-accent`}>
             {checkStatLabel(round.defaultStat)} · DC {round.dc}
+            {round.audience === 'private' ? ' · Private' : ''}
           </h3>
           <p className='mt-0.5 text-[11px] text-p1-faint'>
             {combatantLogSummary(round.entries)}

@@ -50,7 +50,7 @@ import { toLabel } from '@utils/strings';
 import { sign } from '@utils/numbers';
 import { DiceCheckResultToast, DiceCheckRollModal, DiceRollColorKey, DiceRollLogPanel } from './phase1-dice-rolls';
 import { Dice3dOverlay, dice3dThrowsFromCheckLog, dice3dThrowsFromInitiativeRound, diceCheckOverlayTitle, diceRollLogKey, initiativeRoundDiceKey, type Dice3dThrow } from './phase1-dice-3d';
-import { adoptServerDiceLogs, buildDiceRollLog, checkStatLabel, DICE_CHECK_OPTIONS, DICE_CHECK_VALUES, defaultStatForCombatant, degreeOfSuccess, filterCombatantsBySide, formatCheckRoll, loadAllCheckOptions, loadCheckOptions, outcomeLabel, outcomeRowClass, overlayDiceRollMeta, playerPartyDiceCombatants, setDiceRollLogEntryNote } from './phase1-dice-check';
+import { adoptServerDiceLogs, buildDiceRollLog, checkStatLabel, DICE_CHECK_OPTIONS, DICE_CHECK_VALUES, defaultStatForCombatant, degreeOfSuccess, filterCombatantsBySide, formatCheckRoll, gmDiceAudience, loadAllCheckOptions, loadCheckOptions, outcomeLabel, outcomeRowClass, overlayDiceRollMeta, playerPartyDiceCombatants, playerVisibleDiceRollLog, setDiceRollLogEntryNote } from './phase1-dice-check';
 import { findAmbaChallenge, challengeCheckEntries, mapAmbaChallengeStat, mergeEncounterMeta, readAmbaChallenges } from './phase1-amba-challenges';
 import { encounterDisplayName, encounterNamesMatch } from './phase1-encounter-title';
 import { nextEncounterName } from './phase1-encounter-name';
@@ -2143,7 +2143,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     seenDiceCheckKeyRef.current = key;
     if (!latest) return;
     const gmRoll = !latest.initiated_by_user_id || sameUserId(latest.initiated_by_user_id, campaign?.user_id);
-    if (!isGm && gmRoll) return;
+    if (!isGm && gmRoll && latest.audience !== 'public') return;
     maybeShowDice3d(
       dice3dThrowsFromCheckLog(latest, (entry) => (isGm || entry.ally ? entry.name : playerEnemyLabel(entry.name))),
       diceCheckOverlayTitle(latest.dc, checkStatLabel(latest.defaultStat)),
@@ -2213,11 +2213,16 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     const rows = isGm ? filterCombatantsBySide(activeCombatants, state.side) : playerPartyDiceCombatants(activeCombatants);
     const existingLog = diceLogRef.current.length ? diceLogRef.current : encounter.meta_data.dice_roll_log ?? [];
     const challenge = isGm ? findAmbaChallenge(readAmbaChallenges(encounter.meta_data), state.challenge_id) : undefined;
-    const log = buildDiceRollLog(titleDraft || state.title || '', dc, stat, rows, results, challenge, sessionUserId);
+    const audience = isGm ? gmDiceAudience(state.audience) : undefined;
+    const log = buildDiceRollLog(titleDraft || state.title || '', dc, stat, rows, results, challenge, sessionUserId, audience);
     seenDiceCheckKeyRef.current = diceRollLogKey(log);
     seenDiceCheckEncounterRef.current = encounter.id;
     persistDiceMeta({
-      dice_roll_state: { ...state, results },
+      dice_roll_state: {
+        ...state,
+        results,
+        ...(isGm ? { audience, results_audience: audience } : { results_audience: 'public' as const }),
+      },
       dice_roll_log: [...existingLog, log],
     });
     maybeShowDice3d(
@@ -2250,7 +2255,9 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
       total,
       outcome: degreeOfSuccess(die, total, dc),
     };
-    const log = buildDiceRollLog(title, dc, resolvedStat, [combatant], { [combatant._id]: result }, challenge, sessionUserId);
+    const state = encounter.meta_data.dice_roll_state ?? diceStateRef.current;
+    const audience = isGm ? gmDiceAudience(state?.audience) : undefined;
+    const log = buildDiceRollLog(title, dc, resolvedStat, [combatant], { [combatant._id]: result }, challenge, sessionUserId, audience);
     const existingLog = diceLogRef.current.length ? diceLogRef.current : encounter.meta_data.dice_roll_log ?? [];
     seenDiceCheckKeyRef.current = diceRollLogKey(log);
     seenDiceCheckEncounterRef.current = encounter.id;
@@ -2601,6 +2608,8 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
                   canClear={canEditDice && (isGm
                     ? Object.keys(diceState?.results ?? {}).length > 0
                     : Boolean(titleDraft || dcDraft || diceStat || Object.keys(diceState?.results ?? {}).length > 0))}
+                  audience={isGm ? gmDiceAudience(diceState?.audience) : undefined}
+                  onAudience={(audience) => persistDiceState({ audience })}
                   onSide={(side) => persistDiceState({ side, results: {} })}
                   onTitle={setTitleDraft}
                   onTitleCommit={(title) => persistDiceState(isGm ? { title, challenge_id: undefined } : { title })}
@@ -2650,8 +2659,8 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
                   </>
                 ) : (
                   <>
-                    <CombatantGrid combatants={diceGridRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onSingleCheck={!rosterSaving ? rollSingleCheck : undefined} onSingleChallenge={isGm && !rosterSaving && ambaChallenges.length > 0 ? rollSingleChallenge : undefined} challenges={ambaChallenges} dice={{ challengeId: isGm ? diceState?.challenge_id : undefined, checkStat: diceStat ?? undefined, columnLabel: checkStatLabel(diceStat ?? undefined), dc: diceDc, results: diceState?.results ?? {}, emptyMessage: diceGridRows.length === 0 ? 'No matching combatants for this filter.' : 'Right-click a combatant to roll a check. Group rolls still use the toolbar.' }} playerView={!isGm} />
-                    <DiceRollLogPanel log={isGm ? (selectedEncounter?.meta_data.dice_roll_log ?? []) : playerAllyRoundLog(selectedEncounter?.meta_data.dice_roll_log ?? [])} canClear={isGm && !rosterSaving} canEdit={isGm && !rosterSaving} canRemoveEntry={(entry) => isGm || sameUserId(entry.initiated_by_user_id, sessionUserId)} onClear={clearDiceRollLog} onRemove={removeDiceRollLog} onUpdateNote={updateDiceRollNote} />
+                    <CombatantGrid combatants={diceGridRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onSingleCheck={!rosterSaving ? rollSingleCheck : undefined} onSingleChallenge={isGm && !rosterSaving && ambaChallenges.length > 0 ? rollSingleChallenge : undefined} challenges={ambaChallenges} dice={{ challengeId: isGm ? diceState?.challenge_id : undefined, checkStat: diceStat ?? undefined, columnLabel: checkStatLabel(diceStat ?? undefined), dc: diceDc, results: !isGm && diceState?.results_audience === 'private' ? {} : diceState?.results ?? {}, emptyMessage: diceGridRows.length === 0 ? 'No matching combatants for this filter.' : 'Right-click a combatant to roll a check. Group rolls still use the toolbar.' }} playerView={!isGm} />
+                    <DiceRollLogPanel log={isGm ? (selectedEncounter?.meta_data.dice_roll_log ?? []) : playerAllyRoundLog(playerVisibleDiceRollLog(selectedEncounter?.meta_data.dice_roll_log ?? []))} canClear={isGm && !rosterSaving} canEdit={isGm && !rosterSaving} canRemoveEntry={(entry) => isGm || sameUserId(entry.initiated_by_user_id, sessionUserId)} onClear={clearDiceRollLog} onRemove={removeDiceRollLog} onUpdateNote={updateDiceRollNote} />
                   </>
                 )}
               </div>
@@ -4045,9 +4054,10 @@ function EncounterHeader({ encounter, combatants, count, isGm, noteLink, tab, on
   );
 }
 
-function DiceRollToolbar({ isGm, side, title, dc, stat, challenges, challengeId, canEdit, canRoll, canClear, dice3d, canToggleDice3d, onDice3d, onSide, onTitle, onTitleCommit, onDc, onDcCommit, onStat, onChallenge, onRoll, onClear }: {
+function DiceRollToolbar({ isGm, side, audience, title, dc, stat, challenges, challengeId, canEdit, canRoll, canClear, dice3d, canToggleDice3d, onDice3d, onSide, onAudience, onTitle, onTitleCommit, onDc, onDcCommit, onStat, onChallenge, onRoll, onClear }: {
   isGm: boolean;
   side: DiceRollSide | undefined;
+  audience?: 'public' | 'private';
   title: string;
   dc: string;
   stat: string;
@@ -4060,6 +4070,7 @@ function DiceRollToolbar({ isGm, side, title, dc, stat, challenges, challengeId,
   canToggleDice3d: boolean;
   onDice3d: (enabled: boolean) => void;
   onSide: (side: DiceRollSide) => void;
+  onAudience: (audience: 'public' | 'private') => void;
   onTitle: (title: string) => void;
   onTitleCommit: (title: string) => void;
   onDc: (dc: string) => void;
@@ -4081,6 +4092,17 @@ function DiceRollToolbar({ isGm, side, title, dc, stat, challenges, challengeId,
             <label key={value} className='flex items-center gap-1.5 text-xs text-p1-muted'>
               <input type='radio' name='dice-roll-side' checked={side === value} onChange={() => onSide(value)} />
               {value === 'enemies' ? 'Enemies' : value === 'allies' ? 'Allies' : 'Both'}
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {isGm && (
+        <fieldset className='flex items-center gap-3'>
+          <legend className='sr-only'>Who can see this roll</legend>
+          {(['private', 'public'] as const).map((value) => (
+            <label key={value} className='flex items-center gap-1.5 text-xs text-p1-muted'>
+              <input type='radio' name='dice-roll-audience' checked={(audience ?? 'private') === value} onChange={() => onAudience(value)} />
+              {value === 'private' ? 'Private' : 'Public'}
             </label>
           ))}
         </fieldset>

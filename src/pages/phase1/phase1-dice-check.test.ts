@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adoptServerDiceLogs, overlayDiceRollMeta, playerPartyDiceCombatants } from './phase1-dice-check';
+import { adoptServerDiceLogs, gmDiceAudience, overlayDiceRollMeta, playerPartyDiceCombatants, playerVisibleDiceRollLog } from './phase1-dice-check';
 import type { Encounter } from '../../schemas/content';
 
 describe('playerPartyDiceCombatants', () => {
@@ -12,6 +12,19 @@ describe('playerPartyDiceCombatants', () => {
       { type: 'CHARACTER', _id: 'pc' },
       { type: 'CHARACTER', _id: 'pc2' },
     ]);
+  });
+});
+
+describe('playerVisibleDiceRollLog', () => {
+  it('drops private GM rolls and keeps public and player rolls', () => {
+    const log = [
+      { audience: 'private' as const, entries: [{ ally: true }] },
+      { audience: 'public' as const, entries: [{ ally: false }] },
+      { entries: [{ ally: true }] },
+    ];
+    expect(playerVisibleDiceRollLog(log)).toEqual([log[1], log[2]]);
+    expect(gmDiceAudience(undefined)).toBe('private');
+    expect(gmDiceAudience('public')).toBe('public');
   });
 });
 

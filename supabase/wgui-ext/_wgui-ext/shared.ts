@@ -228,5 +228,6 @@ export function mergePlayerDiceRollState(
     next.stat = incoming.stat ? incoming.stat : undefined;
   }
   if ('results' in incoming) next.results = incoming.results ?? {};
+  if (incoming.results_audience === 'public') next.results_audience = 'public';
   return next;
 }

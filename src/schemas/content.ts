@@ -983,12 +983,17 @@ export const DiceCheckResultSchema = z.object({
 });
 export type DiceCheckResult = z.infer<typeof DiceCheckResultSchema>;
 
+export const DiceRollAudienceSchema = z.enum(['public', 'private']);
+export type DiceRollAudience = z.infer<typeof DiceRollAudienceSchema>;
+
 export const DiceRollStateSchema = z.object({
   side: DiceRollSideSchema.optional(),
   title: z.string().optional(),
   dc: z.number().nullable().optional(),
   stat: z.string().nullable().optional(),
   challenge_id: z.string().optional(),
+  audience: DiceRollAudienceSchema.optional(),
+  results_audience: DiceRollAudienceSchema.optional(),
   results: z.record(z.string(), DiceCheckResultSchema).optional(),
 });
 export type DiceRollState = z.infer<typeof DiceRollStateSchema>;
@@ -1011,6 +1016,7 @@ export const DiceRollLogSchema = z.object({
   defaultStat: z.string(),
   entries: z.array(DiceRollLogEntrySchema),
   initiated_by_user_id: z.string().optional(),
+  audience: DiceRollAudienceSchema.optional(),
 });
 export type DiceRollLog = z.infer<typeof DiceRollLogSchema>;
 

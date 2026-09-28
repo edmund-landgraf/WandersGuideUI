@@ -156,6 +156,7 @@ export function buildDiceRollLog(
   results: Record<string, DiceCheckResult>,
   challenge?: AmbaChallengeTable,
   initiatedBy?: string,
+  audience?: DiceRollLog['audience'],
 ): DiceRollLog {
   const entries: DiceRollLogEntry[] = combatants.map((combatant) => {
     const result = results[combatant._id];
@@ -178,7 +179,24 @@ export function buildDiceRollLog(
       note: noteForAmbaOutcome(challenge, result.outcome),
     };
   });
-  return { id: crypto.randomUUID(), title: title.trim(), dc, defaultStat, entries, initiated_by_user_id: initiatedBy };
+  return {
+    id: crypto.randomUUID(),
+    title: title.trim(),
+    dc,
+    defaultStat,
+    entries,
+    initiated_by_user_id: initiatedBy,
+    ...(audience ? { audience } : {}),
+  };
+}
+
+/** GM rolls default to private when the toolbar has not been set to public. */
+export function gmDiceAudience(audience: DiceRollLog['audience'] | undefined): 'public' | 'private' {
+  return audience === 'public' ? 'public' : 'private';
+}
+
+export function playerVisibleDiceRollLog<T extends { audience?: 'public' | 'private'; entries: { ally: boolean }[] }>(log: T[]): T[] {
+  return log.filter((entry) => entry.audience !== 'private');
 }
 
 export function playerPartyDiceCombatants<T extends { type?: string }>(combatants: T[]): T[] {
