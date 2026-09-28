@@ -21,6 +21,7 @@ export function Phase1PickerModal<T>({
   onClose,
   onNone,
   renderItem,
+  tabs,
   toolbar,
   headerAction,
   footer,
@@ -45,6 +46,7 @@ export function Phase1PickerModal<T>({
   onClose: () => void;
   onNone?: () => void;
   renderItem: (item: T) => ReactNode;
+  tabs?: ReactNode;
   toolbar?: ReactNode;
   headerAction?: ReactNode;
   footer?: ReactNode;
@@ -161,6 +163,7 @@ export function Phase1PickerModal<T>({
             <X size={18} />
           </button>
         </header>
+        {tabs}
         <div className='border-b border-p1-border p-3 pb-2'>
           <div className='relative'>
             <Search className='absolute left-3 top-1/2 -translate-y-1/2 text-p1-faint' size={14} />

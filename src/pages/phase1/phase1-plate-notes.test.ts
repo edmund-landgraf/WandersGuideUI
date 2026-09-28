@@ -17,6 +17,12 @@ describe('sheet notes markdown round trip', () => {
     expect(reloaded).toBe(saved);
   });
 
+  it('keeps a Wanderer\'s Guide condition link', () => {
+    const saved = roundTripNotesMarkdown('See [Hidden](<link_condition_hidden>) nearby.');
+    expect(saved).toContain('[Hidden](<link_condition_hidden>)');
+    expect(roundTripNotesMarkdown(saved)).toBe(saved);
+  });
+
   it('keeps a blank line created with enter', () => {
     const saved = roundTripNotesMarkdown('First line\n\nSecond line');
     expect(saved).toContain('First line');

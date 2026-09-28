@@ -15,7 +15,7 @@ import {
 import { CommentPlugin } from '@platejs/comment/react';
 import { DndPlugin, useDraggable } from '@platejs/dnd';
 import { EmojiPlugin } from '@platejs/emoji/react';
-import { insertLink, unwrapLink } from '@platejs/link';
+import { unwrapLink } from '@platejs/link';
 import { LinkPlugin, useLink } from '@platejs/link/react';
 import {
   BulletedListPlugin,
@@ -26,6 +26,8 @@ import {
 import { MarkdownPlugin } from '@platejs/markdown';
 import { TocPlugin, useTocElement, useTocElementState } from '@platejs/toc/react';
 import type { ActionCost } from '@schemas/content';
+import { getContentDataFromHref } from '@common/rich_text_input/ContentLinkExtension';
+import { toWgMarkdownLinks } from '@utils/foundry-text';
 import type { TElement, TLinkElement } from 'platejs';
 import { createSlatePlugin } from 'platejs';
 import {
@@ -49,7 +51,6 @@ import {
   Heading4,
   Highlighter,
   Italic,
-  Link2,
   List,
   ListOrdered,
   ListTree,
@@ -63,6 +64,8 @@ import {
   Unlink,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { NoteLinkButton } from './phase1-note-links';
+import { useContentLinks } from './phase1-content-links';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 
@@ -95,7 +98,7 @@ const ACTION_BY_SYMBOL: Record<string, ActionCost> = {
 };
 
 function actionSymbolNode(cost: ActionCost, symbol: string) {
-  return { type: 'actionSymbol', cost, children: [{ text: `action_symbol_${symbol}`, code: true }] };
+  return { type: 'actionSymbol', cost, symbol, children: [{ text: '' }] };
 }
 
 function liftActionSymbols(nodes: Array<TElement | { text?: string; code?: boolean; children?: unknown[] }>): typeof emptyDoc {
@@ -112,20 +115,21 @@ function liftActionSymbols(nodes: Array<TElement | { text?: string; code?: boole
 }
 
 function ActionSymbolElement(props: PlateElementProps) {
-  const cost = ((props.element as { cost?: ActionCost }).cost) ?? 'ONE-ACTION';
+  const element = props.element as { cost?: ActionCost; symbol?: string };
+  const cost = element.cost ?? ACTION_BY_SYMBOL[element.symbol ?? ''] ?? 'ONE-ACTION';
   return (
-    <PlateElement {...props} as='span' className='mx-0.5 inline-flex align-text-bottom'>
+    <PlateElement {...props} as='span' className='relative mx-0.5 inline-flex align-text-bottom text-p1-text'>
       <span contentEditable={false}>
         <ActionSymbol cost={cost} size='14px' />
       </span>
-      <span className='hidden'>{props.children}</span>
+      <span className='pointer-events-none absolute h-px w-px overflow-hidden'>{props.children}</span>
     </PlateElement>
   );
 }
 
 const ActionSymbolPlugin = createSlatePlugin({
   key: 'actionSymbol',
-  node: { isInline: true, isVoid: true, component: ActionSymbolElement },
+  node: { isElement: true, isInline: true, isVoid: true, component: ActionSymbolElement },
 });
 
 const ACTION_COSTS: Array<{ cost: ActionCost; symbol: '1' | '2' | '3' | '4' | '5' }> = [
@@ -244,9 +248,28 @@ function LiElement(props: PlateElementProps) {
   return <PlateElement as='li' className='my-0.5' {...props} />;
 }
 function LinkElement(props: PlateElementProps) {
-  const { props: linkProps } = useLink({ element: props.element as TLinkElement });
+  const { open } = useContentLinks();
+  const element = props.element as TLinkElement;
+  const { props: linkProps } = useLink({ element });
+  const href = String(element.url ?? '');
+  const content = getContentDataFromHref(href);
   return (
-    <PlateElement as='a' className='text-p1-accent underline underline-offset-2' {...props} attributes={{ ...props.attributes, ...linkProps }} />
+    <PlateElement
+      as='a'
+      className='text-p1-accent underline underline-offset-2'
+      {...props}
+      attributes={{
+        ...props.attributes,
+        ...linkProps,
+        href: content ? undefined : linkProps.href,
+        onClick: (event) => {
+          if (!content) return;
+          event.preventDefault();
+          event.stopPropagation();
+          open(href);
+        },
+      }}
+    />
   );
 }
 
@@ -266,7 +289,10 @@ const notePlugins = [
   BulletedListPlugin.withComponent(UlElement),
   NumberedListPlugin.withComponent(OlElement),
   ListItemPlugin.withComponent(LiElement),
-  LinkPlugin.configure({ node: { component: LinkElement } }),
+  LinkPlugin.configure({
+    node: { component: LinkElement },
+    options: { allowedSchemes: ['http', 'https', 'mailto', 'tel', 'wg'] },
+  }),
   ActionSymbolPlugin,
   EmojiPlugin,
   CommentPlugin,
@@ -279,8 +305,9 @@ function replaceActionNodes(nodes: unknown[]): unknown[] {
   return nodes.map((node) => {
     const item = node as { type?: string; children?: unknown[]; text?: string };
     if (item.type === 'actionSymbol') {
-      const text = (item.children?.[0] as { text?: string } | undefined)?.text ?? 'action_symbol_1';
-      return { text, code: true };
+      const stored = (item as { symbol?: string }).symbol;
+      const fromText = /^action_symbol_([1-5])$/.exec((item.children?.[0] as { text?: string } | undefined)?.text ?? '')?.[1];
+      return { text: `action_symbol_${stored || fromText || '1'}`, code: true };
     }
     if (Array.isArray(item.children)) return { ...item, children: replaceActionNodes(item.children) };
     return node;
@@ -293,7 +320,7 @@ function serializeMarkdown(editor: { children: { type?: string }[] }) {
     value: replaceActionNodes(editor.children as unknown as unknown[]) as never,
   });
   const body = (helper.api.markdown?.serialize() ?? '').replace(new RegExp(`^${TOC_MARK}\\n?`), '');
-  const trimmed = body.replace(/^\s+/, '').replace(/[ \t]+$/gm, '');
+  const trimmed = toWgMarkdownLinks(body.replace(/^\s+/, '').replace(/[ \t]+$/gm, ''));
   const hasToc = editor.children.some((node) => node.type === 'toc');
   return hasToc ? `${TOC_MARK}\n${trimmed}` : trimmed;
 }
@@ -416,16 +443,7 @@ function NotesToolbar({
   return (
     <div className='flex flex-wrap items-center gap-0.5 border-b border-p1-border p-1'>
       <ActionGlyphMenu />
-      <ToolButton
-        label='Content link'
-        onClick={() => {
-          const href = window.prompt('Link URL or content href (link_feat_123)');
-          if (!href?.trim()) return;
-          insertLink(editor, { url: href.trim() });
-        }}
-      >
-        <Link2 size={14} />
-      </ToolButton>
+      <NoteLinkButton editor={editor} />
       <ToolButton label='Remove link' onClick={() => unwrapLink(editor)}>
         <Unlink size={14} />
       </ToolButton>
