@@ -337,7 +337,7 @@ export function DiceRollLogPanel({ log, canClear, canEdit, canRemoveEntry, onCle
             setNoteTarget({ round, entry });
           }}
         />
-      ))}
+      )))}
       {noteTarget && (
         <DiceRollNoteModal
           round={noteTarget.round}
