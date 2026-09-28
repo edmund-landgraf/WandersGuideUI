@@ -49,8 +49,8 @@ import { buildInitiativeRoundLog, formatInitiativeRoll, InitiativeRollModal, isC
 import { toLabel } from '@utils/strings';
 import { sign } from '@utils/numbers';
 import { DiceCheckResultToast, DiceCheckRollModal, DiceRollColorKey, DiceRollLogPanel } from './phase1-dice-rolls';
-import { Dice3dOverlay, type Dice3dThrow } from './phase1-dice-3d';
-import { buildDiceRollLog, checkStatLabel, DICE_CHECK_OPTIONS, DICE_CHECK_VALUES, defaultStatForCombatant, degreeOfSuccess, filterCombatantsBySide, formatCheckRoll, loadAllCheckOptions, loadCheckOptions, outcomeLabel, outcomeRowClass, overlayDiceRollMeta, playerPartyDiceCombatants, setDiceRollLogEntryNote } from './phase1-dice-check';
+import { Dice3dOverlay, dice3dThrowsFromCheckLog, dice3dThrowsFromInitiativeRound, diceCheckOverlayTitle, diceRollLogKey, initiativeRoundDiceKey, type Dice3dThrow } from './phase1-dice-3d';
+import { adoptServerDiceLogs, buildDiceRollLog, checkStatLabel, DICE_CHECK_OPTIONS, DICE_CHECK_VALUES, defaultStatForCombatant, degreeOfSuccess, filterCombatantsBySide, formatCheckRoll, loadAllCheckOptions, loadCheckOptions, outcomeLabel, outcomeRowClass, overlayDiceRollMeta, playerPartyDiceCombatants, setDiceRollLogEntryNote } from './phase1-dice-check';
 import { findAmbaChallenge, challengeCheckEntries, mapAmbaChallengeStat, mergeEncounterMeta, readAmbaChallenges } from './phase1-amba-challenges';
 import { encounterDisplayName, encounterNamesMatch } from './phase1-encounter-title';
 import { nextEncounterName } from './phase1-encounter-name';
@@ -1365,11 +1365,11 @@ export function Phase1StandaloneEncounterPage() {
     enabled,
     queryFn: async () => {
       const result = await phase1Request<Encounter[]>('find-encounter', { user_id: session!.user.id });
-      return overlayDiceRollMeta(
-        overlayInitiativeLogs((result ?? []).filter((item) => item.campaign_id == null), initiativeLogsRef.current),
-        diceLogsRef.current,
-        diceStatesRef.current,
-      );
+      const fetched = overlayInitiativeLogs((result ?? []).filter((item) => item.campaign_id == null), initiativeLogsRef.current);
+      if (queryClient.isMutating({ mutationKey: ['phase1-update-standalone-encounter'] }) === 0) {
+        adoptServerDiceLogs(fetched, diceLogsRef.current);
+      }
+      return overlayDiceRollMeta(fetched, diceLogsRef.current, diceStatesRef.current);
     },
   });
   const players = useQuery({
@@ -1527,12 +1527,13 @@ export function Phase1CampaignPage() {
     queryKey: encountersKey,
     enabled,
     refetchInterval: 4000,
-    queryFn: async () =>
-      overlayDiceRollMeta(
-        overlayInitiativeLogs(await loadPhase1CampaignEncounters(campaignId, session!.access_token), initiativeLogsRef.current),
-        diceLogsRef.current,
-        diceStatesRef.current,
-      ),
+    queryFn: async () => {
+      const fetched = overlayInitiativeLogs(await loadPhase1CampaignEncounters(campaignId, session!.access_token), initiativeLogsRef.current);
+      const diceWriteInFlight = queryClient.isMutating({ mutationKey: ['phase1-patch-encounter-dice', campaignId] }) > 0
+        || queryClient.isMutating({ mutationKey: ['phase1-update-encounter', campaignId] }) > 0;
+      if (!diceWriteInFlight) adoptServerDiceLogs(fetched, diceLogsRef.current);
+      return overlayDiceRollMeta(fetched, diceLogsRef.current, diceStatesRef.current);
+    },
   });
   const updateEncounter = useMutation<boolean, Error, Encounter, { previous?: Encounter[] }>({
     mutationKey: ['phase1-update-encounter', campaignId],
@@ -1573,7 +1574,7 @@ export function Phase1CampaignPage() {
     mutationKey: ['phase1-patch-encounter-dice', campaignId],
     mutationFn: (patch) => {
       const result = encounterSaveChain.current.then(() =>
-        phase1Request('wgui-ext-patch-encounter-dice', {
+        phase1Request<{ dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] }>('wgui-ext-patch-encounter-dice', {
           campaign_id: patch.campaignId,
           encounter_id: patch.encounterId,
           ...('dice_roll_state' in patch ? { dice_roll_state: patch.dice_roll_state } : {}),
@@ -1823,7 +1824,11 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const [encounterTab, setEncounterTab] = useState<'combat' | 'dice'>('combat');
   const [checkOpen, setCheckOpen] = useState(false);
   const [checkToast, setCheckToast] = useState<{ log: DiceRollLog; x: number; y: number } | null>(null);
-  const [dice3dThrows, setDice3dThrows] = useState<Dice3dThrow[] | null>(null);
+  const [dice3dThrows, setDice3dThrows] = useState<{ throws: Dice3dThrow[]; title?: string } | null>(null);
+  const seenInitiativeDiceKeyRef = useRef<string | null>(null);
+  const seenInitiativeDiceEncounterRef = useRef<number | null>(null);
+  const seenDiceCheckKeyRef = useRef<string | null>(null);
+  const seenDiceCheckEncounterRef = useRef<number | null>(null);
   const [titleDraft, setTitleDraft] = useState(selectedEncounter?.meta_data.dice_roll_state?.title ?? '');
   const [dcDraft, setDcDraft] = useState(selectedEncounter?.meta_data.dice_roll_state?.dc != null ? String(selectedEncounter.meta_data.dice_roll_state.dc) : '');
   const combatants = useMemo(() => populateCombatants(selectedEncounter?.combatants.list ?? [], players), [selectedEncounter, players]);
@@ -1844,7 +1849,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   } else if (selectedEncounter?.meta_data.initiative_log && selectedEncounter.meta_data.initiative_log.length >= initiativeLogRef.current.length) {
     initiativeLogRef.current = selectedEncounter.meta_data.initiative_log;
   }
-  if (selectedEncounter?.meta_data.dice_roll_log && selectedEncounter.meta_data.dice_roll_log.length >= diceLogRef.current.length) {
+  if (selectedEncounter?.meta_data.dice_roll_log && (selectedEncounter.meta_data.dice_roll_log.length === 0 || selectedEncounter.meta_data.dice_roll_log.length >= diceLogRef.current.length)) {
     diceLogRef.current = selectedEncounter.meta_data.dice_roll_log;
   }
   if (selectedEncounter?.meta_data.dice_roll_state) {
@@ -2063,6 +2068,11 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     persistRoster(list, { initiative_log: [...existingLog, roundEntry] });
     setInitiativeOpen(false);
     setInitiativeRollNonce((value) => value + 1);
+    seenInitiativeDiceKeyRef.current = initiativeRoundDiceKey(roundEntry);
+    seenInitiativeDiceEncounterRef.current = encounter.id;
+    maybeShowDice3d(
+      dice3dThrowsFromInitiativeRound(roundEntry),
+    );
   }
 
   function clearInitiative() {
@@ -2080,7 +2090,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     persistRoster(encounter.combatants.list, { initiative_log: [] });
   }
 
-  const dice3dEnabled = Boolean(campaign?.meta_data?.settings?.dice_3d);
+  const dice3dEnabled = campaign?.meta_data?.settings?.dice_3d !== false;
 
   function persistDice3d(enabled: boolean) {
     if (!campaign || !isGm) return;
@@ -2096,10 +2106,49 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     });
   }
 
-  function maybeShowDice3d(throws: Dice3dThrow[]) {
+  function maybeShowDice3d(throws: Dice3dThrow[], title?: string) {
     if (!dice3dEnabled || throws.length === 0) return;
-    setDice3dThrows(throws);
+    setDice3dThrows({ throws, title });
   }
+
+  const initiativeLog = selectedEncounter?.meta_data.initiative_log;
+  useEffect(() => {
+    const encounterId = selectedEncounter?.id ?? null;
+    const latest = initiativeLog?.[initiativeLog.length - 1];
+    const key = initiativeRoundDiceKey(latest);
+    if (encounterId !== seenInitiativeDiceEncounterRef.current) {
+      seenInitiativeDiceEncounterRef.current = encounterId;
+      seenInitiativeDiceKeyRef.current = key;
+      return;
+    }
+    if (key === seenInitiativeDiceKeyRef.current) return;
+    seenInitiativeDiceKeyRef.current = key;
+    if (!latest) return;
+    maybeShowDice3d(
+      dice3dThrowsFromInitiativeRound(latest, (entry) => (isGm || entry.ally ? entry.name : playerEnemyLabel(entry.name))),
+    );
+  }, [selectedEncounter?.id, initiativeLog, isGm, dice3dEnabled]);
+
+  const diceRollLog = selectedEncounter?.meta_data.dice_roll_log;
+  useEffect(() => {
+    const encounterId = selectedEncounter?.id ?? null;
+    const latest = diceRollLog?.[diceRollLog.length - 1];
+    const key = diceRollLogKey(latest);
+    if (encounterId !== seenDiceCheckEncounterRef.current) {
+      seenDiceCheckEncounterRef.current = encounterId;
+      seenDiceCheckKeyRef.current = key;
+      return;
+    }
+    if (key === seenDiceCheckKeyRef.current) return;
+    seenDiceCheckKeyRef.current = key;
+    if (!latest) return;
+    const gmRoll = !latest.initiated_by_user_id || sameUserId(latest.initiated_by_user_id, campaign?.user_id);
+    if (!isGm && gmRoll) return;
+    maybeShowDice3d(
+      dice3dThrowsFromCheckLog(latest, (entry) => (isGm || entry.ally ? entry.name : playerEnemyLabel(entry.name))),
+      diceCheckOverlayTitle(latest.dc, checkStatLabel(latest.defaultStat)),
+    );
+  }, [selectedEncounter?.id, diceRollLog, isGm, dice3dEnabled, campaign?.user_id]);
 
   function persistDiceState(patch: Partial<DiceRollState>) {
     const encounter = selectedEncounterRef.current;
@@ -2111,6 +2160,15 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   function clearDiceRollLog() {
     const encounter = selectedEncounterRef.current;
     if (!encounter || !isGm || rosterSaving) return;
+    diceLogRef.current = [];
+    if (campaign && onPatchEncounterDice) {
+      onPatchEncounterDice({
+        encounterId: encounter.id,
+        campaignId: campaign.id,
+        dice_roll_log: [],
+      });
+      return;
+    }
     persistRoster(encounter.combatants.list, { dice_roll_log: [] });
   }
 
@@ -2155,14 +2213,18 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     const rows = isGm ? filterCombatantsBySide(activeCombatants, state.side) : playerPartyDiceCombatants(activeCombatants);
     const existingLog = diceLogRef.current.length ? diceLogRef.current : encounter.meta_data.dice_roll_log ?? [];
     const challenge = isGm ? findAmbaChallenge(readAmbaChallenges(encounter.meta_data), state.challenge_id) : undefined;
+    const log = buildDiceRollLog(titleDraft || state.title || '', dc, stat, rows, results, challenge, sessionUserId);
+    seenDiceCheckKeyRef.current = diceRollLogKey(log);
+    seenDiceCheckEncounterRef.current = encounter.id;
     persistDiceMeta({
       dice_roll_state: { ...state, results },
-      dice_roll_log: [...existingLog, buildDiceRollLog(titleDraft || state.title || '', dc, stat, rows, results, challenge, sessionUserId)],
+      dice_roll_log: [...existingLog, log],
     });
     maybeShowDice3d(
       rows
         .filter((combatant) => results[combatant._id])
-        .map((combatant) => ({ name: combatant.data.name, die: results[combatant._id].die }))
+        .map((combatant) => ({ name: isGm || combatant.ally ? combatant.data.name : playerEnemyLabel(combatant.data.name), die: results[combatant._id].die })),
+      diceCheckOverlayTitle(dc, checkStatLabel(stat)),
     );
     setCheckOpen(false);
   }
@@ -2190,8 +2252,13 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     };
     const log = buildDiceRollLog(title, dc, resolvedStat, [combatant], { [combatant._id]: result }, challenge, sessionUserId);
     const existingLog = diceLogRef.current.length ? diceLogRef.current : encounter.meta_data.dice_roll_log ?? [];
+    seenDiceCheckKeyRef.current = diceRollLogKey(log);
+    seenDiceCheckEncounterRef.current = encounter.id;
     persistDiceMeta({ dice_roll_log: [...existingLog, log] });
-    maybeShowDice3d([{ name: combatant.data.name, die: result.die }]);
+    maybeShowDice3d(
+      [{ name: isGm || combatant.ally ? combatant.data.name : playerEnemyLabel(combatant.data.name), die: result.die }],
+      diceCheckOverlayTitle(dc, checkStatLabel(resolvedStat)),
+    );
     setCheckToast({ log, x, y });
   }
 
@@ -2599,7 +2666,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
                 <DiceCheckResultToast log={checkToast.log} x={checkToast.x} y={checkToast.y} onClose={() => setCheckToast(null)} />
               )}
               {dice3dThrows && (
-                <Dice3dOverlay throws={dice3dThrows} onClose={() => setDice3dThrows(null)} />
+                <Dice3dOverlay throws={dice3dThrows.throws} title={dice3dThrows.title} onClose={() => setDice3dThrows(null)} />
               )}
               {checkOpen && selectedEncounter && diceStat && diceDc != null && (
                 <DiceCheckRollModal

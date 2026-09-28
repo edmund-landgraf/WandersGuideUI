@@ -40,6 +40,49 @@ export function dice3dRollConfig(throws: Dice3dThrow[]) {
   }));
 }
 
+export function parseInitiativeDie(calculation: string | undefined) {
+  if (!calculation) return null;
+  const match = calculation.match(/d20\s*\((\d+)\)/i);
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) return null;
+  return clampDie(value);
+}
+
+export function initiativeRoundDiceKey(round: { id?: string; round?: number; entries: Array<{ combatant_id?: string; calculation?: string }> } | undefined) {
+  if (!round) return '';
+  if (round.id) return round.id;
+  return `${round.round ?? ''}:${round.entries.map((entry) => `${entry.combatant_id ?? ''}:${entry.calculation ?? ''}`).join('|')}`;
+}
+
+export function diceCheckOverlayTitle(dc: number, statLabel: string) {
+  return `DC ${dc} vs ${statLabel}`;
+}
+
+export function diceRollLogKey(log: { id?: string; dc?: number; defaultStat?: string; entries: Array<{ combatant_id?: string; calculation?: string }> } | undefined) {
+  if (!log) return '';
+  if (log.id) return log.id;
+  return `${log.dc ?? ''}:${log.defaultStat ?? ''}:${log.entries.map((entry) => `${entry.combatant_id ?? ''}:${entry.calculation ?? ''}`).join('|')}`;
+}
+
+export function dice3dThrowsFromCheckLog(
+  log: { entries: Array<{ name: string; ally?: boolean; calculation?: string }> },
+  labelName: (entry: { name: string; ally?: boolean }) => string = (entry) => entry.name,
+): Dice3dThrow[] {
+  return dice3dThrowsFromInitiativeRound(log, labelName);
+}
+
+export function dice3dThrowsFromInitiativeRound(
+  round: { entries: Array<{ name: string; ally?: boolean; calculation?: string }> },
+  labelName: (entry: { name: string; ally?: boolean }) => string = (entry) => entry.name,
+): Dice3dThrow[] {
+  return round.entries.flatMap((entry) => {
+    const die = parseInitiativeDie(entry.calculation);
+    if (die == null) return [];
+    return [{ name: labelName(entry), die }];
+  });
+}
+
 function project(mesh: { getWorldPosition: (target: Vector3) => Vector3 }, camera: import('three').Camera, host: HTMLElement) {
   const vector = new Vector3();
   mesh.getWorldPosition(vector);
@@ -68,7 +111,7 @@ export function placeDiceLabel(
   };
 }
 
-export function Dice3dOverlay({ throws, onClose }: { throws: Dice3dThrow[]; onClose: () => void }) {
+export function Dice3dOverlay({ throws, title, onClose }: { throws: Dice3dThrow[]; title?: string; onClose: () => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -146,6 +189,11 @@ export function Dice3dOverlay({ throws, onClose }: { throws: Dice3dThrow[]; onCl
       role='presentation'
       onClick={() => onClose()}
     >
+      {title && (
+        <p className='pointer-events-none absolute inset-x-0 top-6 z-10 text-center text-2xl font-semibold tracking-wide text-white drop-shadow'>
+          {title}
+        </p>
+      )}
       <div ref={hostRef} className='absolute inset-0 [&>canvas]:block [&>canvas]:h-full [&>canvas]:w-full' />
       {labels.map((label, index) => (
         <span

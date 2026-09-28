@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampDie, DICE_HIT_SOUNDS, dice3dRollConfig, placeDiceLabel } from './phase1-dice-3d';
+import { clampDie, diceCheckOverlayTitle, DICE_HIT_SOUNDS, dice3dRollConfig, dice3dThrowsFromCheckLog, dice3dThrowsFromInitiativeRound, placeDiceLabel } from './phase1-dice-3d';
 
 describe('dice3dRollConfig', () => {
   it('maps one predetermined d20 per combatant with distinct shades', () => {
@@ -30,6 +30,37 @@ describe('dice3dRollConfig', () => {
     expect(left.y + label.height / 2).toBeLessThanOrEqual(viewport.height - 8);
     const inside = placeDiceLabel({ x: 400, y: 300 }, viewport, label);
     expect(inside).toEqual({ x: 400, y: 300 });
+  });
+
+  it('builds overlay throws from a logged initiative round', () => {
+    const throws = dice3dThrowsFromInitiativeRound(
+      {
+        entries: [
+          { name: 'Ada', ally: true, calculation: 'd20 (18) + Perception (+4) = 22' },
+          { name: 'Mudjaw Lurkbloom (2)', ally: false, calculation: 'd20 (7) = 7' },
+          { name: 'Skipped Wolf', ally: true, calculation: 'Skipped' },
+        ],
+      },
+      (entry) => (entry.ally ? entry.name : 'ML (2)'),
+    );
+    expect(throws).toEqual([
+      { name: 'Ada', die: 18 },
+      { name: 'ML (2)', die: 7 },
+    ]);
+  });
+
+  it('titles a shared check overlay as DC vs the skill', () => {
+    expect(diceCheckOverlayTitle(17, 'Stealth')).toBe('DC 17 vs Stealth');
+    const throws = dice3dThrowsFromCheckLog(
+      {
+        entries: [
+          { name: 'Ada', ally: true, calculation: 'd20 (14) + Stealth (+8) = 22 vs DC 17' },
+          { name: 'Mudjaw', ally: false, calculation: 'Skipped' },
+        ],
+      },
+      (entry) => (entry.ally ? entry.name : 'MJ'),
+    );
+    expect(throws).toEqual([{ name: 'Ada', die: 14 }]);
   });
 
   it('clamps invalid faces onto a d20', () => {

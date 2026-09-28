@@ -116,6 +116,17 @@ export function filterCombatantsBySide<T extends { ally: boolean }>(combatants: 
   return combatants;
 }
 
+/** Replace a client's optimistic dice log with the server copy, including an empty log after a clear. */
+export function adoptServerDiceLogs(
+  encounters: Encounter[],
+  logs: Map<number, DiceRollLog[]>,
+) {
+  for (const encounter of encounters) {
+    const server = encounter.meta_data.dice_roll_log;
+    if (server !== undefined) logs.set(encounter.id, server);
+  }
+}
+
 export function overlayDiceRollMeta(
   encounters: Encounter[],
   logs: ReadonlyMap<number, DiceRollLog[]>,
