@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampDie, diceCheckOverlayTitle, DICE_HIT_SOUNDS, dice3dRollConfig, dice3dThrowsFromCheckLog, dice3dThrowsFromInitiativeRound, placeDiceLabel } from './phase1-dice-3d';
+import { clampDie, diceCheckOverlayTitle, DICE_HIT_SOUNDS, dice3dRollConfig, dice3dThrowsFromCheckLog, dice3dThrowsFromInitiativeRound, placeDiceLabel, placeDiceLabelBeside } from './phase1-dice-3d';
 
 describe('dice3dRollConfig', () => {
   it('maps one predetermined d20 per combatant with distinct shades', () => {
@@ -30,6 +30,18 @@ describe('dice3dRollConfig', () => {
     expect(left.y + label.height / 2).toBeLessThanOrEqual(viewport.height - 8);
     const inside = placeDiceLabel({ x: 400, y: 300 }, viewport, label);
     expect(inside).toEqual({ x: 400, y: 300 });
+  });
+
+  it('parks the name on the die edge instead of the top face', () => {
+    const viewport = { width: 1280, height: 720 };
+    const label = { width: 140, height: 22 };
+    const right = placeDiceLabelBeside({ x: 400, y: 300 }, 80, viewport, label);
+    expect(right.x).toBeGreaterThanOrEqual(400 + 80);
+    expect(right.y).toBe(300);
+    const left = placeDiceLabelBeside({ x: 1200, y: 300 }, 80, viewport, label);
+    expect(left.x + label.width).toBeLessThanOrEqual(1200 - 80);
+    const below = placeDiceLabelBeside({ x: 40, y: 40 }, 90, viewport, { width: 1200, height: 22 });
+    expect(below.y).toBeGreaterThan(40);
   });
 
   it('builds overlay throws from a logged initiative round', () => {
