@@ -296,6 +296,15 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 }
 .settings-input:focus { border-color: color-mix(in srgb, var(--p1-accent) 55%, transparent); outline: none; }
 
+.p1-plate-editor [data-slate-editor] {
+  min-height: 100%;
+  outline: none;
+}
+.p1-plate-editor [data-slate-placeholder] {
+  color: var(--p1-text-faint);
+  opacity: 1;
+}
+
 
 .ability-prose > :first-child { margin-top: 0; }
 .ability-prose > :last-child { margin-bottom: 0; }

@@ -2,7 +2,7 @@ import { CampaignSignIn } from '@auth/CampaignSignIn';
 import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth, handleRest } from '@pages/character_sheet/entity-handler';
 import { GUIDE_BLUE } from '@constants/data';
-import { notePageToMarkdown } from '@pages/character_sheet/panels/gm-notes';
+import { AlignLeft, ArrowLeft, Brush, ChevronDown, Download, ExternalLink, Eye, Flag, Hammer, HeartPulse, Maximize2, Menu, Minimize2, Moon, Pencil, Plus, RotateCcw, Star, Sun, Trash2, User, X } from 'lucide-react';
 import type { Campaign, Character, Condition, Creature, Item } from '@schemas/content';
 import type { VariableListStr } from '@schemas/variables';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -11,7 +11,8 @@ import { labelToVariable } from '@variables/variable-utils';
 import exportToJSON from '@export/export-to-json';
 import exportToPDF from '@export/export-to-pdf';
 import { cloneDeep } from 'lodash-es';
-import { AlignLeft, ArrowLeft, Brush, ChevronDown, Download, ExternalLink, Eye, Flag, Hammer, HeartPulse, Menu, Moon, Plus, RotateCcw, Star, Sun, User, X } from 'lucide-react';
+import { noteContentsToMarkdown, ProseMarkdown } from './phase1-markdown';
+import { PlateNotesEditor } from './phase1-plate-notes';
 import { Phase1PortraitModal } from './phase1-portrait-modal';
 import { Phase1ArtworkPreview, Phase1BackgroundModal } from './phase1-background-modal';
 import { getAllBackgroundImages } from '@utils/background-images';
@@ -21,6 +22,8 @@ import { Phase1CssThemeToggle } from './Phase1CssThemeToggle';
 import { Phase1ThemeToggle } from './Phase1ThemeToggle';
 import { PHASE1_SHEET_ART_TONE_EVENT, persistSheetArtTone, readStoredSheetArtTone, type Phase1SheetArtTone } from './phase1-theme';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { ConfirmDialog } from './phase1-campaign-settings';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { isPlayable } from '@utils/character';
 import { loadPhase1SheetCharacter, phase1Request, sameUserId } from './phase1-api';
@@ -690,13 +693,51 @@ function creatureAsCombatant(creature: Creature, index: number, canEdit: boolean
   };
 }
 
+function isGmNotesPage(name?: string) {
+  return (name ?? '').trim().toLowerCase() === 'gm notes';
+}
+
+function nextNotePageName(pages: Array<{ name: string }>) {
+  const names = new Set(pages.map((page) => page.name.trim().toLowerCase()));
+  if (!names.has('notes')) return 'Notes';
+  let n = 2;
+  while (names.has(`notes ${n}`)) n += 1;
+  return `Notes ${n}`;
+}
+
 function CharacterNotesPanel({ notes, canEdit, onChange }: { notes: Character['notes']; canEdit: boolean; onChange: (notes: Character['notes']) => void }) {
-  const pages = (notes?.pages ?? []).filter((page) => page.name.trim().toLowerCase() !== 'gm notes');
+  const pages = (notes?.pages ?? []).filter((page) => !isGmNotesPage(page.name));
   const [pageIndex, setPageIndex] = useState(0);
-  const active = pages[Math.min(pageIndex, Math.max(pages.length - 1, 0))];
-  const saved = active ? notePageToMarkdown(active.contents) : '';
-  const [draft, setDraft] = useState(saved);
-  useEffect(() => setDraft(saved), [saved]);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number; index: number } | null>(null);
+  const [renameIndex, setRenameIndex] = useState<number | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [deleteIndex, setDeleteIndex] = useState<number | null>(null);
+  const safeIndex = Math.min(pageIndex, Math.max(pages.length - 1, 0));
+  const active = pages[safeIndex];
+  const saved = active ? noteContentsToMarkdown(active.contents) : '';
+
+  useEffect(() => {
+    if (pageIndex > pages.length - 1) setPageIndex(Math.max(pages.length - 1, 0));
+  }, [pageIndex, pages.length]);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
+
+  function patchPages(nextPages: NonNullable<Character['notes']>['pages']) {
+    onChange({ pages: nextPages });
+  }
+
+  function realIndexFor(pageIndexInList: number) {
+    const page = pages[pageIndexInList];
+    return (notes?.pages ?? []).findIndex((item) => item === page);
+  }
 
   function saveDraft(text: string) {
     if (!active) {
@@ -708,37 +749,201 @@ function CharacterNotesPanel({ notes, canEdit, onChange }: { notes: Character['n
     const nextPages = realIndex < 0
       ? [...all, { name: active.name, icon: active.icon, color: active.color, contents: text }]
       : all.map((page, index) => (index === realIndex ? { ...page, contents: text } : page));
-    onChange({ pages: nextPages });
+    patchPages(nextPages);
+  }
+
+  function addPage() {
+    const all = notes?.pages ?? [];
+    const page = {
+      name: nextNotePageName(pages),
+      icon: 'notebook',
+      color: GUIDE_BLUE,
+      contents: '',
+    };
+    patchPages([...all, page]);
+    setPageIndex(pages.length);
+  }
+
+  function renamePage(index: number, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed || isGmNotesPage(trimmed)) return;
+    const realIndex = realIndexFor(index);
+    if (realIndex < 0) return;
+    patchPages((notes?.pages ?? []).map((page, itemIndex) => (itemIndex === realIndex ? { ...page, name: trimmed } : page)));
+  }
+
+  function deletePage(index: number) {
+    const realIndex = realIndexFor(index);
+    if (realIndex < 0) return;
+    patchPages((notes?.pages ?? []).filter((_, itemIndex) => itemIndex !== realIndex));
+    setPageIndex(Math.max(0, index - 1));
   }
 
   if (!pages.length && !canEdit) return <EmptyState>No notes yet.</EmptyState>;
 
-  return (
-    <div className='flex min-h-[280px] flex-col gap-3'>
-      {pages.length > 1 && (
-        <div className='flex overflow-x-auto border-b border-p1-border'>
+  const editor = canEdit ? (
+    <PlateNotesEditor key={String(safeIndex)} markdown={saved} onMarkdownChange={saveDraft} />
+  ) : saved ? (
+    <div className='min-h-0 flex-1 overflow-y-auto border border-p1-border bg-p1-surface p-4'>
+      <ProseMarkdown>{saved}</ProseMarkdown>
+    </div>
+  ) : (
+    <EmptyState>No notes yet.</EmptyState>
+  );
+
+  const chrome = (
+    <div className={`flex min-h-0 flex-1 flex-col gap-3 ${fullscreen ? 'h-full' : 'h-[calc(100dvh-16rem)]'}`}>
+      <div className='flex items-center gap-2'>
+        <div className='flex min-w-0 flex-1 overflow-x-auto border-b border-p1-border'>
           {pages.map((page, index) => (
-            <InnerTab key={`${page.name}-${index}`} active={Math.min(pageIndex, pages.length - 1) === index} onClick={() => setPageIndex(index)}>
+            <InnerTab
+              key={`${page.name}-${index}`}
+              active={safeIndex === index}
+              onClick={() => setPageIndex(index)}
+              onContextMenu={canEdit ? (event) => {
+                event.preventDefault();
+                setPageIndex(index);
+                setMenu({ x: event.clientX, y: event.clientY, index });
+              } : undefined}
+            >
               {page.name || `Page ${index + 1}`}
             </InnerTab>
           ))}
+          {canEdit && (
+            <button type='button' className='shrink-0 px-2 py-2 text-xs text-p1-muted hover:text-p1-text' onClick={addPage}>
+              New page
+            </button>
+          )}
         </div>
-      )}
-      {!canEdit ? (
-        saved ? <pre className='whitespace-pre-wrap border border-p1-border bg-p1-surface p-4 text-sm leading-6 text-p1-text'>{saved}</pre> : <EmptyState>No notes yet.</EmptyState>
-      ) : (
-        <>
-          <textarea className='min-h-[220px] flex-1 resize-y border border-p1-border bg-p1-surface p-3 text-sm leading-6 text-p1-text outline-none focus:border-p1-accent/60' value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => { if (draft !== saved) saveDraft(draft); }} />
-          <button type='button' className='h-8 self-end bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink' onClick={() => saveDraft(draft)}>Save notes</button>
-        </>
-      )}
+        {canEdit && (
+          <button
+            type='button'
+            aria-label={fullscreen ? 'Exit full screen' : 'Full screen'}
+            className='grid h-8 w-8 shrink-0 place-items-center text-p1-muted hover:bg-p1-hover hover:text-p1-text'
+            onClick={() => setFullscreen((open) => !open)}
+          >
+            {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          </button>
+        )}
+      </div>
+      {editor}
     </div>
+  );
+
+  const dialogs = (
+    <>
+      {menu && (
+        <NotePageMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          onRename={() => {
+            const page = pages[menu.index];
+            setRenameDraft(page?.name ?? '');
+            setRenameIndex(menu.index);
+            setMenu(null);
+          }}
+          onDelete={() => {
+            setDeleteIndex(menu.index);
+            setMenu(null);
+          }}
+        />
+      )}
+      {renameIndex != null && (
+        <RenameNoteDialog
+          value={renameDraft}
+          onChange={setRenameDraft}
+          onCancel={() => setRenameIndex(null)}
+          onSave={() => {
+            renamePage(renameIndex, renameDraft);
+            setRenameIndex(null);
+          }}
+        />
+      )}
+      {deleteIndex != null && (
+        <ConfirmDialog
+          title='Delete note'
+          message={`Delete “${pages[deleteIndex]?.name || 'this page'}”? This cannot be undone.`}
+          confirmLabel='Delete'
+          onCancel={() => setDeleteIndex(null)}
+          onConfirm={() => {
+            deletePage(deleteIndex);
+            setDeleteIndex(null);
+          }}
+        />
+      )}
+    </>
+  );
+
+  if (fullscreen) {
+    return (
+      <>
+        {createPortal(
+          <div className='fixed inset-0 z-[100] flex flex-col bg-p1-page p-4'>
+            {chrome}
+          </div>,
+          document.body
+        )}
+        {dialogs}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {chrome}
+      {dialogs}
+    </>
+  );
+}
+
+function NotePageMenu({ x, y, onClose, onRename, onDelete }: { x: number; y: number; onClose: () => void; onRename: () => void; onDelete: () => void }) {
+  const left = Math.min(x, window.innerWidth - 180);
+  const top = Math.min(y, window.innerHeight - 96);
+  return createPortal(
+    <>
+      <div className='fixed inset-0 z-[109]' onPointerDown={onClose} />
+      <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }} onPointerDown={(event) => event.stopPropagation()}>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onRename}>
+          <Pencil size={14} /> Rename
+        </button>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onDelete}>
+          <Trash2 size={14} /> Delete note
+        </button>
+      </div>
+    </>,
+    document.body
+  );
+}
+
+function RenameNoteDialog({ value, onChange, onCancel, onSave }: { value: string; onChange: (value: string) => void; onCancel: () => void; onSave: () => void }) {
+  return createPortal(
+    <div className='fixed inset-0 z-[120] grid place-items-center bg-black/75 p-5' onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel(); }}>
+      <section className='w-full max-w-sm border border-p1-border bg-p1-surface p-5'>
+        <h2 className='text-lg font-semibold'>Rename</h2>
+        <input
+          autoFocus
+          className='mt-3 h-9 w-full border border-p1-border bg-p1-inset px-3 text-sm text-p1-text outline-none focus:border-p1-accent/60'
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') onSave();
+            if (event.key === 'Escape') onCancel();
+          }}
+        />
+        <div className='mt-4 flex justify-end gap-2'>
+          <button type='button' className='toolbar-button' onClick={onCancel}>Cancel</button>
+          <button type='button' className='toolbar-button text-p1-accent-ink' style={{ background: 'var(--p1-accent)', color: 'var(--p1-accent-ink)', borderColor: 'var(--p1-accent)' }} onClick={onSave}>Save</button>
+        </div>
+      </section>
+    </div>,
+    document.body
   );
 }
 
 function toCharacterNotes(text: string, notes: Character['notes']): Character['notes'] {
   const pages = notes?.pages ?? [];
-  const index = pages.findIndex((page) => page.name.trim().toLowerCase() !== 'gm notes');
+  const index = pages.findIndex((page) => !isGmNotesPage(page.name));
   const page = {
     name: 'Notes',
     icon: 'notebook',

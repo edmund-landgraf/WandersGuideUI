@@ -288,8 +288,8 @@ export function SkillsActionsPanel({ combatant, onLogAction }: { combatant: Popu
   </>;
 }
 
-function InnerTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
-  return <button className={`shrink-0 border-b-2 px-2 py-2 text-xs ${active ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:text-p1-text'}`} onClick={onClick}>{children}</button>;
+function InnerTab({ active, onClick, onContextMenu, children }: { active: boolean; onClick: () => void; onContextMenu?: (event: ReactMouseEvent) => void; children: ReactNode }) {
+  return <button className={`shrink-0 border-b-2 px-2 py-2 text-xs ${active ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:text-p1-text'}`} onClick={onClick} onContextMenu={onContextMenu}>{children}</button>;
 }
 export { InnerTab };
 
