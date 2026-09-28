@@ -26,6 +26,14 @@ export function ProseMarkdown({ children, className = '' }: { children: string; 
               <table>{children}</table>
             </div>
           ),
+          code: ({ children }) => {
+            const value = String(children ?? '');
+            const glyph = value.startsWith('action_symbol_')
+              ? ({ '1': '◆', '2': '◆◆', '3': '◆◆◆', '4': '◇', '5': '↩' } as Record<string, string>)[value.replace('action_symbol_', '')]
+              : undefined;
+            if (glyph) return <span className='action-symbol'>{glyph}</span>;
+            return <code>{children}</code>;
+          },
           a: ({ href, children }) => {
             const resolved = resolveAonHref(href);
             const content = getContentDataFromHref(resolved ?? href ?? '');

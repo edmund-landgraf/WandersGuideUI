@@ -213,6 +213,43 @@ export function actionCostToLabel(cost: ActionCost | string, alt?: boolean): str
   return result;
 }
 
+const ACTION_COST_TO_GLYPH: Record<string, ActionGlyphId> = {
+  'ONE-ACTION': 1,
+  'TWO-ACTIONS': 2,
+  'THREE-ACTIONS': 3,
+  'FREE-ACTION': 4,
+  'REACTION': 5,
+};
+
+/**
+ * Turn stored action-cost tags into `` `action_symbol_N` `` so markdown renderers
+ * can draw glyphs. Handles real tags, markdown-escaped tags, and HTML entities.
+ */
+export function convertActionSymbolMarkup(text: string): string {
+  if (!text || !/abbr|span|action-symbol|action-glyph/i.test(text)) return text;
+
+  let out = text;
+  for (let i = 0; i < 2; i++) {
+    out = out
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#0*39;|&apos;/gi, "'");
+  }
+  out = out.replace(/\\(<\/?(?:abbr|span)\b)/gi, '$1');
+
+  return out.replace(/<(abbr|span)\b([^>]*?)>([\s\S]*?)<\/\1\s*>/gi, (full, _tag: string, attrs: string, inner: string) => {
+    if (!/action-symbol|action-glyph/i.test(attrs)) return full;
+    const cost = attrs.match(/\bcost=["']([^"']+)["']/i)?.[1]?.toUpperCase();
+    const fromCost = cost ? ACTION_COST_TO_GLYPH[cost] : undefined;
+    const innerText = inner.replace(/<[^>]+>/g, '').trim();
+    const fromInner = /^[1-5]$/.test(innerText) ? (Number(innerText) as ActionGlyphId) : undefined;
+    const symbol = fromCost ?? fromInner ?? 1;
+    return `\`action_symbol_${symbol}\``;
+  });
+}
+
 export function findActions(text: string): ActionCost[] {
   const regex = /cost="([^"]*)"/g;
   return Array.from(text.matchAll(regex), (m) => m[1]) as ActionCost[];

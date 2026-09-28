@@ -41,10 +41,7 @@ export default function RichText(props: RichTextProps) {
     convertedChildren = compileExpressions(props.store ?? 'CHARACTER', convertedChildren, true);
   }
 
-  // Convert action symbol text of abbr to code markdown (then convert it back)
-  // This is a hack to get around the fact that markdown doesn't really support abbr
-  const regex = /<abbr[^>]*class="action-symbol"[^>]*>([A-Z0-9]+)<\/abbr>/gm;
-  convertedChildren = convertedChildren?.replace(regex, '`action_symbol_$1`');
+  // Action-cost tags become `action_symbol_N` inside toStandard2eProse.
 
   // Add spaces around em dashes between letters
   convertedChildren = convertedChildren?.replace(/(\w)—(\w)/g, '$1 — $2');

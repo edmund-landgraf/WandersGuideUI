@@ -1788,7 +1788,8 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const diceStat = diceState?.stat;
   const diceDc = diceState?.dc ?? null;
   const diceRows = !diceSide || !diceStat ? [] : filterCombatantsBySide(activeCombatants, diceSide);
-  const diceGridRows = diceSide ? filterCombatantsBySide(activeCombatants, diceSide) : activeCombatants;
+  const gmDiceGridRows = diceSide ? filterCombatantsBySide(activeCombatants, diceSide) : activeCombatants;
+  const diceGridRows = isGm ? gmDiceGridRows : activeCombatants.filter((combatant) => !isEnemyCreature(combatant));
   const canRollCheck = Boolean(isGm && !rosterSaving && diceSide && diceStat && diceDc != null && Number.isFinite(diceDc) && diceRows.length > 0);
   const canSingleCheck = Boolean(isGm && !rosterSaving && diceDc != null && Number.isFinite(diceDc));
 
@@ -2440,7 +2441,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
                 ) : (
                   <>
                     <CombatantGrid combatants={diceGridRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onSingleCheck={canSingleCheck ? rollSingleCheck : undefined} onSingleChallenge={isGm && !rosterSaving && ambaChallenges.length > 0 ? rollSingleChallenge : undefined} challenges={ambaChallenges} dice={{ challengeId: diceState?.challenge_id, checkStat: diceStat, columnLabel: checkStatLabel(diceStat), dc: diceDc, results: diceState?.results ?? {}, emptyMessage: diceGridRows.length === 0 ? 'No matching combatants for this filter.' : 'Right-click a combatant to roll a check. Group rolls still use the toolbar.' }} playerView={!isGm} />
-                    <DiceRollLogPanel log={selectedEncounter?.meta_data.dice_roll_log ?? []} canClear={isGm && !rosterSaving} canEdit={isGm && !rosterSaving} onClear={clearDiceRollLog} onRemove={removeDiceRollLog} onUpdateNote={updateDiceRollNote} />
+                    <DiceRollLogPanel log={isGm ? (selectedEncounter?.meta_data.dice_roll_log ?? []) : playerAllyRoundLog(selectedEncounter?.meta_data.dice_roll_log ?? [])} canClear={isGm && !rosterSaving} canEdit={isGm && !rosterSaving} onClear={clearDiceRollLog} onRemove={removeDiceRollLog} onUpdateNote={updateDiceRollNote} />
                   </>
                 )}
               </div>
@@ -3853,15 +3854,17 @@ function DiceRollToolbar({ isGm, side, title, dc, stat, challenges, challengeId,
   const challengesEmpty = challenges.length === 0;
   return (
     <div className='flex flex-wrap items-end gap-3 border-b border-p1-border bg-p1-surface px-5 py-3'>
-      <fieldset className='flex items-center gap-3'>
-        <legend className='sr-only'>Who to include</legend>
-        {(['enemies', 'allies', 'both'] as const).map((value) => (
-          <label key={value} className='flex items-center gap-1.5 text-xs text-p1-muted'>
-            <input type='radio' name='dice-roll-side' checked={side === value} disabled={!isGm} onChange={() => onSide(value)} />
-            {value === 'enemies' ? 'Enemies' : value === 'allies' ? 'Allies' : 'Both'}
-          </label>
-        ))}
-      </fieldset>
+      {isGm && (
+        <fieldset className='flex items-center gap-3'>
+          <legend className='sr-only'>Who to include</legend>
+          {(['enemies', 'allies', 'both'] as const).map((value) => (
+            <label key={value} className='flex items-center gap-1.5 text-xs text-p1-muted'>
+              <input type='radio' name='dice-roll-side' checked={side === value} onChange={() => onSide(value)} />
+              {value === 'enemies' ? 'Enemies' : value === 'allies' ? 'Allies' : 'Both'}
+            </label>
+          ))}
+        </fieldset>
+      )}
       <label className='min-w-[12rem]'>
         <span className='text-[10px] uppercase text-p1-faint'>Challenge</span>
         <select

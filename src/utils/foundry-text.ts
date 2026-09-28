@@ -1,4 +1,5 @@
 import { getAllConditionNames } from '@conditions/condition-handler';
+import { convertActionSymbolMarkup } from '@utils/actions';
 import { toLabel } from '@utils/strings';
 
 /**
@@ -22,7 +23,8 @@ const AON_ORIGIN = 'https://2e.aonprd.com';
 
 export function toStandard2eProse(text: string): string {
   if (!text) return text;
-  let out = unescapeWikiBrackets(text);
+  let out = convertActionSymbolMarkup(text);
+  out = unescapeWikiBrackets(out);
   out = convertHtmlAnchors(out);
   out = convertUuidEnrichers(out);
   out = convertCheckEnrichers(out);

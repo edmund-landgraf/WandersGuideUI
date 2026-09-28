@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { convertActionSymbolMarkup } from './actions';
 import { autoLinkConditions, normalizeMarkdownTables, toStandard2eProse, toWgMarkdownLinks } from './foundry-text';
 import { getContentDataFromHref } from '@common/rich_text_input/ContentLinkExtension';
 
@@ -24,6 +25,25 @@ describe('WG / wiki condition links', () => {
   it('unescapes markdown-escaped wiki brackets', () => {
     const out = renderProse('are \\[\\[Concealed\\]\\].');
     expect(out).toContain('[concealed](<link_condition_concealed>)');
+  });
+});
+
+describe('action symbol markup', () => {
+  it('turns stored abbr tags into action symbol codes', () => {
+    const raw =
+      '<abbr cost="ONE-ACTION" class="action-symbol">1</abbr> The spell has a range of touch.\n' +
+      '<abbr cost="TWO-ACTIONS" class="action-symbol">2</abbr> (concentrate)\n' +
+      '<abbr cost="THREE-ACTIONS" class="action-symbol">3</abbr> (concentrate)';
+    const out = convertActionSymbolMarkup(raw);
+    expect(out).toContain('`action_symbol_1`');
+    expect(out).toContain('`action_symbol_2`');
+    expect(out).toContain('`action_symbol_3`');
+    expect(out).not.toContain('<abbr');
+  });
+
+  it('decodes entity-escaped action tags', () => {
+    const raw = '&lt;abbr cost=&quot;REACTION&quot; class=&quot;action-symbol&quot;&gt;5&lt;/abbr&gt;';
+    expect(toStandard2eProse(raw)).toContain('`action_symbol_5`');
   });
 });
 
