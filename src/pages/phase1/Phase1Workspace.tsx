@@ -3806,13 +3806,13 @@ function EncounterHeader({ encounter, combatants, count, isGm, noteLink, tab, on
             </button>
           ))}
         </div>
-        {difficulty && (
+        {isGm && difficulty && (
           <button type='button' className='xp-challenge' title='Open XP budget math' onClick={() => setXpOpen(true)}>
             <span className={`xp-challenge-dot xp-challenge-dot-${difficulty.color}`} />
             {difficulty.status} ({difficulty.xp} XP)
           </button>
         )}
-        {xpOpen && difficulty && <EncounterDifficultyModal difficulty={difficulty} onClose={() => setXpOpen(false)} />}
+        {isGm && xpOpen && difficulty && <EncounterDifficultyModal difficulty={difficulty} onClose={() => setXpOpen(false)} />}
         {tab === 'combat' && (
           <>
             <button type='button' className='toolbar-button' title='PC stat blocks' onClick={() => onOpenStatBlocks?.()}><AlignLeft size={15} /> Stat blocks</button>
