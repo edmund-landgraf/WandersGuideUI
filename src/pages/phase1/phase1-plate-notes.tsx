@@ -1,4 +1,3 @@
-import { generateCompletion } from '@ai/open-ai-handler';
 import { ActionSymbol } from '@common/Actions';
 import { FontBackgroundColorPlugin, FontColorPlugin } from '@platejs/basic-styles/react';
 import {
@@ -59,7 +58,6 @@ import {
   Palette,
   Quote,
   Smile,
-  Sparkles,
   Underline,
   Unlink,
 } from 'lucide-react';
@@ -144,13 +142,39 @@ const EMOJIS = ['😀', '😁', '😂', '😊', '😍', '😎', '🤔', '😴', 
 
 type EditorTf = PlateEditor & { getTransforms: (plugin: unknown) => Record<string, { toggle?: () => void; addMark?: (value: string) => void; setDraft?: () => void }> };
 
+function ensureSelection(editor: PlateEditor) {
+  if (editor.selection) return;
+  const end = editor.api.end([]);
+  if (end) editor.tf.select(end);
+}
+
+function keepCaret(editor: PlateEditor, edit?: () => void) {
+  ensureSelection(editor);
+  edit?.();
+  const caret = editor.selection ? structuredClone(editor.selection) : null;
+  requestAnimationFrame(() => {
+    if (caret) {
+      try {
+        editor.tf.select(caret);
+      } catch {
+        const end = editor.api.end([]);
+        if (end) editor.tf.select(end);
+      }
+    }
+    editor.tf.focus();
+  });
+}
+
 function toggle(editor: PlateEditor, plugin: unknown, key: string) {
-  (editor as EditorTf).getTransforms(plugin)[key]?.toggle?.();
+  keepCaret(editor, () => {
+    (editor as EditorTf).getTransforms(plugin)[key]?.toggle?.();
+  });
 }
 
 function addMark(editor: PlateEditor, key: 'backgroundColor' | 'color', value: string) {
-  editor.tf.addMarks({ [key]: value });
-  editor.tf.focus();
+  keepCaret(editor, () => {
+    editor.tf.addMarks({ [key]: value });
+  });
 }
 
 function ColorLeaf(props: PlateLeafProps) {
@@ -334,12 +358,49 @@ function nodesFromMarkdown(editor: { getApi: (plugin: typeof MarkdownPlugin) => 
   return [tocNode, ...rest];
 }
 
-export function roundTripNotesMarkdown(markdown: string) {
-  const editor = createPlateEditor({
+export function createNotesEditor(markdown: string) {
+  return createPlateEditor({
     plugins: notePlugins,
     value: (instance) => nodesFromMarkdown(instance, markdown),
   });
-  return serializeMarkdown(editor);
+}
+
+export function roundTripNotesMarkdown(markdown: string) {
+  return serializeMarkdown(createNotesEditor(markdown));
+}
+
+function focusNotesEditor(editor: { tf: { focus: () => void } }) {
+  try {
+    editor.tf.focus();
+  } catch {
+    // The contenteditable is not mounted in tests.
+  }
+}
+
+/** Apply markdown saved by the parent without dropping the caret. */
+export function applySavedNotes(editor: ReturnType<typeof createNotesEditor>, incoming: string, lastEmitted: string) {
+  const nextSaved = incoming.trim();
+  const selection = editor.selection;
+  const active = typeof document === 'undefined' ? null : document.activeElement;
+  const inOtherField =
+    active instanceof HTMLInputElement ||
+    active instanceof HTMLTextAreaElement ||
+    (active instanceof HTMLElement && active.isContentEditable && !active.closest('.p1-plate-editor'));
+  if (nextSaved === lastEmitted || serializeMarkdown(editor) === nextSaved) {
+    if (selection && !inOtherField) focusNotesEditor(editor);
+    return nextSaved;
+  }
+  editor.tf.setValue(nodesFromMarkdown(editor, nextSaved));
+  if (selection) {
+    try {
+      editor.tf.select(selection);
+    } catch {
+      const end = editor.api.end([]);
+      if (end) editor.tf.select(end);
+    }
+    focusNotesEditor(editor);
+  }
+  return nextSaved;
 }
 
 export function PlateNotesEditor({
@@ -367,11 +428,7 @@ export function PlateNotesEditor({
   });
 
   useEffect(() => {
-    const incoming = markdown.trim();
-    if (incoming === lastEmitted.current) return;
-    lastEmitted.current = incoming;
-    const next = nodesFromMarkdown(editor, incoming);
-    editor.tf.setValue(next);
+    lastEmitted.current = applySavedNotes(editor, markdown, lastEmitted.current);
   }, [editor, markdown]);
 
   useEffect(() => {
@@ -444,7 +501,7 @@ function NotesToolbar({
     <div className='flex flex-wrap items-center gap-0.5 border-b border-p1-border p-1'>
       <ActionGlyphMenu />
       <NoteLinkButton editor={editor} />
-      <ToolButton label='Remove link' onClick={() => unwrapLink(editor)}>
+      <ToolButton label='Remove link' onClick={() => keepCaret(editor, () => unwrapLink(editor))}>
         <Unlink size={14} />
       </ToolButton>
       <Sep />
@@ -463,7 +520,7 @@ function NotesToolbar({
       </ToolButton>
       <ToolButton
         label='Horizontal rule'
-        onClick={() => editor.tf.insertNodes({ type: 'hr', children: [{ text: '' }] })}
+        onClick={() => keepCaret(editor, () => editor.tf.insertNodes({ type: 'hr', children: [{ text: '' }] }))}
       >
         <Minus size={14} />
       </ToolButton>
@@ -496,7 +553,6 @@ function NotesToolbar({
       />
       <Sep />
       <EmojiMenu />
-      <AiMenu />
       <ToolButton label='Comments' active={commentsOpen} onClick={onComments}>
         <MessageSquare size={14} />
       </ToolButton>
@@ -504,12 +560,14 @@ function NotesToolbar({
         label='Table of contents'
         active={hasToc}
         onClick={() => {
-          if (hasToc) {
-            const index = editor.children.findIndex((node) => (node as { type?: string }).type === 'toc');
-            if (index >= 0) editor.tf.removeNodes({ at: [index] });
-            return;
-          }
-          editor.tf.insertNodes(tocNode, { at: [0] });
+          keepCaret(editor, () => {
+            if (hasToc) {
+              const index = editor.children.findIndex((node) => (node as { type?: string }).type === 'toc');
+              if (index >= 0) editor.tf.removeNodes({ at: [index] });
+              return;
+            }
+            editor.tf.insertNodes(tocNode, { at: [0] });
+          });
         }}
       >
         <ListTree size={14} />
@@ -530,7 +588,10 @@ function ActionGlyphMenu() {
           className='grid h-9 w-9 place-items-center text-p1-text hover:bg-p1-hover'
           onMouseDown={(event) => {
             event.preventDefault();
-            editor.tf.insertNodes(actionSymbolNode(item.cost, item.symbol));
+            keepCaret(editor, () => {
+              editor.tf.insertNodes(actionSymbolNode(item.cost, item.symbol));
+              editor.tf.move({ unit: 'offset' });
+            });
             setOpen(false);
           }}
         >
@@ -554,61 +615,13 @@ function EmojiMenu() {
             className='grid h-7 w-7 place-items-center text-sm hover:bg-p1-hover'
             onMouseDown={(event) => {
               event.preventDefault();
-              editor.tf.insertText(emoji);
+              keepCaret(editor, () => editor.tf.insertText(emoji));
               setOpen(false);
             }}
           >
             {emoji}
           </button>
         ))}
-      </div>
-    </Popover>
-  );
-}
-
-function AiMenu() {
-  const editor = useEditorRef();
-  const [open, setOpen] = useState(false);
-  const [prompt, setPrompt] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  async function run() {
-    const instruction = prompt.trim() || 'Continue writing these TTRPG character notes.';
-    const selected = editor.api.string();
-    setBusy(true);
-    setError('');
-    try {
-      const result = await generateCompletion(
-        `You help write Pathfinder character notes. Follow the instruction. Return only the note text.\nInstruction: ${instruction}\n\nCurrent text:\n${selected || serializeMarkdown(editor)}`
-      );
-      if (!result?.trim()) {
-        setError('No response.');
-        return;
-      }
-      editor.tf.insertText(result.trim());
-      setOpen(false);
-      setPrompt('');
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'AI request failed.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Popover open={open} onOpenChange={setOpen} label='AI' icon={<Sparkles size={14} />}>
-      <div className='w-64 space-y-2 p-2'>
-        <textarea
-          className='h-20 w-full border border-p1-border bg-p1-inset p-2 text-xs text-p1-text outline-none'
-          placeholder='Continue, summarize, or rewrite…'
-          value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
-        />
-        {error && <p className='text-[11px] text-p1-danger-soft'>{error}</p>}
-        <button type='button' className='h-8 w-full bg-p1-accent text-xs font-semibold text-p1-accent-ink disabled:opacity-40' disabled={busy} onClick={() => void run()}>
-          {busy ? 'Writing…' : 'Run'}
-        </button>
       </div>
     </Popover>
   );
@@ -689,8 +702,10 @@ function NotesComments({ onClose }: { onClose: () => void }) {
         onClick={() => {
           const text = draft.trim();
           if (!text) return;
-          (editor as EditorTf).getTransforms(CommentPlugin).comment?.setDraft?.();
-          editor.tf.insertText(` «${text}»`);
+          keepCaret(editor, () => {
+            (editor as EditorTf).getTransforms(CommentPlugin).comment?.setDraft?.();
+            editor.tf.insertText(` «${text}»`);
+          });
           setDraft('');
         }}
       >

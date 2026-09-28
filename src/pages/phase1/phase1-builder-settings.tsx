@@ -331,7 +331,7 @@ export function Phase1BuilderSettings({
   );
 }
 
-function BooksPanel({
+export function BooksPanel({
   books,
   loading,
   enabled,

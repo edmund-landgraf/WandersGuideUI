@@ -22,6 +22,7 @@ export function Phase1PickerModal<T>({
   onNone,
   renderItem,
   tabs,
+  panel,
   toolbar,
   headerAction,
   footer,
@@ -47,6 +48,8 @@ export function Phase1PickerModal<T>({
   onNone?: () => void;
   renderItem: (item: T) => ReactNode;
   tabs?: ReactNode;
+  /** Replaces search, letter filters, and the result list. */
+  panel?: ReactNode;
   toolbar?: ReactNode;
   headerAction?: ReactNode;
   footer?: ReactNode;
@@ -164,6 +167,8 @@ export function Phase1PickerModal<T>({
           </button>
         </header>
         {tabs}
+        {panel ?? (
+        <>
         <div className='border-b border-p1-border p-3 pb-2'>
           <div className='relative'>
             <Search className='absolute left-3 top-1/2 -translate-y-1/2 text-p1-faint' size={14} />
@@ -227,6 +232,8 @@ export function Phase1PickerModal<T>({
           {aside && <div className='min-h-0 min-w-0 flex-1 overflow-y-auto'>{aside}</div>}
         </div>
         {footer}
+        </>
+        )}
       </section>
     </div>,
     document.body

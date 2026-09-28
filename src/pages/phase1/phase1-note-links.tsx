@@ -1,14 +1,17 @@
-import { fetchContentAll, getDefaultSources, getDefaultSourcesKey } from '@content/content-store';
+import { fetchContentAll, fetchContentSources } from '@content/content-store';
 import { buildHrefFromContentData } from '@content/hardcoded-links';
 import { getAllConditions } from '@conditions/condition-handler';
+import { COMMON_CORE_ID } from '@constants/data';
 import type { AbilityBlockType, ContentType } from '@schemas/content';
 import { upsertLink } from '@platejs/link';
 import { useQuery } from '@tanstack/react-query';
+import { uniq } from 'lodash-es';
 import { Link2, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { PlateEditor } from 'platejs/react';
 import { isContentStackOpen } from './phase1-content-links';
+import { BooksPanel } from './phase1-builder-settings';
 import { Phase1PickerModal } from './phase1-picker-modal';
 
 type NoteLinkMode = 'href' | 'wg';
@@ -21,6 +24,7 @@ type LinkTab = {
 };
 
 const LINK_TABS: LinkTab[] = [
+  { id: 'books', label: 'Books' },
   { id: 'action', label: 'Action', contentType: 'ability-block', abilityBlockType: 'action' },
   { id: 'feat', label: 'Feat', contentType: 'ability-block', abilityBlockType: 'feat' },
   { id: 'trait', label: 'Trait', contentType: 'trait' },
@@ -39,31 +43,81 @@ const LINK_TABS: LinkTab[] = [
 
 type PickedLink = { key: string; name: string; href: string };
 
+export function insertNoteLink(editor: PlateEditor, url: string, label: string) {
+  const text = label.trim();
+  if (!text || !editor.selection) return;
+  editor.tf.collapse({ edge: 'end' });
+  editor.tf.insertText(text);
+  const point = editor.selection?.anchor;
+  if (point) {
+    editor.tf.select({
+      anchor: { path: point.path, offset: Math.max(0, point.offset - text.length) },
+      focus: point,
+    });
+  }
+  upsertLink(editor, { url, skipValidation: true });
+  editor.tf.collapse({ edge: 'end' });
+  const link = editor.api.above({
+    match: (node) => {
+      const type = (node as { type?: string }).type;
+      return type === 'a' || type === 'link';
+    },
+  });
+  if (!link) return;
+  const [, path] = link;
+  const after = editor.api.after(path);
+  if (after) editor.tf.select(after);
+  else editor.tf.insertNodes({ text: '' }, { at: [...path.slice(0, -1), path[path.length - 1] + 1], select: true });
+}
+
+const WG_BOOKS_KEY = 'phase1-wg-link-books';
+
+function readStoredBooks(): number[] | null {
+  try {
+    const raw = window.localStorage.getItem(WG_BOOKS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed) || !parsed.every((id) => typeof id === 'number')) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export function NoteLinkButton({ editor }: { editor: PlateEditor }) {
   const [mode, setMode] = useState<NoteLinkMode | null>(null);
   const [selection, setSelection] = useState<PlateEditor['selection']>(null);
 
-  function openHref() {
+  function rememberSelection() {
+    if (!editor.selection) {
+      const end = editor.api.end([]);
+      if (end) editor.tf.select(end);
+    }
     setSelection(editor.selection ? structuredClone(editor.selection) : null);
+  }
+
+  function openHref() {
+    rememberSelection();
     setMode('href');
   }
 
-  function insert(url: string, label: string) {
+  function insert(url: string, label: string, stayOpen = false) {
     const text = label.trim();
     if (!text) return;
     if (selection) editor.tf.select(selection);
-    editor.tf.collapse({ edge: 'end' });
-    editor.tf.insertText(text);
-    const point = editor.selection?.anchor;
-    if (point) {
-      editor.tf.select({
-        anchor: { path: point.path, offset: Math.max(0, point.offset - text.length) },
-        focus: point,
-      });
+    else if (!editor.selection) {
+      const end = editor.api.end([]);
+      if (end) editor.tf.select(end);
     }
-    upsertLink(editor, { url, skipValidation: true });
-    editor.tf.collapse({ edge: 'end' });
-    setMode(null);
+    if (!editor.selection) return;
+    insertNoteLink(editor, url, text);
+    const caret = editor.selection ? structuredClone(editor.selection) : null;
+    setSelection(caret);
+    if (!stayOpen) setMode(null);
+    requestAnimationFrame(() => {
+      if (caret) editor.tf.select(caret);
+      editor.tf.focus();
+    });
   }
 
   return (
@@ -92,7 +146,7 @@ export function NoteLinkButton({ editor }: { editor: PlateEditor }) {
         <WgLinkModal
           onClose={() => setMode(null)}
           onSwitch={() => setMode('href')}
-          onPick={(item) => insert(item.href, item.name)}
+          onPick={(item) => insert(item.href, item.name, true)}
         />
       )}
     </>
@@ -179,16 +233,34 @@ function WgLinkModal({
   onSwitch: () => void;
   onPick: (item: PickedLink) => void;
 }) {
-  const [tabId, setTabId] = useState(LINK_TABS[0].id);
-  const tab = LINK_TABS.find((item) => item.id === tabId) ?? LINK_TABS[0];
+  const [tabId, setTabId] = useState('action');
+  const [picked, setPicked] = useState<PickedLink | null>(null);
+  const [enabledBooks, setEnabledBooks] = useState<number[] | null>(readStoredBooks);
+  const tab = LINK_TABS.find((item) => item.id === tabId) ?? LINK_TABS[1];
+  const books = useQuery({
+    queryKey: ['phase1-note-link-books'],
+    queryFn: async () => (await fetchContentSources('ALL-OFFICIAL-PUBLIC')).filter((book) => book.deprecated !== true),
+  });
+  useEffect(() => {
+    if (enabledBooks || !books.data) return;
+    setEnabledBooks(books.data.filter((book) => book.group === 'pathfinder-core').map((book) => book.id));
+  }, [books.data, enabledBooks]);
+  useEffect(() => {
+    if (!enabledBooks) return;
+    window.localStorage.setItem(WG_BOOKS_KEY, JSON.stringify(enabledBooks));
+  }, [enabledBooks]);
+  const sourceIds = useMemo(
+    () => uniq([COMMON_CORE_ID, ...(enabledBooks ?? [])]).sort((a, b) => a - b),
+    [enabledBooks]
+  );
   const catalog = useQuery({
-    queryKey: ['phase1-note-link', tab.id, getDefaultSourcesKey('PAGE')],
+    queryKey: ['phase1-note-link', tab.id, sourceIds.join(',')],
     queryFn: async () => {
       if (!tab.contentType) return [];
-      const all = await fetchContentAll<{ id: number; name: string; type?: AbilityBlockType }>(tab.contentType, getDefaultSources('PAGE'));
+      const all = await fetchContentAll<{ id: number; name: string; type?: AbilityBlockType }>(tab.contentType, sourceIds);
       return all.filter((item) => !tab.abilityBlockType || item.type === tab.abilityBlockType);
     },
-    enabled: Boolean(tab.contentType),
+    enabled: Boolean(tab.contentType) && enabledBooks !== null,
   });
 
   const items = useMemo(() => {
@@ -220,14 +292,55 @@ function WgLinkModal({
       items={items}
       getName={(item) => item.name}
       getKey={(item) => item.key}
-      loading={Boolean(tab.contentType) && catalog.isLoading}
+      loading={Boolean(tab.contentType) && (enabledBooks === null || catalog.isLoading)}
       error={catalog.isError ? 'Could not load content.' : null}
       empty='No matching content.'
       onClose={onClose}
+      panel={
+        tab.id === 'books' ? (
+          <div className='min-h-0 flex-1 overflow-y-auto'>
+            <BooksPanel
+              books={books.data ?? []}
+              loading={books.isLoading}
+              enabled={enabledBooks ?? []}
+              onToggle={(id, next) =>
+                setEnabledBooks((current) => {
+                  const ids = current ?? [];
+                  return next ? uniq([...ids, id]) : ids.filter((bookId) => bookId !== id);
+                })
+              }
+              onEnableAll={(ids) => setEnabledBooks((current) => uniq([...(current ?? []), ...ids]))}
+              onUncheckAll={(ids) => setEnabledBooks((current) => (current ?? []).filter((id) => !ids.includes(id)))}
+            />
+          </div>
+        ) : undefined
+      }
       headerAction={
         <button type='button' className='toolbar-button shrink-0' onClick={onSwitch}>
           Web link
         </button>
+      }
+      footer={
+        tab.id === 'books' ? undefined : (
+          <div className='flex items-center justify-end gap-2 border-t border-p1-border px-3 py-2'>
+            <span className='mr-auto min-w-0 truncate text-xs text-p1-muted'>{picked ? picked.name : 'Select content'}</span>
+            <button
+              type='button'
+              className='h-8 bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink disabled:opacity-40'
+              disabled={!picked}
+              onClick={() => {
+                if (!picked) return;
+                onPick(picked);
+                setPicked(null);
+              }}
+            >
+              Add
+            </button>
+            <button type='button' className='toolbar-button h-8 shrink-0' onClick={onClose}>
+              Close
+            </button>
+          </div>
+        )
       }
       tabs={
         <div className='flex flex-wrap gap-1 border-b border-p1-border px-3 py-2' role='tablist' aria-label='Content category'>
@@ -238,7 +351,10 @@ function WgLinkModal({
               role='tab'
               aria-selected={item.id === tab.id}
               className={`px-2 py-1 text-[11px] font-semibold ${item.id === tab.id ? 'bg-p1-accent text-p1-accent-ink' : 'text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
-              onClick={() => setTabId(item.id)}
+              onClick={() => {
+                setTabId(item.id);
+                setPicked(null);
+              }}
             >
               {item.label}
             </button>
@@ -248,8 +364,9 @@ function WgLinkModal({
       renderItem={(item) => (
         <button
           type='button'
-          className='block w-full border-b border-p1-border px-3 py-2 text-left text-sm hover:bg-p1-hover'
-          onClick={() => onPick(item)}
+          aria-pressed={picked?.key === item.key}
+          className={`block w-full border-b border-p1-border px-3 py-2 text-left text-sm hover:bg-p1-hover ${picked?.key === item.key ? 'bg-p1-hover text-p1-accent-soft' : ''}`}
+          onClick={() => setPicked(item)}
         >
           {item.name}
         </button>
