@@ -7,7 +7,7 @@ import { upsertLink } from '@platejs/link';
 import { useQuery } from '@tanstack/react-query';
 import { uniq } from 'lodash-es';
 import { Link2, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { PlateEditor } from 'platejs/react';
 import { isContentStackOpen } from './phase1-content-links';
@@ -41,7 +41,7 @@ const LINK_TABS: LinkTab[] = [
   { id: 'condition', label: 'Condition' },
 ];
 
-type PickedLink = { key: string; name: string; href: string };
+type PickedLink = { key: string; name: string; href: string; summary: string; meta: string };
 
 export function insertNoteLink(editor: PlateEditor, url: string, label: string) {
   const text = label.trim();
@@ -111,6 +111,7 @@ export function NoteLinkButton({ editor }: { editor: PlateEditor }) {
     }
     if (!editor.selection) return;
     insertNoteLink(editor, url, text);
+    if (stayOpen) editor.tf.insertText('  ');
     const caret = editor.selection ? structuredClone(editor.selection) : null;
     setSelection(caret);
     if (!stayOpen) setMode(null);
@@ -270,6 +271,8 @@ function WgLinkModal({
           key: condition.name,
           name: condition.name,
           href: `link_condition_${condition.name.toLowerCase().replace(/ /g, '~')}`,
+          summary: previewText(condition.description),
+          meta: 'Condition',
         }))
         .sort((a, b) => a.name.localeCompare(b.name));
     }
@@ -278,6 +281,8 @@ function WgLinkModal({
         key: String(item.id),
         name: item.name,
         href: buildHrefFromContentData(tab.abilityBlockType ?? tab.contentType ?? 'trait', item.id),
+        summary: previewText(recordText(item, 'description')),
+        meta: previewMeta(item, tab.label),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [catalog.data, tab]);
@@ -362,15 +367,102 @@ function WgLinkModal({
         </div>
       }
       renderItem={(item) => (
-        <button
-          type='button'
-          aria-pressed={picked?.key === item.key}
-          className={`block w-full border-b border-p1-border px-3 py-2 text-left text-sm hover:bg-p1-hover ${picked?.key === item.key ? 'bg-p1-hover text-p1-accent-soft' : ''}`}
-          onClick={() => setPicked(item)}
-        >
-          {item.name}
-        </button>
+        <PickerChoice item={item} selected={picked?.key === item.key} onSelect={() => setPicked(item)} />
       )}
     />
   );
+}
+
+function PickerChoice({ item, selected, onSelect }: { item: PickedLink; selected: boolean; onSelect: () => void }) {
+  const rowRef = useRef<HTMLButtonElement>(null);
+  const showTimer = useRef(0);
+  const hideTimer = useRef(0);
+  const [box, setBox] = useState<{ left: number; top: number; width: number } | null>(null);
+
+  const clearTimers = () => {
+    window.clearTimeout(showTimer.current);
+    window.clearTimeout(hideTimer.current);
+  };
+  const place = () => {
+    const row = rowRef.current;
+    if (!row) return;
+    const rect = row.getBoundingClientRect();
+    const width = 280;
+    const gap = 8;
+    const fitsRight = window.innerWidth - rect.right > width + gap;
+    const left = fitsRight ? rect.right + gap : Math.max(8, rect.left - width - gap);
+    const top = Math.min(Math.max(8, rect.top), window.innerHeight - 168);
+    setBox({ left, top, width });
+  };
+  useEffect(() => () => clearTimers(), []);
+
+  return (
+    <>
+      <button
+        ref={rowRef}
+        type='button'
+        aria-pressed={selected}
+        className={`block w-full border-b border-p1-border px-3 py-2 text-left text-sm hover:bg-p1-hover ${selected ? 'bg-p1-hover text-p1-accent-soft' : ''}`}
+        onClick={onSelect}
+        onMouseEnter={() => {
+          clearTimers();
+          showTimer.current = window.setTimeout(place, 280);
+        }}
+        onMouseLeave={() => {
+          clearTimers();
+          hideTimer.current = window.setTimeout(() => setBox(null), 80);
+        }}
+        onFocus={() => {
+          clearTimers();
+          place();
+        }}
+        onBlur={() => setBox(null)}
+      >
+        {item.name}
+      </button>
+      {box &&
+        createPortal(
+          <span
+            className='pointer-events-none hidden max-h-40 overflow-hidden border border-p1-border bg-p1-surface p-3 shadow-xl md:block'
+            style={{ position: 'fixed', zIndex: 120, left: box.left, top: box.top, width: box.width }}
+          >
+            <span className='block truncate text-xs font-semibold text-p1-text'>{item.name}</span>
+            {item.meta && <span className='mt-1 block truncate text-[10px] uppercase tracking-wide text-p1-muted'>{item.meta}</span>}
+            <span className='mt-2 block text-[11px] leading-4 text-p1-muted'>
+              {item.summary || 'No description given.'}
+            </span>
+          </span>,
+          document.body
+        )}
+    </>
+  );
+}
+
+function previewText(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  const text = value
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[*_#>~|-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text.length > 220 ? `${text.slice(0, 220)}...` : text;
+}
+
+function recordText(record: object, key: string) {
+  const value = (record as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function previewMeta(record: object, fallback: string) {
+  const data = record as Record<string, unknown>;
+  const parts: string[] = [];
+  if (typeof data.rank === 'number') parts.push(data.rank === 0 ? 'Cantrip' : `Rank ${data.rank}`);
+  if (typeof data.level === 'number') parts.push(`Level ${data.level}`);
+  if (typeof data.rarity === 'string' && data.rarity && data.rarity !== 'COMMON') parts.push(data.rarity.replaceAll('_', ' '));
+  if (Array.isArray(data.traditions) && data.traditions.every((entry) => typeof entry === 'string')) {
+    parts.push(data.traditions.join(', '));
+  }
+  if (parts.length === 0) parts.push(fallback);
+  return parts.join(' · ');
 }
