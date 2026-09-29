@@ -1,0 +1,194 @@
+@import url('https://fonts.googleapis.com/css2?family=Cal+Sans&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-heading: 'Cal Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; min-height: 100%; }
+
+body {
+  font-family: var(--font-sans);
+  color: var(--foreground);
+  background: var(--background);
+  -webkit-font-smoothing: antialiased;
+}
+
+.bg-pattern {
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 20px 20px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.site-header {
+  position: relative;
+  z-index: 2;
+  border-bottom: 1px solid var(--border);
+  padding: 1rem 2rem;
+}
+
+.site-header-inner {
+  max-width: 72rem;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.brand, .header-link {
+  color: var(--foreground);
+  text-decoration: none;
+  font-size: 0.875rem;
+}
+
+.brand { font-family: var(--font-heading); }
+
+.header-link { color: var(--muted-foreground); }
+.header-link:hover { color: var(--foreground); }
+
+.layout {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 16rem minmax(0, 1fr);
+  min-height: calc(100vh - 57px);
+  background: radial-gradient(circle at top, #1f2937, #111827);
+}
+
+.sidebar {
+  border-right: 1px solid var(--border);
+  padding: 1.25rem 1rem 2rem;
+}
+
+.sidebar h2 {
+  margin: 1.25rem 0 0.4rem;
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.sidebar h2:first-child { margin-top: 0; }
+
+.sidebar a {
+  display: block;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.5rem;
+  color: var(--muted-foreground);
+  text-decoration: none;
+  font-size: 0.875rem;
+}
+
+.sidebar a:hover { color: var(--foreground); background: rgb(255 255 255 / 0.05); }
+
+.sidebar a[aria-current='page'] {
+  color: var(--foreground);
+  background: rgb(255 255 255 / 0.08);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.15);
+}
+
+.main {
+  padding: 2.5rem 2rem 4rem;
+  max-width: 48rem;
+}
+
+h1 {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-heading);
+  font-size: 2.25rem;
+  font-weight: 400;
+  line-height: 1.15;
+  background: linear-gradient(to right, var(--foreground), rgb(255 255 255 / 0.6));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.lead, p, li { color: var(--muted-foreground); line-height: 1.6; }
+
+.lead { font-size: 1rem; max-width: 40rem; }
+
+h3 {
+  margin: 1.75rem 0 0.4rem;
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  font-weight: 400;
+  color: var(--foreground);
+}
+
+ol.steps, ul { padding-left: 1.2rem; }
+li { margin: 0.35rem 0; }
+strong { color: var(--foreground); font-weight: 600; }
+code {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.85em;
+  color: var(--foreground);
+}
+
+.path { display: grid; gap: 0.75rem; margin-top: 1.5rem; }
+
+.card {
+  display: grid;
+  grid-template-columns: 2.5rem 1fr;
+  gap: 0.75rem;
+  align-items: start;
+  padding: 1.1rem 1.25rem;
+  border-radius: 0.75rem;
+  background: rgb(255 255 255 / 0.05);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.2);
+  text-decoration: none;
+  color: inherit;
+}
+
+a.card:hover { background: rgb(255 255 255 / 0.1); }
+
+.num {
+  font-family: var(--font-heading);
+  color: var(--foreground);
+  font-size: 1.1rem;
+}
+
+.card h3 { margin: 0 0 0.25rem; font-size: 1.05rem; }
+.card p { margin: 0; font-size: 0.875rem; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+  font-size: 0.875rem;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+th { color: var(--foreground); font-weight: 600; }
+td { color: var(--muted-foreground); }
+
+.next { margin-top: 2rem; font-size: 0.875rem; }
+.next a { color: var(--foreground); }
+
+@media (max-width: 800px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
+  h1 { font-size: 1.75rem; }
+}

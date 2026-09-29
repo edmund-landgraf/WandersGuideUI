@@ -99,14 +99,19 @@ function Launcher() {
             <a className='font-heading text-sm text-foreground' href='/'>
               Wanderer's Guide
             </a>
-            <a
-              className='text-sm text-muted-foreground transition hover:text-foreground'
-              href={PATREON_URL}
-              rel='noreferrer'
-              target='_blank'
-            >
-              Support Quzzar on Patreon
-            </a>
+            <div className='flex items-center gap-5'>
+              <a className='text-sm text-muted-foreground transition hover:text-foreground' href='/help/'>
+                Help
+              </a>
+              <a
+                className='text-sm text-muted-foreground transition hover:text-foreground'
+                href={PATREON_URL}
+                rel='noreferrer'
+                target='_blank'
+              >
+                Support Quzzar on Patreon
+              </a>
+            </div>
           </div>
         </header>
         <section className='px-8 pt-10 pb-16'>
@@ -138,6 +143,16 @@ function Launcher() {
               <FunctionStatus />
             </div>
           </div>
+          <a
+            className='block max-w-xl rounded-xl bg-white/5 p-6 ring-1 ring-white/20 transition hover:bg-white/10 hover:ring-white/30'
+            href='/help/'
+          >
+            <p className='text-sm text-muted-foreground'>Help</p>
+            <h2 className='font-heading mt-2 text-2xl text-foreground'>Characters, campaigns, and combat</h2>
+            <p className='mt-3 text-sm leading-6 text-muted-foreground'>
+              How to join a campaign, what players see in a fight, and how to run a check.
+            </p>
+          </a>
           <a
             className='block rounded-xl bg-white/5 p-6 ring-1 ring-white/20 transition hover:bg-white/10 hover:ring-white/30'
             href={PATREON_URL}

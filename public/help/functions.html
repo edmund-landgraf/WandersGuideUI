@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Functions · Help</title>
+  <link rel="stylesheet" href="help.css" />
+</head>
+<body>
+  <div class="bg-pattern"></div>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a class="brand" href="/">Wanderer's Guide</a>
+      <a class="header-link" href="/phase1">Open the workspace</a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" aria-label="Help">
+      <h2>Start</h2>
+      <a href="index.html">Overview</a>
+      <h2>Play</h2>
+      <a href="characters.html">Characters</a>
+      <a href="campaigns.html">Campaigns</a>
+      <a href="join-own.html">Join your campaign</a>
+      <a href="join-other.html">Join another campaign</a>
+      <a href="encounters.html">Encounters</a>
+      <a href="combat-player.html">Player combat</a>
+      <a href="combat-gm.html">GM combat</a>
+      <a href="challenges.html">Challenges</a>
+      <a href="rock-fall.html">Rock fall walkthrough</a>
+      <h2>Reference</h2>
+      <a href="functions.html" aria-current="page">What the functions do</a>
+    </nav>
+    <main class="main">
+      <h1>What the six functions do</h1>
+      <p class="lead">The home page lists these six calls. Each one is a small piece of play. The launcher marks one up when the server answers.</p>
+      <table>
+        <thead>
+          <tr><th>Call</th><th>What you get</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>wgui-ext-ensure-public-user</code></td><td>Makes sure your account exists before you create a campaign.</td></tr>
+          <tr><td><code>wgui-ext-join-campaign</code></td><td>Attaches your character with a join key. That membership is why the campaign then appears for you, and why the GM sees your PC on the bench.</td></tr>
+          <tr><td><code>wgui-ext-find-campaign-characters</code></td><td>Loads the live party so allies show current names and hit points.</td></tr>
+          <tr><td><code>wgui-ext-find-encounter</code></td><td>Loads campaign encounters. The GM gets every encounter. You get only the ones your character is on.</td></tr>
+          <tr><td><code>wgui-ext-patch-encounter-dice</code></td><td>Saves dice checks and the roll log for people on the fight. Players can change rolls they started. The roster stays with the GM.</td></tr>
+          <tr><td><code>wgui-export-character</code></td><td>Exports your character as JSON or PDF.</td></tr>
+        </tbody>
+      </table>
+      <p class="next">Back to <a href="index.html">Overview</a></p>
+    </main>
+  </div>
+</body>
+</html>
