@@ -105,7 +105,7 @@ export function buildCastingSourceEntries(
       const cantrip = isCantrip(traitNames, record.rank);
       const rankSlots = sourceSlots.filter((slot) => slot.rank === record.rank);
       const pool = sharedRankAvailability(rankSlots);
-      return [makeEntry(spell, record.rank, traitNames, source.name, mode, cantrip, pool.available, pool.exhausted, index)];
+      return [makeEntry(spell, record.rank, traitNames, source.name, mode, cantrip, cantrip || pool.available, cantrip ? false : pool.exhausted, index)];
     });
   }
   const prepared = sourceSlots.flatMap((slot, index) => {
@@ -116,21 +116,11 @@ export function buildCastingSourceEntries(
     if (!spell) return [makeEmptyEntry(source.name, slot.rank, slot.id, Boolean(slot.exhausted))];
     const traitNames = namesFor(spell, traitById);
     const cantrip = isCantrip(traitNames, slot.rank);
-    const pool = cantrip ? sharedRankAvailability(sourceSlots.filter((item) => item.rank === slot.rank)) : null;
-    return [makeEntry(spell, slot.rank, traitNames, source.name, mode, cantrip, pool?.available ?? !slot.exhausted, pool?.exhausted ?? Boolean(slot.exhausted), index, undefined, undefined, slot.id)];
+    const available = cantrip ? true : !slot.exhausted;
+    const exhausted = cantrip ? false : Boolean(slot.exhausted);
+    return [makeEntry(spell, slot.rank, traitNames, source.name, mode, cantrip, available, exhausted, index, undefined, undefined, slot.id)];
   });
-  if (source.type !== 'PREPARED-LIST') return prepared;
-  const slotted = new Set(sourceSlots.map((slot) => slot.spell_id).filter((id): id is number => id != null));
-  const unprepared = sourceList.flatMap((record, index) => {
-    if (slotted.has(record.spell_id)) return [];
-    const spell = spellById.get(record.spell_id);
-    if (!spell) return [];
-    const traitNames = namesFor(spell, traitById);
-    const cantrip = isCantrip(traitNames, record.rank);
-    const pool = cantrip ? sharedRankAvailability(sourceSlots.filter((slot) => slot.rank === record.rank)) : { available: cantrip, exhausted: false };
-    return [makeEntry(spell, record.rank, traitNames, source.name, mode, cantrip, pool.available, pool.exhausted, sourceSlots.length + index)];
-  });
-  return [...prepared, ...unprepared];
+  return prepared;
 }
 
 export function spellCatalogSourceIds(enabled?: number[] | null) {
@@ -143,9 +133,9 @@ export function spellCastsWithoutPreparedSlot(entry: Pick<Phase1SpellEntry, 'can
   return entry.mode !== 'PREPARED' && entry.mode !== 'RITUAL' && entry.mode !== 'SPELLHEART';
 }
 
-/** Cantrips and spontaneous ranks spend a shared pool of slots of that rank, like a sorcerer. */
+/** Spontaneous ranks spend a shared pool of slots of that rank. Cantrips are at-will and do not. */
 export function spellUsesSharedRankSlots(entry: Pick<Phase1SpellEntry, 'cantrip' | 'mode'>) {
-  return entry.cantrip || entry.mode === 'SPONTANEOUS';
+  return !entry.cantrip && entry.mode === 'SPONTANEOUS';
 }
 
 export function applySharedRankSlotCast<S extends { rank: number; source: string; exhausted?: boolean }>(
@@ -298,7 +288,7 @@ export async function castEntitySpell(combatant: Phase1EntityCombatant, entry: P
 export async function setEntitySpellCast(combatant: Phase1EntityCombatant, entry: Phase1SpellEntry, cast: boolean): Promise<LivingEntity> {
   const raw = cloneDeep(combatant.data);
   if (entry.empty || !entry.spell) return raw;
-  if (entry.cantrip && entry.mode !== 'PREPARED' && entry.mode !== 'SPONTANEOUS') return raw;
+  if (entry.cantrip) return raw;
 
   const { entity, storeId } = await preparePhase1Entity(combatant);
   if (entry.mode === 'FOCUS' && cast && isFocusCastBlocked(entry.spell, entity)) return raw;

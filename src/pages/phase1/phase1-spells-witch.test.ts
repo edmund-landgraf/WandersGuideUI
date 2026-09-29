@@ -25,7 +25,7 @@ describe('witch familiar spell load', () => {
     expect(spellCatalogSourceIds([1, 2])).toEqual([3, 1, 2]);
   });
 
-  it('shows catalog-added familiar spells on the sheet even before they are prepared into a slot', () => {
+  it('keeps unprepared familiar spells in the spellbook, not on the sheet', () => {
     const acidGrip = spell(500, 'Acid Grip');
     const entries = buildCastingSourceEntries(
       { name: 'Witch', type: 'PREPARED-LIST' },
@@ -35,7 +35,8 @@ describe('witch familiar spell load', () => {
       new Map([[500, acidGrip]]),
       new Map(),
     );
-    expect(entries.some((entry) => entry.spell?.name === 'Acid Grip' && !entry.slotId)).toBe(true);
+    expect(entries.some((entry) => entry.spell?.name === 'Acid Grip')).toBe(false);
+    expect(entries.some((entry) => entry.empty && entry.slotId === 'slot-1')).toBe(true);
   });
 
   it('shows spontaneous repertoire spells from the saved list', () => {
@@ -81,7 +82,7 @@ describe('witch familiar spell load', () => {
     expect(entries[0]?.exhausted).toBe(true);
   });
 
-  it('treats prepared cantrips as a shared slot pool', () => {
+  it('treats prepared cantrips as always available', () => {
     const stabilize = { ...spell(1, 'Stabilize'), rank: 0 };
     const arc = { ...spell(2, 'Electric Arc'), rank: 0 };
     const entries = buildCastingSourceEntries(
@@ -99,7 +100,7 @@ describe('witch familiar spell load', () => {
     expect(entries.every((entry) => !entry.exhausted)).toBe(true);
   });
 
-  it('marks prepared cantrips exhausted only when every cantrip slot is spent', () => {
+  it('keeps prepared cantrips available even when every cantrip slot is marked spent', () => {
     const stabilize = { ...spell(1, 'Stabilize'), rank: 0 };
     const entries = buildCastingSourceEntries(
       { name: 'Cleric', type: 'PREPARED-TRADITION' },
@@ -112,7 +113,94 @@ describe('witch familiar spell load', () => {
       new Map([[1, stabilize]]),
       new Map(),
     );
-    expect(entries.every((entry) => entry.available === false)).toBe(true);
-    expect(entries.every((entry) => entry.exhausted)).toBe(true);
+    expect(entries.every((entry) => entry.available)).toBe(true);
+    expect(entries.every((entry) => !entry.exhausted)).toBe(true);
+  });
+
+  it('counts cantrip slots including empties, not the whole spellbook', () => {
+    const daze = { ...spell(10, 'Daze'), rank: 0 };
+    const detect = { ...spell(11, 'Detect Magic'), rank: 0 };
+    const eatFire = { ...spell(12, 'Eat Fire'), rank: 0 };
+    const slots = [
+      { id: 'c1', rank: 0, source: 'Magus', spell_id: 10 },
+      { id: 'c2', rank: 0, source: 'Magus', spell_id: 11 },
+      { id: 'c3', rank: 0, source: 'Magus', spell_id: null },
+      { id: 'c4', rank: 0, source: 'Magus', spell_id: null },
+      { id: 'c5', rank: 0, source: 'Magus', spell_id: null },
+    ];
+    const book = [
+      { spell_id: 10, rank: 0, source: 'Magus' },
+      { spell_id: 11, rank: 0, source: 'Magus' },
+      { spell_id: 12, rank: 0, source: 'Magus' },
+    ];
+    const spells = new Map([[10, daze], [11, detect], [12, eatFire]]);
+    const sheet = buildCastingSourceEntries({ name: 'Magus', type: 'PREPARED-LIST' }, 'PREPARED', slots, book, spells, new Map());
+    expect(sheet.filter((entry) => entry.rank === 0)).toHaveLength(5);
+    expect(sheet.map((entry) => entry.spell?.name ?? 'empty')).toEqual(['Daze', 'Detect Magic', 'empty', 'empty', 'empty']);
+    expect(spellbookEntriesForSource(book, 'Magus', [daze, detect, eatFire], []).map((entry) => entry.spell.name)).toEqual([
+      'Daze',
+      'Detect Magic',
+      'Eat Fire',
+    ]);
+  });
+
+  it('shows only prepared ranked slots on the sheet and leaves the rest in the spellbook', () => {
+    const objectReading = spell(20, 'Object Reading');
+    const fear = spell(21, 'Fear');
+    const bless = spell(22, 'Bless');
+    const slots = [
+      { id: 's1', rank: 1, source: 'Magus', spell_id: 20, exhausted: false },
+      { id: 's2', rank: 1, source: 'Magus', spell_id: null },
+    ];
+    const book = [
+      { spell_id: 20, rank: 1, source: 'Magus' },
+      { spell_id: 21, rank: 1, source: 'Magus' },
+      { spell_id: 22, rank: 1, source: 'Magus' },
+    ];
+    const spells = new Map([[20, objectReading], [21, fear], [22, bless]]);
+    const sheet = buildCastingSourceEntries({ name: 'Magus', type: 'PREPARED-LIST' }, 'PREPARED', slots, book, spells, new Map());
+    expect(sheet.map((entry) => entry.spell?.name ?? 'empty')).toEqual(['Object Reading', 'empty']);
+    expect(sheet.every((entry) => Boolean(entry.slotId))).toBe(true);
+    expect(sheet.find((entry) => entry.spell?.name === 'Object Reading')?.exhausted).toBe(false);
+    expect(spellbookEntriesForSource(book, 'Magus', [objectReading, fear, bless], []).map((entry) => entry.spell.name)).toEqual([
+      'Bless',
+      'Fear',
+      'Object Reading',
+    ]);
+  });
+
+  it('still exhausts a ranked prepared slot, not the whole rank', () => {
+    const fear = spell(21, 'Fear');
+    const bless = spell(22, 'Bless');
+    const entries = buildCastingSourceEntries(
+      { name: 'Cleric', type: 'PREPARED-TRADITION' },
+      'PREPARED',
+      [
+        { id: 's1', rank: 1, source: 'Cleric', spell_id: 21, exhausted: true },
+        { id: 's2', rank: 1, source: 'Cleric', spell_id: 22, exhausted: false },
+      ],
+      [],
+      new Map([[21, fear], [22, bless]]),
+      new Map(),
+    );
+    expect(entries.find((entry) => entry.spell?.name === 'Fear')).toMatchObject({ available: false, exhausted: true });
+    expect(entries.find((entry) => entry.spell?.name === 'Bless')).toMatchObject({ available: true, exhausted: false });
+  });
+
+  it('keeps spontaneous cantrips available after every cantrip slot is spent', () => {
+    const daze = { ...spell(10, 'Daze'), rank: 0 };
+    const entries = buildCastingSourceEntries(
+      { name: 'Sorcerer', type: 'SPONTANEOUS-REPERTOIRE' },
+      'SPONTANEOUS',
+      [
+        { id: 'c1', rank: 0, source: 'Sorcerer', spell_id: null, exhausted: true },
+        { id: 'c2', rank: 0, source: 'Sorcerer', spell_id: null, exhausted: true },
+      ],
+      [{ spell_id: 10, rank: 0, source: 'Sorcerer' }],
+      new Map([[10, daze]]),
+      new Map(),
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ available: true, exhausted: false, cantrip: true });
   });
 });

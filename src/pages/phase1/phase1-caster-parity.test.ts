@@ -32,17 +32,24 @@ describe('caster parity helpers', () => {
     expect(spellCastsWithoutPreparedSlot({ cantrip: false, mode: 'PREPARED' })).toBe(false);
   });
 
-  it('lets cantrips spend any matching rank slot, so the same cantrip can be cast until the pool is empty', () => {
-    expect(spellUsesSharedRankSlots({ cantrip: true, mode: 'PREPARED' })).toBe(true);
+  it('lets cantrips stay at-will, while sorcerer ranks still share a slot pool', () => {
+    expect(spellUsesSharedRankSlots({ cantrip: true, mode: 'PREPARED' })).toBe(false);
+    expect(spellUsesSharedRankSlots({ cantrip: true, mode: 'SPONTANEOUS' })).toBe(false);
+    expect(spellUsesSharedRankSlots({ cantrip: false, mode: 'SPONTANEOUS' })).toBe(true);
     const slots = [
-      { rank: 0, source: 'Cleric', exhausted: false, spell_id: 1 },
-      { rank: 0, source: 'Cleric', exhausted: false, spell_id: 2 },
+      { rank: 1, source: 'Sorcerer', exhausted: false, spell_id: 1 },
+      { rank: 1, source: 'Sorcerer', exhausted: false, spell_id: 2 },
     ];
-    const afterOne = applySharedRankSlotCast(slots, { rank: 0, sourceName: 'Cleric' }, true);
+    const afterOne = applySharedRankSlotCast(slots, { rank: 1, sourceName: 'Sorcerer' }, true);
     expect(afterOne.map((slot) => slot.exhausted)).toEqual([true, false]);
-    const afterFiveish = applySharedRankSlotCast(afterOne, { rank: 0, sourceName: 'Cleric' }, true);
-    expect(afterFiveish.map((slot) => slot.exhausted)).toEqual([true, true]);
-    const uncast = applySharedRankSlotCast(afterFiveish, { rank: 0, sourceName: 'Cleric' }, false);
+    const afterTwo = applySharedRankSlotCast(afterOne, { rank: 1, sourceName: 'Sorcerer' }, true);
+    expect(afterTwo.map((slot) => slot.exhausted)).toEqual([true, true]);
+    const uncast = applySharedRankSlotCast(afterTwo, { rank: 1, sourceName: 'Sorcerer' }, false);
     expect(uncast.map((slot) => slot.exhausted)).toEqual([false, true]);
+  });
+
+  it('does not treat prepared ranked spells as a shared rank pool', () => {
+    expect(spellUsesSharedRankSlots({ cantrip: false, mode: 'PREPARED' })).toBe(false);
+    expect(spellUsesSharedRankSlots({ cantrip: false, mode: 'FOCUS' })).toBe(false);
   });
 });

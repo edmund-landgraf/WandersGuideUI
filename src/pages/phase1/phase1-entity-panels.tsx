@@ -2048,12 +2048,13 @@ function SpellSection({ section, rankFilter, spellActions, busyKey, canOpenStats
         const slotRank = rank < 0 ? 0 : rank;
         const slots = section.slots.filter((slot) => slot.rank === slotRank);
         const rankSpent = slots.filter((slot) => slot.exhausted).length;
-        const showRankCircles = slots.length > 0 && (section.mode === 'SPONTANEOUS' || section.mode === 'PREPARED');
+        const showRankCircles = rank >= 0 && slots.length > 0 && (section.mode === 'SPONTANEOUS' || section.mode === 'PREPARED');
+        const rankBadge = section.mode === 'PREPARED' ? slots.length : entries.length;
         return <div key={rank}>
           <div className='flex h-8 items-center gap-2 bg-p1-inset px-3 text-xs font-semibold text-p1-muted'>
             <span>{rank < 0 ? 'Cantrips' : rankLabel(rank)}</span>
             {showRankCircles && <SlotCircles count={slots.length} spent={rankSpent} editable={Boolean(spellActions)} title={`${rank < 0 ? 'Cantrip' : rankLabel(rank)} slots spent`} onChange={(spent) => onRankSpent(slotRank, spent)} />}
-            <span className='ml-auto border border-p1-border px-1.5 py-0.5 text-[9px] font-normal text-p1-muted'>{entries.length}</span>
+            <span className='ml-auto border border-p1-border px-1.5 py-0.5 text-[9px] font-normal text-p1-muted'>{rankBadge}</span>
           </div>
           <div className='divide-y divide-white/[0.06]'>
             {entries.map((entry) => (

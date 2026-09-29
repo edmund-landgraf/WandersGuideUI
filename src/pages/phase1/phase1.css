@@ -44,9 +44,9 @@
   --p1-text-faint: #6d6962;
   --p1-border: rgb(40 38 32 / 0.22);
   --p1-hover: rgb(40 38 32 / 0.1);
-  --p1-accent: #b8863a;
-  --p1-accent-soft: #8a6528;
-  --p1-accent-ink: #17130d;
+  --p1-accent: #0e3470;
+  --p1-accent-soft: #1a365d;
+  --p1-accent-ink: #f4f7fb;
   --p1-danger: #8f3d36;
   --p1-danger-soft: #a95249;
   --p1-pc: #3d6f86;
@@ -55,7 +55,7 @@
   --p1-temp-hp: #1a5a9c;
   --p1-code-number: #1a5f7a;
   --p1-code-string: #2d6b32;
-  --p1-code-key: #8a6528;
+  --p1-code-key: #0e3470;
   --p1-action: #2563eb;
   --p1-action-hover: #1d4ed8;
   --p1-action-ink: #f4f7f8;
