@@ -17,7 +17,6 @@ export function setContainerBulkFullyIgnored(item: Item, ignored: boolean): Item
   if (ignored) bulk.ignored = CONTAINER_BULK_IGNORE_ALL;
   else delete bulk.ignored;
   next.meta_data = {
-    bulk,
     ...next.meta_data,
     bulk,
   };
