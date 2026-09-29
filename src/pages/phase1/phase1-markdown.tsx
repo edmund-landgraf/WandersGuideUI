@@ -4,7 +4,12 @@ import { gmNotesText, insertGmNoteStamp, notePageToMarkdown, sourceImportPages }
 import { useEffect, useRef, useState } from 'react';
 import { getContentDataFromHref } from '@common/rich_text_input/ContentLinkExtension';
 import { autoLinkConditions, isAonConditionHref, normalizeMarkdownTables, resolveAonHref, toStandard2eProse, toWgMarkdownLinks } from '@utils/foundry-text';
+import { compileExpressions } from '@variables/variable-utils';
 import { useContentLinks } from './phase1-content-links';
+
+export function compileWgText(text: string) {
+  return (compileExpressions('CHARACTER', text, true) ?? text).replace(/⬆️/g, '⇧');
+}
 
 export function noteContentsToMarkdown(contents: unknown) {
   if (contents == null) return '';
@@ -15,7 +20,7 @@ export function noteContentsToMarkdown(contents: unknown) {
 export function ProseMarkdown({ children, className = '' }: { children: string; className?: string }) {
   const { open } = useContentLinks();
   if (!children.trim()) return null;
-  const prose = normalizeMarkdownTables(toWgMarkdownLinks(autoLinkConditions(toStandard2eProse(children))));
+  const prose = normalizeMarkdownTables(toWgMarkdownLinks(autoLinkConditions(toStandard2eProse(compileWgText(children)))));
   return (
     <div className={`ability-prose text-sm leading-7 text-p1-text ${className}`.trim()}>
       <ReactMarkdown

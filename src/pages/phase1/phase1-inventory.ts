@@ -5,6 +5,24 @@ import { cloneDeep } from 'lodash-es';
 import { preparePhase1Entity, type Phase1EntityCombatant } from './phase1-entity';
 
 const EMPTY_COINS = { cp: 0, sp: 0, gp: 0, pp: 0 };
+export const CONTAINER_BULK_IGNORE_ALL = 9999;
+
+export function isContainerBulkFullyIgnored(item: Item) {
+  return Number(item.meta_data?.bulk?.ignored ?? 0) >= CONTAINER_BULK_IGNORE_ALL;
+}
+
+export function setContainerBulkFullyIgnored(item: Item, ignored: boolean): Item {
+  const next = cloneDeep(item);
+  const bulk = { ...(next.meta_data?.bulk ?? {}) };
+  if (ignored) bulk.ignored = CONTAINER_BULK_IGNORE_ALL;
+  else delete bulk.ignored;
+  next.meta_data = {
+    bulk,
+    ...next.meta_data,
+    bulk,
+  };
+  return next;
+}
 
 export function createInventoryEntry(item: Item, isFormula: boolean, container_contents: InventoryItem[] = []): InventoryItem {
   const itemData = cloneDeep(item);
@@ -62,6 +80,7 @@ export type Phase1InvItem = {
   isFormula: boolean;
   isInvested: boolean;
     isContainer: boolean;
+    bulkIgnored: boolean;
     unselectable: boolean;
     contents: Phase1InvItem[];
 };
@@ -116,7 +135,7 @@ function mapInvItem(
     traitNames: (item.traits ?? []).map((id) => traitNames.get(id)).filter((name): name is string => Boolean(name)),
     quantity: getItemQuantity(item),
     showQuantity: Boolean(isItemWithQuantity(item)),
-    bulkLabel: labelizeBulk(getItemBulk(entry)),
+    bulkLabel: isItemContainer(item) && isContainerBulkFullyIgnored(item) ? labelizeBulk(0, true) : labelizeBulk(getItemBulk(entry)),
     priceLabel: formatPrice(item),
     damageSummary: formatDamage(item),
     hands: item.hands?.trim() || null,
@@ -127,6 +146,7 @@ function mapInvItem(
     isFormula: entry.is_formula,
     isInvested: entry.is_invested,
     isContainer: isItemContainer(item),
+    bulkIgnored: isItemContainer(item) && isContainerBulkFullyIgnored(item),
     unselectable: Boolean(item.meta_data?.unselectable),
     contents: entry.container_contents.map((child, index) => mapInvItem(child, traitNames, `${key}-${index}`, depth + 1)),
   };

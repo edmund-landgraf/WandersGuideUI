@@ -12,11 +12,11 @@ import { loadEntitySkillsActions, type Phase1ActionGroup, type Phase1Skill } fro
 import { hasEmptyPreparedSlot, isDivinePreparedSource, isFocusCastBlocked, isWitchFamiliarSource, loadEntitySpells, spellCastSkipsResources, spellCastsWithoutPreparedSlot, spellCatalogSourceIds, spellFitsSlot, spellManageMode, spellUsesSharedRankSlots, type Phase1SpellEntry, type Phase1SpellManageMode, type Phase1SpellSection } from './phase1-spells';
 import { wandNeedsOvercharge } from './phase1-item-spells';
 import { Phase1SpellbookModal, type SpellbookAssign } from './phase1-spellbook';
-import { findInventoryItem, flattenInvItems, inventoryContainerTargets, inventoryItemIsNested, inventoryItemToPhase1, loadEntityInventory, matchesInvItem, type Phase1InvItem } from './phase1-inventory';
+import { findInventoryItem, flattenInvItems, inventoryContainerTargets, inventoryItemIsNested, inventoryItemToPhase1, loadEntityInventory, matchesInvItem, setContainerBulkFullyIgnored, type Phase1InvItem } from './phase1-inventory';
 import { SelectAddItemsModal, type AddItemKind } from './phase1-add-items';
 import { Phase1EditItemModal } from './phase1-edit-item-modal';
 import { ConfirmDialog } from './phase1-campaign-settings';
-import { EntityNotesPanel, ProseMarkdown, SourceImportNotesPanel } from './phase1-markdown';
+import { compileWgText, EntityNotesPanel, ProseMarkdown, SourceImportNotesPanel } from './phase1-markdown';
 import { isContentStackOpen, useContentLinks } from './phase1-content-links';
 import { getBestShield, getInvBulk, getItemHealth, isItemContainer, labelizeBulk } from '@items/inv-utils';
 import CopperCoin from '@assets/images/currency/copper.png';
@@ -817,6 +817,8 @@ export function InventoryPanel({ combatant, itemActions, status }: { combatant: 
         canClone={Boolean(itemActions.addItem)}
         canDelete={Boolean(itemActions.deleteItem) && !menu.item.unselectable}
         canMove={Boolean(itemActions.moveItem) && !menu.item.unselectable}
+        canToggleBulkIgnored={Boolean(itemActions.updateItem) && menu.item.isContainer}
+        bulkIgnored={menu.item.bulkIgnored}
         onClose={() => setMenu(null)}
         onToggleEquipped={() => {
           itemActions.toggleEquipped(menu.item);
@@ -843,6 +845,12 @@ export function InventoryPanel({ combatant, itemActions, status }: { combatant: 
           itemActions.moveItem?.(menu.item, containerKey);
           setMenu(null);
           setInvTab(containerKey ? 'containers' : (menu.item.isEquipped ? 'equipped' : 'carried'));
+        }}
+        onToggleBulkIgnored={() => {
+          const source = findInventoryItem(combatant.data.inventory?.items, menu.item.key)?.item;
+          setMenu(null);
+          if (!source || !itemActions.updateItem) return;
+          itemActions.updateItem(menu.item, setContainerBulkFullyIgnored(source, !menu.item.bulkIgnored));
         }}
       />
     )}
@@ -960,6 +968,7 @@ function ItemRow({ item, onOpen, onContextMenu, depth, showContents = true, coll
         <span className='min-w-0 flex-1 truncate text-sm'>{item.name}</span>
         {item.isEquipped && <Tag>Equipped</Tag>}
         {item.isInvested && <Tag>Invested</Tag>}
+        {item.bulkIgnored && <Tag>Bulk ignored</Tag>}
         <span className='ml-auto flex shrink-0 items-center gap-2 text-[10px] text-p1-faint sm:hidden'>
           {item.showQuantity && item.quantity > 0 && <span>×{item.quantity}</span>}
           {item.bulkLabel !== '—' && <span>{item.bulkLabel}</span>}
@@ -1005,12 +1014,15 @@ function InventoryItemContextMenu({
   canClone,
   canDelete,
   canMove,
+  canToggleBulkIgnored,
+  bulkIgnored,
   onClose,
   onToggleEquipped,
   onEdit,
   onClone,
   onDelete,
   onMove,
+  onToggleBulkIgnored,
 }: {
   x: number;
   y: number;
@@ -1022,12 +1034,15 @@ function InventoryItemContextMenu({
   canClone: boolean;
   canDelete: boolean;
   canMove: boolean;
+  canToggleBulkIgnored: boolean;
+  bulkIgnored: boolean;
   onClose: () => void;
   onToggleEquipped: () => void;
   onEdit: () => void;
   onClone: () => void;
   onDelete: () => void;
   onMove: (containerKey: string | null) => void;
+  onToggleBulkIgnored: () => void;
 }) {
   const [moveOpen, setMoveOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -1047,7 +1062,7 @@ function InventoryItemContextMenu({
     if (menu) setMenuBox({ w: menu.offsetWidth, h: menu.offsetHeight });
     const sub = subMenuRef.current;
     if (sub) setSubBox({ w: sub.offsetWidth, h: sub.offsetHeight });
-  }, [moveOpen, canEquip, canEdit, canClone, canDelete, showMove, containers.length]);
+  }, [moveOpen, canEquip, canEdit, canClone, canDelete, canToggleBulkIgnored, bulkIgnored, showMove, containers.length]);
   const pad = 8;
   const left = Math.min(Math.max(pad, x), Math.max(pad, window.innerWidth - menuBox.w - pad));
   const top = Math.min(Math.max(pad, y), Math.max(pad, window.innerHeight - menuBox.h - pad));
@@ -1095,6 +1110,17 @@ function InventoryItemContextMenu({
           >
             Move
             <ChevronRight size={14} className='text-p1-faint' />
+          </button>
+        )}
+        {canToggleBulkIgnored && (
+          <button
+            type='button'
+            role='menuitem'
+            className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover'
+            onMouseEnter={() => setMoveOpen(false)}
+            onClick={onToggleBulkIgnored}
+          >
+            {bulkIgnored ? 'Count toward bulk' : 'Ignore bulk'}
           </button>
         )}
         {canDelete && (
@@ -1159,6 +1185,7 @@ function ItemModal({ item, actions, onClose }: { item: Phase1InvItem; actions?: 
               <Tag>{item.group.replaceAll('_', ' ')}</Tag>
               {item.isEquipped && <Tag>Equipped</Tag>}
               {item.isInvested && <Tag>Invested</Tag>}
+              {item.bulkIgnored && <Tag>Bulk ignored</Tag>}
               {item.isFormula && <Tag>Formula</Tag>}
               {item.traitNames.map((trait) => <Tag key={trait}>{trait}</Tag>)}
             </div>
@@ -1230,7 +1257,7 @@ function AbilityFact({ label, value }: { label: string; value?: string | null })
 }
 export function Tag({ children }: { children: ReactNode }) { return <span className='border border-p1-border bg-p1-hover px-2 py-0.5 text-[10px] uppercase text-p1-muted'>{children}</span>; }
 function plainText(value: string) {
-  return toStandard2eProse(value)
+  return toStandard2eProse(compileWgText(value))
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
     .replace(/[*_#>~|-]/g, ' ')
     .replace(/\s+/g, ' ')

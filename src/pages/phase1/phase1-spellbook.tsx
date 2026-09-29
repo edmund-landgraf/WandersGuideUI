@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom';
 import { ActionSymbol } from '@common/Actions';
 import { Phase1PickerModal } from './phase1-picker-modal';
 import { heightenRanksFor, isWitchFamiliarSource, spellbookEntriesForSource, spellbookLocksTradition, spellFitsSlot, type Phase1SpellbookEntry, type Phase1SpellManageMode } from './phase1-spells';
-import { ProseMarkdown } from './phase1-markdown';
+import { compileWgText, ProseMarkdown } from './phase1-markdown';
 import { toStandard2eProse } from '@utils/foundry-text';
 
 const EMPTY_SPELLS: Spell[] = [];
@@ -326,7 +326,7 @@ function SelectCatalogSpellModal({
 }
 
 function spellPlainText(value: string) {
-  return toStandard2eProse(value)
+  return toStandard2eProse(compileWgText(value))
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
     .replace(/[*_#>~|-]/g, ' ')
     .replace(/\s+/g, ' ')
