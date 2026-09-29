@@ -3,11 +3,13 @@ import { fetchContentAll, getDefaultSources, getDefaultSourcesKey } from '@conte
 import { isSpellVisible } from '@content/content-hidden';
 import type { Spell } from '@schemas/content';
 import { BookOpen, Plus, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { ActionSymbol } from '@common/Actions';
 import { Phase1PickerModal } from './phase1-picker-modal';
 import { heightenRanksFor, isWitchFamiliarSource, spellbookEntriesForSource, spellbookLocksTradition, spellFitsSlot, type Phase1SpellbookEntry, type Phase1SpellManageMode } from './phase1-spells';
 import { ProseMarkdown } from './phase1-markdown';
+import { toStandard2eProse } from '@utils/foundry-text';
 
 const EMPTY_SPELLS: Spell[] = [];
 const TRADITIONS = ['arcane', 'divine', 'occult', 'primal'] as const;
@@ -144,8 +146,8 @@ export function Phase1SpellbookModal({
                 if (!busy) void onRemove(entry.spell.id, entry.rank);
               }}
             >
-              <button
-                type='button'
+              <SpellHoverButton
+                spell={entry.spell}
                 className='flex min-w-0 flex-1 items-center gap-2 text-left hover:text-p1-text'
                 disabled={busy}
                 onClick={() => {
@@ -153,7 +155,7 @@ export function Phase1SpellbookModal({
                   else setPreview(entry);
                 }}
               >
-                <ActionSymbol cost={entry.spell.cast} />
+                <span className='shrink-0'><ActionSymbol cost={entry.spell.cast} /></span>
                 <span className='min-w-0 flex-1'>
                   <span className='block truncate text-sm font-medium'>{entry.spell.name}</span>
                   <span className='mt-0.5 block truncate text-[9px] uppercase text-p1-faint'>
@@ -162,7 +164,7 @@ export function Phase1SpellbookModal({
                     {assign && !fits ? ' · prepares its own rank' : ''}
                   </span>
                 </span>
-              </button>
+              </SpellHoverButton>
               <button
                 type='button'
                 className='icon-button shrink-0'
@@ -290,13 +292,13 @@ function SelectCatalogSpellModal({
           </div>
         }
         renderItem={(spell) => (
-          <button
-            type='button'
+          <SpellHoverButton
+            spell={spell}
             className='flex w-full items-center gap-2 border-b border-p1-border px-4 py-2.5 text-left hover:bg-p1-hover disabled:opacity-50'
             disabled={busy}
             onClick={() => void choose(spell)}
           >
-            <ActionSymbol cost={spell.cast} />
+            <span className='shrink-0'><ActionSymbol cost={spell.cast} /></span>
             <span className='min-w-0 flex-1'>
               <span className='block truncate text-sm font-medium'>{spell.name}</span>
               <span className='mt-0.5 block truncate text-[9px] uppercase text-p1-faint'>
@@ -305,7 +307,7 @@ function SelectCatalogSpellModal({
               </span>
             </span>
             <span className='shrink-0 text-[10px] font-semibold text-p1-accent-soft'>{preferRank != null ? 'Prepare' : 'Add'}</span>
-          </button>
+          </SpellHoverButton>
         )}
       />
       {heighten && (
@@ -318,6 +320,88 @@ function SelectCatalogSpellModal({
             setHeighten(null);
           }}
         />
+      )}
+    </>
+  );
+}
+
+function spellPlainText(value: string) {
+  return toStandard2eProse(value)
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[*_#>~|-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function SpellHoverButton({
+  spell,
+  className,
+  disabled,
+  onClick,
+  children,
+}: {
+  spell: Spell;
+  className: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  const rowRef = useRef<HTMLButtonElement>(null);
+  const hideTimer = useRef(0);
+  const showTimer = useRef(0);
+  const [hoverBox, setHoverBox] = useState<{ left: number; width: number; top?: number; bottom?: number } | null>(null);
+  const preview = spellPlainText(spell.description).slice(0, 180);
+  const meta = [
+    spell.rank === 0 ? 'Cantrip' : `Rank ${spell.rank}`,
+    ...spell.traditions,
+  ].join(' · ');
+
+  const clearHoverTimers = () => {
+    window.clearTimeout(showTimer.current);
+    window.clearTimeout(hideTimer.current);
+  };
+  const placeHover = () => {
+    const row = rowRef.current;
+    if (!row) return;
+    const rect = row.getBoundingClientRect();
+    const width = Math.max(220, Math.min(360, rect.width - 16));
+    const left = Math.min(rect.left + 8, window.innerWidth - width - 8);
+    const above = window.innerHeight - rect.bottom < 160;
+    setHoverBox(above
+      ? { left, width, bottom: window.innerHeight - rect.top + 4 }
+      : { left, width, top: rect.bottom + 4 });
+  };
+  useEffect(() => () => clearHoverTimers(), []);
+
+  return (
+    <>
+      <button
+        ref={rowRef}
+        type='button'
+        className={className}
+        disabled={disabled}
+        onClick={onClick}
+        onMouseEnter={() => {
+          clearHoverTimers();
+          showTimer.current = window.setTimeout(placeHover, 300);
+        }}
+        onMouseLeave={() => {
+          clearHoverTimers();
+          hideTimer.current = window.setTimeout(() => setHoverBox(null), 80);
+        }}
+      >
+        {children}
+      </button>
+      {hoverBox && createPortal(
+        <span
+          className='pointer-events-none hidden max-h-[40vh] overflow-hidden border border-p1-border bg-p1-surface p-3 text-left shadow-xl md:block'
+          style={{ position: 'fixed', zIndex: 140, left: hoverBox.left, width: hoverBox.width, top: hoverBox.top, bottom: hoverBox.bottom }}
+        >
+          <span className='flex items-center gap-2 text-xs font-semibold text-p1-text'><ActionSymbol cost={spell.cast} />{spell.name}</span>
+          <span className='mt-1.5 block truncate text-[9px] uppercase text-p1-muted'>{meta}</span>
+          {preview && <span className='mt-2 block text-[11px] leading-4 text-p1-muted'>{preview}{spellPlainText(spell.description).length > preview.length ? '...' : ''}</span>}
+        </span>,
+        document.body
       )}
     </>
   );

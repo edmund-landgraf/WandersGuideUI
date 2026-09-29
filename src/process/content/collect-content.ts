@@ -262,8 +262,15 @@ export function collectEntitySpellcasting(id: StoreID, entity: LivingEntity) {
   };
 }
 
-export function getFocusPoints(id: StoreID, entity: LivingEntity, focusSpells: Record<string, any>[]) {
-  const fromSpells = focusSpells.filter((f) => f?.rank !== 0).length ?? 0;
+export function getFocusPoints(
+  id: StoreID,
+  entity: LivingEntity,
+  focusSpells: Record<string, any>[],
+  options?: { includeRankZero?: boolean },
+) {
+  // Rank 0 grants are ignored unless the caller already removed focus cantrips.
+  // A rank 0 focus spell with no cantrip trait still adds a point.
+  const fromSpells = focusSpells.filter((f) => options?.includeRankZero || f?.rank !== 0).length ?? 0;
   const extra = getVariable<VariableNum>(id, 'FOCUS_POINT_BONUS')?.value ?? 0;
 
   // Clamp: FOCUS_POINT_BONUS can be negative, and a retrain can leave a stored current

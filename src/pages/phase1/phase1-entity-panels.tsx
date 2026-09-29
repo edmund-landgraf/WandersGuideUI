@@ -9,7 +9,7 @@ import type { Phase1EntityCombatant } from './phase1-entity';
 import { StatDetailModal, type Phase1StatKey, type Phase1StatTarget } from './phase1-stat-modal';
 import { loadEntityDetails, type Phase1ProfRow } from './phase1-details';
 import { loadEntitySkillsActions, type Phase1ActionGroup, type Phase1Skill } from './phase1-skills';
-import { hasEmptyPreparedSlot, isDivinePreparedSource, isFocusCastBlocked, isWitchFamiliarSource, loadEntitySpells, spellCastsWithoutPreparedSlot, spellCatalogSourceIds, spellFitsSlot, spellManageMode, spellUsesSharedRankSlots, type Phase1SpellEntry, type Phase1SpellManageMode, type Phase1SpellSection } from './phase1-spells';
+import { hasEmptyPreparedSlot, isDivinePreparedSource, isFocusCastBlocked, isWitchFamiliarSource, loadEntitySpells, spellCastSkipsResources, spellCastsWithoutPreparedSlot, spellCatalogSourceIds, spellFitsSlot, spellManageMode, spellUsesSharedRankSlots, type Phase1SpellEntry, type Phase1SpellManageMode, type Phase1SpellSection } from './phase1-spells';
 import { wandNeedsOvercharge } from './phase1-item-spells';
 import { Phase1SpellbookModal, type SpellbookAssign } from './phase1-spellbook';
 import { findInventoryItem, flattenInvItems, inventoryContainerTargets, inventoryItemIsNested, inventoryItemToPhase1, loadEntityInventory, matchesInvItem, type Phase1InvItem } from './phase1-inventory';
@@ -1804,9 +1804,13 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
       setWandOvercharge(entry);
       return;
     }
-    if (entry.cantrip && entry.mode !== 'PREPARED' && entry.mode !== 'SPONTANEOUS') {
+    if (spellCastSkipsResources(entry)) {
+      // Same as the old sheet: a cantrip does not spend a slot or focus point.
+      // In an encounter it is written to the action log. On the character sheet
+      // there is no log, so open the spell — that was the cast drawer.
       logSpell(entry);
       if (closeModal) setSelected(null);
+      else setSelected(entry);
       return;
     }
     const draft = spellDraft(entry);
@@ -2166,7 +2170,7 @@ function SpellRow({ entry, entity, spellActions, busy, onOpen, onOpenEmpty, onCa
         {entry.mode === 'PREPARED' && entry.slotId && (
           <button className='h-7 border border-p1-border px-2.5 text-[10px] font-semibold text-p1-muted hover:bg-p1-hover disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onClearSlot}>Clear</button>
         )}
-        <button className='h-7 border border-p1-accent/40 px-2.5 text-[10px] font-semibold text-p1-accent-soft hover:bg-p1-accent/10 disabled:cursor-wait disabled:opacity-50' disabled={castDisabled} title={focusBlocked ? 'Focus spell rank is too high for your level' : undefined} onClick={onCast}>{busy ? 'Saving...' : 'Cast'}</button>
+        <button className={`h-7 border border-p1-accent/40 px-2.5 text-[10px] font-semibold text-p1-accent-soft hover:bg-p1-accent/10 disabled:opacity-50 ${busy ? 'disabled:cursor-wait' : 'disabled:cursor-not-allowed'}`} disabled={castDisabled} title={focusBlocked ? 'Focus spell rank is too high for your level' : entry.mode === 'FOCUS' && !entry.available ? 'No focus points remaining' : undefined} onClick={onCast}>{busy ? 'Saving...' : 'Cast'}</button>
         {showUncast && <button className='h-7 border border-p1-border px-2.5 text-[10px] font-semibold text-p1-muted hover:bg-p1-hover disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onUncast}>Uncast</button>}
       </div>
     )}
@@ -2328,14 +2332,14 @@ function SpellModal({ entry, entity, spellActions, busy, rankSpent, onCast, onUn
           </div>
           {showCast && spellUsesSharedRankSlots(entry) && (
             <div className='flex shrink-0 items-center gap-1.5'>
-              <button className='h-8 shrink-0 border border-p1-accent/50 bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink disabled:cursor-wait disabled:opacity-50' disabled={busy || focusBlocked || !entry.available} title={focusBlocked ? 'Focus spell rank is too high for your level' : undefined} onClick={onCast}>{busy ? 'Saving...' : entry.cantrip ? 'Cast' : `Cast ${rankLabel(entry.rank)}`}</button>
+              <button className={`h-8 shrink-0 border border-p1-accent/50 bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink disabled:opacity-50 ${busy ? 'disabled:cursor-wait' : 'disabled:cursor-not-allowed'}`} disabled={busy || focusBlocked || !entry.available} title={focusBlocked ? 'Focus spell rank is too high for your level' : entry.mode === 'FOCUS' && !entry.available ? 'No focus points remaining' : undefined} onClick={onCast}>{busy ? 'Saving...' : entry.cantrip ? 'Cast' : `Cast ${rankLabel(entry.rank)}`}</button>
               {rankSpent > 0 && <button className='h-8 shrink-0 border border-p1-border px-3 text-xs font-semibold text-p1-text hover:bg-p1-hover disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onUncast}>{busy ? 'Saving...' : 'Uncast'}</button>}
             </div>
           )}
           {showCast && !spellUsesSharedRankSlots(entry) && (
             entry.exhausted
               ? <button className='h-8 shrink-0 border border-p1-border px-3 text-xs font-semibold text-p1-text hover:bg-p1-hover disabled:cursor-wait disabled:opacity-50' disabled={busy} onClick={onUncast}>{busy ? 'Saving...' : 'Uncast'}</button>
-              : <button className='h-8 shrink-0 border border-p1-accent/50 bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink disabled:cursor-wait disabled:opacity-50' disabled={busy || focusBlocked || !entry.available} title={focusBlocked ? 'Focus spell rank is too high for your level' : undefined} onClick={onCast}>{busy ? 'Saving...' : `Cast ${rankLabel(entry.rank)}`}</button>
+              : <button className={`h-8 shrink-0 border border-p1-accent/50 bg-p1-accent px-3 text-xs font-semibold text-p1-accent-ink disabled:opacity-50 ${busy ? 'disabled:cursor-wait' : 'disabled:cursor-not-allowed'}`} disabled={busy || focusBlocked || !entry.available} title={focusBlocked ? 'Focus spell rank is too high for your level' : entry.mode === 'FOCUS' && !entry.available ? 'No focus points remaining' : undefined} onClick={onCast}>{busy ? 'Saving...' : `Cast ${rankLabel(entry.rank)}`}</button>
           )}
           <button ref={closeRef} className='icon-button shrink-0' onClick={onClose} title='Close spell details'><X size={18} /></button>
         </header>

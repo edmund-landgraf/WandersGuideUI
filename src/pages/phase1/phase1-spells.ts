@@ -198,12 +198,18 @@ export async function loadEntitySpells(combatant: Phase1EntityCombatant): Promis
 
     const focusRecords = data.focus.filter((entry) => entry.source === source.name);
     if (focusRecords.length) {
-      const points = getFocusPoints(storeId, entity, data.focus);
-      const focusExhausted = points.current <= 0;
+      const poolGrants = focusGrantsInPool(data.focus, (spellId) => {
+        const spell = spellById.get(spellId);
+        return spell ? namesFor(spell, traitById) : [];
+      });
+      const points = getFocusPoints(storeId, entity, poolGrants, { includeRankZero: true });
       const entries = focusRecords.flatMap((record, index) => {
         const spell = spellById.get(record.spell_id);
         if (!spell) return [];
-        return [makeEntry(spell, record.rank ?? spell.rank, namesFor(spell, traitById), source.name, 'FOCUS', false, points.current > 0, focusExhausted, index, points.current, points.max)];
+        const rank = record.rank ?? spell.rank;
+        const traitNames = namesFor(spell, traitById);
+        const castState = focusSpellCastState(rank, traitNames, points);
+        return [makeEntry(spell, rank, traitNames, source.name, 'FOCUS', castState.cantrip, castState.available, castState.exhausted, index, castState.usesCurrent, castState.usesMax)];
       });
       sections.push({
         key: `FOCUS-${source.name}`,
@@ -224,10 +230,8 @@ export async function loadEntitySpells(combatant: Phase1EntityCombatant): Promis
       const spell = spellById.get(record.spell_id);
       if (!spell) return [];
       const traitNames = namesFor(spell, traitById);
-      const cantrip = traitNames.some((name) => name.toLowerCase() === 'cantrip');
-      const remaining = Math.max(record.casts_max - record.casts_current, 0);
-      const exhausted = !cantrip && remaining <= 0;
-      return [makeEntry(spell, record.rank, traitNames, 'Innate', 'INNATE', cantrip, cantrip || remaining > 0, exhausted, index, remaining, record.casts_max)];
+      const castState = innateSpellCastState(traitNames, record.casts_max, record.casts_current);
+      return [makeEntry(spell, record.rank, traitNames, 'Innate', 'INNATE', castState.cantrip, castState.available, castState.exhausted, index, castState.usesCurrent, record.casts_max)];
     });
     sections.push({ key: 'INNATE', label: 'Innate Spells', mode: 'INNATE', attack, dc, entries, slots: [] });
   }
@@ -541,6 +545,48 @@ function makeEmptyEntry(sourceName: string, rank: number, slotId: string, exhaus
 
 function isCantrip(traitNames: string[], rank: number) {
   return rank === 0 || traitNames.some((name) => name.toLowerCase() === 'cantrip');
+}
+
+function hasCantripTrait(traitNames: string[]) {
+  return traitNames.some((name) => name.toLowerCase() === 'cantrip');
+}
+
+/** Focus cantrips do not join the pool. Every other focus spell does, including a grant saved at rank 0. */
+export function focusGrantsInPool<T extends { spell_id: number }>(grants: T[], traitNamesFor: (spellId: number) => string[]) {
+  return grants.filter((grant) => !hasCantripTrait(traitNamesFor(grant.spell_id)));
+}
+
+/** A focus cantrip is at-will. Any other focus spell spends one focus point, even when its saved rank is 0. */
+export function focusSpellCastState(_rank: number, traitNames: string[], points: { current: number; max: number }) {
+  if (hasCantripTrait(traitNames)) return { cantrip: true, available: true, exhausted: false, usesCurrent: undefined, usesMax: undefined };
+  return {
+    cantrip: false,
+    available: points.current > 0,
+    exhausted: points.current <= 0,
+    usesCurrent: points.current,
+    usesMax: points.max,
+  };
+}
+
+/** Innate cantrips and innate spells with no daily maximum are at-will. Rank 0 alone does not make one free. */
+export function innateSpellCastState(traitNames: string[], castsMax: number, castsCurrent: number) {
+  const cantrip = hasCantripTrait(traitNames);
+  const unlimited = cantrip || castsMax === 0;
+  const remaining = Math.max(castsMax - castsCurrent, 0);
+  return {
+    cantrip,
+    available: unlimited || remaining > 0,
+    exhausted: !unlimited && remaining <= 0,
+    usesCurrent: cantrip ? undefined : remaining,
+  };
+}
+
+/** Class cantrips and focus cantrips change no resources. A wand always spends its daily use. A staff cantrip spends charges only when its rank is above 0. */
+export function spellCastSkipsResources(entry: { cantrip: boolean; mode: string; rank: number }) {
+  if (!entry.cantrip) return false;
+  if (entry.mode === 'PREPARED' || entry.mode === 'SPONTANEOUS' || entry.mode === 'WAND') return false;
+  if (entry.mode === 'STAFF' && entry.rank > 0) return false;
+  return true;
 }
 
 export function spellFitsSlot(spell: Spell, slotRank: number, listRank?: number) {
