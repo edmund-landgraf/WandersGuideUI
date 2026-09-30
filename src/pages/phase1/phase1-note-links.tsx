@@ -23,23 +23,50 @@ type LinkTab = {
   abilityBlockType?: AbilityBlockType;
 };
 
-const LINK_TABS: LinkTab[] = [
-  { id: 'books', label: 'Books' },
-  { id: 'action', label: 'Action', contentType: 'ability-block', abilityBlockType: 'action' },
-  { id: 'feat', label: 'Feat', contentType: 'ability-block', abilityBlockType: 'feat' },
-  { id: 'trait', label: 'Trait', contentType: 'trait' },
-  { id: 'item', label: 'Item', contentType: 'item' },
-  { id: 'spell', label: 'Spell', contentType: 'spell' },
-  { id: 'language', label: 'Language', contentType: 'language' },
-  { id: 'sense', label: 'Sense', contentType: 'ability-block', abilityBlockType: 'sense' },
-  { id: 'physical-feature', label: 'Physical Feature', contentType: 'ability-block', abilityBlockType: 'physical-feature' },
-  { id: 'class', label: 'Class', contentType: 'class' },
-  { id: 'class-feature', label: 'Class Feature', contentType: 'ability-block', abilityBlockType: 'class-feature' },
-  { id: 'ancestry', label: 'Ancestry', contentType: 'ancestry' },
-  { id: 'heritage', label: 'Heritage', contentType: 'ability-block', abilityBlockType: 'heritage' },
-  { id: 'background', label: 'Background', contentType: 'background' },
-  { id: 'condition', label: 'Condition' },
+const LINK_TAB_GROUPS: { id: string; label: string; tabs: LinkTab[] }[] = [
+  { id: 'books', label: 'Books', tabs: [{ id: 'books', label: 'Books' }] },
+  {
+    id: 'class',
+    label: 'Class',
+    tabs: [
+      { id: 'class', label: 'Class', contentType: 'class' },
+      { id: 'class-feature', label: 'Class Feature', contentType: 'ability-block', abilityBlockType: 'class-feature' },
+    ],
+  },
+  {
+    id: 'ancestry',
+    label: 'Ancestry',
+    tabs: [
+      { id: 'ancestry', label: 'Ancestry', contentType: 'ancestry' },
+      { id: 'heritage', label: 'Heritage', contentType: 'ability-block', abilityBlockType: 'heritage' },
+    ],
+  },
+  {
+    id: 'character',
+    label: 'Character',
+    tabs: [
+      { id: 'action', label: 'Action', contentType: 'ability-block', abilityBlockType: 'action' },
+      { id: 'background', label: 'Background', contentType: 'background' },
+      { id: 'feat', label: 'Feat', contentType: 'ability-block', abilityBlockType: 'feat' },
+      { id: 'language', label: 'Language', contentType: 'language' },
+      { id: 'physical-feature', label: 'Physical Feature', contentType: 'ability-block', abilityBlockType: 'physical-feature' },
+      { id: 'sense', label: 'Sense', contentType: 'ability-block', abilityBlockType: 'sense' },
+      { id: 'spell', label: 'Spell', contentType: 'spell' },
+    ],
+  },
+  {
+    id: 'rules',
+    label: 'Rules',
+    tabs: [
+      { id: 'condition', label: 'Condition' },
+      { id: 'creature', label: 'Creatures', contentType: 'creature' },
+      { id: 'item', label: 'Item', contentType: 'item' },
+      { id: 'trait', label: 'Trait', contentType: 'trait' },
+    ],
+  },
 ];
+
+const LINK_TABS = LINK_TAB_GROUPS.flatMap((group) => group.tabs);
 
 type PickedLink = { key: string; name: string; href: string; summary: string; meta: string };
 
@@ -237,7 +264,7 @@ function WgLinkModal({
   const [tabId, setTabId] = useState('action');
   const [picked, setPicked] = useState<PickedLink | null>(null);
   const [enabledBooks, setEnabledBooks] = useState<number[] | null>(readStoredBooks);
-  const tab = LINK_TABS.find((item) => item.id === tabId) ?? LINK_TABS[1];
+  const tab = LINK_TABS.find((item) => item.id === tabId) ?? LINK_TABS.find((item) => item.id === 'action') ?? LINK_TABS[0];
   const books = useQuery({
     queryKey: ['phase1-note-link-books'],
     queryFn: async () => (await fetchContentSources('ALL-OFFICIAL-PUBLIC')).filter((book) => book.deprecated !== true),
@@ -281,7 +308,7 @@ function WgLinkModal({
         key: String(item.id),
         name: item.name,
         href: buildHrefFromContentData(tab.abilityBlockType ?? tab.contentType ?? 'trait', item.id),
-        summary: previewText(recordText(item, 'description')),
+        summary: previewText(itemDescription(item)),
         meta: previewMeta(item, tab.label),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -348,21 +375,28 @@ function WgLinkModal({
         )
       }
       tabs={
-        <div className='flex flex-wrap gap-1 border-b border-p1-border px-3 py-2' role='tablist' aria-label='Content category'>
-          {LINK_TABS.map((item) => (
-            <button
-              key={item.id}
-              type='button'
-              role='tab'
-              aria-selected={item.id === tab.id}
-              className={`px-2 py-1 text-[11px] font-semibold ${item.id === tab.id ? 'bg-p1-accent text-p1-accent-ink' : 'text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
-              onClick={() => {
-                setTabId(item.id);
-                setPicked(null);
-              }}
-            >
-              {item.label}
-            </button>
+        <div className='flex flex-wrap items-stretch gap-x-2 gap-y-1 border-b border-p1-border px-3 py-2' role='tablist' aria-label='Content category'>
+          {LINK_TAB_GROUPS.map((group, index) => (
+            <div key={group.id} className='flex items-stretch gap-2'>
+              {index > 0 && <span className='w-px self-stretch bg-p1-border' aria-hidden='true' />}
+              <div className='flex flex-wrap gap-1' role='group' aria-label={group.label}>
+                {group.tabs.map((item) => (
+                  <button
+                    key={item.id}
+                    type='button'
+                    role='tab'
+                    aria-selected={item.id === tab.id}
+                    className={`px-2 py-1 text-[11px] font-semibold ${item.id === tab.id ? 'bg-p1-accent text-p1-accent-ink' : 'text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
+                    onClick={() => {
+                      setTabId(item.id);
+                      setPicked(null);
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       }
@@ -452,6 +486,14 @@ function previewText(value: unknown) {
 function recordText(record: object, key: string) {
   const value = (record as Record<string, unknown>)[key];
   return typeof value === 'string' ? value : '';
+}
+
+function itemDescription(record: object) {
+  const direct = recordText(record, 'description');
+  if (direct) return direct;
+  const details = (record as Record<string, unknown>).details;
+  if (details && typeof details === 'object') return recordText(details, 'description');
+  return '';
 }
 
 function previewMeta(record: object, fallback: string) {

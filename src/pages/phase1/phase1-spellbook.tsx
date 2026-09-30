@@ -474,7 +474,7 @@ function HeightenRankModal({
   onClose: () => void;
 }) {
   const ranks = heightenRanksFor(spell);
-  return (
+  return createPortal(
     <div className='fixed inset-0 z-[120] grid place-items-center bg-black/60 p-5' role='presentation' onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section role='dialog' aria-modal='true' className='w-full max-w-sm border border-p1-border bg-p1-surface p-4 shadow-2xl'>
         <h3 className='text-sm font-semibold'>Add {spell.name} at rank</h3>
@@ -493,14 +493,15 @@ function HeightenRankModal({
         </div>
         <button type='button' className='mt-4 text-xs text-p1-muted hover:text-p1-text' onClick={onClose}>Cancel</button>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
 function SpellbookPreview({ entry, onClose }: { entry: Phase1SpellbookEntry; onClose: () => void }) {
   const spell = entry.spell;
-  return (
-    <div className='fixed inset-0 z-[110] grid place-items-center bg-black/60 p-5' role='presentation' onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+  return createPortal(
+    <div className='fixed inset-0 z-[120] grid place-items-center bg-black/60 p-5' role='presentation' onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section role='dialog' aria-modal='true' className='flex max-h-[min(80vh,720px)] w-full max-w-2xl flex-col border border-p1-border bg-p1-surface shadow-2xl'>
         <header className='flex items-start gap-3 border-b border-p1-border px-4 py-3'>
           <BookOpen size={16} className='mt-1 text-p1-accent' />
@@ -514,6 +515,7 @@ function SpellbookPreview({ entry, onClose }: { entry: Phase1SpellbookEntry; onC
           <ProseMarkdown>{spell.description}</ProseMarkdown>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

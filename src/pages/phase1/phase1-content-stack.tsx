@@ -9,7 +9,7 @@ import { convertToContentType, isAbilityBlockType } from '@content/content-utils
 import { getConditionByName } from '@conditions/condition-handler';
 import { priceToString } from '@items/currency-handler';
 import { determineItemMetaType, labelizeBulk } from '@items/inv-utils';
-import type { AbilityBlock, Item, Language, Spell, Trait } from '@schemas/content';
+import type { AbilityBlock, Creature, Item, Language, Spell, Trait } from '@schemas/content';
 import { abilityNameAndCost } from '@utils/actions';
 import { useContentLinks, type ContentLinkRef } from './phase1-content-links';
 import { ProseMarkdown } from './phase1-markdown';
@@ -265,6 +265,16 @@ async function loadCatalogContent(entry: ContentLinkRef): Promise<CatalogView | 
         { label: 'Script', value: language.script },
       ],
       description: language.description,
+    };
+  }
+
+  if (contentType === 'creature') {
+    const creature = record as unknown as Creature;
+    return {
+      title: creature.name,
+      tags: [creature.rarity, 'Creature', ...traitNames].filter(Boolean),
+      facts: [{ label: 'Level', value: String(creature.level) }],
+      description: creature.details?.description ?? '',
     };
   }
 
