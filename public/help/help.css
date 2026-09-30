@@ -65,6 +65,8 @@ body {
   z-index: 1;
   display: grid;
   grid-template-columns: 16rem minmax(0, 1fr);
+  width: min(72rem, calc(100% - 4rem));
+  margin: 0 auto;
   min-height: calc(100vh - 57px);
   background: radial-gradient(circle at top, #1f2937, #111827);
 }
@@ -105,7 +107,6 @@ body {
 
 .main {
   padding: 2.5rem 2rem 4rem;
-  max-width: 48rem;
 }
 
 h1 {
