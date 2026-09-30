@@ -1,6 +1,7 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { VitePWA, VitePWAOptions } from 'vite-plugin-pwa';
@@ -11,7 +12,7 @@ const manifestForPlugin: Partial<VitePWAOptions> = {
   includeAssets: ['apple-icon-180.png', 'maskable_icon.png'],
   workbox: {
     maximumFileSizeToCacheInBytes: 15 * 1024 * 1024, // 15 MiB
-    navigateFallbackDenylist: [/^\/auth\//, /^\/rest\//, /^\/functions\//, /^\/storage\//, /^\/pg\//],
+    navigateFallbackDenylist: [/^\/auth\//, /^\/rest\//, /^\/functions\//, /^\/storage\//, /^\/pg\//, /^\/help(\/|$)/],
   },
   manifest: {
     name: "Wanderer's Guide",
@@ -81,6 +82,23 @@ export default defineConfig(({ mode }) => ({
     },
   },
   plugins: [
+    {
+      name: 'serve-help-pages',
+      configureServer(server) {
+        const helpDir = path.resolve(__dirname, 'public/help');
+        server.middlewares.use((req, res, next) => {
+          const urlPath = req.url?.split('?')[0] ?? '';
+          if (urlPath !== '/help' && !urlPath.startsWith('/help/')) return next();
+          const relative = urlPath === '/help' || urlPath === '/help/' ? 'index.html' : urlPath.slice('/help/'.length);
+          if (!relative || relative.includes('..')) return next();
+          const file = path.resolve(helpDir, relative);
+          if (!file.startsWith(helpDir) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return next();
+          const type = file.endsWith('.css') ? 'text/css' : 'text/html';
+          res.setHeader('Content-Type', `${type}; charset=utf-8`);
+          fs.createReadStream(file).pipe(res);
+        });
+      },
+    },
     tailwindcss(),
     react(),
     visualizer({
