@@ -312,6 +312,10 @@ export function Phase1SheetPage() {
             return next;
           }),
         })),
+        updateCoins: (coins) => patchCharacter((current) => {
+          const inv = current.inventory ?? { coins: { cp: 0, sp: 0, gp: 0, pp: 0 }, items: [] };
+          return { ...current, inventory: { ...inv, coins } };
+        }),
         addItem: async (item: Item, type, coins) => {
           let added;
           try {

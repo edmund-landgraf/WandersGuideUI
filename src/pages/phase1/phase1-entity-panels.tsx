@@ -1,7 +1,10 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Activity, BookOpen, Calculator, ChevronDown, ChevronRight, Copy, Crosshair, Eye, Footprints, History, ListChecks, Package, Pencil, Plus, Search, Shield, Sparkles, Swords, Trash2, WandSparkles, X } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { Activity, BookOpen, Calculator, ChevronDown, ChevronRight, Copy, Crosshair, Eye, Footprints, History, ListChecks, Minus, Package, Pencil, Plus, Search, Shield, Sparkles, Swords, Trash2, WandSparkles, X } from 'lucide-react';
+import { evaluate } from 'mathjs';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { isPlayingStarfinder } from '@content/system-handler';
+import { convertToHardcodedLink } from '@content/hardcoded-links';
 import type { Character, Combatant, CombatantActionLogEntry, CombatantChangeLogEntry, Condition, Hazard, InitiativeRoundLog, InitiativeRoundLogEntry, Inventory, Item, LivingEntity, Spell } from '@schemas/content';
 import { loadEntityAbilities, type Phase1Ability, type Phase1FeatCategory } from './phase1-abilities';
 import { type Phase1CreatureStatus } from './phase1-stats';
@@ -747,6 +750,7 @@ export type InventoryItemActions = {
   deleteItem?: (item: Phase1InvItem) => void;
   updateItem?: (item: Phase1InvItem, next: Item) => void;
   moveItem?: (item: Phase1InvItem, containerKey: string | null) => void;
+  updateCoins?: (coins: Inventory['coins']) => void;
 };
 
 export function InventoryPanel({ combatant, itemActions, status }: { combatant: PopulatedCombatant; itemActions?: InventoryItemActions; status?: Phase1CreatureStatus | null }) {
@@ -755,6 +759,7 @@ export function InventoryPanel({ combatant, itemActions, status }: { combatant: 
   const [invTab, setInvTabState] = useState(persistedInventoryTab);
   const [selected, setSelected] = useState<Phase1InvItem | null>(null);
   const [adding, setAdding] = useState(false);
+  const [managingCoins, setManagingCoins] = useState(false);
   const [menu, setMenu] = useState<{ item: Phase1InvItem; x: number; y: number } | null>(null);
   const [editing, setEditing] = useState<Phase1InvItem | null>(null);
   const data = useQuery({
@@ -819,7 +824,7 @@ export function InventoryPanel({ combatant, itemActions, status }: { combatant: 
       <span className={`shrink-0 whitespace-nowrap border px-2.5 py-1.5 text-xs ${overBulk ? 'border-p1-danger/50 bg-p1-danger/10 text-p1-danger-soft' : 'border-p1-border bg-p1-surface text-p1-muted'}`}>
         Bulk: {carriedBulk} / {bulkLimit}
       </span>
-      <CoinStrip coins={coins} />
+      <CoinStrip coins={coins} onManage={itemActions?.updateCoins ? () => setManagingCoins(true) : undefined} />
       {itemActions?.addItem && (
         <button
           type='button'
@@ -923,6 +928,13 @@ export function InventoryPanel({ combatant, itemActions, status }: { combatant: 
         onClose={() => setEditing(null)}
       />
     )}
+    {managingCoins && itemActions?.updateCoins && (
+      <ManageCurrencyModal
+        coins={coins}
+        onChange={itemActions.updateCoins}
+        onClose={() => setManagingCoins(false)}
+      />
+    )}
     {adding && itemActions?.addItem && (
       <SelectAddItemsModal
         inventory={combatant.data.inventory}
@@ -936,24 +948,243 @@ export function InventoryPanel({ combatant, itemActions, status }: { combatant: 
   </>;
 }
 
-function CoinStrip({ coins }: { coins: { cp: number; sp: number; gp: number; pp: number } }) {
+function CoinStrip({ coins, onManage }: { coins: { cp: number; sp: number; gp: number; pp: number }; onManage?: () => void }) {
   const entries = [
     { label: 'Platinum', amount: coins.pp, src: PlatinumCoin },
     { label: 'Gold', amount: coins.gp, src: GoldCoin },
     { label: 'Silver', amount: coins.sp, src: SilverCoin },
     { label: 'Copper', amount: coins.cp, src: CopperCoin },
   ] as const;
+  const inner = entries.map((entry) => (
+    <span key={entry.label} className='inline-flex items-center gap-1 text-xs font-semibold text-p1-muted' title={entry.label}>
+      {entry.amount.toLocaleString()}
+      <img src={entry.src} alt={entry.label} className='h-4 w-4' />
+    </span>
+  ));
+  if (!onManage) {
+    return <div className='flex shrink-0 items-center gap-2'>{inner}</div>;
+  }
   return (
-    <div className='flex shrink-0 items-center gap-2'>
-      {entries.map((entry) => (
-        <span key={entry.label} className='inline-flex items-center gap-1 text-xs font-semibold text-p1-muted' title={entry.label}>
-          {entry.amount.toLocaleString()}
-          <img src={entry.src} alt={entry.label} className='h-4 w-4' />
-        </span>
-      ))}
-    </div>
+    <button
+      type='button'
+      className='flex h-9 shrink-0 items-center gap-2 border border-p1-border bg-p1-surface px-2.5 hover:bg-p1-hover'
+      title='Manage currency'
+      onClick={onManage}
+    >
+      {inner}
+    </button>
   );
 }
+
+function parseCoinInput(raw: string) {
+  const input = raw.trim() || '0';
+  let result = Number.NaN;
+  try {
+    result = Number(evaluate(input));
+  } catch {
+    result = parseInt(input, 10);
+  }
+  if (Number.isNaN(result)) result = 0;
+  return Math.max(0, Math.floor(result));
+}
+
+function ManageCurrencyModal({
+  coins,
+  onChange,
+  onClose,
+}: {
+  coins: { cp: number; sp: number; gp: number; pp: number };
+  onChange: (coins: { cp: number; sp: number; gp: number; pp: number }) => void;
+  onClose: () => void;
+}) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const [cp, setCp] = useState(`${coins.cp || 0}`);
+  const [sp, setSp] = useState(`${coins.sp || 0}`);
+  const [gp, setGp] = useState(`${coins.gp || 0}`);
+  const [pp, setPp] = useState(`${coins.pp || 0}`);
+  const silverLabel = isPlayingStarfinder() ? 'Credits' : 'Silver';
+  const latest = useRef({ cp, sp, gp, pp, onChange, onClose });
+  latest.current = { cp, sp, gp, pp, onChange, onClose };
+
+  useEffect(() => {
+    closeRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !isContentStackOpen()) persistAndClose();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      document.body.style.overflow = overflow;
+    };
+  }, []);
+
+  function persistAndClose() {
+    const current = latest.current;
+    current.onChange({
+      cp: parseCoinInput(current.cp),
+      sp: parseCoinInput(current.sp),
+      gp: parseCoinInput(current.gp),
+      pp: parseCoinInput(current.pp),
+    });
+    current.onClose();
+  }
+
+  function totals(overrides?: Partial<{ cp: string; sp: string; gp: string; pp: string }>) {
+    return {
+      cp: parseCoinInput(overrides?.cp ?? cp),
+      sp: parseCoinInput(overrides?.sp ?? sp),
+      gp: parseCoinInput(overrides?.gp ?? gp),
+      pp: parseCoinInput(overrides?.pp ?? pp),
+    };
+  }
+
+  function apply(next: { cp: number; sp: number; gp: number; pp: number }) {
+    setCp(`${next.cp}`);
+    setSp(`${next.sp}`);
+    setGp(`${next.gp}`);
+    setPp(`${next.pp}`);
+    onChange(next);
+  }
+
+  function commit(kind: 'cp' | 'sp' | 'gp' | 'pp', value: string) {
+    apply(totals({ [kind]: value }));
+  }
+
+  function nudge(kind: 'cp' | 'sp' | 'gp' | 'pp', delta: number) {
+    const current = totals();
+    apply({ ...current, [kind]: Math.max(0, current[kind] + delta) });
+  }
+
+  function field(
+    kind: 'cp' | 'sp' | 'gp' | 'pp',
+    label: string,
+    src: string,
+    value: string,
+    setValue: (next: string) => void,
+  ) {
+    const amount = parseCoinInput(value);
+    return (
+      <div className='min-w-0'>
+        <span className='mb-1 flex items-center gap-1.5 text-xs font-semibold text-p1-muted'>
+          <img src={src} alt='' className='h-4 w-4' />
+          {label}
+        </span>
+        <div className='flex items-center gap-1'>
+          <button
+            type='button'
+            className='icon-button shrink-0'
+            aria-label={`Decrease ${label}`}
+            disabled={amount <= 0}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => nudge(kind, -1)}
+          >
+            <Minus size={14} />
+          </button>
+          <input
+            className='settings-input min-w-0 flex-1 text-center'
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            onBlur={() => commit(kind, value)}
+            onKeyDown={(event: ReactKeyboardEvent<HTMLInputElement>) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                commit(kind, value);
+                event.currentTarget.blur();
+              }
+              if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                nudge(kind, 1);
+              }
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                nudge(kind, -1);
+              }
+            }}
+          />
+          <button
+            type='button'
+            className='icon-button shrink-0'
+            aria-label={`Increase ${label}`}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => nudge(kind, 1)}
+          >
+            <Plus size={14} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return createPortal(
+    <div
+      data-entity-modal
+      className='fixed inset-0 z-[200] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]'
+      role='presentation'
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !isContentStackOpen()) persistAndClose();
+      }}
+    >
+      <section
+        role='dialog'
+        aria-modal='true'
+        aria-labelledby='manage-currency-title'
+        className='flex max-h-[min(88vh,860px)] w-full max-w-2xl flex-col border border-p1-border bg-p1-surface shadow-2xl'
+      >
+        <header className='flex items-start gap-4 border-b border-p1-border px-5 py-4'>
+          <h2 id='manage-currency-title' className='min-w-0 flex-1 text-xl font-semibold'>
+            Manage Currency
+          </h2>
+          <button ref={closeRef} type='button' className='icon-button shrink-0' onClick={persistAndClose} title='Close'>
+            <X size={18} />
+          </button>
+        </header>
+        <div className='min-h-0 flex-1 overflow-y-auto'>
+        <div className='grid grid-cols-2 gap-3 px-5 py-4 sm:grid-cols-4'>
+          {field('pp', 'Platinum', PlatinumCoin, pp, setPp)}
+          {field('gp', 'Gold', GoldCoin, gp, setGp)}
+          {field('sp', silverLabel, SilverCoin, sp, setSp)}
+          {field('cp', 'Copper', CopperCoin, cp, setCp)}
+        </div>
+        <div className='space-y-2 border-t border-p1-border px-5 py-4'>
+          <CurrencyNote title='Description'>
+            <ProseMarkdown>{CURRENCY_DESCRIPTION}</ProseMarkdown>
+            {isPlayingStarfinder() && <ProseMarkdown className='mt-3'>{STARFINDER_CURRENCY_NOTE}</ProseMarkdown>}
+          </CurrencyNote>
+          <CurrencyNote title='Other Currencies'>
+            <ProseMarkdown>{`Art objects, gems, and raw materials (such as those used for the ${convertToHardcodedLink('action', 'Craft')} activity) can be used much like currency: you can sell them for the same Price you can buy them.`}</ProseMarkdown>
+          </CurrencyNote>
+        </div>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+function CurrencyNote({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <details className='group border border-p1-border bg-p1-inset'>
+      <summary className='flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-sm font-semibold marker:content-none [&::-webkit-details-marker]:hidden'>
+        {title}
+        <ChevronDown size={14} className='shrink-0 text-p1-faint transition group-open:rotate-180' />
+      </summary>
+      <div className='border-t border-p1-border px-3 py-3 text-sm leading-6 text-p1-muted'>
+        {children}
+      </div>
+    </details>
+  );
+}
+
+const CURRENCY_DESCRIPTION = `There are four common types of coins, each standardized in weight and value.
+
+- The copper piece (cp) is worth one-tenth of a silver piece.
+- The silver piece (sp) is the standard unit of currency. Each silver piece is a standard weight of silver and is typically accepted by any merchant or kingdom no matter where it was minted.
+- The gold piece (gp) is often used for purchasing magic items and other expensive items, as 1 gold piece is worth 10 silver pieces or 100 copper pieces.
+- The platinum piece (pp) is used for the purchase of very expensive items or as a way to easily transport large sums of currency. A platinum piece is worth 10 gold pieces, 100 silver pieces, or 1,000 copper pieces.`;
+
+const STARFINDER_CURRENCY_NOTE = `The standard currency in Starfinder is the credit, and all items in this document are priced in credits. In Pathfinder Second Edition, the standard currency is typically in gold pieces (gp). The conversion rate between credits and gp is that 10 credits = 1 gp.`;
 
 function InventoryItemSection({ title, items, onOpen, onContextMenu, flat = false, collapsible = false, hideTitle = false }: {
   title: string;
