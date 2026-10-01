@@ -42,8 +42,16 @@ export async function signInWithEmail(email: string, password: string) {
   return supabase.auth.signInWithPassword({ email, password });
 }
 
+/**
+ * Drop the browser session even when GoTrue no longer has it.
+ *
+ * A global logout POSTs /logout and, on this stack, that call returns 403
+ * "Session not found" once the refresh-token row is already gone. The campaign
+ * buttons were awaiting that global call, so the click looked like it did nothing.
+ * Local scope removes the stored session and fires SIGNED_OUT without asking auth.
+ */
 export async function signOut() {
-  return supabase.auth.signOut();
+  return supabase.auth.signOut({ scope: 'local' });
 }
 
 export function parseOAuthReturnError(search: string): string | null {

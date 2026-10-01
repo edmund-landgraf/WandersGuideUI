@@ -14,8 +14,8 @@
 //
 // WG_DIR overrides the wanderers-guide checkout location (default: ../wanderers-guide).
 //
-// TODO: stack:up and export:up each replace the functions entrypoint, so the last one
-// wins and the other overlay disappears (players then see no encounters). Mount both.
+// Both launchers use docker/wgui-functions.compose.yml so export:up does not drop
+// the encounter handlers, and stack:up does not drop character export.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -24,7 +24,8 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const extDir = path.join(repoRoot, 'supabase', 'wgui-ext');
-const overrideFile = path.join(repoRoot, 'docker', 'wgui-ext.compose.yml');
+const exportDir = path.join(repoRoot, 'supabase', 'wgui-export');
+const overrideFile = path.join(repoRoot, 'docker', 'wgui-functions.compose.yml');
 const wgDir = path.resolve(process.env.WG_DIR ?? path.join(repoRoot, '..', 'wanderers-guide'));
 const stackFile = path.join(wgDir, 'docker-compose.yml');
 
@@ -76,6 +77,7 @@ function compose(args) {
       env: {
         ...process.env,
         WGUI_EXT_DIR: posix(extDir),
+        WGUI_EXPORT_DIR: posix(exportDir),
         WG_FUNCTIONS_DIR: posix(path.join(wgDir, 'supabase', 'functions')),
       },
     }

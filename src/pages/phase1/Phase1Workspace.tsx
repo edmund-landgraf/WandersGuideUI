@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, EyeOff, ExternalLink, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, EyeOff, ExternalLink, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
-import type { AmbaChallengeTable, Campaign, Character, Combatant, Condition, Creature, DiceCheckResult, DiceRollLog, DiceRollLogEntry, DiceRollSide, DiceRollState, Encounter, InitiativeRoundLog, InitiativeRoundLogEntry, LivingEntity } from '@schemas/content';
+import type { AmbaChallengeTable, Campaign, Character, Combatant, Condition, Creature, DiceCheckResult, DiceRollLog, DiceRollLogEntry, DiceRollSide, DiceRollState, Encounter, Hazard, InitiativeRoundLog, InitiativeRoundLogEntry, LivingEntity } from '@schemas/content';
 import { CampaignSignIn } from '@auth/CampaignSignIn';
+import { signOut } from '@auth/campaign-auth';
 import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
-import { supabase } from '../../supabase-client';
 import { phase1Request, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
 import { isEnemyCreature, playerAllyRoundLog, playerEnemyLabel, playerVisibleCombatants } from './phase1-player-combat';
 import { loadEntityAbilities, type Phase1Ability } from './phase1-abilities';
@@ -37,7 +37,7 @@ import { toGmNotes } from '@pages/character_sheet/panels/gm-notes';
 import { lookupMonsterArt, type Phase1MonsterArt } from './phase1-monster-image';
 import { addConditionWithSpawns, compiledConditions, removeConditionWithSpawns } from '@conditions/condition-handler';
 import { ConditionDetailModal, SelectConditionModal } from './phase1-conditions';
-import { SelectCreatureModal } from './phase1-creatures';
+import { SelectCreatureModal, SelectHazardModal } from './phase1-creatures';
 import { ActionSymbol } from '@common/Actions';
 import { abilityNameAndCost } from '@utils/actions';
 import { toStandard2eProse } from '@utils/foundry-text';
@@ -45,7 +45,7 @@ import { GiDiceTwentyFacesTwenty } from '@common/game-icons-inline';
 import { Phase1CssThemeToggle } from './Phase1CssThemeToggle';
 import { Phase1ThemeToggle } from './Phase1ThemeToggle';
 import { rollDie } from '@utils/random';
-import { buildInitiativeRoundLog, formatInitiativeRoll, InitiativeRollModal, isCombatantOut, nextInitiativeRoundNumber, overlayInitiativeLogs, setRoundLogEntryNote, sortCombatantsByInitiative, type InitiativeRollChoice } from './phase1-initiative';
+import { buildInitiativeRoundLog, combatantDisplayName, formatInitiativeRoll, InitiativeRollModal, isCombatantOut, nextInitiativeRoundNumber, overlayInitiativeLogs, setRoundLogEntryNote, sortCombatantsByInitiative, type InitiativeRollChoice } from './phase1-initiative';
 import { toLabel } from '@utils/strings';
 import { sign } from '@utils/numbers';
 import { DiceCheckResultToast, DiceCheckRollModal, DiceRollColorKey, DiceRollLogPanel } from './phase1-dice-rolls';
@@ -77,7 +77,8 @@ import { importFromPathbuilder } from '@import/pathbuilder/import-from-pathbuild
 import { Phase1RandomCharacterModal } from './phase1-random-character-modal';
 import { Phase1PortraitModal } from './phase1-portrait-modal';
 import { calculateDifficulty, formatLevelDelta, shouldDisplayEncounterDifficulty, type EncounterDifficulty } from '@utils/encounter-difficulty';
-import { InspectorContent, DETAIL_TABS, fallbackStatus, hasFullEntityDetails, normalizeDetailTab, signed, statsFor, type DetailTab, type Phase1SpellActions } from './phase1-entity-panels';
+import { createHazardCombatant, getHazardCurrentHp, getHazardInitiativeModifier, isHazardCombatant, updateHazardHp } from '@utils/encounter-hazard';
+import { InspectorContent, HazardInspector, DETAIL_TABS, fallbackStatus, hasFullEntityDetails, normalizeDetailTab, signed, statsFor, type DetailTab, type Phase1SpellActions } from './phase1-entity-panels';
 type CampaignNotePage = NonNullable<Campaign['notes']>['pages'][number];
 type IndexedNotePage = { page: CampaignNotePage; index: number };
 
@@ -209,7 +210,7 @@ export function Phase1IndexPage() {
                 <Plus size={15} />
                 {creating ? 'Creating…' : 'Create campaign'}
               </button>
-              <button className='icon-button' title='Sign out' onClick={() => supabase.auth.signOut()}><LogOut size={17} /></button>
+              <button className='icon-button' title='Sign out' onClick={() => void signOut()}><LogOut size={17} /></button>
             </div>
           </div>
         </div>
@@ -1818,6 +1819,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const [initiativeOpen, setInitiativeOpen] = useState(false);
   const [initiativeRollNonce, setInitiativeRollNonce] = useState(0);
   const [creaturePickerOpen, setCreaturePickerOpen] = useState(false);
+  const [hazardPickerOpen, setHazardPickerOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [pendingCampaignRemove, setPendingCampaignRemove] = useState<{ id: number; name: string } | null>(null);
   const [statBlocksOpen, setStatBlocksOpen] = useState(false);
@@ -1866,11 +1868,12 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const diceSide = diceState?.side;
   const diceStat = diceState?.stat ?? undefined;
   const diceDc = diceState?.dc ?? null;
-  const playerDiceRows = playerPartyDiceCombatants(activeCombatants);
+  const playerDiceRows = playerPartyDiceCombatants(activeCombatants.filter((combatant) => combatant.type !== 'HAZARD'));
+  const livingActive = activeCombatants.filter((combatant) => combatant.type !== 'HAZARD');
   const diceRows = isGm
-    ? (!diceSide || !diceStat ? [] : filterCombatantsBySide(activeCombatants, diceSide))
+    ? (!diceSide || !diceStat ? [] : filterCombatantsBySide(livingActive, diceSide))
     : playerDiceRows;
-  const gmDiceGridRows = diceSide ? filterCombatantsBySide(activeCombatants, diceSide) : activeCombatants;
+  const gmDiceGridRows = diceSide ? filterCombatantsBySide(livingActive, diceSide) : livingActive;
   const diceGridRows = isGm ? gmDiceGridRows : playerDiceRows;
   const canRollCheck = Boolean(!rosterSaving && diceStat && diceDc != null && Number.isFinite(diceDc) && diceRows.length > 0 && (isGm ? Boolean(diceSide) : true));
   const canEditDice = !rosterSaving;
@@ -2003,6 +2006,13 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     setSelectedId(id);
   }
 
+  function addHazard(hazard: Hazard) {
+    if (!selectedEncounter) return;
+    const incoming = createHazardCombatant(hazard, crypto.randomUUID());
+    updateRoster([...selectedEncounter.combatants.list, incoming]);
+    setSelectedId(incoming._id);
+  }
+
   function cloneCreature(combatantId: string) {
     if (!selectedEncounter) return;
     const list = selectedEncounter.combatants.list;
@@ -2031,7 +2041,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   function deleteCreature(combatantId: string) {
     if (!selectedEncounter) return;
     const combatant = selectedEncounter.combatants.list.find((item) => item._id === combatantId);
-    if (combatant?.type !== 'CREATURE') return;
+    if (combatant?.type !== 'CREATURE' && combatant?.type !== 'HAZARD') return;
     updateRoster(selectedEncounter.combatants.list.filter((item) => item._id !== combatantId));
     if (selectedId === combatantId) setSelectedId(null);
   }
@@ -2210,7 +2220,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
       setCheckOpen(false);
       return;
     }
-    const rows = isGm ? filterCombatantsBySide(activeCombatants, state.side) : playerPartyDiceCombatants(activeCombatants);
+    const rows = isGm ? filterCombatantsBySide(livingActive, state.side) : playerPartyDiceCombatants(livingActive);
     const existingLog = diceLogRef.current.length ? diceLogRef.current : encounter.meta_data.dice_roll_log ?? [];
     const challenge = isGm ? findAmbaChallenge(readAmbaChallenges(encounter.meta_data), state.challenge_id) : undefined;
     const audience = isGm ? gmDiceAudience(state.audience) : undefined;
@@ -2228,7 +2238,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     maybeShowDice3d(
       rows
         .filter((combatant) => results[combatant._id])
-        .map((combatant) => ({ name: isGm || combatant.ally ? combatant.data.name : playerEnemyLabel(combatant.data.name), die: results[combatant._id].die })),
+        .map((combatant) => ({ name: isGm || combatant.ally ? combatantDisplayName(combatant) : playerEnemyLabel(combatantDisplayName(combatant)), die: results[combatant._id].die })),
       diceCheckOverlayTitle(dc, checkStatLabel(stat)),
     );
     setCheckOpen(false);
@@ -2263,7 +2273,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     seenDiceCheckEncounterRef.current = encounter.id;
     persistDiceMeta({ dice_roll_log: [...existingLog, log] });
     maybeShowDice3d(
-      [{ name: isGm || combatant.ally ? combatant.data.name : playerEnemyLabel(combatant.data.name), die: result.die }],
+      [{ name: isGm || combatant.ally ? combatantDisplayName(combatant) : playerEnemyLabel(combatantDisplayName(combatant)), die: result.die }],
       diceCheckOverlayTitle(dc, checkStatLabel(resolvedStat)),
     );
     setCheckToast({ log, x, y });
@@ -2292,11 +2302,13 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     persistRoster(
       selectedEncounter.combatants.list.map((combatant) => {
         const populated = populatedById.get(combatant._id);
-        const maxHp = populated
-          ? resolveResetMaxHp(populated.data, statuses.data?.[combatant._id]?.maxHp)
-          : combatant.creature
-            ? resolveResetMaxHp(combatant.creature)
-            : 0;
+        const maxHp = combatant.type === 'HAZARD'
+          ? combatant.hazard?.details.defenses?.hp ?? 0
+          : populated?.data
+            ? resolveResetMaxHp(populated.data, statuses.data?.[combatant._id]?.maxHp)
+            : combatant.creature
+              ? resolveResetMaxHp(combatant.creature)
+              : 0;
         if (combatant.type === 'CHARACTER' && combatant.character) {
           const character = players.find((player) => player.id === combatant.character);
           if (character) {
@@ -2322,11 +2334,13 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     persistRoster(
       selectedEncounter.combatants.list.map((combatant) => {
         const populated = populatedById.get(combatant._id);
-        const maxHp = populated
-          ? resolveResetMaxHp(populated.data, statuses.data?.[combatant._id]?.maxHp)
-          : combatant.creature
-            ? resolveResetMaxHp(combatant.creature)
-            : 0;
+        const maxHp = combatant.type === 'HAZARD'
+          ? combatant.hazard?.details.defenses?.hp ?? 0
+          : populated?.data
+            ? resolveResetMaxHp(populated.data, statuses.data?.[combatant._id]?.maxHp)
+            : combatant.creature
+              ? resolveResetMaxHp(combatant.creature)
+              : 0;
         if (combatant.type === 'CHARACTER' && combatant.character) {
           const character = players.find((player) => player.id === combatant.character);
           if (character) {
@@ -2417,8 +2431,29 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   function persistHpCurrentById(combatantId: string, raw: string, note: string | null) {
     const combatant = combatants.find((item) => item._id === combatantId);
     if (!combatant || !canManageCombatant(combatant)) return;
+    if (isHazardCombatant(combatant)) {
+      const maximum = combatant.hazard.details.defenses?.hp;
+      if (maximum === undefined) return;
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed)) return;
+      persistRoster((selectedEncounterRef.current?.combatants.list ?? []).map((item) => (
+        item._id === combatantId ? updateHazardHp(item, parsed) : item
+      )));
+      return;
+    }
+    if (!combatant.data) return;
     const maxHp = statuses.data?.[combatantId]?.maxHp ?? statsFor(combatant.data).maxHp;
     persistHpCurrent(combatant, raw, note, maxHp);
+  }
+
+  function persistHazardDisabled(combatantId: string, disabled: boolean) {
+    const encounter = selectedEncounterRef.current;
+    if (!encounter || rosterSaving) return;
+    persistRoster(encounter.combatants.list.map((item) => (
+      item._id === combatantId && isHazardCombatant(item)
+        ? { ...item, hazard_state: { ...item.hazard_state, disabled } }
+        : item
+    )));
   }
 
   function persistCreature(entity: LivingEntity) {
@@ -2592,7 +2627,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
             <NoteSurface note={selectedNote} isGm={isGm} encounterLink={noteEncounter ? { href: phase1EncounterPath(noteEncounter.id, campaign?.id), name: noteEncounter.name } : undefined} />
           ) : (
             <>
-              <EncounterHeader encounter={selectedEncounter} combatants={activeCombatants} count={activeCombatants.length} isGm={isGm} noteLink={!standalone && encounterNote && campaign ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} tab={encounterTab} onTab={setEncounterTab} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} canRollInitiative={isGm && activeCombatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && activeCombatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} onOpenStatBlocks={() => setStatBlocksOpen(true)} />
+              <EncounterHeader encounter={selectedEncounter} combatants={activeCombatants} count={activeCombatants.length} isGm={isGm} noteLink={!standalone && encounterNote && campaign ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} tab={encounterTab} onTab={setEncounterTab} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} showAddHazard={campaign?.meta_data?.settings?.show_hazards_button === true} canAddHazard={isGm && !rosterSaving} onAddHazard={() => setHazardPickerOpen(true)} canRollInitiative={isGm && activeCombatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && activeCombatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} onOpenStatBlocks={() => setStatBlocksOpen(true)} />
               {rosterError && <div className='border-b border-p1-danger/40 bg-p1-danger/10 px-5 py-2 text-xs text-p1-danger-soft'>Roster update failed: {rosterError.message}</div>}
               {encounterTab === 'dice' && (
                 <DiceRollToolbar
@@ -2654,7 +2689,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               <div className='p-5'>
                 {encounterTab === 'combat' ? (
                   <>
-                    <CombatantGrid combatants={orderedCombatants} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={initiativeRollNonce} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} playerView={!isGm} />
+                    <CombatantGrid combatants={orderedCombatants} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={initiativeRollNonce} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onToggleHazardDisabled={persistHazardDisabled} playerView={!isGm} />
                     <InitiativeRoundLogPanel log={isGm ? (selectedEncounter?.meta_data.initiative_log ?? []) : playerAllyRoundLog(selectedEncounter?.meta_data.initiative_log ?? [])} canEdit={isGm && !rosterSaving} canClear={isGm && !rosterSaving} onClear={clearInitiativeLog} onUpdateNote={updateRoundNote} />
                   </>
                 ) : (
@@ -2666,7 +2701,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               </div>
               {initiativeOpen && selectedEncounter && (
                 <InitiativeRollModal
-                  combatants={activeCombatants}
+                  combatants={activeCombatants.filter((combatant) => !isHazardCombatant(combatant) || getHazardInitiativeModifier(combatant.hazard) !== undefined)}
                   onConfirm={rollInitiative}
                   onClose={() => setInitiativeOpen(false)}
                 />
@@ -2692,6 +2727,13 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
                   busy={rosterSaving}
                   onSelect={addCreature}
                   onClose={() => setCreaturePickerOpen(false)}
+                />
+              )}
+              {hazardPickerOpen && (
+                <SelectHazardModal
+                  busy={rosterSaving}
+                  onSelect={addHazard}
+                  onClose={() => setHazardPickerOpen(false)}
                 />
               )}
               {statBlocksOpen && (
@@ -2728,7 +2770,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
         {!viewingNotes && !viewingSettings && (
           <>
             <ResizeRail onResize={(delta) => setDetailWidth((width) => clamp(width - delta, DETAIL_WIDTH_MIN, DETAIL_WIDTH_MAX))} />
-            <Inspector combatant={selected && (isGm || !isEnemyCreature(selected)) ? selected : null} width={detailWidth} activeTab={normalizeDetailTab(activeTab)} onTab={setActiveTab} hasMatchingCampaignNote={Boolean(encounterNote)} status={selected ? statuses.data?.[selected._id] : undefined} statusLoading={statuses.isLoading} canManageSpells={canManageSpells} spellActions={spellActions} onChangeConditions={canManageSpells ? persistConditions : undefined} onSaveGmNotes={isGm && selected?.type === 'CREATURE' ? persistGmNotes : undefined} onPersistHpCurrent={selected && canManageSpells ? (raw, note) => persistHpCurrent(selected, raw, note, statuses.data?.[selected._id]?.maxHp ?? statsFor(selected.data).maxHp) : undefined} onPersistTempHp={selected && canManageSpells ? (raw, note) => persistTempHp(selected, raw, note) : undefined} initiativeLog={selectedEncounter?.meta_data.initiative_log ?? []} canEditRoundNotes={isGm && !rosterSaving} onUpdateRoundNote={updateRoundNote} onLogAction={selected && canManageSpells ? persistLogAction : undefined} onDeleteLogEntry={selected && canManageSpells ? persistDeleteLogEntry : undefined} />
+            <Inspector combatant={selected && (isGm || !isEnemyCreature(selected)) ? selected : null} width={detailWidth} activeTab={normalizeDetailTab(activeTab)} onTab={setActiveTab} hasMatchingCampaignNote={Boolean(encounterNote)} status={selected ? statuses.data?.[selected._id] : undefined} statusLoading={statuses.isLoading} canManageSpells={canManageSpells} spellActions={spellActions} onChangeConditions={canManageSpells && selected?.type !== 'HAZARD' ? persistConditions : undefined} onSaveGmNotes={isGm && selected?.type === 'CREATURE' ? persistGmNotes : undefined} onPersistHpCurrent={selected && canManageSpells && selected.data ? (raw, note) => persistHpCurrent(selected, raw, note, statuses.data?.[selected._id]?.maxHp ?? statsFor(selected.data).maxHp) : undefined} onPersistTempHp={selected && canManageSpells && selected.data ? (raw, note) => persistTempHp(selected, raw, note) : undefined} initiativeLog={selectedEncounter?.meta_data.initiative_log ?? []} canEditRoundNotes={isGm && !rosterSaving} onUpdateRoundNote={updateRoundNote} onLogAction={selected && canManageSpells && selected.type !== 'HAZARD' ? persistLogAction : undefined} onDeleteLogEntry={selected && canManageSpells && selected.type !== 'HAZARD' ? persistDeleteLogEntry : undefined} />
           </>
         )}
       </div>
@@ -2777,14 +2819,18 @@ function nextCreatureCloneName(source: Combatant, roster: Combatant[]): string {
 type CombatantStatusMap = Record<string, Phase1CreatureStatus | null>;
 
 function useCombatantStatuses(encounterId: number | null, combatants: PopulatedCombatant[]) {
-  const signature = combatants.map((combatant) => `${combatant._id}:${combatant.data.hp_current}:${combatant.data.hp_temp}:${JSON.stringify(combatant.data.details?.conditions ?? [])}`).join('|');
+  const signature = combatants.map((combatant) => (
+    isHazardCombatant(combatant)
+      ? `${combatant._id}:hazard:${combatant.hazard_state?.hp_current ?? ''}:${combatant.hazard_state?.disabled ?? false}`
+      : `${combatant._id}:${combatant.data?.hp_current}:${combatant.data?.hp_temp}:${JSON.stringify(combatant.data?.details?.conditions ?? [])}`
+  )).join('|');
   return useQuery({
     queryKey: ['phase1-encounter-statuses', 'isolated-store', 'keep-encounter-ops', encounterId, signature],
     enabled: encounterId !== null && combatants.length > 0,
     queryFn: async () => {
       const result: CombatantStatusMap = {};
       for (const combatant of combatants) {
-        if (combatant.access?.details_revealed === false || !hasFullEntityDetails(combatant)) continue;
+        if (isHazardCombatant(combatant) || combatant.access?.details_revealed === false || !hasFullEntityDetails(combatant) || !combatant.data) continue;
         try {
           result[combatant._id] = await calculateEntityStatus(combatant as Phase1EntityCombatant);
         } catch {
@@ -2819,7 +2865,7 @@ function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, v
         <Phase1ThemeToggle />
         <Phase1CssThemeToggle />
         <PhaseViewSwitch current='phase1' section={section} campaignId={campaignId} encounterId={encounterId} noteIndex={noteIndex} viewingSettings={viewingSettings} />
-        <button className='icon-button' title='Switch account' onClick={() => supabase.auth.signOut()}><LogOut size={15} /></button>
+        <button className='icon-button' title='Switch account' onClick={() => void signOut()}><LogOut size={15} /></button>
       </div>
     </header>
   );
@@ -2997,7 +3043,7 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
                     x: event.clientX,
                     y: event.clientY,
                     characterId: combatant.type === 'CHARACTER' ? combatant.character : undefined,
-                    name: combatant.data.name,
+                    name: combatantDisplayName(combatant),
                   });
                 }}
               >
@@ -3008,7 +3054,7 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
                     onDragEnd={() => { clearCombatantDrag(); setOutActive(false); }}
                     className='shrink-0 cursor-grab text-p1-faint'
                     title='Drag back to encounter'
-                    aria-label={`Drag ${combatant.data.name} back to encounter`}
+                    aria-label={`Drag ${combatantDisplayName(combatant)} back to encounter`}
                   >
                     <GripVertical size={14} />
                   </span>
@@ -3019,7 +3065,7 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
                   className='flex min-w-0 flex-1 items-center gap-2 text-left'
                 >
                   <Skull size={15} className='shrink-0' />
-                  <span className='min-w-0 flex-1 truncate'>{!isGm && isEnemyCreature(combatant) ? playerEnemyLabel(combatant.data.name) : combatant.data.name}</span>
+                  <span className='min-w-0 flex-1 truncate'>{!isGm && isEnemyCreature(combatant) ? playerEnemyLabel(combatantDisplayName(combatant)) : combatantDisplayName(combatant)}</span>
                   <span className='shrink-0 text-[10px] uppercase text-p1-faint'>{combatant.out === 'dead' ? 'Dead' : 'Incap.'}</span>
                 </button>
               </div>
@@ -3457,7 +3503,7 @@ function DiceCombatantContextMenu({ x, y, combatant, canCheck, challenges, canCh
   );
 }
 
-function CombatantContextMenu({ x, y, onClose, onClone, onIncapacitate, onMarkDead, onDelete }: { x: number; y: number; onClose: () => void; onClone: () => void; onIncapacitate: () => void; onMarkDead: () => void; onDelete: () => void }) {
+function CombatantContextMenu({ x, y, onClose, onClone, onIncapacitate, onMarkDead, onDelete }: { x: number; y: number; onClose: () => void; onClone?: () => void; onIncapacitate?: () => void; onMarkDead?: () => void; onDelete: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -3471,15 +3517,21 @@ function CombatantContextMenu({ x, y, onClose, onClone, onIncapacitate, onMarkDe
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
       <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        {onClone && (
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onClone}>
           <Copy size={14} /> Clone
         </button>
+        )}
+        {onIncapacitate && (
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onIncapacitate}>
           <Skull size={14} /> Move to incapacitated
         </button>
+        )}
+        {onMarkDead && (
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onMarkDead}>
           <Skull size={14} /> Mark dead
         </button>
+        )}
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onDelete}>
           <Trash2 size={14} /> Delete
         </button>
@@ -4010,7 +4062,7 @@ function EncounterDifficultyModal({ difficulty, onClose }: { difficulty: Encount
   );
 }
 
-function EncounterHeader({ encounter, combatants, count, isGm, noteLink, tab, onTab, canAddCreature, onAddCreature, canRollInitiative, onRollInitiative, canClearInitiative, onClearInitiative, canMaxStats, onMaxStats, canReset, onReset, onOpenStatBlocks }: { encounter: Encounter | null; combatants: PopulatedCombatant[]; count: number; isGm: boolean; noteLink?: { href: string; name: string }; tab: 'combat' | 'dice'; onTab: (tab: 'combat' | 'dice') => void; canAddCreature?: boolean; onAddCreature?: () => void; canRollInitiative?: boolean; onRollInitiative?: () => void; canClearInitiative?: boolean; onClearInitiative?: () => void; canMaxStats?: boolean; onMaxStats?: () => void; canReset?: boolean; onReset?: () => void; onOpenStatBlocks?: () => void }) {
+function EncounterHeader({ encounter, combatants, count, isGm, noteLink, tab, onTab, canAddCreature, onAddCreature, showAddHazard, canAddHazard, onAddHazard, canRollInitiative, onRollInitiative, canClearInitiative, onClearInitiative, canMaxStats, onMaxStats, canReset, onReset, onOpenStatBlocks }: { encounter: Encounter | null; combatants: PopulatedCombatant[]; count: number; isGm: boolean; noteLink?: { href: string; name: string }; tab: 'combat' | 'dice'; onTab: (tab: 'combat' | 'dice') => void; canAddCreature?: boolean; onAddCreature?: () => void; showAddHazard?: boolean; canAddHazard?: boolean; onAddHazard?: () => void; canRollInitiative?: boolean; onRollInitiative?: () => void; canClearInitiative?: boolean; onClearInitiative?: () => void; canMaxStats?: boolean; onMaxStats?: () => void; canReset?: boolean; onReset?: () => void; onOpenStatBlocks?: () => void }) {
   const [xpOpen, setXpOpen] = useState(false);
   const difficulty = encounter && shouldDisplayEncounterDifficulty(combatants) ? calculateDifficulty(encounter, combatants) : null;
   return (
@@ -4042,6 +4094,7 @@ function EncounterHeader({ encounter, combatants, count, isGm, noteLink, tab, on
           <>
             <button type='button' className='toolbar-button' title='PC stat blocks' onClick={() => onOpenStatBlocks?.()}><AlignLeft size={15} /> Stat blocks</button>
             {isGm && <button className='toolbar-button' disabled={!canAddCreature} title={canAddCreature ? 'Add a creature from the catalog' : 'Wait for the roster to finish saving'} onClick={onAddCreature}><Swords size={15} /> Add creature</button>}
+            {isGm && showAddHazard && <button className='toolbar-button' disabled={!canAddHazard} title={canAddHazard ? 'Add a hazard from the catalog' : 'Wait for the roster to finish saving'} onClick={onAddHazard}><TriangleAlert size={15} /> Add hazard</button>}
             <button className='toolbar-button' disabled={!canRollInitiative} title={!isGm ? 'GM only' : count === 0 ? 'Add combatants first' : 'Roll initiative'} onClick={onRollInitiative}><GiDiceTwentyFacesTwenty size={15} /> Roll initiative</button>
             <button className='toolbar-button' disabled={!canClearInitiative} title={!isGm ? 'GM only' : canClearInitiative ? 'Clear initiative and restore roster order' : 'No initiative to clear'} onClick={onClearInitiative}><Eraser size={15} /> Clear init</button>
             <button className='toolbar-button' disabled={!canMaxStats} title={!isGm ? 'GM only' : canMaxStats ? 'Restore HP, spells, focus, wands/staves, and other encounter consumables' : count === 0 ? 'Add combatants first' : 'Wait for the roster to finish saving'} onClick={onMaxStats}><HeartPulse size={15} /> Max stats</button>
@@ -4195,7 +4248,7 @@ type GridSortKey = 'name' | 'init';
 type GridSort = { key: GridSortKey; dir: 'asc' | 'desc' } | null;
 
 function compareCombatantNames(a: PopulatedCombatant, b: PopulatedCombatant) {
-  return a.data.name.localeCompare(b.data.name, undefined, { numeric: true, sensitivity: 'base' });
+  return combatantDisplayName(a).localeCompare(combatantDisplayName(b), undefined, { numeric: true, sensitivity: 'base' });
 }
 
 function initiativeValue(combatant: PopulatedCombatant) {
@@ -4225,7 +4278,7 @@ function SortGlyph({ dir }: { dir: 'asc' | 'desc' | null }) {
   return <ArrowUpDown size={12} className='opacity-50' />;
 }
 
-function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedId, onSelect, statuses, calculating, canManageRoster, canManageCombatant, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature, onRestoreCombatant, onMarkOut, onRequestRemoveFromCampaign, onUpdateInitiative, onUpdateHp, onSingleCheck, onSingleChallenge, challenges, dice, playerView = false }: { combatants: PopulatedCombatant[]; encounterId: number | null; initiativeRollNonce: number; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; canManageCombatant: (combatant: PopulatedCombatant) => boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void; onRestoreCombatant: (combatantId: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onRequestRemoveFromCampaign?: (characterId: number, name: string) => void; onUpdateInitiative: (combatantId: string, initiative: number) => void; onUpdateHp: (combatantId: string, raw: string, note: string | null) => void; onSingleCheck?: (combatantId: string, stat: string, x: number, y: number) => void; onSingleChallenge?: (combatantId: string, challengeId: string, x: number, y: number, preferredStat?: string) => void; challenges?: Array<{ id: string; title: string }>; dice?: { challengeId?: string; checkStat?: string; columnLabel: string; dc: number | null; results: Record<string, DiceCheckResult>; emptyMessage: string }; playerView?: boolean }) {
+function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedId, onSelect, statuses, calculating, canManageRoster, canManageCombatant, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature, onRestoreCombatant, onMarkOut, onRequestRemoveFromCampaign, onUpdateInitiative, onUpdateHp, onToggleHazardDisabled, onSingleCheck, onSingleChallenge, challenges, dice, playerView = false }: { combatants: PopulatedCombatant[]; encounterId: number | null; initiativeRollNonce: number; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; canManageCombatant: (combatant: PopulatedCombatant) => boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void; onRestoreCombatant: (combatantId: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onRequestRemoveFromCampaign?: (characterId: number, name: string) => void; onUpdateInitiative: (combatantId: string, initiative: number) => void; onUpdateHp: (combatantId: string, raw: string, note: string | null) => void; onToggleHazardDisabled?: (combatantId: string, disabled: boolean) => void; onSingleCheck?: (combatantId: string, stat: string, x: number, y: number) => void; onSingleChallenge?: (combatantId: string, challengeId: string, x: number, y: number, preferredStat?: string) => void; challenges?: Array<{ id: string; title: string }>; dice?: { challengeId?: string; checkStat?: string; columnLabel: string; dc: number | null; results: Record<string, DiceCheckResult>; emptyMessage: string }; playerView?: boolean }) {
   const [encounterActive, setEncounterActive] = useState(false);
   const [gridSort, setGridSort] = useState<GridSort>(() => (
     dice ? null : combatants.some((combatant) => initiativeValue(combatant) != null) ? { key: 'init', dir: 'desc' } : null
@@ -4295,9 +4348,10 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
         <tbody>
           {rows.map((combatant) => {
             const detailsVisible = combatant.access?.details_revealed !== false;
+            const hazard = isHazardCombatant(combatant);
             const calculable = detailsVisible && hasFullEntityDetails(combatant);
             const calculated = statuses?.[combatant._id];
-            const stats = calculated ?? (!calculable ? fallbackStatus(combatant.data) : null);
+            const stats = calculated ?? (!calculable && combatant.data ? fallbackStatus(combatant.data) : null);
             const draggable = canManageRoster;
             const result = dice?.results[combatant._id];
             const outcomeTone = dice ? outcomeRowClass(result?.outcome) : '';
@@ -4305,7 +4359,9 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
             const critInk = result?.outcome === 'critical-success';
             const enemyPlayerRow = playerView && isEnemyCreature(combatant);
             const canOpen = !enemyPlayerRow;
-            const displayName = enemyPlayerRow ? playerEnemyLabel(combatant.data.name) : combatant.data.name;
+            const displayName = enemyPlayerRow ? playerEnemyLabel(combatantDisplayName(combatant)) : combatantDisplayName(combatant);
+            const currentHazardHp = getHazardCurrentHp(combatant);
+            const hazardMaxHp = combatant.hazard?.details.defenses?.hp;
             return (
               <tr key={combatant._id} onClick={(event) => { if (!canOpen) return; if ((event.target as HTMLElement).closest('button, input, textarea, a, [draggable="true"]')) return; openCombatant(combatant, onSelect); }} onContextMenu={(event) => {
                 const canDiceMenu = Boolean(dice && (combatant.type === 'CREATURE' || combatant.type === 'CHARACTER') && (playerView || onSingleCheck || onSingleChallenge));
@@ -4314,7 +4370,7 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                   setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY });
                   return;
                 }
-                if (!canManageRoster || (combatant.type !== 'CREATURE' && combatant.type !== 'CHARACTER')) return;
+                if (!canManageRoster || (combatant.type !== 'CREATURE' && combatant.type !== 'CHARACTER' && combatant.type !== 'HAZARD')) return;
                 event.preventDefault();
                 setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY });
               }} className={`border-b border-p1-border last:border-0 ${canOpen ? 'cursor-pointer' : ''} ${rowTone}`}>
@@ -4328,7 +4384,7 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                         onDragEnd={() => { clearCombatantDrag(); setEncounterActive(false); }}
                         className={`shrink-0 cursor-grab ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}
                         title='Drag to reorder'
-                        aria-label={`Drag ${combatant.data.name} to reorder`}
+                        aria-label={`Drag ${displayName} to reorder`}
                       >
                         <GripVertical size={14} />
                       </span>
@@ -4343,7 +4399,11 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                       <EntityIcon type={combatant.type} />
                       <span className='min-w-0'>
                         <span className='block truncate font-semibold'>{displayName}</span>
-                        {!enemyPlayerRow && <span className={`block text-xs ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}>Level {combatant.data.level} | {combatant.ally ? 'Ally' : 'Enemy'}</span>}
+                        {!enemyPlayerRow && <span className={`block text-xs ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}>
+                          {hazard
+                            ? `${combatant.hazard.details.complexity === 'SIMPLE' ? 'Simple' : 'Complex'} hazard · Level ${combatant.hazard.level}`
+                            : `Level ${combatant.data?.level ?? '—'} | ${combatant.ally ? 'Ally' : 'Enemy'}`}
+                        </span>}
                       </span>
                     </button>
                   </div>
@@ -4355,10 +4415,30 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                         {result ? outcomeLabel(result.outcome) : 'Not rolled'}
                       </span>
                     )}
-                    <CombatantConditionPills conditions={detailsVisible ? compiledConditions(combatant.data.details?.conditions ?? []) : []} onOpen={canOpen ? () => openCombatant(combatant, onSelect) : undefined} maxVisible={dice ? 5 : 2} />
+                    {hazard ? (
+                      <label className='inline-flex items-center gap-1.5 text-[11px] text-p1-muted'>
+                        <input
+                          type='checkbox'
+                          className='accent-p1-accent'
+                          checked={combatant.hazard_state?.disabled ?? false}
+                          disabled={!canManageRoster}
+                          onChange={(event) => onToggleHazardDisabled?.(combatant._id, event.target.checked)}
+                          onClick={(event) => event.stopPropagation()}
+                        />
+                        Disabled
+                      </label>
+                    ) : (
+                      <CombatantConditionPills conditions={detailsVisible ? compiledConditions(combatant.data?.details?.conditions ?? []) : []} onOpen={canOpen ? () => openCombatant(combatant, onSelect) : undefined} maxVisible={dice ? 5 : 2} />
+                    )}
                   </div>
                 </td>
-                <td className={`px-3 py-3 text-xs ${critInk ? 'text-[#234028]' : 'text-p1-muted'}`}>{enemyPlayerRow ? <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>—</span> : !detailsVisible ? <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>Not revealed</span> : stats ? <>{stats.ac} AC <span className={`px-1 ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}>|</span> Fort {signed(stats.fortitude)}, Ref {signed(stats.reflex)}, Will {signed(stats.will)}</> : calculating ? <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>Calculating...</span> : <span className='text-p1-danger-soft'>Unavailable</span>}</td>
+                <td className={`px-3 py-3 text-xs ${critInk ? 'text-[#234028]' : 'text-p1-muted'}`}>
+                  {hazard ? (
+                    combatant.hazard.details.defenses
+                      ? <>{combatant.hazard.details.defenses.ac != null && <>{combatant.hazard.details.defenses.ac} AC</>}{combatant.hazard.details.defenses.fort != null && <> <span className='px-1 text-p1-faint'>|</span> Fort {signed(combatant.hazard.details.defenses.fort)}</>}{combatant.hazard.details.defenses.ref != null && <>, Ref {signed(combatant.hazard.details.defenses.ref)}</>}</>
+                      : <span className='text-p1-faint'>—</span>
+                  ) : enemyPlayerRow ? <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>—</span> : !detailsVisible ? <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>Not revealed</span> : stats ? <>{stats.ac} AC <span className={`px-1 ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}>|</span> Fort {signed(stats.fortitude)}, Ref {signed(stats.reflex)}, Will {signed(stats.will)}</> : calculating ? <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>Calculating...</span> : <span className='text-p1-danger-soft'>Unavailable</span>}
+                </td>
                 {dice && (
                   <td className={`px-3 py-3 text-sm ${critInk ? 'text-[#234028]' : 'text-p1-text'}`}>
                     {!checkStat ? (
@@ -4383,6 +4463,20 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                     <span className='inline-flex h-9 min-w-24 items-center justify-center border border-p1-border bg-p1-raised text-p1-faint'>—</span>
                   ) : !detailsVisible ? (
                     <span className='inline-flex h-9 min-w-24 items-center justify-center border border-p1-border bg-p1-raised text-p1-faint'>Hidden</span>
+                  ) : hazard ? (
+                    hazardMaxHp == null ? (
+                      <span className='inline-flex h-9 min-w-24 items-center justify-center border border-p1-border bg-p1-raised text-p1-faint'>—</span>
+                    ) : (
+                      <GridHpCell
+                        combatant={combatant}
+                        maxHp={hazardMaxHp}
+                        calculating={false}
+                        canEdit={canManageCombatant(combatant)}
+                        onEdit={(rect) => {
+                          setHpEditor({ combatantId: combatant._id, name: displayName, currentHp: currentHazardHp ?? hazardMaxHp, maxHp: hazardMaxHp, rect });
+                        }}
+                      />
+                    )
                   ) : (
                     <GridHpCell
                       combatant={combatant}
@@ -4390,9 +4484,9 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                       calculating={calculating}
                       canEdit={canManageCombatant(combatant)}
                       onEdit={(rect) => {
-                        const currentHp = combatant.data.hp_current ?? stats?.maxHp ?? 0;
+                        const currentHp = combatant.data?.hp_current ?? stats?.maxHp ?? 0;
                         const resolvedMaxHp = stats?.maxHp ?? currentHp;
-                        setHpEditor({ combatantId: combatant._id, name: combatant.data.name, currentHp, maxHp: resolvedMaxHp, rect });
+                        setHpEditor({ combatantId: combatant._id, name: displayName, currentHp, maxHp: resolvedMaxHp, rect });
                       }}
                     />
                   )}
@@ -4402,7 +4496,7 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                     {result ? formatCheckRoll(result, result.total, dice.dc ?? undefined) : <span className={critInk ? 'text-[#234028]' : 'text-p1-faint'}>Not rolled</span>}
                   </td>
                 )}
-                {!playerView && <td className='px-3 text-center'><button className='icon-button mx-auto' title={`Open ${combatant.data.name}`} onClick={() => openCombatant(combatant, onSelect)}><PanelRight size={16} /></button></td>}
+                {!playerView && <td className='px-3 text-center'><button className='icon-button mx-auto' title={`Open ${displayName}`} onClick={() => openCombatant(combatant, onSelect)}><PanelRight size={16} /></button></td>}
               </tr>
             );
           })}
@@ -4442,6 +4536,14 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
         />
         );
       })()}
+      {menu?.type === 'HAZARD' && !dice && (
+        <CombatantContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          onDelete={() => { setMenu(null); onDeleteCreature(menu.id); }}
+        />
+      )}
       {menu?.type === 'CREATURE' && !dice && (
         <CombatantContextMenu
           x={menu.x}
@@ -4464,7 +4566,7 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
           onRemoveFromCampaign={onRequestRemoveFromCampaign ? () => {
             const combatant = combatants.find((item) => item._id === menu.id);
             const characterId = combatant?.type === 'CHARACTER' ? combatant.character : undefined;
-            const name = combatant?.data.name;
+            const name = combatant ? combatantDisplayName(combatant) : undefined;
             setMenu(null);
             if (characterId != null && name) onRequestRemoveFromCampaign(characterId, name);
           } : undefined}
@@ -4485,9 +4587,10 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
 }
 
 function GridHpCell({ combatant, maxHp, calculating, canEdit, onEdit }: { combatant: PopulatedCombatant; maxHp: number | null; calculating: boolean; canEdit: boolean; onEdit: (rect: DOMRect) => void }) {
+  const current = isHazardCombatant(combatant) ? getHazardCurrentHp(combatant) : combatant.data?.hp_current;
   const content = maxHp != null ? (
     <>
-      {combatant.data.hp_current ?? maxHp}
+      {current ?? maxHp}
       <span className='px-2 text-p1-faint'>/</span>
       {maxHp}
     </>
@@ -4495,7 +4598,7 @@ function GridHpCell({ combatant, maxHp, calculating, canEdit, onEdit }: { combat
     <span className='text-p1-faint'>...</span>
   ) : (
     <>
-      {combatant.data.hp_current ?? '-'}
+      {current ?? '-'}
       <span className='px-2 text-p1-faint'>/</span>
       -
     </>
@@ -4510,7 +4613,7 @@ function GridHpCell({ combatant, maxHp, calculating, canEdit, onEdit }: { combat
       type='button'
       className='inline-flex h-9 min-w-24 items-center justify-center border border-p1-border bg-p1-raised hover:border-p1-accent/40 hover:bg-p1-hover'
       onClick={(event) => onEdit(event.currentTarget.getBoundingClientRect())}
-      title={`Edit ${combatant.data.name} hit points`}
+      title={`Edit ${combatantDisplayName(combatant)} hit points`}
     >
       {content}
     </button>
@@ -4550,7 +4653,7 @@ function InitiativeCell({ combatant, canEdit, onUpdate }: { combatant: Populated
         value={value}
         readOnly={!canEdit}
         disabled={!canEdit}
-        aria-label={`${combatant.data.name} initiative`}
+        aria-label={`${combatantDisplayName(combatant)} initiative`}
         title={breakdown}
         onChange={(event) => setValue(event.target.value === '' ? '' : Number(event.target.value))}
         onBlur={commit}
@@ -4721,9 +4824,22 @@ function Inspector({ combatant, width, activeTab, onTab, hasMatchingCampaignNote
     <aside className='min-h-0 overflow-hidden bg-p1-inset' style={{ width }}>
       {!combatant ? (
         <div className='flex h-full flex-col items-center justify-center px-8 text-center'><PanelRight className='mb-4 text-p1-faint' size={28} /><p className='text-sm font-semibold'>Select a combatant</p><p className='mt-2 max-w-56 text-xs leading-5 text-p1-faint'>PCs, NPCs, and creatures open in this shared read-only inspector.</p></div>
+      ) : combatant.type === 'HAZARD' && combatant.hazard ? (
+        <div className='flex h-full min-w-0 flex-col'>
+          <div className='flex items-start gap-3 border-b border-p1-border px-4 py-3.5'>
+            <div className='min-w-0 flex-1'>
+              <Eyebrow>Hazard</Eyebrow>
+              <h2 className='mt-1 truncate text-lg font-semibold leading-tight'>{combatant.hazard.name}</h2>
+              <p className='mt-1 text-xs text-p1-faint'>{combatant.hazard.details.complexity === 'SIMPLE' ? 'Simple' : 'Complex'} · Level {combatant.hazard.level}</p>
+            </div>
+          </div>
+          <div className='min-h-0 flex-1 overflow-y-auto p-4'>
+            <HazardInspector hazard={combatant.hazard} disabled={combatant.hazard_state?.disabled ?? false} />
+          </div>
+        </div>
       ) : (
         <div className='flex h-full min-w-0 flex-col'>
-<div className='flex items-start gap-3 border-b border-p1-border px-4 py-3.5'><div className='min-w-0 flex-1'><Eyebrow>{combatant.type === 'CREATURE' ? (combatant.ally ? 'NPC / Creature' : 'Creature') : 'Player character'}</Eyebrow><h2 className='mt-1 truncate text-lg font-semibold leading-tight'>{combatant.data.name}</h2><p className='mt-1 text-xs text-p1-faint'>Level {combatant.data.level} | {canManageSpells ? 'Spell tracking' : 'Read only'}</p></div>{combatant.type === 'CHARACTER' && combatant.data.id && <a className='icon-button shrink-0' href={`/sheet/${combatant.data.id}`} target='_blank' rel='noreferrer' title='Open full character sheet'><ExternalLink size={16} /></a>}</div>
+<div className='flex items-start gap-3 border-b border-p1-border px-4 py-3.5'><div className='min-w-0 flex-1'><Eyebrow>{combatant.type === 'CREATURE' ? (combatant.ally ? 'NPC / Creature' : 'Creature') : 'Player character'}</Eyebrow><h2 className='mt-1 truncate text-lg font-semibold leading-tight'>{combatant.data?.name}</h2><p className='mt-1 text-xs text-p1-faint'>Level {combatant.data?.level} | {canManageSpells ? 'Spell tracking' : 'Read only'}</p></div>{combatant.type === 'CHARACTER' && combatant.data?.id && <a className='icon-button shrink-0' href={`/sheet/${combatant.data.id}`} target='_blank' rel='noreferrer' title='Open full character sheet'><ExternalLink size={16} /></a>}</div>
           <div className='grid grid-cols-4 border-b border-p1-border bg-p1-inset'>
             {DETAIL_TABS.map((tab) => <button key={tab} className={`border-b-2 px-2 py-2.5 text-[11px] ${activeTab === tab ? 'border-p1-accent text-p1-accent-soft' : 'border-transparent text-p1-faint hover:text-p1-text'}`} onClick={() => onTab(tab)}>{tab}</button>)}
           </div>
@@ -4769,7 +4885,7 @@ function ResizeRail({ onResize }: { onResize: (delta: number) => void }) {
 }
 
 function EntityIcon({ type }: { type: Combatant['type'] }) {
-  return <span className={`grid h-9 w-9 shrink-0 place-items-center border ${type === 'CREATURE' ? 'border-p1-creature/50 text-p1-creature' : 'border-p1-pc/50 text-p1-pc'}`}>{type === 'CREATURE' ? <Swords size={16} /> : <UserRound size={16} />}</span>;
+  return <span className={`grid h-9 w-9 shrink-0 place-items-center border ${type === 'HAZARD' ? 'border-amber-400/50 text-amber-300' : type === 'CREATURE' ? 'border-p1-creature/50 text-p1-creature' : 'border-p1-pc/50 text-p1-pc'}`}>{type === 'HAZARD' ? <TriangleAlert size={16} /> : type === 'CREATURE' ? <Swords size={16} /> : <UserRound size={16} />}</span>;
 }
 function PortraitPreviewModal({
   url,
@@ -4827,9 +4943,37 @@ function ErrorState({ error }: { error: Error }) { return <div className='border
 function PageError({ error }: { error: Error }) { return <div className='min-h-screen bg-p1-page p-8 text-p1-text'><Link to='/phase1' className='text-sm text-p1-accent'>Back to campaigns</Link><div className='mt-6 max-w-xl'><ErrorState error={error} /></div></div>; }
 function LoadingScreen({ label }: { label: string }) { return <div className='grid min-h-screen place-items-center bg-p1-page text-sm text-p1-muted'>{label}...</div>; }
 
+function hazardLivingStub(hazard: Hazard): LivingEntity {
+  return {
+    name: hazard.name,
+    level: hazard.level,
+    experience: 0,
+    inventory: null,
+    hp_current: hazard.details.defenses?.hp ?? 0,
+    hp_temp: 0,
+    stamina_current: 0,
+    resolve_current: 0,
+    details: null,
+    notes: null,
+    roll_history: null,
+    spells: null,
+    operation_data: null,
+    meta_data: null,
+  };
+}
+
 function populateCombatants(combatants: Combatant[], players: Character[]): PopulatedCombatant[] {
   const populated: PopulatedCombatant[] = [];
   for (const combatant of combatants) {
+    if (isHazardCombatant(combatant)) {
+      populated.push({
+        ...combatant,
+        ally: false,
+        data: hazardLivingStub(combatant.hazard),
+        access: { can_edit: false, details_revealed: true },
+      });
+      continue;
+    }
     const characterId = numericId(combatant.character);
     const data = combatant.type === 'CHARACTER' ? players.find((player) => numericId(player.id) === characterId) ?? combatant.data : combatant.creature ?? combatant.data;
     if (!data) continue;

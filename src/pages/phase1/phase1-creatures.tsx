@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchContentAll, getDefaultSources, getDefaultSourcesKey } from '@content/content-store';
-import type { Creature, Trait } from '@schemas/content';
+import { fetchHazards } from '@content/hazards';
+import type { Creature, Hazard, Trait } from '@schemas/content';
 import { findCreatureTraits } from '@utils/creature';
 import { getEntityLevel } from '@utils/entity-utils';
 import { ChevronDown, Swords } from 'lucide-react';
@@ -206,6 +207,129 @@ export function SelectCreatureModal({
       )}
       aside={<CreaturePreview creature={selected} busy={busy || adding} ally={ally} onAdd={add} />}
     />
+  );
+}
+
+const EMPTY_HAZARDS: Hazard[] = [];
+
+export function SelectHazardModal({
+  busy,
+  onSelect,
+  onClose,
+}: {
+  busy?: boolean;
+  onSelect: (hazard: Hazard) => void;
+  onClose: () => void;
+}) {
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [added, setAdded] = useState<string | null>(null);
+  const catalog = useQuery({
+    queryKey: ['phase1-hazard-catalog', getDefaultSourcesKey('PAGE'), getDefaultSourcesKey('INFO')],
+    queryFn: async () => {
+      const hazards = await fetchHazards();
+      return hazards.filter((hazard) => !hazard.deprecated).sort((a, b) => a.name.localeCompare(b.name));
+    },
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const items = catalog.data ?? EMPTY_HAZARDS;
+  const selected = items.find((hazard) => hazard.id === selectedId) ?? null;
+
+  useEffect(() => {
+    if (!added) return;
+    const timeout = window.setTimeout(() => setAdded(null), 2200);
+    return () => window.clearTimeout(timeout);
+  }, [added]);
+
+  function add(hazard: Hazard) {
+    if (busy) return;
+    onSelect(hazard);
+    setAdded(hazard.name);
+  }
+
+  return (
+    <Phase1PickerModal
+      title='Select Hazard'
+      titleId='select-hazard-title'
+      searchPlaceholder='Search hazards'
+      items={items}
+      getName={(hazard) => hazard.name}
+      getKey={(hazard) => String(hazard.id)}
+      matchesSearch={(hazard, needle) =>
+        hazard.name.toLowerCase().includes(needle) || hazard.details.description.toLowerCase().includes(needle)
+      }
+      loading={catalog.isLoading}
+      error={catalog.isError ? (catalog.error instanceof Error ? catalog.error.message : 'Could not load hazards.') : null}
+      empty='No matching hazards.'
+      onClose={onClose}
+      maxWidthClass='max-w-4xl'
+      maxHeightClass='max-h-[min(86vh,760px)]'
+      batchSize={16}
+      toolbar={added ? <p className='mt-2 truncate text-xs text-emerald-300'>Added {added}</p> : undefined}
+      renderItem={(hazard) => (
+        <button
+          type='button'
+          className={`flex w-full items-center gap-3 border-b border-p1-border px-3 py-2.5 text-left hover:bg-p1-hover ${
+            hazard.id === selectedId ? 'bg-p1-accent/[0.08]' : ''
+          }`}
+          onClick={() => setSelectedId(hazard.id)}
+        >
+          <span className='min-w-0 flex-1'>
+            <span className='block truncate text-sm text-p1-text'>{hazard.name}</span>
+            <span className='block text-[11px] uppercase tracking-wide text-p1-faint'>
+              {hazard.details.complexity === 'SIMPLE' ? 'Simple' : 'Complex'} · Level {hazard.level}
+              {hazard.rarity !== 'COMMON' ? ` · ${labelize(hazard.rarity)}` : ''}
+            </span>
+          </span>
+        </button>
+      )}
+      aside={<HazardPreview hazard={selected} busy={busy} onAdd={add} />}
+    />
+  );
+}
+
+function HazardPreview({
+  hazard,
+  busy,
+  onAdd,
+}: {
+  hazard: Hazard | null;
+  busy?: boolean;
+  onAdd: (hazard: Hazard) => void;
+}) {
+  if (!hazard) {
+    return (
+      <div className='grid h-full place-items-center px-6 text-center text-sm text-p1-muted'>
+        Choose a hazard to preview, then add it to the encounter.
+      </div>
+    );
+  }
+  return (
+    <div className='flex h-full min-h-0 flex-col'>
+      <div className='min-h-0 flex-1 overflow-y-auto px-5 py-4'>
+        <h3 className='text-xl font-semibold leading-tight'>{hazard.name}</h3>
+        <p className='mt-1 text-sm text-p1-muted'>
+          {hazard.details.complexity === 'SIMPLE' ? 'Simple' : 'Complex'} hazard · Level {hazard.level}
+        </p>
+        {hazard.details.stealth && (
+          <p className='mt-3 text-xs text-p1-muted'><span className='font-semibold text-p1-text'>Stealth </span>{hazard.details.stealth}</p>
+        )}
+        {hazard.details.description && (
+          <div className='mt-3'>
+            <ProseMarkdown>{hazard.details.description}</ProseMarkdown>
+          </div>
+        )}
+      </div>
+      <div className='flex gap-2 border-t border-p1-border p-3'>
+        <button
+          type='button'
+          className='inline-flex h-10 flex-1 items-center justify-center bg-p1-action text-sm font-bold italic text-p1-action-ink hover:bg-p1-action-hover disabled:opacity-50'
+          disabled={busy}
+          onClick={() => onAdd(hazard)}
+        >
+          Add hazard
+        </button>
+      </div>
+    </div>
   );
 }
 

@@ -187,7 +187,7 @@ function Phase0CampaignPage({ campaignId, encounterId }: { campaignId: number; e
             </div>
             <div className='flex items-center gap-2'>
               <span className='max-w-48 truncate text-xs text-slate-500' title={session?.user.email}>{session?.user.email}</span>
-              <Button variant='outline' onClick={() => supabase.auth.signOut()}>Switch account</Button>
+              <Button variant='outline' onClick={() => void supabase.auth.signOut({ scope: 'local' })}>Switch account</Button>
               <Button asChild variant='outline'><Link to='/phase0'>All campaigns</Link></Button>
             </div>
           </div>

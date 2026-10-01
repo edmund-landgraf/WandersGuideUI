@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Activity, BookOpen, Calculator, ChevronDown, ChevronRight, Copy, Crosshair, Eye, Footprints, History, ListChecks, Package, Pencil, Plus, Search, Shield, Sparkles, Swords, Trash2, WandSparkles, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { Character, Combatant, CombatantActionLogEntry, CombatantChangeLogEntry, Condition, InitiativeRoundLog, InitiativeRoundLogEntry, Inventory, Item, LivingEntity, Spell } from '@schemas/content';
+import type { Character, Combatant, CombatantActionLogEntry, CombatantChangeLogEntry, Condition, Hazard, InitiativeRoundLog, InitiativeRoundLogEntry, Inventory, Item, LivingEntity, Spell } from '@schemas/content';
 import { loadEntityAbilities, type Phase1Ability, type Phase1FeatCategory } from './phase1-abilities';
 import { type Phase1CreatureStatus } from './phase1-stats';
 import type { Phase1EntityCombatant } from './phase1-entity';
@@ -101,6 +101,7 @@ export function setConditionValue(current: Condition[], name: string, value: num
   return current.map((item) => (item.name === name ? { ...item, value } : item));
 }
 export function hasFullEntityDetails(combatant: PopulatedCombatant) {
+  if (combatant.type === 'HAZARD' || !combatant.data) return false;
   return combatant.type === 'CREATURE' || Boolean((combatant.data as Partial<Character>).user_id);
 }
 export function statsFor(entity: LivingEntity) {
@@ -169,6 +170,64 @@ export function InspectorContent({ combatant, tab, hasMatchingCampaignNote, stat
       {body}
       {overLimitDialog}
     </>
+  );
+}
+
+export function HazardInspector({ hazard, disabled }: { hazard: Hazard; disabled: boolean }) {
+  const defenses = hazard.details.defenses;
+  const defenseLine = [
+    defenses?.ac != null ? `AC ${defenses.ac}` : null,
+    defenses?.fort != null ? `Fort +${defenses.fort}` : null,
+    defenses?.ref != null ? `Ref +${defenses.ref}` : null,
+    defenses?.hardness != null ? `Hardness ${defenses.hardness}` : null,
+    defenses?.hp != null ? `HP ${defenses.hp}` : null,
+    defenses?.bt != null ? `BT ${defenses.bt}` : null,
+  ].filter(Boolean).join(' · ');
+  return (
+    <div className='space-y-4 text-sm'>
+      {disabled && <p className='border border-p1-border bg-p1-surface px-3 py-2 text-xs uppercase tracking-wide text-p1-muted'>Disabled</p>}
+      {hazard.details.trait_labels.length > 0 && (
+        <p className='text-xs uppercase tracking-wide text-p1-muted'>{hazard.details.trait_labels.join(', ')}</p>
+      )}
+      <section>
+        <Eyebrow>Stealth</Eyebrow>
+        <ProseMarkdown className='mt-1'>{hazard.details.stealth}</ProseMarkdown>
+      </section>
+      {hazard.details.description && (
+        <section>
+          <Eyebrow>Description</Eyebrow>
+          <ProseMarkdown className='mt-1'>{hazard.details.description}</ProseMarkdown>
+        </section>
+      )}
+      <section>
+        <Eyebrow>Disable</Eyebrow>
+        <ProseMarkdown className='mt-1'>{hazard.details.disable}</ProseMarkdown>
+      </section>
+      {defenseLine && (
+        <section>
+          <Eyebrow>Defenses</Eyebrow>
+          <p className='mt-1 text-p1-text'>{defenseLine}</p>
+          {defenses?.immunities && <p className='mt-1 text-p1-muted'>{defenses.immunities}</p>}
+        </section>
+      )}
+      <section>
+        <Eyebrow>{hazard.details.activation.name || 'Activation'}</Eyebrow>
+        {hazard.details.activation.trigger && <p className='mt-1 text-p1-muted'><span className='font-semibold text-p1-text'>Trigger </span>{hazard.details.activation.trigger}</p>}
+        <ProseMarkdown className='mt-1'>{hazard.details.activation.effect}</ProseMarkdown>
+      </section>
+      {hazard.details.routine && (
+        <section>
+          <Eyebrow>Routine ({hazard.details.routine.actions} {hazard.details.routine.actions === 1 ? 'action' : 'actions'})</Eyebrow>
+          <ProseMarkdown className='mt-1'>{hazard.details.routine.text}</ProseMarkdown>
+        </section>
+      )}
+      {hazard.details.reset && (
+        <section>
+          <Eyebrow>Reset</Eyebrow>
+          <ProseMarkdown className='mt-1'>{hazard.details.reset}</ProseMarkdown>
+        </section>
+      )}
+    </div>
   );
 }
 

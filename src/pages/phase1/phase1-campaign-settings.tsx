@@ -340,6 +340,27 @@ export function SettingsSurface({
                   placeholder='A brief description of the campaign...'
                 />
               </Field>
+              <Field label='Show Hazards button'>
+                <label className='flex items-center gap-2 text-sm text-p1-text'>
+                  <input
+                    type='checkbox'
+                    checked={campaign.meta_data?.settings?.show_hazards_button === true}
+                    onChange={(event) =>
+                      patchCampaign({
+                        meta_data: {
+                          ...campaign.meta_data,
+                          settings: {
+                            ...campaign.meta_data?.settings,
+                            show_hazards_button: event.target.checked,
+                          },
+                        },
+                      })
+                    }
+                  />
+                  Show the Add hazard control on encounter toolbars
+                </label>
+                <p className='mt-1 text-xs text-p1-faint'>Off by default. The catalog currently has only a few War of Immortals hazards.</p>
+              </Field>
               <Field label='Show Party Member Status'>
                 <select
                   className='settings-input'

@@ -1,5 +1,6 @@
 import { compileTraits } from '@items/inv-utils';
 import type { Combatant, Creature, Inventory, InventoryItem, LivingEntity } from '@schemas/content';
+import { resetHazardState } from '@utils/encounter-hazard';
 import { hasTraitType } from '@utils/traits';
 
 /** PF2e focus-point cap; the sheet clamps this down to the caster's actual max. */
@@ -114,6 +115,9 @@ export function resetCombatant(combatant: Combatant, maxHp: number): Combatant {
   if (combatant.type === 'CREATURE' && combatant.creature) {
     next.creature = resetEntityCombatState(combatant.creature, maxHp) as Creature;
   }
+  if (combatant.type === 'HAZARD') {
+    return resetHazardState(next);
+  }
   return next;
 }
 
@@ -121,5 +125,6 @@ export function maxCombatantStats(combatant: Combatant, maxHp: number): Combatan
   if (combatant.type === 'CREATURE' && combatant.creature) {
     return { ...combatant, creature: maxEntityStats(combatant.creature, maxHp) as Creature };
   }
+  if (combatant.type === 'HAZARD') return resetHazardState(combatant);
   return combatant;
 }

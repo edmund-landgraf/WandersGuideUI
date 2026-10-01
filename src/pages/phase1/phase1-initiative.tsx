@@ -1,3 +1,4 @@
+import { getHazardInitiativeModifier, isHazardCombatant } from '@utils/encounter-hazard';
 import { GiDiceTwentyFacesTwenty } from '@common/game-icons-inline';
 import type { Character, Combatant, Encounter, InitiativeRoundLog, InitiativeRoundLogEntry, LivingEntity } from '@schemas/content';
 import { sign } from '@utils/numbers';
@@ -15,6 +16,11 @@ export type InitiativeSkillOption = { value: string; label: string; num: number 
 export type InitiativeRollChoice = { bonus: number; source: string } | null;
 export type InitiativeRollBreakdown = NonNullable<Combatant['initiative_roll']>;
 
+export function combatantDisplayName(combatant: Combatant): string {
+  if (isHazardCombatant(combatant)) return combatant.hazard.name;
+  return combatant.creature?.name ?? combatant.data?.name ?? 'Combatant';
+}
+
 export function formatInitiativeRoll(roll: InitiativeRollBreakdown, total?: number) {
   const bonus = roll.source ? `${roll.source} (${sign(roll.bonus)})` : roll.bonus !== 0 ? sign(roll.bonus) : null;
   const equation = bonus ? `d20 (${roll.die}) + ${bonus}` : `d20 (${roll.die})`;
@@ -30,7 +36,7 @@ export function buildInitiativeRoundLog(
     const rolled = rolledIds.has(combatant._id);
     if (rolled && combatant.initiative_roll && combatant.initiative !== undefined) {
       return {
-        name: combatant.data.name,
+        name: combatantDisplayName(combatant),
         ally: combatant.ally,
         initiative: combatant.initiative,
         calculation: formatInitiativeRoll(combatant.initiative_roll, combatant.initiative),
@@ -38,7 +44,7 @@ export function buildInitiativeRoundLog(
       };
     }
     return {
-      name: combatant.data.name,
+        name: combatantDisplayName(combatant),
       ally: combatant.ally,
       initiative: combatant.initiative ?? null,
       calculation: 'Skipped',
@@ -167,6 +173,10 @@ function compareInitiativeOptions(a: InitiativeSkillOption, b: InitiativeSkillOp
 }
 
 async function loadInitiativeOptions(combatant: InitiativeCombatant): Promise<InitiativeSkillOption[]> {
+  if (isHazardCombatant(combatant)) {
+    const modifier = getHazardInitiativeModifier(combatant.hazard);
+    return modifier === undefined ? [] : [{ value: 'STEALTH', label: 'Stealth', num: modifier }];
+  }
   if (combatant.type === 'CHARACTER' && isCharacter(combatant.data)) {
     const fromStats = optionsFromCharacterProfs(combatant.data.meta_data?.calculated_stats?.profs);
     if (fromStats.length) return fromStats;
@@ -190,7 +200,11 @@ async function loadAllInitiativeOptions(combatants: InitiativeCombatant[]) {
   const needPrepare: InitiativeCombatant[] = [];
 
   for (const combatant of combatants) {
-    if (combatant.type === 'CHARACTER' && isCharacter(combatant.data)) {
+    if (isHazardCombatant(combatant)) {
+      optionsById[combatant._id] = await loadInitiativeOptions(combatant);
+      continue;
+    }
+    if (combatant.type === 'CHARACTER' && combatant.data && isCharacter(combatant.data)) {
       const fromStats = optionsFromCharacterProfs(combatant.data.meta_data?.calculated_stats?.profs);
       if (fromStats.length) {
         optionsById[combatant._id] = fromStats;
@@ -233,7 +247,7 @@ export function InitiativeRollModal({
   const [optionsById, setOptionsById] = useState<Record<string, InitiativeSkillOption[]>>({});
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Record<string, string | null>>(() =>
-    Object.fromEntries(combatants.map((combatant) => [combatant._id, 'PERCEPTION']))
+    Object.fromEntries(combatants.map((combatant) => [combatant._id, isHazardCombatant(combatant) ? 'STEALTH' : 'PERCEPTION']))
   );
 
   useEffect(() => {
@@ -320,7 +334,7 @@ export function InitiativeRollModal({
                 <InitiativeSelect
                   key={combatant._id}
                   id={combatant._id}
-                  label={combatant.data.name}
+                  label={combatantDisplayName(combatant)}
                   options={optionsById[combatant._id] ?? []}
                   value={selected[combatant._id] ?? null}
                   onChange={(value) => setSelected((current) => ({ ...current, [combatant._id]: value }))}

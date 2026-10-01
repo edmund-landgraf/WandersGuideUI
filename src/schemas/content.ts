@@ -780,6 +780,73 @@ export const CreatureSchema = LivingEntitySchema.extend({
 });
 export type Creature = z.infer<typeof CreatureSchema>;
 
+// ─── Hazard ───────────────────────────────────────────────────────────────────
+
+/** A hazard shares creature storage but has its own rules and no living-entity state. */
+export const HazardSchema = z.object({
+  id: z.number(),
+  uuid: z.number(),
+  created_at: z.string(),
+  updated_at: z.string().optional(),
+  type: z.literal('hazard'),
+  name: z.string(),
+  level: z.number(),
+  rarity: RaritySchema,
+  details: z.object({
+    complexity: z.enum(['SIMPLE', 'COMPLEX']),
+    trait_ids: z.array(z.number()).optional(),
+    trait_labels: z.array(z.string()),
+    stealth: z.string(),
+    description: z.string(),
+    disable: z.string(),
+    defenses: z
+      .object({
+        ac: z.number().optional(),
+        fort: z.number().optional(),
+        ref: z.number().optional(),
+        hardness: z.number().optional(),
+        hp: z.number().optional(),
+        bt: z.number().optional(),
+        immunities: z.string().optional(),
+      })
+      .optional(),
+    activation: z.object({
+      name: z.string(),
+      actions: ActionCostSchema.optional(),
+      traits: z.array(z.string()).optional(),
+      trigger: z.string(),
+      effect: z.string(),
+    }),
+    routine: z.object({ actions: z.number().int().nonnegative(), text: z.string() }).optional(),
+    reset: z.string().optional(),
+  }),
+  content_source_id: z.number(),
+  deprecated: z.boolean().nullable(),
+  version: z.string(),
+  meta_data: z
+    .object({
+      source: z
+        .object({
+          book: z.string().optional(),
+          page: z.string().optional(),
+          url: z.string().optional(),
+        })
+        .optional(),
+    })
+    .passthrough()
+    .nullable(),
+});
+export type Hazard = z.infer<typeof HazardSchema>;
+
+export const HazardSearchResultSchema = HazardSchema.pick({
+  id: true,
+  type: true,
+  name: true,
+  level: true,
+  content_source_id: true,
+});
+export type HazardSearchResult = z.infer<typeof HazardSearchResultSchema>;
+
 // ─── Character ────────────────────────────────────────────────────────────────
 
 export const CharacterSchema = LivingEntitySchema.extend({
@@ -864,6 +931,7 @@ export const CampaignSchema = z.object({
         .object({
           show_party_member_status: z.enum(['OFF', 'STATUS', 'DETAILED']).optional(),
           dice_3d: z.boolean().optional(),
+          show_hazards_button: z.boolean().optional(),
         })
         .optional(),
       image_url: z.string().optional(),
@@ -930,25 +998,38 @@ export const CombatantActionLogEntrySchema = z.object({
 });
 export type CombatantActionLogEntry = z.infer<typeof CombatantActionLogEntrySchema>;
 
-export const CombatantSchema = z.object({
-  _id: z.string(),
-  type: z.enum(['CREATURE', 'CHARACTER']),
-  ally: z.boolean(),
-  initiative: z.number().optional(),
-  initiative_roll: z
-    .object({
-      die: z.number(),
-      bonus: z.number(),
-      source: z.string().optional(),
-    })
-    .optional(),
-  creature: CreatureSchema.optional(),
-  character: z.number().optional(),
-  data: LivingEntitySchema.optional(),
-  change_log: z.array(CombatantChangeLogEntrySchema).optional(),
-  action_log: z.array(CombatantActionLogEntrySchema).optional(),
-  out: z.enum(['dead', 'incapacitated']).optional(),
+export const HazardCombatantStateSchema = z.object({
+  hp_current: z.number().nonnegative().optional(),
+  disabled: z.boolean().optional(),
 });
+export type HazardCombatantState = z.infer<typeof HazardCombatantStateSchema>;
+
+export const CombatantSchema = z
+  .object({
+    _id: z.string(),
+    type: z.enum(['CREATURE', 'CHARACTER', 'HAZARD']),
+    ally: z.boolean(),
+    initiative: z.number().optional(),
+    initiative_roll: z
+      .object({
+        die: z.number(),
+        bonus: z.number(),
+        source: z.string().optional(),
+      })
+      .optional(),
+    creature: CreatureSchema.optional(),
+    character: z.number().optional(),
+    data: LivingEntitySchema.optional(),
+    hazard: HazardSchema.optional(),
+    hazard_state: HazardCombatantStateSchema.optional(),
+    change_log: z.array(CombatantChangeLogEntrySchema).optional(),
+    action_log: z.array(CombatantActionLogEntrySchema).optional(),
+    out: z.enum(['dead', 'incapacitated']).optional(),
+  })
+  .refine((combatant) => combatant.type !== 'HAZARD' || combatant.hazard !== undefined, {
+    path: ['hazard'],
+    message: 'A hazard combatant requires its hazard stat block.',
+  });
 export type Combatant = z.infer<typeof CombatantSchema>;
 
 export const InitiativeRoundLogEntrySchema = z.object({

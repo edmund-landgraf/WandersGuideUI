@@ -845,7 +845,7 @@ function ProfileSection() {
                           onConfirm: async () => {
                             const result = await makeRequest('delete-user', {});
                             if (result) {
-                              supabase.auth.signOut();
+                              void supabase.auth.signOut({ scope: 'local' });
                               clearStoragePreservingDisplayPrefs();
                               queryClient.clear();
                             } else {

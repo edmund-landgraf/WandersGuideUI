@@ -305,7 +305,7 @@ export default function Layout(props: { children: React.ReactNode }) {
                       <Menu.Item
                         leftSection={<IconLogout style={{ width: rem(16), height: rem(16) }} stroke={1.5} />}
                         onClick={async () => {
-                          supabase.auth.signOut();
+                          void supabase.auth.signOut({ scope: 'local' });
                           clearStoragePreservingDisplayPrefs();
                           queryClient.clear();
                         }}
@@ -453,7 +453,7 @@ export default function Layout(props: { children: React.ReactNode }) {
             <UnstyledButton
               className={classes.control}
               onClick={async () => {
-                supabase.auth.signOut();
+                void supabase.auth.signOut({ scope: 'local' });
                 clearStoragePreservingDisplayPrefs();
                 queryClient.clear();
                 close();

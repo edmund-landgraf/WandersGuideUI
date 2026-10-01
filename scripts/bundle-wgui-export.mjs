@@ -15,7 +15,9 @@ if (!existsSync(join(frontend, 'vite.config.ts'))) {
   console.error(`wgui-export bundle: no frontend at ${frontend}. Set WG_DIR.`);
   process.exit(1);
 }
-const { build } = createRequire(join(frontend, 'vite.config.ts'))('esbuild');
+// esbuild ships with this repo's vite. Resolve it here so the wanderers-guide
+// checkout is read-only and does not need its own node_modules.
+const { build } = createRequire(createRequire(import.meta.url).resolve('vite/package.json'))('esbuild');
 const outDir = join(repoRoot, 'supabase', 'wgui-export', 'wgui-export-character');
 
 const stubContent = `
@@ -66,6 +68,7 @@ export function getWorkerContentReader() { return null; }
 
 const result = await build({
   absWorkingDir: frontend,
+  nodePaths: [join(repoRoot, 'node_modules')],
   stdin: {
     contents: `
       export { setExportContentPackage } from '@content/content-store';

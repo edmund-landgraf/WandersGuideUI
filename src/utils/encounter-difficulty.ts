@@ -1,10 +1,14 @@
-import type { Encounter, LivingEntity } from '@schemas/content';
+import type { Encounter, Hazard, LivingEntity } from '@schemas/content';
+import { getHazardXpMultiplier } from '@utils/encounter-hazard';
 import { getEntityLevel } from '@utils/entity-utils';
 import { mean } from 'lodash-es';
 
 export type EncounterDifficultyCombatant = {
   ally: boolean;
-  data: LivingEntity;
+  type?: string;
+  data?: LivingEntity;
+  hazard?: Hazard;
+  hazard_state?: { disabled?: boolean };
   out?: 'dead' | 'incapacitated';
 };
 export type EncounterDifficultyStatus = 'IMPOSSIBLE' | 'Extreme' | 'Severe' | 'Moderate' | 'Low' | 'Trivial';
@@ -53,7 +57,19 @@ export function xpForLevelDelta(delta: number) {
 }
 
 function isInEncounterDifficulty(combatant: EncounterDifficultyCombatant) {
-  return combatant.out !== 'dead' && combatant.out !== 'incapacitated';
+  if (combatant.out === 'dead' || combatant.out === 'incapacitated') return false;
+  if (combatant.type === 'HAZARD' && combatant.hazard_state?.disabled) return false;
+  return true;
+}
+
+function combatantLevel(combatant: EncounterDifficultyCombatant) {
+  if (combatant.type === 'HAZARD' && combatant.hazard) return combatant.hazard.level;
+  return combatant.data ? getEntityLevel(combatant.data) : undefined;
+}
+
+function combatantName(combatant: EncounterDifficultyCombatant) {
+  if (combatant.type === 'HAZARD' && combatant.hazard) return combatant.hazard.name;
+  return combatant.data?.name ?? 'Combatant';
 }
 
 export function shouldDisplayEncounterDifficulty(combatants: EncounterDifficultyCombatant[]) {
@@ -66,16 +82,17 @@ export function calculateDifficulty(encounter: Encounter, combatants: EncounterD
   const alliesInEncounter = active.filter((c) => c.ally);
   const partyLevelFromEncounter = encounter.meta_data.party_level != null;
   const partySizeFromEncounter = encounter.meta_data.party_size != null;
-  const partyLevel = encounter.meta_data.party_level ?? mean(alliesInEncounter.map((p) => getEntityLevel(p.data))) ?? 0;
+  const partyLevel = encounter.meta_data.party_level ?? mean(alliesInEncounter.map((p) => combatantLevel(p)).filter((level): level is number => level != null)) ?? 0;
   const partySize = encounter.meta_data.party_size ?? alliesInEncounter.length;
   const partySizeDiff = partySize - 4;
 
   const lines = active
     .filter((entity) => !entity.ally)
     .map((entity) => {
-      const level = getEntityLevel(entity.data);
+      const level = combatantLevel(entity) ?? 0;
       const delta = level - partyLevel;
-      return { name: entity.data.name, level, delta, xp: xpForLevelDelta(delta) };
+      const xp = xpForLevelDelta(delta) * (entity.type === 'HAZARD' && entity.hazard ? getHazardXpMultiplier(entity.hazard) : 1);
+      return { name: combatantName(entity), level, delta, xp };
     });
   const xpBudget = lines.reduce((sum, line) => sum + line.xp, 0);
   const xp = Math.floor(xpBudget);

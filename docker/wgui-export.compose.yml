@@ -1,9 +1,7 @@
-# Injects wgui-export-character into the wanderers-guide functions container.
-# Combat stays docker/wgui-ext.compose.yml / npm run stack:up.
+# Unused by the launchers. export:up and stack:up both use docker/wgui-functions.compose.yml
+# so character export does not replace the encounter handlers.
 #
-# TODO: this override and docker/wgui-ext.compose.yml each replace the functions
-# entrypoint. Whichever of export:up / stack:up ran last is the only overlay mounted.
-# Mount both so character export and campaign encounters stay up together.
+# Injects wgui-export-character into the wanderers-guide functions container.
 
 services:
   functions:

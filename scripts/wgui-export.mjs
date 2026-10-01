@@ -1,9 +1,6 @@
 #!/usr/bin/env node
-// Mounts only wgui-export-character onto the wanderers-guide stack.
-// Combat stays scripts/wgui-ext.mjs / npm run stack:up.
-//
-// TODO: export:up and stack:up each replace the functions entrypoint, so the last one
-// wins and the other overlay disappears (players then see no encounters). Mount both.
+// Mounts wgui-export-character and the wgui-ext handlers together.
+// Uses the same compose file as scripts/wgui-ext.mjs so this does not replace stack:up.
 //
 //   node scripts/wgui-export.mjs up
 //   node scripts/wgui-export.mjs restart
@@ -18,8 +15,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const extDir = path.join(repoRoot, 'supabase', 'wgui-ext');
 const exportDir = path.join(repoRoot, 'supabase', 'wgui-export');
-const overrideFile = path.join(repoRoot, 'docker', 'wgui-export.compose.yml');
+const overrideFile = path.join(repoRoot, 'docker', 'wgui-functions.compose.yml');
 const wgDir = path.resolve(process.env.WG_DIR ?? path.join(repoRoot, '..', 'wanderers-guide'));
 const stackFile = path.join(wgDir, 'docker-compose.yml');
 const posix = (p) => p.split(path.sep).join('/');
@@ -52,6 +50,7 @@ function compose(args) {
     {
       env: {
         ...process.env,
+        WGUI_EXT_DIR: posix(extDir),
         WGUI_EXPORT_DIR: posix(exportDir),
         WG_FUNCTIONS_DIR: posix(path.join(wgDir, 'supabase', 'functions')),
       },

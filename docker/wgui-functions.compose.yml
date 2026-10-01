@@ -1,0 +1,33 @@
+# Mounts both wgui-ext and wgui-export into the wanderers-guide functions container.
+# stack:up and export:up both use this file, so either command keeps both overlays.
+#
+# /home/deno/functions is a tmpfs filled at start from the stack's functions tree plus
+# the two read-only overlays. A nested bind under the stack's read-only functions mount
+# fails, and making that mount writable would dirty the wanderers-guide checkout.
+
+services:
+  functions:
+    volumes: !override
+      - ${WG_FUNCTIONS_DIR}:/wgui-fn/base:ro
+      - ${WGUI_EXT_DIR}:/wgui-fn/ext:ro
+      - ${WGUI_EXPORT_DIR}:/wgui-fn/export:ro
+    tmpfs:
+      - /home/deno/functions:size=128m,mode=0755
+    entrypoint:
+      - sh
+      - -c
+      - >
+        set -e;
+        cp -a /wgui-fn/base/. /home/deno/functions/;
+        cp -a /wgui-fn/ext/_wgui-ext
+        /wgui-fn/ext/wgui-ext-find-encounter
+        /wgui-fn/ext/wgui-ext-find-campaign-characters
+        /wgui-fn/ext/wgui-ext-ensure-public-user
+        /wgui-fn/ext/wgui-ext-join-campaign
+        /wgui-fn/ext/wgui-ext-patch-encounter-dice
+        /home/deno/functions/;
+        cp -a /wgui-fn/export/_wgui-export
+        /wgui-fn/export/wgui-export-character
+        /home/deno/functions/;
+        exec edge-runtime "$$@"
+      - edge-runtime

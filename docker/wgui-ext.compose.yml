@@ -20,9 +20,8 @@
 # happens at start and the runtime caches isolates, a code change needs
 # `npm run stack:restart`.
 #
-# TODO: this override and docker/wgui-export.compose.yml each replace the functions
-# entrypoint. Whichever of stack:up / export:up ran last is the only overlay mounted.
-# Mount both so campaign encounters and character export stay up together.
+# Unused by the launchers. stack:up and export:up both use docker/wgui-functions.compose.yml
+# so the two overlays stay mounted together.
 
 services:
   functions:
