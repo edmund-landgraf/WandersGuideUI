@@ -162,6 +162,28 @@ export function convertCastToActionCost(cast: string): ActionCost | string {
   }
 }
 
+const ACTION_SYMBOL_COSTS = new Set<string>([
+  'ONE-ACTION',
+  'TWO-ACTIONS',
+  'THREE-ACTIONS',
+  'REACTION',
+  'FREE-ACTION',
+  'ONE-TO-TWO-ACTIONS',
+  'ONE-TO-THREE-ACTIONS',
+  'TWO-TO-THREE-ACTIONS',
+  'TWO-TO-TWO-ROUNDS',
+  'TWO-TO-THREE-ROUNDS',
+  'THREE-TO-TWO-ROUNDS',
+  'THREE-TO-THREE-ROUNDS',
+]);
+
+/** Cast times longer than an action glyph, such as "1 minute". Null when the header already draws a symbol. */
+export function proseCastTime(cast: string | null | undefined): string | null {
+  const text = cast?.trim();
+  if (!text || resolveActionGlyph(text) || ACTION_SYMBOL_COSTS.has(text.toUpperCase())) return null;
+  return text;
+}
+
 export function actionCostToLabel(cost: ActionCost | string, alt?: boolean): string {
   let result = '';
   switch (cost) {

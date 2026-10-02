@@ -6,7 +6,6 @@ import { abilityNameAndCost } from '@utils/actions';
 import { BuyItemButton } from '@common/BuyItemButton';
 import TraitsDisplay from '@common/TraitsDisplay';
 import { fetchContentAll, fetchContentById, getDefaultSources, getDefaultSourcesKey } from '@content/content-store';
-import { isActionCost } from '@content/content-utils';
 import { isItemArchaic } from '@items/inv-utils';
 import {
   ActionIcon,
@@ -2808,11 +2807,11 @@ export function SpellSelectionOption(props: {
               {props.spell.name}
             </Text>
           </Box>
-          {isActionCost(props.spell.cast) && (
+          {props.spell.cast ? (
             <Box>
               <ActionSymbol cost={props.spell.cast} gap={5} />
             </Box>
-          )}
+          ) : null}
           {props.leftSection && <Box>{props.leftSection}</Box>}
         </Group>
       }

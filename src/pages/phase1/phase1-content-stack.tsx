@@ -10,7 +10,7 @@ import { getConditionByName } from '@conditions/condition-handler';
 import { priceToString } from '@items/currency-handler';
 import { determineItemMetaType, labelizeBulk } from '@items/inv-utils';
 import type { AbilityBlock, Creature, Item, Language, Spell, Trait } from '@schemas/content';
-import { abilityNameAndCost } from '@utils/actions';
+import { abilityNameAndCost, proseCastTime } from '@utils/actions';
 import { useContentLinks, type ContentLinkRef } from './phase1-content-links';
 import { ProseMarkdown } from './phase1-markdown';
 
@@ -230,6 +230,7 @@ async function loadCatalogContent(entry: ContentLinkRef): Promise<CatalogView | 
       tags: [cantrip ? 'Cantrip' : `Rank ${spell.rank}`, spell.rarity, ...traitNames].filter(Boolean),
       actions: spell.cast,
       facts: [
+        { label: 'Cast', value: proseCastTime(spell.cast) },
         { label: 'Traditions', value: spell.traditions.join(', ') },
         { label: 'Defense', value: spell.defense },
         { label: 'Cost', value: spell.cost },

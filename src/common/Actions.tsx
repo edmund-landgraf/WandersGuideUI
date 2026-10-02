@@ -270,6 +270,13 @@ export function ActionSymbol(props: ActionSymbolProps) {
         </>
       );
     default:
+      if (typeof cost === 'string' && cost.trim()) {
+        return (
+          <RangeLabel color={c} textProps={textProps}>
+            {cost.trim()}
+          </RangeLabel>
+        );
+      }
       return null;
   }
 }

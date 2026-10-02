@@ -30,7 +30,7 @@ import { lookupMonsterArt, type Phase1MonsterArt } from './phase1-monster-image'
 import { addConditionWithSpawns, compiledConditions, removeConditionWithSpawns } from '@conditions/condition-handler';
 import { ConditionDetailModal, SelectConditionModal } from './phase1-conditions';
 import { ActionSymbol } from '@common/Actions';
-import { abilityNameAndCost } from '@utils/actions';
+import { abilityNameAndCost, proseCastTime } from '@utils/actions';
 import { toStandard2eProse } from '@utils/foundry-text';
 import { EditableValueWithNote, RoundNoteField } from './phase1-change-log-ui';
 import { formatChangeLogField, formatChangeLogTime, formatChangeLogValue } from './phase1-change-log';
@@ -2093,11 +2093,13 @@ export function SpellsPanel({ combatant, spellActions, onLogAction }: { combatan
 
   function spellDraft(entry: Phase1SpellEntry): ActionLogDraft | null {
     if (!entry.spell) return null;
+    const cast = entry.spell.cast;
+    const time = typeof cast === 'string' && cast.trim() && !isExecutableActionCost(cast) ? cast.trim() : null;
     return {
       name: entry.spell.name,
-      cost: isExecutableActionCost(entry.spell.cast) ? entry.spell.cast : null,
+      cost: isExecutableActionCost(cast) ? cast : null,
       kind: 'spell',
-      extra: rankLabel(entry.rank),
+      extra: [rankLabel(entry.rank), time].filter(Boolean).join(' · '),
     };
   }
 
@@ -2662,6 +2664,7 @@ function SpellModal({ entry, entity, spellActions, busy, rankSpent, onCast, onUn
         </header>
         <div className='min-h-0 overflow-y-auto px-5 py-4'>
           <div className='mb-4 space-y-1 border-b border-p1-border pb-4 text-sm leading-6'>
+            <AbilityFact label='Cast' value={proseCastTime(spell.cast)} />
             <AbilityFact label='Traditions' value={spell.traditions.join(', ')} />
             <AbilityFact label='Defense' value={spell.defense} />
             <AbilityFact label='Cost' value={spell.cost} />
