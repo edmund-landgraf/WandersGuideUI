@@ -122,7 +122,7 @@ function Phase1BuilderInner({ characterId, embedded, seed }: { characterId: numb
       ) : (
         <main className={`grid gap-4 ${embedded ? '' : 'mx-auto max-w-6xl px-4 pb-6'} lg:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)]`}>
           <aside className='space-y-4 self-start overflow-visible border border-p1-border bg-p1-surface p-4 lg:sticky lg:top-4'>
-            <Phase1BuilderPicks character={character} setCharacter={setCharacter} flushSave={flushSave} content={content} results={results} showIdentity={false} />
+            <Phase1BuilderPicks character={character} setCharacter={setCharacter} flushSave={flushSave} content={content} results={results} showIdentity={false} showLevel />
             <Phase1BuilderStats results={results} character={character} content={content} />
             {!embedded && (
               <button type='button' className='toolbar-button' disabled={!playable} onClick={() => navigate(`/sheet/${character.id}`)}>

@@ -10,6 +10,54 @@ interface FindCampaignEncountersBody {
   id?: number | number[];
 }
 
+type StatEntity = {
+  meta_data?: {
+    calculated_stats?: { hp_max?: number | null } | null;
+  } | null;
+  operations?: Array<{ data?: { variable?: string; value?: number | string | null } }> | null;
+};
+
+function healthBonus(entity: StatEntity | null | undefined): number | null {
+  for (const operation of entity?.operations ?? []) {
+    if (operation.data?.variable !== 'MAX_HEALTH_BONUS') continue;
+    const raw = operation.data.value;
+    const value = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number.parseInt(raw, 10) : NaN;
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return null;
+}
+
+function withResolvedHitPoints<T extends Encounter>(encounter: T): T {
+  const list = encounter.combatants?.list;
+  if (!list?.length) return encounter;
+  return {
+    ...encounter,
+    combatants: {
+      ...encounter.combatants,
+      list: list.map((combatant) => {
+        const creature = (combatant as { creature?: StatEntity | null }).creature;
+        const data = (combatant as { data?: StatEntity | null }).data;
+        const entity = creature ?? data;
+        const stored = entity?.meta_data?.calculated_stats?.hp_max;
+        if (typeof stored === 'number' && stored > 0) return combatant;
+        const max = healthBonus(entity);
+        if (max == null || !entity) return combatant;
+        const next = {
+          ...entity,
+          meta_data: {
+            ...entity.meta_data,
+            calculated_stats: {
+              ...entity.meta_data?.calculated_stats,
+              hp_max: max,
+            },
+          },
+        };
+        return creature ? { ...combatant, creature: next } : { ...combatant, data: next };
+      }),
+    },
+  };
+}
+
 /**
  * Campaign encounters, for the GM *or* for a player whose PC is in the fight.
  *
@@ -55,7 +103,7 @@ serve(async (req: Request) => {
 
     return {
       status: 'success',
-      data: visible.sort((a, b) => a.id - b.id),
+      data: visible.sort((a, b) => a.id - b.id).map(withResolvedHitPoints),
     };
   });
 });

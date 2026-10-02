@@ -4,6 +4,7 @@ import type { Character, Class, ClassArchetype, ContentPackage } from '@schemas/
 import type { SetterOrUpdater } from '@utils/type-fixing';
 import { uniq } from 'lodash-es';
 import { useMemo, useState } from 'react';
+import { ConfirmDialog } from './phase1-campaign-settings';
 import { useContentLinks } from './phase1-content-links';
 import { Phase1PickerModal } from './phase1-picker-modal';
 import { setOverflowTitle } from './phase1-overflow-title';
@@ -18,6 +19,7 @@ export function Phase1BuilderPicks({
   flushSave,
   content,
   showIdentity = true,
+  showLevel = showIdentity,
   showPicks = true,
 }: {
   character: Character;
@@ -26,10 +28,12 @@ export function Phase1BuilderPicks({
   content: ContentPackage;
   results?: OperationCharacterResultPackage | null;
   showIdentity?: boolean;
+  showLevel?: boolean;
   showPicks?: boolean;
 }) {
   const { open } = useContentLinks();
   const [picker, setPicker] = useState<Picker>(null);
+  const [pendingLevel, setPendingLevel] = useState<number | null>(null);
   const [archetypes, setArchetypes] = useState<ClassArchetype[]>([]);
   const dual = Boolean(character.variants?.dual_class);
   const allowedSources = useMemo(
@@ -51,6 +55,23 @@ export function Phase1BuilderPicks({
 
   function sourceName(id: number) {
     return content.sources?.find((source) => source.id === id)?.name;
+  }
+
+  function commitLevel(level: number) {
+    const next = { ...character, level, meta_data: { ...character.meta_data, reset_hp: true } };
+    setCharacter((prev) => (prev ? { ...prev, level, meta_data: { ...prev.meta_data, reset_hp: true } } : prev));
+    flushSave?.(next);
+  }
+
+  function requestLevel(raw: number) {
+    const level = Math.min(20, Math.max(1, raw));
+    const oldLevel = character.level ?? 1;
+    if (level === oldLevel) return;
+    if (level < oldLevel) {
+      setPendingLevel(level);
+      return;
+    }
+    commitLevel(level);
   }
 
   async function afterClassPick(option: Class, slot: '1' | '2') {
@@ -91,39 +112,46 @@ export function Phase1BuilderPicks({
           }}
         />
       </label>
-      <label className='block text-xs text-p1-muted'>
-        Level
-        <input
-          className='settings-input mt-1 w-full'
-          type='number'
-          min={1}
-          max={20}
-          value={character.level}
-          onChange={(event) => {
-            const parsed = Number.parseInt(event.target.value, 10);
-            if (!Number.isFinite(parsed)) return;
-            setCharacter((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    level: Math.min(20, Math.max(1, parsed)),
-                    meta_data: { ...prev.meta_data, reset_hp: true },
-                  }
-                : prev
-            );
-          }}
-          onBlur={(event) => {
-            const level = Math.min(20, Math.max(1, Number.parseInt(event.currentTarget.value, 10) || 1));
-            const next = { ...character, level, meta_data: { ...character.meta_data, reset_hp: true } };
-            setCharacter((prev) => (prev ? { ...prev, level, meta_data: { ...prev.meta_data, reset_hp: true } } : prev));
-            flushSave?.(next);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') (event.target as HTMLInputElement).blur();
+        </>
+      )}
+      {showLevel && (
+        <div className='flex items-end gap-2'>
+          <label className='block min-w-0 flex-1 text-xs text-p1-muted'>
+            Level
+            <select
+              className='settings-input mt-1 w-full'
+              value={character.level}
+              onChange={(event) => requestLevel(Number.parseInt(event.target.value, 10))}
+            >
+              {Array.from({ length: 20 }, (_, index) => index + 1).map((level) => (
+                <option key={level} value={level}>
+                  {level}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type='button'
+            className='toolbar-button shrink-0'
+            disabled={(character.level ?? 1) >= 20}
+            onClick={() => requestLevel((character.level ?? 1) + 1)}
+          >
+            Add level
+          </button>
+        </div>
+      )}
+      {pendingLevel != null && (
+        <ConfirmDialog
+          title={`Decrease level from ${character.level} to ${pendingLevel}`}
+          message='Any selections you made at levels higher than the new level will be erased.'
+          confirmLabel='Decrease level'
+          onCancel={() => setPendingLevel(null)}
+          onConfirm={() => {
+            const level = pendingLevel;
+            setPendingLevel(null);
+            commitLevel(level);
           }}
         />
-      </label>
-        </>
       )}
       {showPicks && (
         <>
