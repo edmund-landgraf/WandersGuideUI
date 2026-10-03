@@ -15,7 +15,7 @@ import { uniqBy } from 'lodash-es';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLoaderData, useNavigate } from 'react-router-dom';
 import { useAtomValue } from 'jotai';
-import { supabase } from '../../supabase-client';
+import { signOut } from '@auth/campaign-auth';
 import { OLD_UI_ORIGIN, PhaseViewSwitch } from '../phase-switch/PhaseViewSwitch';
 
 const PANE_STORAGE_KEY = 'phase0-encounter-detail-width';
@@ -187,7 +187,7 @@ function Phase0CampaignPage({ campaignId, encounterId }: { campaignId: number; e
             </div>
             <div className='flex items-center gap-2'>
               <span className='max-w-48 truncate text-xs text-slate-500' title={session?.user.email}>{session?.user.email}</span>
-              <Button variant='outline' onClick={() => void supabase.auth.signOut({ scope: 'local' })}>Switch account</Button>
+              <Button variant='outline' onClick={() => void signOut()}>Switch account</Button>
               <Button asChild variant='outline'><Link to='/phase0'>All campaigns</Link></Button>
             </div>
           </div>

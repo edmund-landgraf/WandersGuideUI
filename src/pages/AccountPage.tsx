@@ -60,7 +60,7 @@ import { hasPatreonAccess } from '@utils/patreon';
 import { userState } from '@atoms/userAtoms';
 import { findApprovedContentUpdates } from '@content/content-update';
 import { resetContentStore, fetchContentSources } from '@content/content-store';
-import { supabase } from '../main';
+import { signOut } from '@auth/campaign-auth';
 import { showNotification } from '@mantine/notifications';
 import { DisplayIcon } from '@common/IconDisplay';
 import { PATREON_AUTH_URL } from '@constants/urls';
@@ -845,7 +845,7 @@ function ProfileSection() {
                           onConfirm: async () => {
                             const result = await makeRequest('delete-user', {});
                             if (result) {
-                              void supabase.auth.signOut({ scope: 'local' });
+                              void signOut();
                               clearStoragePreservingDisplayPrefs();
                               queryClient.clear();
                             } else {

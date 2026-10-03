@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Connect Wanderer's Guide</title>
+  </head>
+  <body>
+    <p id="status" style="font-family: sans-serif; margin: 24px">Checking your Wanderer's Guide session…</p>
+    <script>
+      const MESSAGE_TYPE = "wgui-owlbear-auth";
+
+      function allowedTarget(value) {
+        if (!value) return null;
+        try {
+          const url = new URL(value);
+          if (url.origin !== value) return null;
+          if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+          return url.origin;
+        } catch {
+          return null;
+        }
+      }
+
+      function readSession() {
+        for (let index = 0; index < localStorage.length; index += 1) {
+          const key = localStorage.key(index);
+          if (!key || !key.endsWith("-auth-token")) continue;
+          try {
+            const stored = JSON.parse(localStorage.getItem(key) || "");
+            const accessToken = stored && stored.access_token;
+            const refreshToken = stored && stored.refresh_token;
+            if (typeof accessToken === "string" && accessToken) {
+              return {
+                accessToken,
+                refreshToken: typeof refreshToken === "string" ? refreshToken : ""
+              };
+            }
+          } catch {
+            // Another auth-token key may hold the session.
+          }
+        }
+        return null;
+      }
+
+      const status = document.getElementById("status");
+      const targetOrigin = allowedTarget(new URLSearchParams(location.search).get("targetOrigin"));
+      if (!targetOrigin) {
+        status.textContent = "Invalid Owlbear extension origin.";
+      } else {
+        const session = readSession();
+        if (!session) {
+          status.textContent = "Log in to Wanderer's Guide in this browser, then return to Owlbear and try again.";
+        } else if (window.opener) {
+          window.opener.postMessage(
+            {
+              type: MESSAGE_TYPE,
+              accessToken: session.accessToken,
+              refreshToken: session.refreshToken
+            },
+            targetOrigin
+          );
+          window.close();
+        } else {
+          status.textContent = "Session found. Return to Owlbear.";
+        }
+      }
+    </script>
+  </body>
+</html>

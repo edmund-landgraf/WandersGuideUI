@@ -32,7 +32,7 @@ import {
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAtomValue } from 'jotai';
-import { supabase } from '../main';
+import { signOut } from '@auth/campaign-auth';
 import { LoginButton } from './LoginButton';
 import { SearchBar } from './Searchbar';
 import WanderersGuideLogo from './WanderersGuideLogo';
@@ -305,7 +305,7 @@ export default function Layout(props: { children: React.ReactNode }) {
                       <Menu.Item
                         leftSection={<IconLogout style={{ width: rem(16), height: rem(16) }} stroke={1.5} />}
                         onClick={async () => {
-                          void supabase.auth.signOut({ scope: 'local' });
+                          void signOut();
                           clearStoragePreservingDisplayPrefs();
                           queryClient.clear();
                         }}
@@ -453,7 +453,7 @@ export default function Layout(props: { children: React.ReactNode }) {
             <UnstyledButton
               className={classes.control}
               onClick={async () => {
-                void supabase.auth.signOut({ scope: 'local' });
+                void signOut();
                 clearStoragePreservingDisplayPrefs();
                 queryClient.clear();
                 close();

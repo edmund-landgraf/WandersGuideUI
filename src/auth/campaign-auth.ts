@@ -42,16 +42,33 @@ export async function signInWithEmail(email: string, password: string) {
   return supabase.auth.signInWithPassword({ email, password });
 }
 
+function isLogoutRequest(input: RequestInfo | URL) {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  return url.includes('/logout');
+}
+
 /**
  * Drop the browser session even when GoTrue no longer has it.
  *
- * A global logout POSTs /logout and, on this stack, that call returns 403
- * "Session not found" once the refresh-token row is already gone. The campaign
- * buttons were awaiting that global call, so the click looked like it did nothing.
- * Local scope removes the stored session and fires SIGNED_OUT without asking auth.
+ * auth-js still POSTs /logout before it clears storage, including for
+ * scope "local". On this stack that call 403s ("Session not found") or
+ * fails another way, and any result other than 401/403/404 aborts the
+ * clear — the header stays signed in. Answer the logout request locally
+ * so the client always removes the session and fires SIGNED_OUT.
  */
 export async function signOut() {
-  return supabase.auth.signOut({ scope: 'local' });
+  const originalFetch = globalThis.fetch.bind(globalThis);
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (isLogoutRequest(input)) {
+      return new Response(null, { status: 204 });
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+  try {
+    return await supabase.auth.signOut({ scope: 'local' });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 }
 
 export function parseOAuthReturnError(search: string): string | null {

@@ -281,6 +281,7 @@ export function Phase1CharactersPage() {
   const [portraitPreview, setPortraitPreview] = useState<Character | null>(null);
   const [portraitPickerOpen, setPortraitPickerOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{ id: number; name: string } | null>(null);
+  const [pendingRename, setPendingRename] = useState<Character | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportAllOpen, setExportAllOpen] = useState(false);
   const [exportAllProgress, setExportAllProgress] = useState<{
@@ -1016,6 +1017,10 @@ export function Phase1CharactersPage() {
               setCharacterMenu(null);
               window.open(`/stat-block/character/${target.id}`, '_blank');
             }}
+            onRename={() => {
+              setPendingRename(characterMenu.character);
+              setCharacterMenu(null);
+            }}
             onExportPdf={() => {
               const target = characterMenu.character;
               setCharacterMenu(null);
@@ -1071,6 +1076,25 @@ export function Phase1CharactersPage() {
             onConfirm={() => {
               setPendingAddAll(null);
               addAllToJoinKey.mutate();
+            }}
+          />
+        )}
+        {pendingRename && (
+          <RenameDialog
+            title='Rename character'
+            initialName={pendingRename.name}
+            onCancel={() => setPendingRename(null)}
+            onConfirm={(name) => {
+              const target = pendingRename;
+              setPendingRename(null);
+              void phase1Request('update-character', { id: target.id, name }).then(
+                () => {
+                  void queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] });
+                },
+                (error) => {
+                  setJoinStatus(error instanceof Error ? error.message : 'Could not rename character.');
+                }
+              );
             }}
           />
         )}
@@ -3681,7 +3705,7 @@ function CreateNameModal({ title, label, confirmLabel, skipLabel, onCancel, onSk
   );
 }
 
-function CharacterGridContextMenu({ x, y, onClose, onJoinMyCampaign, onJoinOthersCampaign, onUnassign, onOpenStatBlock, onExportJson, onExportPdf, onDelete }: { x: number; y: number; onClose: () => void; onJoinMyCampaign: () => void; onJoinOthersCampaign: () => void; onUnassign?: () => void; onOpenStatBlock: () => void; onExportJson: () => void; onExportPdf: () => void; onDelete: () => void }) {
+function CharacterGridContextMenu({ x, y, onClose, onJoinMyCampaign, onJoinOthersCampaign, onUnassign, onOpenStatBlock, onRename, onExportJson, onExportPdf, onDelete }: { x: number; y: number; onClose: () => void; onJoinMyCampaign: () => void; onJoinOthersCampaign: () => void; onUnassign?: () => void; onOpenStatBlock: () => void; onRename: () => void; onExportJson: () => void; onExportPdf: () => void; onDelete: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -3690,7 +3714,7 @@ function CharacterGridContextMenu({ x, y, onClose, onJoinMyCampaign, onJoinOther
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
   const left = Math.min(x, window.innerWidth - 220);
-  const top = Math.min(y, window.innerHeight - 240);
+  const top = Math.min(y, window.innerHeight - 280);
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onPointerDown={onClose} />
@@ -3702,6 +3726,9 @@ function CharacterGridContextMenu({ x, y, onClose, onJoinMyCampaign, onJoinOther
       >
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onOpenStatBlock(); }}>
           <AlignLeft size={14} /> Open Stat Block
+        </button>
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onRename(); }}>
+          <Pencil size={14} /> Rename
         </button>
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onJoinMyCampaign(); }}>
           <UserPlus size={14} /> Join my campaign
