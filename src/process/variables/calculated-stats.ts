@@ -75,8 +75,9 @@ export function setCalculatedStatsInStore(id: StoreID, entity: LivingEntity) {
   if (calcStats.stamina_max !== undefined) {
     addVariable(id, 'num', `CS:STAMINA_MAX`, calcStats.stamina_max, 'Calculated Stats');
   }
-  for (const name of Object.keys(calcStats.profs)) {
-    const { total, type } = calcStats.profs[name];
+  const profs = calcStats.profs ?? {};
+  for (const name of Object.keys(profs)) {
+    const { total } = profs[name];
     addVariable(id, 'num', `CS:${labelToVariable(name)}`, total, 'Calculated Stats');
   }
 }

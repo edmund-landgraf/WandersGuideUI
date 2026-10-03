@@ -53,7 +53,9 @@
       const isAuthCallback = ['code', 'access_token', 'error', 'error_description', 'token_hash'].some(
         (key) => search.has(key) || hash.has(key)
       );
-      const application = location.pathname.startsWith('/phase0')
+      const application = location.pathname.startsWith('/owlbear/auth')
+        ? import('/src/pages/OwlbearAuthPage.tsx')
+        : location.pathname.startsWith('/phase0')
         ? import('/src/pages/phase0/main.tsx')
         : location.pathname.startsWith('/phase1') ||
             location.pathname.startsWith('/sheet') ||
