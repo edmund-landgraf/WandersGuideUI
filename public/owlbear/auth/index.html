@@ -13,8 +13,8 @@
         if (!value) return null;
         try {
           const url = new URL(value);
-          if (url.origin !== value) return null;
           if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+          if (url.origin === "null") return null;
           return url.origin;
         } catch {
           return null;

@@ -71,8 +71,14 @@ export { supabase };
   }
 })();
 
+document.documentElement.dataset.wguiEntry = 'router';
+
 // The DOM router for determining what pages are rendered at which paths
 const router = createBrowserRouter([
+  {
+    path: '/owlbear/auth/*',
+    lazy: () => import('./pages/OwlbearAuthPage.tsx'),
+  },
   {
     path: '/phase0',
     lazy: () => import('@pages/phase0/Phase0CampaignPage.tsx'),

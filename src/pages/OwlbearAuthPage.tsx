@@ -8,8 +8,8 @@ function allowedTarget(value: string | null): string | null {
   if (!value) return null;
   try {
     const url = new URL(value);
-    if (url.origin !== value) return null;
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+    if (url.origin === 'null') return null;
     return url.origin;
   } catch {
     return null;
@@ -59,8 +59,14 @@ function OwlbearAuth() {
   return <p style={{ fontFamily: 'sans-serif', margin: 24 }}>{status}</p>;
 }
 
-createRoot(document.getElementById('root') as HTMLElement).render(
-  <StrictMode>
-    <OwlbearAuth />
-  </StrictMode>
-);
+export function Component() {
+  return <OwlbearAuth />;
+}
+
+if (document.documentElement.dataset.wguiEntry !== 'router') {
+  createRoot(document.getElementById('root') as HTMLElement).render(
+    <StrictMode>
+      <OwlbearAuth />
+    </StrictMode>
+  );
+}
