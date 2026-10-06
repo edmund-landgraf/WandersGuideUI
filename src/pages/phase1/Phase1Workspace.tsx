@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, EyeOff, ExternalLink, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, EyeOff, ExternalLink, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Menu, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -81,6 +81,19 @@ import { createHazardCombatant, getHazardCurrentHp, getHazardInitiativeModifier,
 import { InspectorContent, HazardInspector, DETAIL_TABS, fallbackStatus, hasFullEntityDetails, normalizeDetailTab, signed, statsFor, type DetailTab, type Phase1SpellActions } from './phase1-entity-panels';
 type CampaignNotePage = NonNullable<Campaign['notes']>['pages'][number];
 type IndexedNotePage = { page: CampaignNotePage; index: number };
+
+function useNarrowLayout() {
+  const query = '(max-width: 767px)';
+  const [matches, setMatches] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const onChange = () => setMatches(media.matches);
+    onChange();
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+  return matches;
+}
 
 const DETAIL_WIDTH_KEY = 'phase1-detail-width';
 const DETAIL_WIDTH_MIN = 340;
@@ -170,7 +183,7 @@ export function Phase1IndexPage() {
   if (session === undefined) return <LoadingScreen label='Loading session' />;
   if (!session) return <CampaignSignIn variant='phase1' />;
   return (
-    <div className='min-h-screen bg-p1-page text-p1-text'>
+    <div className='min-h-screen max-w-full overflow-x-hidden bg-p1-page text-p1-text'>
       <WorkspaceHeader section='campaigns' />
       <main className='mx-auto max-w-5xl px-6 py-10'>
         <div className='mb-8 flex items-end justify-between gap-6 border-b border-p1-border pb-6'>
@@ -801,7 +814,7 @@ export function Phase1CharactersPage() {
   if (session === undefined) return <LoadingScreen label='Loading session' />;
   if (!session) return <CampaignSignIn variant='phase1' />;
   return (
-    <div className='min-h-screen bg-p1-page text-p1-text'>
+    <div className='min-h-screen max-w-full overflow-x-hidden bg-p1-page text-p1-text'>
       <WorkspaceHeader section='characters' />
       <main className='mx-auto max-w-5xl px-6 py-10'>
         <div className='mb-8 flex flex-wrap items-end justify-between gap-6 border-b border-p1-border pb-6'>
@@ -1307,7 +1320,7 @@ export function Phase1EncountersPage() {
   if (session === undefined) return <LoadingScreen label='Loading session' />;
   if (!session) return <CampaignSignIn variant='phase1' />;
   return (
-    <div className='min-h-screen bg-p1-page text-p1-text'>
+    <div className='min-h-screen max-w-full overflow-x-hidden bg-p1-page text-p1-text'>
       <WorkspaceHeader section='encounters' />
       <main className='mx-auto max-w-5xl px-6 py-10'>
         <div className='mb-8 flex items-end justify-between gap-6 border-b border-p1-border pb-6'>
@@ -1839,6 +1852,9 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const standalone = campaign == null;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailWidth, setDetailWidth] = useState(readDetailWidth);
+  const narrow = useNarrowLayout();
+  const [railOpen, setRailOpen] = useState(false);
+  const { pathname } = useLocation();
   const [activeTab, setActiveTab] = useState<DetailTab>('Health');
   const [initiativeOpen, setInitiativeOpen] = useState(false);
   const [initiativeRollNonce, setInitiativeRollNonce] = useState(0);
@@ -2629,12 +2645,33 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     setDcDraft(selectedEncounter?.meta_data.dice_roll_state?.dc != null ? String(selectedEncounter.meta_data.dice_roll_state.dc) : '');
   }, [selectedEncounter?.id]);
   useEffect(() => window.localStorage.setItem(DETAIL_WIDTH_KEY, String(detailWidth)), [detailWidth]);
+  useEffect(() => { setRailOpen(false); }, [pathname]);
+  useEffect(() => {
+    if (!railOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setRailOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [railOpen]);
+
+  const rail = (
+    <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddPlayer={addPlayer} onAddAllPlayers={addAllPlayers} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onDeleteNote={onDeleteNote} onDeleteEncounter={onDeleteEncounter} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} onRenameNote={renameNote} onRenameEncounter={renameEncounter} />
+  );
+  const inspector = (
+    <Inspector fill={narrow} combatant={selected && (isGm || !isEnemyCreature(selected)) ? selected : null} width={detailWidth} activeTab={normalizeDetailTab(activeTab)} onTab={setActiveTab} hasMatchingCampaignNote={Boolean(encounterNote)} status={selected ? statuses.data?.[selected._id] : undefined} statusLoading={statuses.isLoading} canManageSpells={canManageSpells} spellActions={spellActions} onChangeConditions={canManageSpells && selected?.type !== 'HAZARD' ? persistConditions : undefined} onSaveGmNotes={isGm && selected?.type === 'CREATURE' ? persistGmNotes : undefined} onPersistHpCurrent={selected && canManageSpells && selected.data ? (raw, note) => persistHpCurrent(selected, raw, note, statuses.data?.[selected._id]?.maxHp ?? statsFor(selected.data).maxHp) : undefined} onPersistTempHp={selected && canManageSpells && selected.data ? (raw, note) => persistTempHp(selected, raw, note) : undefined} initiativeLog={selectedEncounter?.meta_data.initiative_log ?? []} canEditRoundNotes={isGm && !rosterSaving} onUpdateRoundNote={updateRoundNote} onLogAction={selected && canManageSpells && selected.type !== 'HAZARD' ? persistLogAction : undefined} onDeleteLogEntry={selected && canManageSpells && selected.type !== 'HAZARD' ? persistDeleteLogEntry : undefined} />
+  );
+  const phoneInspector = narrow && selectedId && !viewingNotes && !viewingSettings;
 
   return (
-    <div className='flex h-screen min-h-[680px] flex-col overflow-hidden bg-p1-page text-p1-text'>
-      <WorkspaceHeader section={standalone ? 'encounters' : undefined} label={campaign?.name ?? encounterDisplayName(selectedEncounter?.name ?? 'Encounter')} campaignId={campaign?.id ?? null} encounterId={selectedEncounter?.id ?? null} noteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} />
-      <div className={`grid min-h-0 flex-1 ${viewingNotes || viewingSettings ? 'grid-cols-[248px_minmax(280px,1fr)]' : 'grid-cols-[248px_minmax(280px,1fr)_6px_auto]'}`}>
-        <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddPlayer={addPlayer} onAddAllPlayers={addAllPlayers} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onDeleteNote={onDeleteNote} onDeleteEncounter={onDeleteEncounter} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} onRenameNote={renameNote} onRenameEncounter={renameEncounter} />
+    <div className='flex h-dvh min-h-0 flex-col overflow-hidden bg-p1-page text-p1-text md:h-screen md:min-h-[680px]'>
+      <WorkspaceHeader section={standalone ? 'encounters' : undefined} label={campaign?.name ?? encounterDisplayName(selectedEncounter?.name ?? 'Encounter')} campaignId={campaign?.id ?? null} encounterId={selectedEncounter?.id ?? null} noteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} railOpen={railOpen} onToggleRail={() => setRailOpen((open) => !open)} />
+      <div className={`grid min-h-0 flex-1 ${narrow ? 'grid-cols-1' : viewingNotes || viewingSettings ? 'grid-cols-[248px_minmax(280px,1fr)]' : 'grid-cols-[248px_minmax(280px,1fr)_6px_auto]'}`}>
+        {narrow ? railOpen && createPortal(
+          <>
+            <button type='button' className='fixed inset-0 z-40 bg-black/50' aria-label='Close navigation' onClick={() => setRailOpen(false)} />
+            <div id='campaign-rail' className='fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col shadow-2xl'>{rail}</div>
+          </>,
+          document.body,
+        ) : rail}
         <main className='min-w-0 overflow-auto bg-p1-surface'>
           {viewingSettings && campaign ? (
             <SettingsSurface
@@ -2791,13 +2828,21 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
             </>
           )}
         </main>
-        {!viewingNotes && !viewingSettings && (
+        {!narrow && !viewingNotes && !viewingSettings && (
           <>
             <ResizeRail onResize={(delta) => setDetailWidth((width) => clamp(width - delta, DETAIL_WIDTH_MIN, DETAIL_WIDTH_MAX))} />
-            <Inspector combatant={selected && (isGm || !isEnemyCreature(selected)) ? selected : null} width={detailWidth} activeTab={normalizeDetailTab(activeTab)} onTab={setActiveTab} hasMatchingCampaignNote={Boolean(encounterNote)} status={selected ? statuses.data?.[selected._id] : undefined} statusLoading={statuses.isLoading} canManageSpells={canManageSpells} spellActions={spellActions} onChangeConditions={canManageSpells && selected?.type !== 'HAZARD' ? persistConditions : undefined} onSaveGmNotes={isGm && selected?.type === 'CREATURE' ? persistGmNotes : undefined} onPersistHpCurrent={selected && canManageSpells && selected.data ? (raw, note) => persistHpCurrent(selected, raw, note, statuses.data?.[selected._id]?.maxHp ?? statsFor(selected.data).maxHp) : undefined} onPersistTempHp={selected && canManageSpells && selected.data ? (raw, note) => persistTempHp(selected, raw, note) : undefined} initiativeLog={selectedEncounter?.meta_data.initiative_log ?? []} canEditRoundNotes={isGm && !rosterSaving} onUpdateRoundNote={updateRoundNote} onLogAction={selected && canManageSpells && selected.type !== 'HAZARD' ? persistLogAction : undefined} onDeleteLogEntry={selected && canManageSpells && selected.type !== 'HAZARD' ? persistDeleteLogEntry : undefined} />
+            {inspector}
           </>
         )}
       </div>
+      {phoneInspector && (
+        <div className='fixed inset-0 z-30 flex min-h-0 flex-col bg-p1-inset'>
+          <button type='button' className='flex shrink-0 items-center gap-2 border-b border-p1-border px-3 py-3 text-sm text-p1-muted hover:text-p1-text' onClick={() => setSelectedId(null)}>
+            <ArrowLeft size={16} /> Back to encounter
+          </button>
+          <div className='min-h-0 flex-1'>{inspector}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2866,7 +2911,7 @@ function useCombatantStatuses(encounterId: number | null, combatants: PopulatedC
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
-function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, viewingSettings }: { label?: string; section?: 'campaigns' | 'characters' | 'encounters'; campaignId?: number | null; encounterId?: number | null; noteIndex?: number | null; viewingSettings?: boolean }) {
+function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, viewingSettings, railOpen, onToggleRail }: { label?: string; section?: 'campaigns' | 'characters' | 'encounters'; campaignId?: number | null; encounterId?: number | null; noteIndex?: number | null; viewingSettings?: boolean; railOpen?: boolean; onToggleRail?: () => void }) {
   const navClass = (active: boolean) => `text-sm ${active ? 'text-p1-text' : 'text-p1-muted hover:text-p1-text'}`;
   const user = useQuery({
     queryKey: ['phase1-public-user'],
@@ -2875,14 +2920,19 @@ function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, v
   });
   const patreonTier = user.data?.patreon?.tier ?? null;
   return (
-    <header className='flex h-14 shrink-0 items-center gap-4 border-b border-p1-border bg-p1-header px-5'>
+    <header className='flex w-full min-w-0 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-p1-border bg-p1-header px-3 py-2 md:h-14 md:flex-nowrap md:gap-4 md:px-5 md:py-0'>
+      {onToggleRail && (
+        <button type='button' className='icon-button md:hidden' aria-expanded={Boolean(railOpen)} aria-controls='campaign-rail' aria-label={railOpen ? 'Close campaign navigation' : 'Open campaign navigation'} onClick={onToggleRail}>
+          <Menu size={16} />
+        </button>
+      )}
       <a href='/' className='font-semibold'>Wanderer's Guide</a>
-      <span className='h-4 w-px bg-p1-border' />
+      <span className='hidden h-4 w-px bg-p1-border sm:block' />
       <Link to='/phase1' className={navClass(section === 'campaigns')}>Campaigns</Link>
       <Link to='/phase1/characters' className={navClass(section === 'characters')}>Characters</Link>
       <Link to='/phase1/encounters' className={navClass(section === 'encounters')}>Encounters</Link>
-      {label && <><span className='text-p1-faint'>/</span><span className='truncate text-sm text-p1-muted'>{label}</span></>}
-      <div className='ml-auto flex items-center gap-2'>
+      {label && <><span className='text-p1-faint'>/</span><span className='max-w-40 truncate text-sm text-p1-muted'>{label}</span></>}
+      <div className='flex w-full min-w-0 flex-wrap items-center gap-2 md:ml-auto md:w-auto'>
         <span className='hidden text-[11px] uppercase tracking-[0.14em] text-p1-faint sm:inline' title='patreon.tier from get-user'>
           {user.isPending ? 'Patreon…' : patreonTier ?? 'no Patreon tier'}
         </span>
@@ -2952,7 +3002,7 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
   }
 
   return (
-    <aside className='min-h-0 overflow-y-auto border-r border-p1-border bg-p1-header'>
+    <aside className='h-full min-h-0 overflow-y-auto border-r border-p1-border bg-p1-header'>
       <div className='border-b border-p1-border p-4'>
         <Link to={standalone ? '/phase1/encounters' : '/phase1'} className='mb-5 flex items-center gap-2 text-xs text-p1-muted hover:text-p1-text'><ArrowLeft size={14} /> {standalone ? 'Encounters' : 'Campaigns'}</Link>
         {standalone ? (
@@ -4844,11 +4894,11 @@ function CombatantConditionPills({ conditions, onOpen, maxVisible = CONDITION_PI
   );
 }
 
-function Inspector({ combatant, width, activeTab, onTab, hasMatchingCampaignNote, status, statusLoading, canManageSpells, spellActions, onChangeConditions, onSaveGmNotes, onPersistHpCurrent, onPersistTempHp, initiativeLog, canEditRoundNotes, onUpdateRoundNote, onLogAction, onDeleteLogEntry }: {
-  combatant: PopulatedCombatant | null; width: number; activeTab: DetailTab; onTab: (tab: DetailTab) => void; hasMatchingCampaignNote?: boolean; status?: Phase1CreatureStatus | null; statusLoading: boolean; canManageSpells: boolean; spellActions?: Phase1SpellActions; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onSaveGmNotes?: (text: string) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void; initiativeLog?: InitiativeRoundLog[]; canEditRoundNotes?: boolean; onUpdateRoundNote?: (round: InitiativeRoundLog, entry: InitiativeRoundLogEntry, note: string) => void; onLogAction?: (draft: ActionLogDraft) => void; onDeleteLogEntry?: (entryId: string) => void;
+function Inspector({ combatant, width, fill, activeTab, onTab, hasMatchingCampaignNote, status, statusLoading, canManageSpells, spellActions, onChangeConditions, onSaveGmNotes, onPersistHpCurrent, onPersistTempHp, initiativeLog, canEditRoundNotes, onUpdateRoundNote, onLogAction, onDeleteLogEntry }: {
+  combatant: PopulatedCombatant | null; width: number; fill?: boolean; activeTab: DetailTab; onTab: (tab: DetailTab) => void; hasMatchingCampaignNote?: boolean; status?: Phase1CreatureStatus | null; statusLoading: boolean; canManageSpells: boolean; spellActions?: Phase1SpellActions; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onSaveGmNotes?: (text: string) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void; initiativeLog?: InitiativeRoundLog[]; canEditRoundNotes?: boolean; onUpdateRoundNote?: (round: InitiativeRoundLog, entry: InitiativeRoundLogEntry, note: string) => void; onLogAction?: (draft: ActionLogDraft) => void; onDeleteLogEntry?: (entryId: string) => void;
 }) {
   return (
-    <aside className='min-h-0 overflow-hidden bg-p1-inset' style={{ width }}>
+    <aside className={`min-h-0 overflow-hidden bg-p1-inset ${fill ? 'h-full w-full' : ''}`} style={fill ? undefined : { width }}>
       {!combatant ? (
         <div className='flex h-full flex-col items-center justify-center px-8 text-center'><PanelRight className='mb-4 text-p1-faint' size={28} /><p className='text-sm font-semibold'>Select a combatant</p><p className='mt-2 max-w-56 text-xs leading-5 text-p1-faint'>PCs, NPCs, and creatures open in this shared read-only inspector.</p></div>
       ) : combatant.type === 'HAZARD' && combatant.hazard ? (
