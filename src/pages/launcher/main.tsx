@@ -1,5 +1,6 @@
 import { PATREON_URL } from '@constants/urls';
 import { ArrowDownCircle, ArrowRight, ArrowUpCircle } from 'lucide-react';
+import { LauncherHeader } from './launcher-header';
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './launcher.css';
@@ -94,26 +95,7 @@ function Launcher() {
     <div className='dark min-h-screen bg-background font-sans text-foreground antialiased'>
       <div className='bg-pattern' />
       <main className='relative z-10 min-h-screen bg-radial from-gray-800 to-gray-900'>
-        <header className='border-b border-border px-8 py-4'>
-          <div className='mx-auto flex max-w-6xl items-center justify-between'>
-            <a className='font-heading text-sm text-foreground' href='/'>
-              Wanderer's Guide
-            </a>
-            <div className='flex items-center gap-5'>
-              <a className='text-sm text-muted-foreground transition hover:text-foreground' href='/help/index.html'>
-                Help
-              </a>
-              <a
-                className='text-sm text-muted-foreground transition hover:text-foreground'
-                href={PATREON_URL}
-                rel='noreferrer'
-                target='_blank'
-              >
-                Support Quzzar on Patreon
-              </a>
-            </div>
-          </div>
-        </header>
+        <LauncherHeader />
         <section className='px-8 pt-10 pb-16'>
           <div className='mx-auto grid max-w-6xl content-start gap-8'>
           <div className='grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-x-8'>
