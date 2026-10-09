@@ -15,12 +15,16 @@ export const HOMEBREW_CSS = `
     radial-gradient(circle at 12% 8%, rgba(255,255,255,0.45), transparent 28%),
     linear-gradient(180deg, #f7edd4 0%, #efe0b8 48%, #e7d3a4 100%);
   box-shadow: 0 0 0 1px #c4a36a, 0 24px 60px rgba(0,0,0,0.45);
+  outline: 2px solid #8a5a22;
+  outline-offset: -14px;
   font-family: "Crimson Pro", Georgia, serif;
   font-size: 17px;
   line-height: 1.45;
 }
 .brew-sheet h1 {
-  margin: 0 0 8px;
+  margin: 14px 0 8px;
+  padding-top: 10px;
+  border-top: 1px solid #8a5a22;
   font-family: Cinzel, Palatino, serif;
   font-size: 2.4rem;
   font-weight: 700;
@@ -38,10 +42,11 @@ export const HOMEBREW_CSS = `
   text-transform: uppercase;
   color: #6b1d14;
   text-align: left;
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-bottom: 2px solid #8a5a22;
 }
-.brew-sheet td { padding: 8px 10px; border-bottom: 1px solid rgba(138, 90, 34, 0.35); vertical-align: top; }
+.brew-sheet td { padding: 10px 12px; border-bottom: 1px solid rgba(138, 90, 34, 0.35); vertical-align: top; }
+.brew-sheet tbody tr:nth-child(even) { background: rgba(138, 90, 34, 0.08); }
 .brew-sheet button {
   color: #1c140c;
   background: none;
@@ -146,7 +151,7 @@ function StockName({ row, homebrew = false }: { row: ShopStockRow; homebrew?: bo
   );
 }
 
-export function ShopDocument({ name, stock, homebrew }: { name: string; stock: ShopStockRow[]; homebrew: boolean }) {
+export function ShopDocument({ name, stock, homebrew, description }: { name: string; stock: ShopStockRow[]; homebrew: boolean; description?: string }) {
   if (homebrew) {
     return (
       <div className='brew-v3'>
@@ -154,7 +159,7 @@ export function ShopDocument({ name, stock, homebrew }: { name: string; stock: S
         <article className='brew-sheet'>
           <h1>{name}</h1>
           <hr className='brew-rule' />
-          <p className='brew-note'>Goods on the counter, written in the Homebrewery hand.</p>
+          {description ? <p className='brew-note'>{description}</p> : null}
           <table>
             <thead>
               <tr>
@@ -192,6 +197,7 @@ export function ShopDocument({ name, stock, homebrew }: { name: string; stock: S
         <section className='px-8 pt-10 pb-16'>
           <div className='mx-auto grid max-w-6xl gap-6'>
             <h1 className='font-heading text-4xl text-foreground'>{name}</h1>
+            {description ? <p className='max-w-3xl text-sm leading-6 text-muted-foreground'>{description}</p> : null}
             <div className='overflow-hidden rounded-xl bg-white/5 ring-1 ring-white/20'>
               <table className='w-full text-left text-sm'>
                 <thead className='text-muted-foreground'>
@@ -246,7 +252,7 @@ export function ShopsPublic({ token }: { token: string }) {
   const stock = page?.snapshot.stock ?? [];
   const homebrew = page?.snapshot.style === 'homebrew-v3';
 
-  if (page) return <ShopDocument name={page.name} stock={stock} homebrew={homebrew} />;
+  if (page) return <ShopDocument name={page.name} stock={stock} homebrew={homebrew} description={page.snapshot.description} />;
 
   return (
     <div className='dark min-h-screen bg-background font-sans text-foreground antialiased'>

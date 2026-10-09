@@ -19,7 +19,7 @@ function normalizeName(name: string) {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, ' ')
-    .replace(/\s*\((elite|weak)\)\s*$/i, '')
+    .replace(/\s*\((?:elite|weak|\d+)\)\s*$/i, '')
     .replace(/,?\s+(elite|weak)$/i, '');
 }
 

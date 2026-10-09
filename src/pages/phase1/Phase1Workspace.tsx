@@ -122,6 +122,22 @@ export function Phase1IndexPage() {
   });
 
   const ownedCampaigns = (campaigns.data ?? []).filter((campaign) => sameUserId(campaign.user_id, session?.user.id));
+  const characters = useQuery({
+    queryKey: ['phase1-characters', session?.user.id],
+    enabled: Boolean(session),
+    queryFn: () => phase1Request<Character[]>('find-character', { user_id: session!.user.id }),
+  });
+  const characterNamesByCampaign = useMemo(() => {
+    const names = new Map<number, { id: number; name: string; imageUrl: string }[]>();
+    for (const character of characters.data ?? []) {
+      const campaignId = numericId(character.campaign_id);
+      if (campaignId == null) continue;
+      const list = names.get(campaignId) ?? [];
+      list.push({ id: character.id, name: character.name, imageUrl: character.details?.image_url?.trim() ?? '' });
+      names.set(campaignId, list);
+    }
+    return names;
+  }, [characters.data]);
 
   async function createCampaign() {
     const accessToken = session?.access_token;
@@ -244,6 +260,7 @@ export function Phase1IndexPage() {
               key={campaign.id}
               campaign={campaign}
               canDelete={sameUserId(campaign.user_id, session.user.id)}
+              memberNames={characterNamesByCampaign.get(numericId(campaign.id) ?? -1) ?? []}
               onOpen={() => navigate(`/phase1/campaign/${campaign.id}`)}
               onDeleted={() => queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] })}
             />
@@ -3946,7 +3963,7 @@ function CampaignAssignPickerModal({
   );
 }
 
-function RailContextMenu({ x, y, onClose, onRename, onDelete }: { x: number; y: number; onClose: () => void; onRename?: () => void; onDelete: () => void }) {
+function RailContextMenu({ x, y, onClose, onRename, onDelete, onRemove }: { x: number; y: number; onClose: () => void; onRename?: () => void; onDelete?: () => void; onRemove?: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -3954,20 +3971,27 @@ function RailContextMenu({ x, y, onClose, onRename, onDelete }: { x: number; y: 
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
-  const left = Math.min(x, window.innerWidth - 176);
+  const left = Math.min(x, window.innerWidth - 220);
   const top = Math.min(y, window.innerHeight - 88);
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
-      <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+      <div role='menu' className='fixed z-[110] min-w-52 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
         {onRename && (
           <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onRename}>
             <Pencil size={14} /> Rename
           </button>
         )}
-        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onDelete}>
-          <Trash2 size={14} /> Delete
-        </button>
+        {onRemove && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onRemove}>
+            <UserMinus size={14} /> Remove from campaign
+          </button>
+        )}
+        {onDelete && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onDelete}>
+            <Trash2 size={14} /> Delete
+          </button>
+        )}
       </div>
     </>,
     document.body
@@ -4474,7 +4498,7 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                       event.stopPropagation();
                       setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY });
                     }}>
-                      <EntityIcon type={combatant.type} />
+                      <EntityIcon type={combatant.type} name={combatant.type === 'CREATURE' ? displayName : undefined} />
                       <span className='min-w-0'>
                         <span className='block truncate font-semibold'>{displayName}</span>
                         {!enemyPlayerRow && <span className={`block text-xs ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}>
@@ -4962,7 +4986,25 @@ function ResizeRail({ onResize }: { onResize: (delta: number) => void }) {
   return <button aria-label='Resize detail panel' className='cursor-col-resize bg-p1-raised hover:bg-p1-accent' onMouseDown={() => setDragging(true)} />;
 }
 
-function EntityIcon({ type }: { type: Combatant['type'] }) {
+function EntityIcon({ type, name }: { type: Combatant['type']; name?: string }) {
+  const art = useQuery({
+    queryKey: ['phase1-creature-picker-art', name],
+    queryFn: () => lookupMonsterArt(name ?? ''),
+    enabled: type === 'CREATURE' && Boolean(name?.trim()),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const src = art.data?.thumbSrc;
+  const [failed, setFailed] = useState(false);
+  if (src && !failed) {
+    return (
+      <img
+        src={src}
+        alt=''
+        className='h-9 w-9 shrink-0 border border-p1-border object-contain bg-p1-inset'
+        onError={() => setFailed(true)}
+      />
+    );
+  }
   return <span className={`grid h-9 w-9 shrink-0 place-items-center border ${type === 'HAZARD' ? 'border-amber-400/50 text-amber-300' : type === 'CREATURE' ? 'border-p1-creature/50 text-p1-creature' : 'border-p1-pc/50 text-p1-pc'}`}>{type === 'HAZARD' ? <TriangleAlert size={16} /> : type === 'CREATURE' ? <Swords size={16} /> : <UserRound size={16} />}</span>;
 }
 function PortraitPreviewModal({
@@ -5165,12 +5207,15 @@ function EncounterListRow({ encounter, onOpen, onChanged }: { encounter: Encount
   );
 }
 
-function CampaignWorkspaceRow({ campaign, canDelete, onOpen, onDeleted }: { campaign: Campaign; canDelete: boolean; onOpen: () => void; onDeleted: () => void }) {
+function CampaignWorkspaceRow({ campaign, canDelete, memberNames, onOpen, onDeleted }: { campaign: Campaign; canDelete: boolean; memberNames: { id: number; name: string; imageUrl: string }[]; onOpen: () => void; onDeleted: () => void }) {
+  const queryClient = useQueryClient();
   const [visible, setVisible] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [leaveMenu, setLeaveMenu] = useState<{ x: number; y: number } | null>(null);
   const [pendingRename, setPendingRename] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(false);
+  const [pendingLeave, setPendingLeave] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const hasKey = Boolean(campaign.join_key);
@@ -5183,11 +5228,32 @@ function CampaignWorkspaceRow({ campaign, canDelete, onOpen, onDeleted }: { camp
   }
 
   function openMenu(event: ReactMouseEvent) {
-    if (!canDelete) return;
     event.preventDefault();
     event.stopPropagation();
     setActionError(null);
-    setMenu({ x: event.clientX, y: event.clientY });
+    if (canDelete) {
+      setMenu({ x: event.clientX, y: event.clientY });
+      return;
+    }
+    setLeaveMenu({ x: event.clientX, y: event.clientY });
+  }
+
+  async function confirmLeave() {
+    if (busy) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      for (const member of memberNames) {
+        await phase1Request('update-character', { id: member.id, campaign_id: null });
+      }
+      setPendingLeave(false);
+      await queryClient.invalidateQueries({ queryKey: ['phase1-characters'] });
+      onDeleted();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not remove characters from the campaign.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function confirmRename(name: string) {
@@ -5235,6 +5301,21 @@ function CampaignWorkspaceRow({ campaign, canDelete, onOpen, onDeleted }: { camp
             <span className={visible ? 'font-mono' : ''}>{visible ? campaign.join_key : 'Copy key'}</span>
           </button>
         )}
+        {memberNames.length > 0 && (
+          <span className='flex items-center gap-1'>
+            {memberNames.map((member) => (
+              member.imageUrl ? (
+                <a key={member.id} href={`/sheet/${member.id}`} title={member.name} className='block h-14 w-14 overflow-hidden border border-p1-border hover:border-p1-accent/60'>
+                  <img src={member.imageUrl} alt='' className='h-full w-full object-cover' />
+                </a>
+              ) : (
+                <a key={member.id} href={`/sheet/${member.id}`} title={member.name} className='grid h-14 w-14 place-items-center border border-p1-border bg-p1-inset text-p1-faint hover:border-p1-accent/60 hover:text-p1-muted'>
+                  <User size={22} />
+                </a>
+              )
+            ))}
+          </span>
+        )}
         <button type='button' className='icon-button' title={`Open ${campaign.name}`} onClick={onOpen}>
           <ChevronRight className='text-p1-faint group-hover:text-p1-accent' size={18} />
         </button>
@@ -5264,6 +5345,17 @@ function CampaignWorkspaceRow({ campaign, canDelete, onOpen, onDeleted }: { camp
           onConfirm={(name) => { void confirmRename(name); }}
         />
       )}
+      {leaveMenu && (
+        <RailContextMenu
+          x={leaveMenu.x}
+          y={leaveMenu.y}
+          onClose={() => setLeaveMenu(null)}
+          onRemove={() => {
+            setLeaveMenu(null);
+            setPendingLeave(true);
+          }}
+        />
+      )}
       {pendingDelete && (
         <ConfirmDialog
           title='Delete campaign'
@@ -5273,6 +5365,19 @@ function CampaignWorkspaceRow({ campaign, canDelete, onOpen, onDeleted }: { camp
             if (!busy) setPendingDelete(false);
           }}
           onConfirm={() => void confirmDelete()}
+        />
+      )}
+      {pendingLeave && (
+        <ConfirmDialog
+          title='Remove from campaign'
+          message={memberNames.length > 0
+            ? `${memberNames.map((member) => member.name).join(', ')} will leave "${campaign.name}". Character sheets stay.`
+            : `Leave "${campaign.name}"? Character sheets stay.`}
+          confirmLabel={busy ? 'Removing…' : 'Remove from campaign'}
+          onCancel={() => {
+            if (!busy) setPendingLeave(false);
+          }}
+          onConfirm={() => void confirmLeave()}
         />
       )}
     </div>

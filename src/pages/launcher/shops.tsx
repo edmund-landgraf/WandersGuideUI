@@ -284,6 +284,7 @@ function ShopsPage() {
   const [markup, setMarkup] = useState(0);
   const [pageStyle, setPageStyle] = useState<ShopPageStyle>('default');
   const [shopName, setShopName] = useState('');
+  const [shopDescription, setShopDescription] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveNote, setSaveNote] = useState('');
   const [edited, setEdited] = useState(false);
@@ -348,6 +349,7 @@ function ShopsPage() {
       setPageStyle(draft.style === 'homebrew-v3' ? 'homebrew-v3' : 'default');
       setStockCount(loaded.length || STOCK_COUNT);
       setShopName(node?.name ?? '');
+      setShopDescription(draft.description ?? '');
       setStock(loaded.map((item) => asShopLine(item)));
       setEdited(false);
       setRemoved(null);
@@ -541,6 +543,15 @@ function ShopsPage() {
                       onChange={(event) => setShopName(event.target.value)}
                     />
                   </label>
+                  <label className='grid min-w-[16rem] flex-1 gap-2 text-sm text-muted-foreground'>
+                    Description
+                    <textarea
+                      className='min-h-[2.5rem] rounded-lg bg-card px-3 py-2 text-foreground ring-1 ring-white/15'
+                      rows={2}
+                      value={shopDescription}
+                      onChange={(event) => setShopDescription(event.target.value)}
+                    />
+                  </label>
                   <button
                     className='rounded-lg bg-card px-4 py-2 text-sm text-foreground ring-1 ring-white/15 disabled:opacity-50'
                     type='button'
@@ -555,7 +566,7 @@ function ShopsPage() {
                         kind: 'entry',
                         name,
                         parent_id: null,
-                        draft: shopDraft(preset, settlement, stock, traits, markup, pageStyle),
+                        draft: shopDraft(preset, settlement, stock, traits, markup, pageStyle, shopDescription),
                       })
                         .then(() => setSaveNote('Saved. Open Saved shops to publish it.'))
                         .catch((cause: unknown) => {
@@ -799,7 +810,7 @@ function ShopDraftView({ id }: { id: string }) {
   if (error) return <p className='p-8 text-sm text-red-300'>{error}</p>;
   if (page === undefined) return <p className='p-8 text-sm text-muted-foreground'>Loading shop…</p>;
   if (page === null) return <p className='p-8 text-sm text-muted-foreground'>This shop is not available.</p>;
-  return <ShopDocument name={page.name} stock={page.draft.stock} homebrew={page.draft.style === 'homebrew-v3'} />;
+  return <ShopDocument name={page.name} stock={page.draft.stock} homebrew={page.draft.style === 'homebrew-v3'} description={page.draft.description} />;
 }
 
 function ShopsApp() {

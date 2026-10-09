@@ -27,6 +27,7 @@ export type ShopDraft = {
   settlement: SettlementId;
   markup: number;
   style?: ShopPageStyle;
+  description?: string;
   stock: ShopStockRow[];
 };
 
@@ -44,12 +45,14 @@ export function shopDraft(
   traits: Trait[],
   markup = 0,
   style: ShopPageStyle = 'default',
+  description = '',
 ): ShopDraft {
   return {
     preset,
     settlement,
     markup,
     style,
+    description: description.trim() || undefined,
     stock: items.map((item) => ({
       id: item.id,
       name: item.name,

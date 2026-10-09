@@ -20,6 +20,7 @@ const manifestForPlugin: Partial<VitePWAOptions> = {
       /^\/pg\//,
       /^\/help(\/|$)/,
       /^\/owlbear\/auth(\/|$)/,
+      /^\/videos(\/|$)/,
     ],
   },
   manifest: {
@@ -90,6 +91,65 @@ export default defineConfig(({ mode }) => ({
     },
   },
   plugins: [
+    {
+      name: 'serve-videos',
+      configureServer(server) {
+        const videosDir = path.resolve(__dirname, 'videos');
+        const types: Record<string, string> = {
+          '.mp4': 'video/mp4',
+          '.webm': 'video/webm',
+          '.mov': 'video/quicktime',
+          '.m4v': 'video/x-m4v',
+        };
+        server.middlewares.use((req, res, next) => {
+          const urlPath = decodeURIComponent(req.url?.split('?')[0] ?? '');
+          if (urlPath !== '/videos' && !urlPath.startsWith('/videos/')) return next();
+          const relative = urlPath.slice('/videos/'.length);
+          const safe =
+            relative.length > 0 &&
+            !relative.endsWith('/') &&
+            !relative.includes('/') &&
+            !relative.includes('\\') &&
+            !relative.includes('..');
+          const file = safe ? path.resolve(videosDir, relative) : '';
+          if (!safe || !file.startsWith(videosDir + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+            res.statusCode = 404;
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+            res.end('Not Found');
+            return;
+          }
+          const stat = fs.statSync(file);
+          const ext = path.extname(file).toLowerCase();
+          res.setHeader('Content-Type', types[ext] ?? 'application/octet-stream');
+          res.setHeader('Accept-Ranges', 'bytes');
+          const range = req.headers.range;
+          if (range) {
+            const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+            if (!match) {
+              res.statusCode = 416;
+              res.setHeader('Content-Range', `bytes */${stat.size}`);
+              res.end();
+              return;
+            }
+            const start = match[1] ? Number(match[1]) : 0;
+            const end = match[2] ? Number(match[2]) : stat.size - 1;
+            if (start > end || end >= stat.size) {
+              res.statusCode = 416;
+              res.setHeader('Content-Range', `bytes */${stat.size}`);
+              res.end();
+              return;
+            }
+            res.statusCode = 206;
+            res.setHeader('Content-Range', `bytes ${start}-${end}/${stat.size}`);
+            res.setHeader('Content-Length', end - start + 1);
+            fs.createReadStream(file, { start, end }).pipe(res);
+            return;
+          }
+          res.setHeader('Content-Length', stat.size);
+          fs.createReadStream(file).pipe(res);
+        });
+      },
+    },
     {
       name: 'serve-help-pages',
       configureServer(server) {
