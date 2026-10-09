@@ -1930,7 +1930,7 @@ function useMonsterArt(combatant: PopulatedCombatant) {
   const fallback = combatant.data.details?.image_url;
   return useQuery<Phase1MonsterArt | null>({
     queryKey: ['phase1-monster-art', combatant.type, combatant._id, name, fallback],
-    queryFn: () => combatant.type === 'CREATURE' ? lookupMonsterArt(name, fallback) : Promise.resolve(fallback ? { monsterId: null, fullSrc: fallback, thumbSrc: fallback } : null),
+    queryFn: () => combatant.type === 'CREATURE' ? lookupMonsterArt(name, fallback, 'full') : Promise.resolve(fallback ? { monsterId: null, fullSrc: fallback, thumbSrc: fallback } : null),
     staleTime: Number.POSITIVE_INFINITY,
   });
 }

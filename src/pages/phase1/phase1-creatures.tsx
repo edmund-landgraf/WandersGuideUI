@@ -1,13 +1,13 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchContentAll, getDefaultSources, getDefaultSourcesKey } from '@content/content-store';
 import { fetchHazards } from '@content/hazards';
 import type { Creature, Hazard, Trait } from '@schemas/content';
 import { findCreatureTraits } from '@utils/creature';
 import { getEntityLevel } from '@utils/entity-utils';
 import { ChevronDown, Swords } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { hydrateCreatureForCombat } from './phase1-entity';
-import { lookupMonsterArt } from './phase1-monster-image';
+import { lookupMonsterArt, readArtPassword, unlockMonsterArt } from './phase1-monster-image';
 import { ProseMarkdown } from './phase1-markdown';
 import { Phase1PickerModal } from './phase1-picker-modal';
 
@@ -101,7 +101,7 @@ export function SelectCompanionModal({
           className='flex w-full items-center gap-3 border-b border-p1-border px-3 py-2.5 text-left hover:bg-p1-hover'
           onClick={() => onSelect(creature)}
         >
-          <CreatureThumb src={creature.details.image_url} name={creature.name} />
+          <CreatureThumb name={creature.name} />
           <span className='min-w-0 flex-1'>
             <span className='block truncate text-sm text-p1-text'>{creature.name}</span>
             <span className='block text-[11px] uppercase tracking-wide text-p1-faint'>Level {getEntityLevel(creature)}</span>
@@ -195,7 +195,7 @@ export function SelectCreatureModal({
           }`}
           onClick={() => setSelectedId(creature.id)}
         >
-          <CreatureThumb src={creature.details.image_url} name={creature.name} />
+          <CreatureThumb name={creature.name} />
           <span className='min-w-0 flex-1'>
             <span className='block truncate text-sm text-p1-text'>{creature.name}</span>
             <span className='block text-[11px] uppercase tracking-wide text-p1-faint'>
@@ -358,7 +358,7 @@ function CreaturePreview({
   return (
     <div className='flex h-full min-h-0 flex-col'>
       <div className='min-h-0 flex-1 overflow-y-auto px-5 py-4'>
-        <CreatureArt name={creature.name} fallback={creature.details.image_url} />
+        <CreatureArt name={creature.name} />
         <div className='mt-3 flex flex-wrap items-end gap-x-3 gap-y-1'>
           <h3 className='text-xl font-semibold leading-tight'>{creature.name}</h3>
           <span className='text-sm text-p1-muted'>Level {getEntityLevel(creature)}</span>
@@ -388,13 +388,16 @@ function CreaturePreview({
   );
 }
 
-function CreatureArt({ name, fallback }: { name: string; fallback?: string }) {
+function CreatureArt({ name }: { name: string }) {
   const art = useQuery({
-    queryKey: ['phase1-creature-picker-art', name, fallback],
-    queryFn: () => lookupMonsterArt(name, fallback),
+    queryKey: ['phase1-creature-picker-art', name, 'full'],
+    queryFn: () => lookupMonsterArt(name, undefined, 'full'),
     staleTime: Number.POSITIVE_INFINITY,
   });
-  const src = art.data?.thumbSrc || fallback;
+  const src = art.data?.fullSrc;
+  if (!src && !readArtPassword()) {
+    return <ArtPasswordForm />;
+  }
   if (!src) {
     return (
       <div className='grid h-40 w-full place-items-center border border-p1-border bg-p1-inset text-p1-faint'>
@@ -405,7 +408,56 @@ function CreatureArt({ name, fallback }: { name: string; fallback?: string }) {
   return <img src={src} alt='' className='h-40 w-full border border-p1-border object-contain bg-p1-inset' />;
 }
 
-function CreatureThumb({ src, name }: { src?: string; name: string }) {
+function ArtPasswordForm() {
+  const queryClient = useQueryClient();
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [pending, setPending] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setPending(true);
+    setError('');
+    const unlocked = await unlockMonsterArt(password);
+    setPending(false);
+    if (!unlocked) {
+      setError('That password did not unlock art.');
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ['phase1-creature-picker-art'] });
+    await queryClient.invalidateQueries({ queryKey: ['phase1-monster-art'] });
+  }
+
+  return (
+    <form onSubmit={submit} className='grid gap-2 border border-p1-border bg-p1-inset p-3'>
+      <p className='text-xs text-p1-muted'>Creature art is locked. Enter the art password to show it on this browser.</p>
+      <input
+        type='password'
+        value={password}
+        autoComplete='current-password'
+        onChange={(event) => setPassword(event.target.value)}
+        className='h-9 border border-p1-border bg-p1-surface px-2 text-sm text-p1-text'
+        aria-label='Art password'
+      />
+      {error && <p className='text-xs text-red-300'>{error}</p>}
+      <button
+        type='submit'
+        disabled={pending || !password.trim()}
+        className='h-9 bg-p1-action text-sm font-bold italic text-p1-action-ink hover:bg-p1-action-hover disabled:opacity-50'
+      >
+        Unlock art
+      </button>
+    </form>
+  );
+}
+
+function CreatureThumb({ name }: { name: string }) {
+  const art = useQuery({
+    queryKey: ['phase1-creature-picker-art', name],
+    queryFn: () => lookupMonsterArt(name),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const src = art.data?.thumbSrc;
   const [failed, setFailed] = useState(false);
   if (!src || failed) {
     return (

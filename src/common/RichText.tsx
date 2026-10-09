@@ -1,6 +1,6 @@
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Anchor, Blockquote, Code, Divider, List, Table, Text, TextProps, Title, useMantineTheme } from '@mantine/core';
+import { Anchor, Blockquote, Box, Button, Code, Divider, List, Table, Text, TextProps, Title, useMantineTheme } from '@mantine/core';
 import { getContentDataFromHref } from './rich_text_input/ContentLinkExtension';
 import { drawerState } from '@atoms/navAtoms';
 import { convertContentLink } from '@drawers/drawer-utils';
@@ -14,6 +14,7 @@ import { isString } from 'lodash-es';
 import { ActionGlyph } from './Actions';
 import { resolveActionGlyph } from '@utils/actions';
 import { autoLinkConditions, toStandard2eProse, toWgMarkdownLinks } from '@utils/foundry-text';
+import { copyMarkdownAndOpenHomebreweryV3, sourceHasHomebreweryTable, toHomebreweryV3 } from '@utils/homebrewery-v3';
 
 interface RichTextProps extends TextProps {
   children: any;
@@ -41,6 +42,9 @@ export default function RichText(props: RichTextProps) {
     convertedChildren = compileExpressions(props.store ?? 'CHARACTER', convertedChildren, true);
   }
 
+  const exportSource = convertedChildren ?? '';
+  const showHomebreweryCopy = sourceHasHomebreweryTable(exportSource);
+
   // Action-cost tags become `action_symbol_N` inside toStandard2eProse.
 
   // Add spaces around em dashes between letters
@@ -59,6 +63,19 @@ export default function RichText(props: RichTextProps) {
   convertedChildren = convertedChildren?.replace(/⬆️/g, '⇧');
 
   return (
+    <Box>
+      {showHomebreweryCopy && (
+        <Button
+          size='compact-xs'
+          variant='subtle'
+          mb={6}
+          onClick={() => {
+            void copyMarkdownAndOpenHomebreweryV3(toHomebreweryV3(exportSource));
+          }}
+        >
+          Copy Homebrewery
+        </Button>
+      )}
     <Markdown
       children={convertedChildren}
       remarkPlugins={[remarkGfm]}
@@ -306,6 +323,7 @@ export default function RichText(props: RichTextProps) {
         },
       }}
     />
+    </Box>
   );
 }
 

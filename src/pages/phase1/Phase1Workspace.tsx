@@ -2931,6 +2931,7 @@ function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, v
       <Link to='/phase1' className={navClass(section === 'campaigns')}>Campaigns</Link>
       <Link to='/phase1/characters' className={navClass(section === 'characters')}>Characters</Link>
       <Link to='/phase1/encounters' className={navClass(section === 'encounters')}>Encounters</Link>
+      <a href='/shops' className={navClass(false)}>Shops</a>
       {label && <><span className='text-p1-faint'>/</span><span className='max-w-40 truncate text-sm text-p1-muted'>{label}</span></>}
       <div className='flex w-full min-w-0 flex-wrap items-center gap-2 md:ml-auto md:w-auto'>
         <span className='hidden text-[11px] uppercase tracking-[0.14em] text-p1-faint sm:inline' title='patreon.tier from get-user'>
