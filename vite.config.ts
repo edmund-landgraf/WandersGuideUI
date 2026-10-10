@@ -181,6 +181,19 @@ export default defineConfig(({ mode }) => ({
     // in a single pass; 'safari15' preserves the original iOS 15 support intent.
     target: ['es2020', 'safari15'],
   },
+  server: {
+    proxy: {
+      // Same-origin stand-in for local Kong. Firefox rejects Kong's
+      // Allow-Origin * + Allow-Credentials response; Chrome does not.
+      // Docker publishes Kong on IPv6 localhost; 127.0.0.1 accepts the TCP
+      // connection and then sends an empty reply.
+      '/auth': { target: 'http://[::1]:8000', changeOrigin: true },
+      '/rest': { target: 'http://[::1]:8000', changeOrigin: true },
+      '/storage': { target: 'http://[::1]:8000', changeOrigin: true },
+      '/functions': { target: 'http://[::1]:8000', changeOrigin: true },
+      '/realtime': { target: 'http://[::1]:8000', changeOrigin: true, ws: true },
+    },
+  },
   test: {
     environment: 'jsdom',
     include: ['src/**/*.test.ts'],

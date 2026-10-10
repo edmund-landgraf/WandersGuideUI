@@ -1,3 +1,4 @@
+import { browserSupabaseUrl } from '../../supabase-client';
 import { PATREON_URL } from '@constants/urls';
 import { ArrowDownCircle, ArrowRight, ArrowUpCircle } from 'lucide-react';
 import { LauncherHeader } from './launcher-header';
@@ -18,7 +19,7 @@ const WGUI_FUNCTIONS = [
 type Probe = 'pending' | 'up' | 'down';
 
 async function probeFunction(name: string): Promise<Probe> {
-  const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const base = browserSupabaseUrl(import.meta.env.VITE_SUPABASE_URL, window.location.origin);
   const key = import.meta.env.VITE_SUPABASE_KEY as string | undefined;
   if (!base || !key) return 'down';
   try {

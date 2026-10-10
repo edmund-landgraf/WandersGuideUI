@@ -139,7 +139,7 @@ export default function Layout(props: { children: React.ReactNode }) {
                 {!session ? (
                   <LoginButton
                     onClick={() => {
-                      navigate('/characters');
+                      navigate('/login');
                     }}
                   />
                 ) : (

@@ -53,7 +53,7 @@ Revert accidental WGUI diffs (`Layout.tsx`, etc.) unless they are real WGUI work
 
 ## Current contents (machine-local)
 
-As of the Firefox header login fix: `local/wanderers-guide/frontend/src/nav/LoginButton.tsx` is a drop-in for upstream. Same `onClick` as Layout; the login icon is an SVG, not a nested Mantine `ActionIcon` `<button>` (Firefox often ignores the outer click).
+The Firefox header login failure is the glass blur, not only a nested button. Full write-up: [firefox-header-signin.md](./firefox-header-signin.md). The header must not use `backdrop-filter`. The login icon is still an SVG, not a nested Mantine `ActionIcon` `<button>`.
 
 ## Experimental header link
 
@@ -62,4 +62,4 @@ The “Experimental” link beside Legacy Site is shipped by the update scripts,
 - Linux: `wanderers-guide-update-scripts/docker/experimental-nav.compose.yml`
 - Windows: `AdventureMakerByAct/scripts/windows/docker/experimental-nav.compose.yml`
 
-A non-content update copies that file to `docker-compose.override.yml` in the Wanderer's Guide checkout when the override is missing or already this inject, and passes it as an extra compose file when recreating `frontend`. The script chooses the URL in the browser: `http://localhost:5194` when the page host is localhost, and `https://wgui.wandersguide.site` otherwise (amba included). Do not `skip-worktree` `frontend/src/nav/Layout.tsx` for this link. Do not commit the override into Quzzar’s repo.
+A non-content update copies that file to `docker-compose.override.yml` in the Wanderer's Guide checkout when the override is missing or already this inject, and passes it as an extra compose file when recreating `frontend`. The script chooses the URL in the browser: `http://localhost:5194` when the page host is localhost, and `https://wgui.wandersguide.site` otherwise (amba included). The injected link is a sibling of the Legacy Site control. Inserting it on the inner text node nests an `<a>` inside that control; Firefox then drops clicks on Sign in. The observer watches element changes only, so a text update does not rewrite the header under the pointer. Do not `skip-worktree` `frontend/src/nav/Layout.tsx` for this link. Do not commit the override into Quzzar’s repo.

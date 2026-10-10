@@ -11,8 +11,34 @@ import { createClient } from '@supabase/supabase-js';
  * inactivity was noticed by one client while the rest of the app kept acting
  * logged in with dead credentials.
  */
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const configuredSupabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_KEY;
+
+/**
+ * Local GoTrue/Kong answers `Access-Control-Allow-Origin: *` together with
+ * `Access-Control-Allow-Credentials: true`. Firefox rejects that pair, so every
+ * call from :5194 to :8000 fails. In dev, talk to the Vite origin and let the
+ * dev server proxy those paths to Kong.
+ */
+export function browserSupabaseUrl(configured: string | undefined, pageOrigin?: string) {
+  if (!configured) return configured;
+  if (!import.meta.env.DEV || !pageOrigin) return configured;
+  try {
+    const api = new URL(configured);
+    const localApi = api.hostname === 'localhost' || api.hostname === '127.0.0.1';
+    if (!localApi || api.port !== '8000') return configured;
+    const page = new URL(pageOrigin);
+    if (page.origin === api.origin) return configured;
+    return page.origin;
+  } catch {
+    return configured;
+  }
+}
+
+const supabaseUrl = browserSupabaseUrl(
+  configuredSupabaseUrl,
+  typeof window === 'undefined' ? undefined : window.location.origin
+);
 
 function isUnsetEnv(value: string | undefined) {
   return !value || /[<>]|API_URL|ANON_KEY/.test(value);
