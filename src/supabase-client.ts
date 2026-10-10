@@ -44,16 +44,13 @@ function isUnsetEnv(value: string | undefined) {
   return !value || /[<>]|API_URL|ANON_KEY/.test(value);
 }
 
-if (isUnsetEnv(supabaseUrl) || isUnsetEnv(supabaseKey)) {
+if (!supabaseUrl || !supabaseKey || isUnsetEnv(supabaseUrl) || isUnsetEnv(supabaseKey)) {
   throw new Error(
     'Missing VITE_SUPABASE_URL or VITE_SUPABASE_KEY. Copy .env.local.template to .env.local, replace the placeholders, and restart the Vite dev server.'
   );
 }
 
-const resolvedSupabaseUrl: string = supabaseUrl;
-const resolvedSupabaseKey: string = supabaseKey;
-
-export const supabase = createClient(resolvedSupabaseUrl, resolvedSupabaseKey, {
+export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
     // Chrome incognito can leave navigator.locks stuck. auth-js then treats a live
     // session as signed-out inside later requests, and find-campaign returns [].

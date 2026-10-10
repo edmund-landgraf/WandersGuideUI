@@ -2,8 +2,20 @@ import { describe, expect, it } from 'vitest';
 import type { Item, Trait } from '@schemas/content';
 import { activeShopRarities, formatShopPrice, raritiesForSettlement, STOCK_COUNT, stockShop } from './shops-generate';
 
-function item(partial: Partial<Item> & Pick<Item, 'id' | 'name' | 'group' | 'level' | 'rarity'>): Item {
-  return { traits: [], meta_data: {}, price: { gp: 1 }, bulk: null, ...partial } as Item;
+function item(
+  partial: Omit<Partial<Item>, 'meta_data'> &
+    Pick<Item, 'id' | 'name' | 'group' | 'level' | 'rarity'> & {
+      meta_data?: Partial<NonNullable<Item['meta_data']>>;
+    },
+): Item {
+  const { meta_data, ...rest } = partial;
+  return {
+    traits: [],
+    price: { gp: 1 },
+    bulk: null,
+    meta_data: { bulk: {}, ...meta_data },
+    ...rest,
+  } as Item;
 }
 
 const traits = [
