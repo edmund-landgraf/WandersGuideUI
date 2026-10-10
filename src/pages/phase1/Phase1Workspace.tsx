@@ -11,6 +11,7 @@ import { confirmHealth } from '@pages/character_sheet/entity-handler';
 import { phase1Request, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
 import { isEnemyCreature, playerAllyRoundLog, playerEnemyLabel, playerVisibleCombatants } from './phase1-player-combat';
 import { loadEntityAbilities, type Phase1Ability } from './phase1-abilities';
+import { readStoredDefenses } from './phase1-creature-defenses';
 import { calculateEntityStatus, type Phase1CreatureStatus } from './phase1-stats';
 import type { Phase1EntityCombatant } from './phase1-entity';
 import { StatDetailModal, type Phase1StatKey, type Phase1StatTarget } from './phase1-stat-modal';
@@ -78,7 +79,7 @@ import { Phase1RandomCharacterModal } from './phase1-random-character-modal';
 import { Phase1PortraitModal } from './phase1-portrait-modal';
 import { calculateDifficulty, formatLevelDelta, shouldDisplayEncounterDifficulty, type EncounterDifficulty } from '@utils/encounter-difficulty';
 import { createHazardCombatant, getHazardCurrentHp, getHazardInitiativeModifier, isHazardCombatant, updateHazardHp } from '@utils/encounter-hazard';
-import { InspectorContent, HazardInspector, DETAIL_TABS, fallbackStatus, hasFullEntityDetails, normalizeDetailTab, signed, statsFor, type DetailTab, type Phase1SpellActions } from './phase1-entity-panels';
+import { InspectorContent, HazardInspector, DETAIL_TABS, defensesForRow, fallbackStatus, hasFullEntityDetails, normalizeDetailTab, signed, statsFor, type DetailTab, type Phase1SpellActions } from './phase1-entity-panels';
 type CampaignNotePage = NonNullable<Campaign['notes']>['pages'][number];
 type IndexedNotePage = { page: CampaignNotePage; index: number };
 
@@ -1829,6 +1830,14 @@ export function Phase1CampaignPage() {
       else navigate(`/phase1/campaign/${campaignId}`);
     }
   }
+  async function addAllPcsToAllEncounters() {
+    const current = queryClient.getQueryData<Encounter[]>(encountersKey) ?? visible;
+    const pcs = players.data ?? [];
+    for (const encounter of current) {
+      const next = encounterWithAllPlayers(encounter, pcs);
+      if (next) await updateEncounter.mutateAsync(next);
+    }
+  }
   if (!viewingNotes && !viewingSettings && !encounterId && visible[0]) return <Navigate replace to={`/phase1/campaign/${campaignId}/encounters/${visible[0].id}`} />;
   if (viewingSettings && !isGm) return <PageError error={new Error('Campaign settings are only available to the game master.')} />;
   return (
@@ -1844,6 +1853,7 @@ export function Phase1CampaignPage() {
       isGm={isGm}
       sessionUserId={session.user.id}
       onUpdateEncounter={(encounter) => updateEncounter.mutate(encounter)}
+      onAddAllPcsToEncounters={addAllPcsToAllEncounters}
       onPatchEncounterDice={(patch) => patchEncounterDice.mutate(patch)}
       onUpdateCharacter={(id, fields) => updateCharacter.mutate({ id, ...fields })}
       onUpdateCampaign={(next) => updateCampaign.mutate(next)}
@@ -1863,8 +1873,8 @@ export function Phase1CampaignPage() {
 }
 
 
-function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, viewingSettings, isGm, sessionUserId, onUpdateEncounter, onPatchEncounterDice, onUpdateCharacter, onUpdateCampaign, onResetJoinKey, onKickPlayer, onDeleteCampaign, onDeleteNote, onDeleteEncounter, onCreateNote, onCreateEncounter, rosterSaving, campaignSaving, rosterError, campaignError }: {
-  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onPatchEncounterDice?: (patch: { encounterId: number; campaignId: number; dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] }) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; campaignError: Error | null;
+function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, viewingSettings, isGm, sessionUserId, onUpdateEncounter, onAddAllPcsToEncounters, onPatchEncounterDice, onUpdateCharacter, onUpdateCampaign, onResetJoinKey, onKickPlayer, onDeleteCampaign, onDeleteNote, onDeleteEncounter, onCreateNote, onCreateEncounter, rosterSaving, campaignSaving, rosterError, campaignError }: {
+  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onPatchEncounterDice?: (patch: { encounterId: number; campaignId: number; dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] }) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; campaignError: Error | null;
 }) {
   const standalone = campaign == null;
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1916,6 +1926,31 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   }
   const selected = combatants.find((item) => item._id === selectedId) ?? null;
   const statuses = useCombatantStatuses(selectedEncounter?.id ?? null, combatants);
+  const stampedDefensesKey = useRef('');
+  useEffect(() => {
+    if (!isGm || rosterSaving || !statuses.data) return;
+    const encounter = selectedEncounterRef.current;
+    if (!encounter) return;
+    let changed = false;
+    const list = encounter.combatants.list.map((combatant) => {
+      if (combatant.type !== 'CREATURE') return combatant;
+      const source = combatant.creature ?? combatant.data;
+      const status = defensesForRow(statuses.data?.[combatant._id], source);
+      if (!status || !source || typeof source.meta_data?.calculated_stats?.ac === 'number') return combatant;
+      if (status.ac <= 10 && readStoredDefenses(source).ac == null) return combatant;
+      changed = true;
+      return {
+        ...combatant,
+        creature: combatant.creature ? stampCreatureDefenses(combatant.creature, status) : combatant.creature,
+        data: combatant.data ? stampCreatureDefenses(combatant.data, status) : stampCreatureDefenses(source, status),
+      };
+    });
+    if (!changed) return;
+    const key = `${encounter.id}:${list.map((combatant) => combatant._id).join(',')}`;
+    if (stampedDefensesKey.current === key) return;
+    stampedDefensesKey.current = key;
+    persistRoster(list);
+  }, [statuses.data, isGm, rosterSaving]);
   const encounterNote = notePages.find((item) => encounterNamesMatch(item.page.name, selectedEncounter?.name));
   const noteEncounter = encounters.find((item) => encounterNamesMatch(item.name, selectedNote?.page.name));
   const activeCharacterIds = new Set((selectedEncounter?.combatants.list ?? []).filter((combatant) => combatant.type === 'CHARACTER').map((combatant) => combatant.character));
@@ -2671,7 +2706,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   }, [railOpen]);
 
   const rail = (
-    <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddPlayer={addPlayer} onAddAllPlayers={addAllPlayers} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onDeleteNote={onDeleteNote} onDeleteEncounter={onDeleteEncounter} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} onRenameNote={renameNote} onRenameEncounter={renameEncounter} />
+    <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} campaignPlayers={players} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddPlayer={addPlayer} onAddAllPlayers={addAllPlayers} onAddAllPcsToEncounters={campaign && isGm ? onAddAllPcsToEncounters : undefined} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onDeleteNote={onDeleteNote} onDeleteEncounter={onDeleteEncounter} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} onRenameNote={renameNote} onRenameEncounter={renameEncounter} />
   );
   const inspector = (
     <Inspector fill={narrow} combatant={selected && (isGm || !isEnemyCreature(selected)) ? selected : null} width={detailWidth} activeTab={normalizeDetailTab(activeTab)} onTab={setActiveTab} hasMatchingCampaignNote={Boolean(encounterNote)} status={selected ? statuses.data?.[selected._id] : undefined} statusLoading={statuses.isLoading} canManageSpells={canManageSpells} spellActions={spellActions} onChangeConditions={canManageSpells && selected?.type !== 'HAZARD' ? persistConditions : undefined} onSaveGmNotes={isGm && selected?.type === 'CREATURE' ? persistGmNotes : undefined} onPersistHpCurrent={selected && canManageSpells && selected.data ? (raw, note) => persistHpCurrent(selected, raw, note, statuses.data?.[selected._id]?.maxHp ?? statsFor(selected.data).maxHp) : undefined} onPersistTempHp={selected && canManageSpells && selected.data ? (raw, note) => persistTempHp(selected, raw, note) : undefined} initiativeLog={selectedEncounter?.meta_data.initiative_log ?? []} canEditRoundNotes={isGm && !rosterSaving} onUpdateRoundNote={updateRoundNote} onLogAction={selected && canManageSpells && selected.type !== 'HAZARD' ? persistLogAction : undefined} onDeleteLogEntry={selected && canManageSpells && selected.type !== 'HAZARD' ? persistDeleteLogEntry : undefined} />
@@ -2904,6 +2939,29 @@ function nextCreatureCloneName(source: Combatant, roster: Combatant[]): string {
 
 type CombatantStatusMap = Record<string, Phase1CreatureStatus | null>;
 
+function stampCreatureDefenses<T extends LivingEntity>(entity: T, status: Phase1CreatureStatus): T {
+  const stats = entity.meta_data?.calculated_stats;
+  const prof = (total: number, current?: { total: number }) => ({ ...current, total });
+  return {
+    ...entity,
+    meta_data: {
+      ...entity.meta_data,
+      calculated_stats: {
+        ...stats,
+        hp_max: status.maxHp > 0 ? status.maxHp : stats?.hp_max,
+        ac: status.ac,
+        profs: {
+          ...stats?.profs,
+          SAVE_FORT: prof(status.fortitude, stats?.profs?.SAVE_FORT),
+          SAVE_REFLEX: prof(status.reflex, stats?.profs?.SAVE_REFLEX),
+          SAVE_WILL: prof(status.will, stats?.profs?.SAVE_WILL),
+          PERCEPTION: prof(status.perception, stats?.profs?.PERCEPTION),
+        },
+      },
+    },
+  };
+}
+
 function useCombatantStatuses(encounterId: number | null, combatants: PopulatedCombatant[]) {
   const signature = combatants.map((combatant) => (
     isHazardCombatant(combatant)
@@ -2920,7 +2978,8 @@ function useCombatantStatuses(encounterId: number | null, combatants: PopulatedC
         try {
           result[combatant._id] = await calculateEntityStatus(combatant as Phase1EntityCombatant);
         } catch {
-          result[combatant._id] = null;
+          const stored = statsFor(combatant.data);
+          result[combatant._id] = stored.defensesKnown ? fallbackStatus(combatant.data) : null;
         }
       }
       return result;
@@ -2963,8 +3022,8 @@ function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, v
   );
 }
 
-function CampaignRail({ campaign, encounters, players, outCombatants, selectedEncounter, selectedId, notePages, selectedNoteIndex, viewingSettings, isGm, rosterSaving, onRemovePlayer, onAddPlayer, onAddAllPlayers, onSelectCombatant, onMarkOut, onRequestRemoveFromCampaign, onDeleteNote, onDeleteEncounter, onCreateNote, onCreateEncounter, onRenameNote, onRenameEncounter }: {
-  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; outCombatants: PopulatedCombatant[]; selectedEncounter: Encounter | null; selectedId: string | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; rosterSaving: boolean; onRemovePlayer: (combatantId: string) => void; onAddPlayer: (characterId: number) => void; onAddAllPlayers: () => void; onSelectCombatant: (id: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onRequestRemoveFromCampaign?: (characterId: number, name: string) => void; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; onRenameNote: (index: number, name: string) => void; onRenameEncounter: (id: number, name: string) => void;
+function CampaignRail({ campaign, encounters, players, campaignPlayers, outCombatants, selectedEncounter, selectedId, notePages, selectedNoteIndex, viewingSettings, isGm, rosterSaving, onRemovePlayer, onAddPlayer, onAddAllPlayers, onAddAllPcsToEncounters, onSelectCombatant, onMarkOut, onRequestRemoveFromCampaign, onDeleteNote, onDeleteEncounter, onCreateNote, onCreateEncounter, onRenameNote, onRenameEncounter }: {
+  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; campaignPlayers: Character[]; outCombatants: PopulatedCombatant[]; selectedEncounter: Encounter | null; selectedId: string | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; rosterSaving: boolean; onRemovePlayer: (combatantId: string) => void; onAddPlayer: (characterId: number) => void; onAddAllPlayers: () => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onSelectCombatant: (id: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onRequestRemoveFromCampaign?: (characterId: number, name: string) => void; onDeleteNote: (index: number) => void; onDeleteEncounter: (id: number) => void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; onRenameNote: (index: number, name: string) => void; onRenameEncounter: (id: number, name: string) => void;
 }) {
   const standalone = campaign == null;
   const [benchActive, setBenchActive] = useState(false);
@@ -2978,6 +3037,7 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
   const [outMenu, setOutMenu] = useState<{ id: string; x: number; y: number; characterId?: number; name?: string } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<RailContextTarget | null>(null);
   const [pendingRename, setPendingRename] = useState<RailContextTarget | null>(null);
+  const [pendingAddAllPcs, setPendingAddAllPcs] = useState(false);
   const canManageRoster = isGm && !rosterSaving && Boolean(selectedEncounter);
 
   function openSectionMenu(event: ReactMouseEvent, kind: 'note' | 'encounter') {
@@ -3185,6 +3245,7 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
         <SectionContextMenu
           x={sectionMenu.x}
           y={sectionMenu.y}
+          addAllPcsDisabled={rosterSaving || campaignPlayers.length === 0 || encounters.length === 0}
           onClose={() => setSectionMenu(null)}
           onNew={() => {
             const kind = sectionMenu.kind;
@@ -3193,6 +3254,10 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
             else setEncountersOpen(true);
             setCreateKind(kind);
           }}
+          onAddAllPcs={sectionMenu.kind === 'encounter' && onAddAllPcsToEncounters ? () => {
+            setSectionMenu(null);
+            setPendingAddAllPcs(true);
+          } : undefined}
         />
       )}
       {createKind && (
@@ -3278,6 +3343,18 @@ function CampaignRail({ campaign, encounters, players, outCombatants, selectedEn
             if (pendingDelete.kind === 'note') onDeleteNote(pendingDelete.id);
             else onDeleteEncounter(pendingDelete.id);
             setPendingDelete(null);
+          }}
+        />
+      )}
+      {pendingAddAllPcs && (
+        <ConfirmDialog
+          title='Add all PCs'
+          message={`Add all ${campaignPlayers.length} PCs to all ${encounters.length} encounters? Anyone already in an encounter stays as they are.`}
+          confirmLabel='Add'
+          onCancel={() => setPendingAddAllPcs(false)}
+          onConfirm={() => {
+            setPendingAddAllPcs(false);
+            void onAddAllPcsToEncounters?.();
           }}
         />
       )}
@@ -3694,7 +3771,7 @@ function BenchContextMenu({ x, y, showAdd, addAllDisabled, showRemoveFromCampaig
   );
 }
 
-function SectionContextMenu({ x, y, onClose, onNew }: { x: number; y: number; onClose: () => void; onNew: () => void }) {
+function SectionContextMenu({ x, y, addAllPcsDisabled, onClose, onNew, onAddAllPcs }: { x: number; y: number; addAllPcsDisabled?: boolean; onClose: () => void; onNew: () => void; onAddAllPcs?: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -3702,15 +3779,20 @@ function SectionContextMenu({ x, y, onClose, onNew }: { x: number; y: number; on
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
-  const left = Math.min(x, window.innerWidth - 176);
-  const top = Math.min(y, window.innerHeight - 56);
+  const left = Math.min(x, window.innerWidth - 280);
+  const top = Math.min(y, window.innerHeight - (onAddAllPcs ? 96 : 56));
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
-      <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+      <div role='menu' className='fixed z-[110] min-w-64 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onNew}>
           <Plus size={14} /> New
         </button>
+        {onAddAllPcs && (
+          <button type='button' role='menuitem' disabled={addAllPcsDisabled} className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint disabled:hover:bg-transparent' onClick={onAddAllPcs}>
+            <UsersRound size={14} /> Add all PCs to all encounters
+          </button>
+        )}
       </div>
     </>,
     document.body
@@ -4452,8 +4534,8 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
             const detailsVisible = combatant.access?.details_revealed !== false;
             const hazard = isHazardCombatant(combatant);
             const calculable = detailsVisible && hasFullEntityDetails(combatant);
-            const calculated = statuses?.[combatant._id];
-            const stats = calculated ?? (!calculable && combatant.data ? fallbackStatus(combatant.data) : null);
+            const stored = combatant.data ? statsFor(combatant.data) : null;
+            const stats = defensesForRow(statuses?.[combatant._id], combatant.data) ?? (!calculable && combatant.data ? fallbackStatus(combatant.data) : null);
             const draggable = canManageRoster;
             const result = dice?.results[combatant._id];
             const outcomeTone = dice ? outcomeRowClass(result?.outcome) : '';
@@ -4498,7 +4580,7 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                       event.stopPropagation();
                       setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY });
                     }}>
-                      <EntityIcon type={combatant.type} name={combatant.type === 'CREATURE' ? displayName : undefined} />
+                      <EntityIcon type={combatant.type} name={combatant.type === 'CREATURE' ? displayName : undefined} imageUrl={combatant.type === 'CHARACTER' ? combatant.data?.details?.image_url : undefined} />
                       <span className='min-w-0'>
                         <span className='block truncate font-semibold'>{displayName}</span>
                         {!enemyPlayerRow && <span className={`block text-xs ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}>
@@ -4582,7 +4664,7 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                   ) : (
                     <GridHpCell
                       combatant={combatant}
-                      maxHp={stats?.maxHp ?? null}
+                      maxHp={stats?.maxHp ?? (stored?.maxHp && stored.maxHp > 0 ? stored.maxHp : null)}
                       calculating={calculating}
                       canEdit={canManageCombatant(combatant)}
                       onEdit={(rect) => {
@@ -4986,21 +5068,24 @@ function ResizeRail({ onResize }: { onResize: (delta: number) => void }) {
   return <button aria-label='Resize detail panel' className='cursor-col-resize bg-p1-raised hover:bg-p1-accent' onMouseDown={() => setDragging(true)} />;
 }
 
-function EntityIcon({ type, name }: { type: Combatant['type']; name?: string }) {
+function EntityIcon({ type, name, imageUrl }: { type: Combatant['type']; name?: string; imageUrl?: string }) {
   const art = useQuery({
     queryKey: ['phase1-creature-picker-art', name],
     queryFn: () => lookupMonsterArt(name ?? ''),
     enabled: type === 'CREATURE' && Boolean(name?.trim()),
     staleTime: Number.POSITIVE_INFINITY,
   });
-  const src = art.data?.thumbSrc;
+  const portrait = type === 'CHARACTER' ? imageUrl?.trim() : '';
+  const src = type === 'CREATURE' ? art.data?.thumbSrc : portrait && !portrait.startsWith('icon|||') ? portrait : undefined;
   const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [src]);
   if (src && !failed) {
     return (
       <img
+        key={src}
         src={src}
         alt=''
-        className='h-9 w-9 shrink-0 border border-p1-border object-contain bg-p1-inset'
+        className={`h-9 w-9 shrink-0 border border-p1-border bg-p1-inset ${type === 'CHARACTER' ? 'object-cover' : 'object-contain'}`}
         onError={() => setFailed(true)}
       />
     );
@@ -5079,6 +5164,38 @@ function hazardLivingStub(hazard: Hazard): LivingEntity {
     spells: null,
     operation_data: null,
     meta_data: null,
+  };
+}
+
+function encounterWithAllPlayers(encounter: Encounter, players: Character[]): Encounter | null {
+  const present = new Set(
+    encounter.combatants.list
+      .filter((item) => item.type === 'CHARACTER')
+      .map((item) => numericId(item.character))
+      .filter((id): id is number => id != null),
+  );
+  const missing = players.filter((player) => !present.has(numericId(player.id) ?? player.id));
+  if (missing.length === 0) return null;
+  const list: Combatant[] = [
+    ...encounter.combatants.list,
+    ...missing.map((player) => ({
+      _id: crypto.randomUUID(),
+      type: 'CHARACTER' as const,
+      ally: true,
+      initiative: undefined,
+      character: player.id,
+      data: undefined,
+    })),
+  ];
+  const allies = populateCombatants(list, players).filter((combatant) => combatant.ally);
+  const levels = allies.map((combatant) => combatant.data.level).filter(Number.isFinite);
+  return {
+    ...encounter,
+    combatants: { list },
+    meta_data: mergeEncounterMeta(encounter.meta_data, {}, {
+      party_size: allies.length,
+      party_level: levels.length ? levels.reduce((sum, level) => sum + level, 0) / levels.length : 0,
+    }),
   };
 }
 

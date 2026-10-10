@@ -7,6 +7,7 @@ import { isPlayingStarfinder } from '@content/system-handler';
 import { convertToHardcodedLink } from '@content/hardcoded-links';
 import type { Character, Combatant, CombatantActionLogEntry, CombatantChangeLogEntry, Condition, Hazard, InitiativeRoundLog, InitiativeRoundLogEntry, Inventory, Item, LivingEntity, Spell } from '@schemas/content';
 import { loadEntityAbilities, type Phase1Ability, type Phase1FeatCategory } from './phase1-abilities';
+import { readStoredDefenses } from './phase1-creature-defenses';
 import { type Phase1CreatureStatus } from './phase1-stats';
 import type { Phase1EntityCombatant } from './phase1-entity';
 import { StatDetailModal, type Phase1StatKey, type Phase1StatTarget } from './phase1-stat-modal';
@@ -108,9 +109,38 @@ export function hasFullEntityDetails(combatant: PopulatedCombatant) {
   return combatant.type === 'CREATURE' || Boolean((combatant.data as Partial<Character>).user_id);
 }
 export function statsFor(entity: LivingEntity) {
-  const profs = entity.meta_data?.calculated_stats?.profs;
-  const storedMax = entity.meta_data?.calculated_stats?.hp_max;
-  return { ac: entity.meta_data?.calculated_stats?.ac ?? 10, fort: profs?.SAVE_FORT?.total ?? 0, reflex: profs?.SAVE_REFLEX?.total ?? 0, will: profs?.SAVE_WILL?.total ?? 0, maxHp: storedMax && storedMax > 0 ? storedMax : entity.hp_current };
+  const stored = readStoredDefenses(entity);
+  return {
+    ac: stored.ac ?? 10,
+    fort: stored.fort ?? 0,
+    reflex: stored.reflex ?? 0,
+    will: stored.will ?? 0,
+    maxHp: stored.hp && stored.hp > 0 ? stored.hp : entity.hp_current ?? 0,
+    perception: stored.perception ?? 0,
+    defensesKnown: stored.ac != null || stored.fort != null || stored.reflex != null || stored.will != null || stored.perception != null,
+  };
+}
+
+/** Keep exported AC, HP, saves, and Perception when the live engine is missing or empty. */
+export function defensesForRow(live: Phase1CreatureStatus | null | undefined, entity: LivingEntity | null | undefined): Phase1CreatureStatus | null {
+  if (!entity) return live ?? null;
+  const stored = statsFor(entity);
+  const exported = stored.defensesKnown || stored.maxHp > 0;
+  if (!live) return exported ? fallbackStatus(entity) : null;
+  const liveEmpty = live.ac <= 10 && live.fortitude === 0 && live.reflex === 0 && live.will === 0 && live.perception === 0;
+  if (!exported || !liveEmpty) {
+    if (live.maxHp > 0 || stored.maxHp <= 0) return live;
+    return { ...live, maxHp: stored.maxHp };
+  }
+  return {
+    ...live,
+    maxHp: stored.maxHp > 0 ? stored.maxHp : live.maxHp,
+    ac: stored.defensesKnown ? stored.ac : live.ac,
+    fortitude: stored.fort,
+    reflex: stored.reflex,
+    will: stored.will,
+    perception: stored.perception,
+  };
 }
 export function signed(value: number) { return value >= 0 ? `+${value}` : String(value); }
 export function EmptyState({ children }: { children: ReactNode }) { return <div className='border border-p1-border p-8 text-center text-sm text-p1-muted'>{children}</div>; }
@@ -1944,7 +1974,7 @@ export function fallbackStatus(entity: LivingEntity): Phase1CreatureStatus {
   const stats = statsFor(entity);
   return {
     maxHp: stats.maxHp, ac: stats.ac, fortitude: stats.fort, reflex: stats.reflex, will: stats.will, classDc: 10,
-    perception: 0, speed: 0, otherSpeeds: [], vision: 'Normal vision',
+    perception: stats.perception, speed: 0, otherSpeeds: [], vision: 'Normal vision',
     attributes: { strength: 0, dexterity: 0, constitution: 0, intelligence: 0, wisdom: 0, charisma: 0 },
     conditions: entity.details?.conditions?.map((condition) => condition.value ? `${condition.name} ${condition.value}` : condition.name) ?? [],
     resistances: [], weaknesses: [], immunities: [], recallKnowledge: null,

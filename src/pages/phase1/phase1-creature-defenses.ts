@@ -26,6 +26,46 @@ export function hasDefenseOperations(creature: Creature) {
   });
 }
 
+type DefenseOperation = { data?: { variable?: string; value?: number | string | null } | null };
+
+function operationNumber(value: number | string | null | undefined) {
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number.parseInt(value, 10) : NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Defenses already written on a creature, for when the live stat engine cannot run. */
+export function readStoredDefenses(entity: {
+  hp_current?: number | null;
+  operations?: DefenseOperation[] | null;
+  meta_data?: { calculated_stats?: { hp_max?: number; ac?: number; profs?: Record<string, { total?: number }> } | null } | null;
+}) {
+  const stats = entity.meta_data?.calculated_stats;
+  const profs = stats?.profs;
+  const sums = new Map<string, number>();
+  for (const operation of entity.operations ?? []) {
+    const variable = operation.data?.variable;
+    const value = operationNumber(operation.data?.value);
+    if (!variable || value == null) continue;
+    sums.set(variable, (sums.get(variable) ?? 0) + value);
+  }
+  const ac = typeof stats?.ac === 'number' ? stats.ac : sums.has('AC_BONUS') ? 10 + (sums.get('AC_BONUS') ?? 0) : undefined;
+  const hp = typeof stats?.hp_max === 'number' && stats.hp_max > 0
+    ? stats.hp_max
+    : sums.has('MAX_HEALTH_BONUS') && (sums.get('MAX_HEALTH_BONUS') ?? 0) > 0
+      ? sums.get('MAX_HEALTH_BONUS')
+      : undefined;
+  const save = (key: string) => profs?.[key]?.total ?? (sums.has(key) ? sums.get(key) : undefined);
+  return {
+    ac,
+    hp,
+    fort: save('SAVE_FORT'),
+    reflex: save('SAVE_REFLEX'),
+    will: save('SAVE_WILL'),
+    perception: save('PERCEPTION'),
+    known: ac != null || hp != null || save('SAVE_FORT') != null || save('SAVE_REFLEX') != null || save('SAVE_WILL') != null,
+  };
+}
+
 export function hasUsefulCalculatedStats(stats?: { hp_max?: number; ac?: number } | null) {
   return Boolean(stats && ((typeof stats.hp_max === 'number' && stats.hp_max > 0) || (typeof stats.ac === 'number' && stats.ac > 10)));
 }
