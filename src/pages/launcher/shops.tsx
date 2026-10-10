@@ -288,7 +288,7 @@ function ShopsPage() {
   const [saving, setSaving] = useState(false);
   const [saveNote, setSaveNote] = useState('');
   const [edited, setEdited] = useState(false);
-  const [removed, setRemoved] = useState<{ item: Item; index: number } | null>(null);
+  const [removed, setRemoved] = useState<{ item: ShopStockItem; index: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;

@@ -3,7 +3,7 @@ import type { Item, Trait } from '@schemas/content';
 import { activeShopRarities, formatShopPrice, raritiesForSettlement, STOCK_COUNT, stockShop } from './shops-generate';
 
 function item(partial: Partial<Item> & Pick<Item, 'id' | 'name' | 'group' | 'level' | 'rarity'>): Item {
-  return { traits: [], meta_data: {}, price: { gp: 1 }, ...partial } as Item;
+  return { traits: [], meta_data: {}, price: { gp: 1 }, bulk: null, ...partial } as Item;
 }
 
 const traits = [

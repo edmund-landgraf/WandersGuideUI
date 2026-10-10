@@ -48,6 +48,7 @@ describe('syndication snapshot', () => {
     const updated = updateSnapshot({ ...hidden, published: true }, '2026-10-09T01:00:00.000Z');
     expect(updated.public_token).toBe(published.public_token);
     expect(updated.snapshot).toEqual({ label: 'second' });
-    expect(publicSnapshot({ ...updated, draft: { label: 'unsaved' } })?.snapshot).toEqual({ label: 'second' });
+    const withUnsavedDraft: SyndicatedNode<Draft> = { ...updated, draft: { label: 'unsaved' } };
+    expect(publicSnapshot(withUnsavedDraft)?.snapshot).toEqual({ label: 'second' });
   });
 });

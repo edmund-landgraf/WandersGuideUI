@@ -50,7 +50,10 @@ if (isUnsetEnv(supabaseUrl) || isUnsetEnv(supabaseKey)) {
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseKey, {
+const resolvedSupabaseUrl: string = supabaseUrl;
+const resolvedSupabaseKey: string = supabaseKey;
+
+export const supabase = createClient(resolvedSupabaseUrl, resolvedSupabaseKey, {
   auth: {
     // Chrome incognito can leave navigator.locks stuck. auth-js then treats a live
     // session as signed-out inside later requests, and find-campaign returns [].
