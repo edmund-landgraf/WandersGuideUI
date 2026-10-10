@@ -36,6 +36,8 @@ import { isContentStackOpen, useContentLinks } from './phase1-content-links';
 import { getBestShield, getItemHealth } from '@items/inv-utils';
 import { toGmNotes } from '@pages/character_sheet/panels/gm-notes';
 import { lookupMonsterArt, type Phase1MonsterArt } from './phase1-monster-image';
+import { Icon } from '@common/Icon';
+import { parseIconValue } from '@common/IconDisplay';
 import { addConditionWithSpawns, compiledConditions, removeConditionWithSpawns } from '@conditions/condition-handler';
 import { ConditionDetailModal, SelectConditionModal } from './phase1-conditions';
 import { SelectCreatureModal, SelectHazardModal } from './phase1-creatures';
@@ -4580,7 +4582,7 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                       event.stopPropagation();
                       setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY });
                     }}>
-                      <EntityIcon type={combatant.type} name={combatant.type === 'CREATURE' ? displayName : undefined} imageUrl={combatant.type === 'CHARACTER' ? combatant.data?.details?.image_url : undefined} />
+                      <EntityIcon type={combatant.type} name={combatant.data?.name ?? combatantDisplayName(combatant)} imageUrl={combatant.data?.details?.image_url} />
                       <span className='min-w-0'>
                         <span className='block truncate font-semibold'>{displayName}</span>
                         {!enemyPlayerRow && <span className={`block text-xs ${critInk ? 'text-[#234028]' : 'text-p1-faint'}`}>
@@ -5069,16 +5071,24 @@ function ResizeRail({ onResize }: { onResize: (delta: number) => void }) {
 }
 
 function EntityIcon({ type, name, imageUrl }: { type: Combatant['type']; name?: string; imageUrl?: string }) {
+  const stored = parseIconValue(imageUrl?.trim() ?? '');
+  const portrait = stored.type === 'image' ? stored.value.trim() : '';
   const art = useQuery({
-    queryKey: ['phase1-creature-picker-art', name],
-    queryFn: () => lookupMonsterArt(name ?? ''),
-    enabled: type === 'CREATURE' && Boolean(name?.trim()),
+    queryKey: ['phase1-creature-picker-art', name, portrait],
+    queryFn: () => lookupMonsterArt(name ?? '', portrait || undefined, 'thumb'),
+    enabled: type === 'CREATURE' && Boolean(name?.trim() || portrait),
     staleTime: Number.POSITIVE_INFINITY,
   });
-  const portrait = type === 'CHARACTER' ? imageUrl?.trim() : '';
-  const src = type === 'CREATURE' ? art.data?.thumbSrc : portrait && !portrait.startsWith('icon|||') ? portrait : undefined;
+  const src = type === 'CREATURE' ? art.data?.thumbSrc : portrait || undefined;
   const [failed, setFailed] = useState(false);
   useEffect(() => { setFailed(false); }, [src]);
+  if (type !== 'CREATURE' && stored.type === 'icon' && stored.value) {
+    return (
+      <span className='grid h-9 w-9 shrink-0 place-items-center border border-p1-pc/50 bg-p1-inset' style={{ color: stored.color || undefined }}>
+        <Icon name={stored.value} size={20} />
+      </span>
+    );
+  }
   if (src && !failed) {
     return (
       <img

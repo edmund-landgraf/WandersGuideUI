@@ -5,50 +5,84 @@ import { LauncherHeader } from './launcher-header';
 import { SHOP_CONTENT_KIND, type ShopDraft, type ShopStockRow } from './shops-syndicate';
 
 export const HOMEBREW_CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Crimson+Pro:ital,wght@0,400;0,600;1,400&display=swap');
-.brew-v3 { min-height: 100vh; background: #2b241c; color: #1c140c; }
-.brew-sheet {
-  max-width: 920px;
-  margin: 0 auto;
-  padding: 48px 56px 80px;
-  background:
-    radial-gradient(circle at 12% 8%, rgba(255,255,255,0.45), transparent 28%),
-    linear-gradient(180deg, #f7edd4 0%, #efe0b8 48%, #e7d3a4 100%);
-  box-shadow: 0 0 0 1px #c4a36a, 0 24px 60px rgba(0,0,0,0.45);
-  outline: 2px solid #8a5a22;
-  outline-offset: -14px;
-  font-family: "Crimson Pro", Georgia, serif;
-  font-size: 17px;
-  line-height: 1.45;
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Crimson+Pro:ital,wght@0,400;0,600;1,400&family=IM+Fell+English:ital@0;1&display=swap');
+.brew-v3 {
+  padding: 36px 16px 72px;
+  color: #3b2414;
 }
-.brew-sheet h1 {
-  margin: 14px 0 8px;
-  padding-top: 10px;
-  border-top: 1px solid #8a5a22;
-  font-family: Cinzel, Palatino, serif;
-  font-size: 2.4rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+.brew-v3 .brew-sheet {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 42px 52px 64px;
+  color: #3b2414;
+  background:
+    repeating-linear-gradient(0deg, rgba(90, 60, 20, 0.018) 0 1px, transparent 1px 4px),
+    radial-gradient(ellipse at 50% 8%, #fff8e8, transparent 46%),
+    linear-gradient(180deg, #f8efd8 0%, #f3e6c8 100%);
+  box-shadow:
+    0 0 0 1px #5a3a1c,
+    0 0 0 10px #f3e6c8,
+    0 0 0 11px #8a5a22,
+    0 28px 70px rgba(0,0,0,0.5);
+  font-family: "Crimson Pro", Georgia, serif;
+  font-size: 16.5px;
+  line-height: 1.4;
+}
+.brew-masthead { text-align: center; margin: 0 0 22px; }
+.brew-rule-double {
+  height: 5px;
+  border: 0;
+  border-top: 2px solid #6b3a1f;
+  border-bottom: 1px solid #6b3a1f;
+  background: none;
+}
+.brew-rule-thin {
+  height: 0;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid #6b3a1f;
+}
+.brew-v3 h1 {
+  margin: 10px 0 12px;
+  padding: 0;
+  border: 0;
+  font-family: "IM Fell English", Palatino, serif;
+  font-size: 3rem;
+  font-weight: 400;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: #6b1d14;
-  text-align: center;
 }
-.brew-rule { height: 2px; margin: 10px 0 22px; background: linear-gradient(90deg, transparent, #8a5a22, transparent); border: 0; }
-.brew-sheet table { width: 100%; border-collapse: collapse; }
-.brew-sheet th {
+.brew-note {
+  margin: 10px 0 20px;
+  text-align: center;
+  font-style: italic;
+  color: #6b4a2e;
+}
+.brew-v3 table { width: 100%; border-collapse: collapse; }
+.brew-v3 th {
   font-family: Cinzel, Palatino, serif;
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: #6b1d14;
   text-align: left;
-  padding: 10px 12px;
-  border-bottom: 2px solid #8a5a22;
+  padding: 8px 10px 10px;
+  border-bottom: 2px solid #6b3a1f;
 }
-.brew-sheet td { padding: 10px 12px; border-bottom: 1px solid rgba(138, 90, 34, 0.35); vertical-align: top; }
-.brew-sheet tbody tr:nth-child(even) { background: rgba(138, 90, 34, 0.08); }
-.brew-sheet button {
-  color: #1c140c;
+.brew-v3 td {
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(107, 58, 31, 0.22);
+  vertical-align: middle;
+  color: #3b2414;
+}
+.brew-v3 tbody tr:nth-child(even) { background: rgba(139, 90, 40, 0.13); }
+.brew-v3 th:nth-child(1), .brew-v3 td:nth-child(1) { width: 4.2rem; white-space: nowrap; }
+.brew-v3 th:nth-child(2), .brew-v3 td:nth-child(2) { width: auto; }
+.brew-v3 th:nth-child(n+3), .brew-v3 td:nth-child(n+3) { width: 6.2rem; white-space: nowrap; }
+.brew-v3 button {
+  color: #6b1d14;
   background: none;
   border: 0;
   padding: 0;
@@ -58,15 +92,14 @@ export const HOMEBREW_CSS = `
   text-underline-offset: 3px;
   cursor: pointer;
 }
-.brew-note { margin: 0 0 18px; text-align: center; font-style: italic; color: #5c4630; }
 .brew-sheet .text-foreground,
 .brew-sheet .text-muted-foreground,
 .brew-sheet button,
 .brew-sheet label,
 .brew-sheet input,
-.brew-sheet td { color: #1c140c; }
+.brew-sheet td { color: #3b2414; }
 .brew-sheet .border-white\\/10,
-.brew-sheet .border-b { border-color: rgba(138, 90, 34, 0.35); }
+.brew-sheet .border-b { border-color: rgba(107, 58, 31, 0.28); }
 `;
 
 function StockName({ row, homebrew = false }: { row: ShopStockRow; homebrew?: boolean }) {
@@ -154,37 +187,46 @@ function StockName({ row, homebrew = false }: { row: ShopStockRow; homebrew?: bo
 export function ShopDocument({ name, stock, homebrew, description }: { name: string; stock: ShopStockRow[]; homebrew: boolean; description?: string }) {
   if (homebrew) {
     return (
-      <div className='brew-v3'>
-        <style>{HOMEBREW_CSS}</style>
-        <article className='brew-sheet'>
-          <h1>{name}</h1>
-          <hr className='brew-rule' />
-          {description ? <p className='brew-note'>{description}</p> : null}
-          <table>
-            <thead>
-              <tr>
-                <th>Qty</th>
-                <th>Name</th>
-                <th>Level</th>
-                <th>Rarity</th>
-                <th>Group</th>
-                <th>Price</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stock.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.quantity ?? 1} ×</td>
-                  <td><StockName row={row} homebrew /></td>
-                  <td>{row.level}</td>
-                  <td>{row.rarity}</td>
-                  <td>{row.group}</td>
-                  <td>{row.price}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </article>
+      <div className='dark min-h-screen bg-background font-sans text-foreground antialiased'>
+        <div className='bg-pattern' />
+        <main className='relative z-10 min-h-screen bg-radial from-gray-800 to-gray-900'>
+          <LauncherHeader />
+          <style>{HOMEBREW_CSS}</style>
+          <div className='brew-v3'>
+            <article className='brew-sheet'>
+              <header className='brew-masthead'>
+                <hr className='brew-rule-double' />
+                <h1>{name}</h1>
+                <hr className='brew-rule-thin' />
+              </header>
+              {description ? <p className='brew-note'>{description}</p> : null}
+              <table>
+                <thead>
+                  <tr>
+                    <th>Qty</th>
+                    <th>Name</th>
+                    <th>Level</th>
+                    <th>Rarity</th>
+                    <th>Group</th>
+                    <th>Price</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stock.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.quantity ?? 1} ×</td>
+                      <td><StockName row={row} homebrew /></td>
+                      <td>{row.level}</td>
+                      <td>{row.rarity}</td>
+                      <td>{row.group}</td>
+                      <td>{row.price}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </article>
+          </div>
+        </main>
       </div>
     );
   }

@@ -102,12 +102,39 @@ export function unlockMonsterArt(password: string) {
   return artUnlock;
 }
 
+const ART_CACHE_PREFIX = 'wgui-monster-thumb:';
+
+function readCachedArt(name: string): string | null {
+  try {
+    return localStorage.getItem(`${ART_CACHE_PREFIX}${name}`);
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedArt(name: string, dataUrl: string) {
+  try {
+    localStorage.setItem(`${ART_CACHE_PREFIX}${name}`, dataUrl);
+  } catch {
+    // A full cache should not hide the image that was just fetched.
+  }
+}
+
+async function blobToDataUrl(blob: Blob) {
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
 async function fetchArtObjectUrl(url: string) {
   const response = await fetch(url, { credentials: 'include' });
   if (!response.ok) return null;
   const blob = await response.blob();
   if (!blob.type.startsWith('image/')) return null;
-  return URL.createObjectURL(blob);
+  return blobToDataUrl(blob);
 }
 
 export async function lookupMonsterArt(name: string, fallbackUrl?: string, size: 'thumb' | 'full' = 'thumb'): Promise<Phase1MonsterArt | null> {
@@ -124,12 +151,12 @@ export async function lookupMonsterArt(name: string, fallbackUrl?: string, size:
       const password = readArtPassword();
       if (pick?.MonsterId && password) {
         const unlocked = await unlockMonsterArt(password);
-        if (!unlocked) {
-          clearArtPassword();
-          return null;
-        }
+        if (!unlocked) clearArtPassword();
+      }
+      if (pick?.MonsterId) {
         const src = await fetchArtObjectUrl(hostedMonsterImage(pick.MonsterId, size));
         if (src) {
+          writeCachedArt(lookupName, src);
           return { monsterId: pick.MonsterId, fullSrc: src, thumbSrc: src };
         }
       }
@@ -137,6 +164,9 @@ export async function lookupMonsterArt(name: string, fallbackUrl?: string, size:
       // Fall back to the entity image URL when PathfinderUtil is unavailable.
     }
   }
+
+  const cached = lookupName ? readCachedArt(lookupName) : null;
+  if (cached) return { monsterId: null, fullSrc: cached, thumbSrc: cached };
 
   if (!trimmedFallback || /aonprd\.com/i.test(trimmedFallback)) return null;
   const src = resolveImageUrl(trimmedFallback);
