@@ -32,11 +32,16 @@ import { fetchContentPackage, getDefaultSources } from '@content/content-store';
 import { getFinalAcValue, getFinalHealthValue, getFinalProfValue } from '@variables/variable-helpers';
 import { getBestArmor, isItemImplantable, isItemInvestable } from '@items/inv-utils';
 import { hashData, sign } from '@utils/numbers';
-import { findCreatureImage } from '@utils/images';
 import { getWeaponStats } from '@items/weapon-handler';
 import { StoreID } from '@schemas/variables';
 import { cloneDeep, groupBy } from 'lodash-es';
 import { GranularCreature } from '@schemas/index';
+
+function nonAonImage(imageUrl?: string) {
+  const trimmed = imageUrl?.trim();
+  if (!trimmed || /aonprd\.com/i.test(trimmed)) return undefined;
+  return trimmed;
+}
 
 export async function convertGranularCreature(source: ContentSource, g: GranularCreature): Promise<Creature> {
   const creature = {
@@ -61,7 +66,7 @@ export async function convertGranularCreature(source: ContentSource, g: Granular
     },
     notes: null,
     details: {
-      image_url: await findCreatureImage(g.name ?? ''),
+      image_url: nonAonImage(g.imageUrl),
       background_image_url: undefined,
       conditions: undefined,
       description: g.description ?? '',

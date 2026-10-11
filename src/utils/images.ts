@@ -1,5 +1,3 @@
-import { toLabel } from './strings';
-
 export async function getShapeIcon(content: string) {
   const res = await fetch(`https://api.dicebear.com/7.x/shapes/svg?seed=${content}`);
   return res.ok ? await res.text() : '';
@@ -40,12 +38,3 @@ export async function preloadImage(url?: string | null): Promise<void> {
   });
 }
 
-export async function findCreatureImage(name: string): Promise<string | undefined> {
-  if (!name.trim()) return undefined;
-  const aonPath = `https://2e.aonprd.com/Images/Monsters/${toLabel(name).replace(/ /g, '_')}.webp`;
-  if (await isValidImage(aonPath)) {
-    return aonPath;
-  } else {
-    return undefined;
-  }
-}

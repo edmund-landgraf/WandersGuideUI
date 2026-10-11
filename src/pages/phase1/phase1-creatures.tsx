@@ -7,7 +7,7 @@ import { getEntityLevel } from '@utils/entity-utils';
 import { ChevronDown, Swords } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { hydrateCreatureForCombat } from './phase1-entity';
-import { lookupMonsterArt, readArtPassword, unlockMonsterArt } from './phase1-monster-image';
+import { clearArtPassword, lookupMonsterArt, readArtPassword, unlockMonsterArt } from './phase1-monster-image';
 import { ProseMarkdown } from './phase1-markdown';
 import { Phase1PickerModal } from './phase1-picker-modal';
 
@@ -121,10 +121,12 @@ export function SelectCreatureModal({
   onSelect: (creature: Creature, ally: boolean) => void;
   onClose: () => void;
 }) {
+  const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [ally, setAlly] = useState(false);
   const [added, setAdded] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [artUnlocked, setArtUnlocked] = useState(() => Boolean(readArtPassword()));
   const catalog = useQuery({
     queryKey: ['phase1-creature-catalog', getDefaultSourcesKey('PAGE')],
     queryFn: async () => {
@@ -185,6 +187,20 @@ export function SelectCreatureModal({
             </SideButton>
           </div>
           {added && <span className='truncate text-xs text-emerald-300'>Added {added}</span>}
+          {artUnlocked && (
+            <button
+              type='button'
+              className='toolbar-button ml-auto'
+              onClick={() => {
+                clearArtPassword();
+                setArtUnlocked(false);
+                queryClient.removeQueries({ queryKey: ['phase1-creature-picker-art'] });
+                queryClient.removeQueries({ queryKey: ['phase1-monster-art'] });
+              }}
+            >
+              Relock art
+            </button>
+          )}
         </div>
       }
       renderItem={(creature) => (
@@ -205,7 +221,15 @@ export function SelectCreatureModal({
           </span>
         </button>
       )}
-      aside={<CreaturePreview creature={selected} busy={busy || adding} ally={ally} onAdd={add} />}
+      aside={
+        <CreaturePreview
+          creature={selected}
+          busy={busy || adding}
+          ally={ally}
+          onAdd={add}
+          onArtUnlocked={() => setArtUnlocked(true)}
+        />
+      }
     />
   );
 }
@@ -338,11 +362,13 @@ function CreaturePreview({
   busy,
   ally,
   onAdd,
+  onArtUnlocked,
 }: {
   creature: Creature | null;
   busy?: boolean;
   ally: boolean;
   onAdd: (creature: Creature, adjustment?: 'ELITE' | 'WEAK') => void;
+  onArtUnlocked?: () => void;
 }) {
   if (!creature) {
     return (
@@ -358,7 +384,7 @@ function CreaturePreview({
   return (
     <div className='flex h-full min-h-0 flex-col'>
       <div className='min-h-0 flex-1 overflow-y-auto px-5 py-4'>
-        <CreatureArt name={creature.name} />
+        <CreatureArt name={creature.name} onArtUnlocked={onArtUnlocked} />
         <div className='mt-3 flex flex-wrap items-end gap-x-3 gap-y-1'>
           <h3 className='text-xl font-semibold leading-tight'>{creature.name}</h3>
           <span className='text-sm text-p1-muted'>Level {getEntityLevel(creature)}</span>
@@ -388,7 +414,7 @@ function CreaturePreview({
   );
 }
 
-function CreatureArt({ name }: { name: string }) {
+function CreatureArt({ name, onArtUnlocked }: { name: string; onArtUnlocked?: () => void }) {
   const art = useQuery({
     queryKey: ['phase1-creature-picker-art', name, 'full'],
     queryFn: () => lookupMonsterArt(name, undefined, 'full'),
@@ -396,7 +422,7 @@ function CreatureArt({ name }: { name: string }) {
   });
   const src = art.data?.fullSrc;
   if (!src && !readArtPassword()) {
-    return <ArtPasswordForm />;
+    return <ArtPasswordForm onUnlocked={onArtUnlocked} />;
   }
   if (!src) {
     return (
@@ -408,7 +434,7 @@ function CreatureArt({ name }: { name: string }) {
   return <img src={src} alt='' className='h-40 w-full border border-p1-border object-contain bg-p1-inset' />;
 }
 
-function ArtPasswordForm() {
+function ArtPasswordForm({ onUnlocked }: { onUnlocked?: () => void }) {
   const queryClient = useQueryClient();
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -426,6 +452,7 @@ function ArtPasswordForm() {
     }
     await queryClient.invalidateQueries({ queryKey: ['phase1-creature-picker-art'] });
     await queryClient.invalidateQueries({ queryKey: ['phase1-monster-art'] });
+    onUnlocked?.();
   }
 
   return (

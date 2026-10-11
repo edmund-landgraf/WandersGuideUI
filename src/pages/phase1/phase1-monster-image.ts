@@ -49,6 +49,8 @@ function hostedMonsterImage(monsterId: number, size: 'thumb' | 'full') {
   return `${PATHFINDER_API_ORIGIN}/api/monsters/${monsterId}${suffix}`;
 }
 
+const ART_CACHE_PREFIX = 'wgui-monster-thumb:';
+
 let artUnlock: Promise<boolean> | null = null;
 let unlockedPassword = '';
 
@@ -68,6 +70,17 @@ export function clearArtPassword() {
   document.cookie = `${ART_PASSWORD_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
   artUnlock = null;
   unlockedPassword = '';
+  clearCachedMonsterArt();
+}
+
+export function clearCachedMonsterArt() {
+  if (typeof localStorage === 'undefined') return;
+  const keys: string[] = [];
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (key?.startsWith(ART_CACHE_PREFIX)) keys.push(key);
+  }
+  keys.forEach((key) => localStorage.removeItem(key));
 }
 
 function rememberArtPassword(password: string) {
@@ -101,8 +114,6 @@ export function unlockMonsterArt(password: string) {
     });
   return artUnlock;
 }
-
-const ART_CACHE_PREFIX = 'wgui-monster-thumb:';
 
 function readCachedArt(name: string): string | null {
   try {
@@ -140,6 +151,13 @@ async function fetchArtObjectUrl(url: string) {
 export async function lookupMonsterArt(name: string, fallbackUrl?: string, size: 'thumb' | 'full' = 'thumb'): Promise<Phase1MonsterArt | null> {
   const trimmedFallback = fallbackUrl?.trim() || undefined;
   const lookupName = normalizeName(name) || name.trim();
+  const password = readArtPassword();
+
+  if (!password) {
+    if (!trimmedFallback || /aonprd\.com/i.test(trimmedFallback)) return null;
+    const src = resolveImageUrl(trimmedFallback);
+    return { monsterId: null, fullSrc: src, thumbSrc: src };
+  }
 
   if (lookupName) {
     try {
@@ -148,7 +166,6 @@ export async function lookupMonsterArt(name: string, fallbackUrl?: string, size:
         ? []
         : await searchCreatures('/api/npcs', lookupName);
       const pick = pickMonsterRow([...monsters, ...npcs], lookupName) ?? [...monsters, ...npcs].find((row) => row.MonsterId);
-      const password = readArtPassword();
       if (pick?.MonsterId && password) {
         const unlocked = await unlockMonsterArt(password);
         if (!unlocked) clearArtPassword();
