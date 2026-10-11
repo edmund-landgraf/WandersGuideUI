@@ -698,7 +698,7 @@ export function Phase1CharactersPage() {
     }
   }
 
-  async function createRandomCharacter(picks: { class?: string; ancestry?: string; level: number }) {
+  async function createRandomCharacter(picks: { class?: string; ancestry?: string; background?: string; level: number }) {
     if (createDisabled) return;
     setCreating(true);
     setJoinStatus('Creating random character. This may take a minute…');
@@ -708,7 +708,7 @@ export function Phase1CharactersPage() {
         data: {
           name: 'RANDOM',
           class: picks.class ?? 'RANDOM',
-          background: 'RANDOM',
+          background: picks.background ?? 'RANDOM',
           ancestry: picks.ancestry ?? 'RANDOM',
           level: picks.level,
           content_sources: 'ALL',

@@ -2,11 +2,12 @@ import { fetchContentAll, fetchContentSources } from '@content/content-store';
 import { X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Ancestry, Class } from '@schemas/content';
+import { Ancestry, Background, Class } from '@schemas/content';
 
 export type Phase1RandomCharacterPicks = {
   class?: string;
   ancestry?: string;
+  background?: string;
   level: number;
 };
 
@@ -17,9 +18,11 @@ export function Phase1RandomCharacterModal(props: {
 }) {
   const [className, setClassName] = useState('');
   const [ancestryName, setAncestryName] = useState('');
+  const [backgroundName, setBackgroundName] = useState('');
   const [level, setLevel] = useState(1);
   const [classes, setClasses] = useState<{ value: string; label: string }[]>([]);
   const [ancestries, setAncestries] = useState<{ value: string; label: string }[]>([]);
+  const [backgrounds, setBackgrounds] = useState<{ value: string; label: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -28,14 +31,16 @@ export function Phase1RandomCharacterModal(props: {
       try {
         const sources = await fetchContentSources('ALL-OFFICIAL-PUBLIC');
         const sourceIds = sources.map((s) => s.id);
-        const [classList, ancestryList] = await Promise.all([
+        const [classList, ancestryList, backgroundList] = await Promise.all([
           fetchContentAll<Class>('class', sourceIds),
           fetchContentAll<Ancestry>('ancestry', sourceIds),
+          fetchContentAll<Background>('background', sourceIds),
         ]);
         const sortByName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
         if (cancelled) return;
         setClasses([...classList].sort(sortByName).map((c) => ({ value: c.name, label: c.name })));
         setAncestries([...ancestryList].sort(sortByName).map((a) => ({ value: a.name, label: a.name })));
+        setBackgrounds([...backgroundList].sort(sortByName).map((b) => ({ value: b.name, label: b.name })));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -70,8 +75,8 @@ export function Phase1RandomCharacterModal(props: {
           </button>
         </div>
         <p className='mt-2 text-sm text-p1-muted'>
-          Pick ancestry, class, and level. Leave ancestry or class empty to randomize. Heritage, background, and feats
-          are filled automatically.
+          Pick ancestry, class, background, and level. Leave ancestry, class, or background empty to randomize. Heritage
+          and feats are filled automatically.
         </p>
         <label className='mt-4 block text-xs text-p1-muted'>
           Ancestry
@@ -106,6 +111,22 @@ export function Phase1RandomCharacterModal(props: {
           </select>
         </label>
         <label className='mt-3 block text-xs text-p1-muted'>
+          Background
+          <select
+            className='settings-input mt-1 h-9 w-full'
+            value={backgroundName}
+            disabled={loading || props.generating}
+            onChange={(event) => setBackgroundName(event.target.value)}
+          >
+            <option value=''>Random</option>
+            {backgrounds.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className='mt-3 block text-xs text-p1-muted'>
           Level
           <input
             className='settings-input mt-1 h-9 w-full'
@@ -133,6 +154,7 @@ export function Phase1RandomCharacterModal(props: {
               props.onConfirm({
                 class: className || undefined,
                 ancestry: ancestryName || undefined,
+                background: backgroundName || undefined,
                 level,
               })
             }

@@ -378,6 +378,33 @@ export function importFromContentPackage(packageData: ContentPackage) {
   packageData.traits.forEach((c) => idStore.get('trait')?.set(c.id, c));
   packageData.versatileHeritages.forEach((c) => idStore.get('versatile-heritage')?.set(c.id, c));
   packageData.sources?.forEach((c) => idStore.get('content-source')?.set(c.id, c));
+
+  // Operations run in a worker that does not share the page's fetch cache or auth storage.
+  // Selection lists call fetchContentAll, which would otherwise miss this package and come
+  // back empty for every unchosen option. Seed the bulk-fetch cache the same way
+  // fetchContentAll looks it up.
+  const pageSources = getDefaultSources('PAGE');
+  const seeded: [ContentType, { content_source_id?: number }[]][] = [
+    ['ability-block', packageData.abilityBlocks],
+    ['ancestry', packageData.ancestries],
+    ['archetype', packageData.archetypes],
+    ['background', packageData.backgrounds],
+    ['class-archetype', packageData.classArchetypes],
+    ['class', packageData.classes],
+    ['creature', packageData.creatures],
+    ['item', packageData.items],
+    ['language', packageData.languages],
+    ['spell', packageData.spells],
+    ['trait', packageData.traits],
+    ['versatile-heritage', packageData.versatileHeritages],
+    ['content-source', packageData.sources ?? []],
+  ];
+  for (const [type, records] of seeded) {
+    const list = Array.isArray(pageSources)
+      ? records.filter((record) => record.content_source_id == null || pageSources.includes(record.content_source_id))
+      : records;
+    setStoredFetch(type, { content_sources: pageSources }, list);
+  }
 }
 
 /**
