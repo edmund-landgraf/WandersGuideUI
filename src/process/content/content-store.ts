@@ -384,7 +384,9 @@ export function importFromContentPackage(packageData: ContentPackage) {
   // back empty for every unchosen option. Seed the bulk-fetch cache the same way
   // fetchContentAll looks it up.
   const pageSources = getDefaultSources('PAGE');
-  const seeded: [ContentType, { content_source_id?: number }[]][] = [
+  // Content rows belong to a book via content_source_id. A content-source row is the book
+  // itself, so it is scoped by id.
+  const seeded: [ContentType, { id?: number; content_source_id?: number }[]][] = [
     ['ability-block', packageData.abilityBlocks],
     ['ancestry', packageData.ancestries],
     ['archetype', packageData.archetypes],
@@ -401,7 +403,10 @@ export function importFromContentPackage(packageData: ContentPackage) {
   ];
   for (const [type, records] of seeded) {
     const list = Array.isArray(pageSources)
-      ? records.filter((record) => record.content_source_id == null || pageSources.includes(record.content_source_id))
+      ? records.filter((record) => {
+          const sourceId = type === 'content-source' ? record.id : record.content_source_id;
+          return sourceId == null || pageSources.includes(sourceId);
+        })
       : records;
     setStoredFetch(type, { content_sources: pageSources }, list);
   }
