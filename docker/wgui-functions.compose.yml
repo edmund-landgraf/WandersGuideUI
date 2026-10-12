@@ -25,6 +25,7 @@ services:
         /wgui-fn/ext/wgui-ext-ensure-public-user
         /wgui-fn/ext/wgui-ext-join-campaign
         /wgui-fn/ext/wgui-ext-patch-encounter-dice
+        /wgui-fn/ext/wgui-ext-import-official-characters
         /home/deno/functions/;
         cp -a /wgui-fn/export/_wgui-export
         /wgui-fn/export/wgui-export-character

@@ -30,6 +30,12 @@ export type EncounterDifficulty = {
   status: EncounterDifficultyStatus;
   color: EncounterDifficultyColor;
   xp: number;
+  /** Party-adjusted building budget for `status`. Awards do not use this number. */
+  budget: number;
+  /** True when creature XP is above this difficulty's budget and still below the next one. */
+  exceedsBudget: boolean;
+  /** Group XP award for a four-PC party of this difficulty. Party size does not change it. */
+  awardXp: number;
   partyLevel: number;
   partySize: number;
   partyLevelFromEncounter: boolean;
@@ -54,6 +60,22 @@ export function xpForLevelDelta(delta: number) {
   const rounded = Math.round(delta);
   if (rounded in XP_BY_DELTA) return XP_BY_DELTA[rounded];
   return rounded > 4 ? rounded * 40 : 0;
+}
+
+/** GM Core encounter budgets for four PCs, plus the amount added or removed per extra or missing PC. */
+const BUDGET_BY_DIFFICULTY: Record<Exclude<EncounterDifficultyStatus, 'IMPOSSIBLE'>, { base: number; perPc: number }> = {
+  Trivial: { base: 40, perPc: 10 },
+  Low: { base: 60, perPc: 20 },
+  Moderate: { base: 80, perPc: 20 },
+  Severe: { base: 120, perPc: 30 },
+  Extreme: { base: 160, perPc: 40 },
+};
+
+const DIFFICULTY_ORDER: Exclude<EncounterDifficultyStatus, 'IMPOSSIBLE'>[] = ['Trivial', 'Low', 'Moderate', 'Severe', 'Extreme'];
+
+export function encounterBudget(status: Exclude<EncounterDifficultyStatus, 'IMPOSSIBLE'>, partySize: number) {
+  const row = BUDGET_BY_DIFFICULTY[status];
+  return row.base + (partySize - 4) * row.perPc;
 }
 
 function isInEncounterDifficulty(combatant: EncounterDifficultyCombatant) {
@@ -84,7 +106,6 @@ export function calculateDifficulty(encounter: Encounter, combatants: EncounterD
   const partySizeFromEncounter = encounter.meta_data.party_size != null;
   const partyLevel = encounter.meta_data.party_level ?? mean(alliesInEncounter.map((p) => combatantLevel(p)).filter((level): level is number => level != null)) ?? 0;
   const partySize = encounter.meta_data.party_size ?? alliesInEncounter.length;
-  const partySizeDiff = partySize - 4;
 
   const lines = active
     .filter((entity) => !entity.ally)
@@ -97,38 +118,54 @@ export function calculateDifficulty(encounter: Encounter, combatants: EncounterD
   const xpBudget = lines.reduce((sum, line) => sum + line.xp, 0);
   const xp = Math.floor(xpBudget);
 
+  const budgets = {
+    Trivial: encounterBudget('Trivial', partySize),
+    Low: encounterBudget('Low', partySize),
+    Moderate: encounterBudget('Moderate', partySize),
+    Severe: encounterBudget('Severe', partySize),
+    Extreme: encounterBudget('Extreme', partySize),
+  };
+  const impossibleMin = budgets.Extreme + 40;
+
   const thresholds: EncounterDifficultyThreshold[] = [
     { status: 'Trivial', min: 0 },
-    { status: 'Low', min: 50 + partySizeDiff * 15 },
-    { status: 'Moderate', min: 70 + partySizeDiff * 20 },
-    { status: 'Severe', min: 100 + partySizeDiff * 30 },
-    { status: 'Extreme', min: 140 + partySizeDiff * 40 },
-    { status: 'IMPOSSIBLE', min: 200 + partySizeDiff * 40 },
+    { status: 'Low', min: budgets.Low },
+    { status: 'Moderate', min: budgets.Moderate },
+    { status: 'Severe', min: budgets.Severe },
+    { status: 'Extreme', min: budgets.Extreme },
+    { status: 'IMPOSSIBLE', min: impossibleMin },
   ];
 
   let status: EncounterDifficultyStatus = 'Trivial';
   let color: EncounterDifficultyColor = 'blue';
-  if (xpBudget >= 200 + partySizeDiff * 40) {
+  if (xpBudget >= impossibleMin) {
     status = 'IMPOSSIBLE';
     color = 'dark';
-  } else if (xpBudget >= 140 + partySizeDiff * 40) {
+  } else if (xpBudget >= budgets.Extreme) {
     status = 'Extreme';
     color = 'red';
-  } else if (xpBudget >= 100 + partySizeDiff * 30) {
+  } else if (xpBudget >= budgets.Severe) {
     status = 'Severe';
     color = 'orange';
-  } else if (xpBudget >= 70 + partySizeDiff * 20) {
+  } else if (xpBudget >= budgets.Moderate) {
     status = 'Moderate';
     color = 'yellow';
-  } else if (xpBudget >= 50 + partySizeDiff * 15) {
+  } else if (xpBudget >= budgets.Low) {
     status = 'Low';
     color = 'green';
   }
+
+  const budget = status === 'IMPOSSIBLE' ? impossibleMin : budgets[status];
+  const nextBudget = status === 'IMPOSSIBLE' ? null : status === 'Extreme' ? impossibleMin : budgets[DIFFICULTY_ORDER[DIFFICULTY_ORDER.indexOf(status) + 1]];
+  const awardStatus = status === 'IMPOSSIBLE' ? 'Extreme' : status;
 
   return {
     status,
     color,
     xp,
+    budget,
+    exceedsBudget: nextBudget != null && xp > budget && xp < nextBudget,
+    awardXp: BUDGET_BY_DIFFICULTY[awardStatus].base,
     partyLevel,
     partySize,
     partyLevelFromEncounter,

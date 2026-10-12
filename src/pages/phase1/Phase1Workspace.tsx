@@ -79,6 +79,7 @@ import importFromGUIDECHAR from '@import/guidechar/import-from-guidechar';
 import { importFromFTC } from '@import/ftc/import-from-ftc';
 import { importFromPathbuilder } from '@import/pathbuilder/import-from-pathbuilder';
 import { Phase1RandomCharacterModal } from './phase1-random-character-modal';
+import OfficialImportDialog from './OfficialImportDialog';
 import { Phase1PortraitModal } from './phase1-portrait-modal';
 import { calculateDifficulty, formatLevelDelta, shouldDisplayEncounterDifficulty, type EncounterDifficulty } from '@utils/encounter-difficulty';
 import { createHazardCombatant, getHazardCurrentHp, getHazardInitiativeModifier, isHazardCombatant, updateHazardHp } from '@utils/encounter-hazard';
@@ -305,6 +306,7 @@ export function Phase1CharactersPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [randomOpen, setRandomOpen] = useState(false);
   const [pathbuilderOpen, setPathbuilderOpen] = useState(false);
+  const [officialImportOpen, setOfficialImportOpen] = useState(false);
   const [pathbuilderId, setPathbuilderId] = useState('');
   const [pathbuilderFile, setPathbuilderFile] = useState<File | null>(null);
   const pathbuilderFileRef = useRef<HTMLInputElement>(null);
@@ -1064,6 +1066,10 @@ export function Phase1CharactersPage() {
               setPendingDelete({ id: characterMenu.character.id, name: characterMenu.character.name });
               setCharacterMenu(null);
             }}
+            onImportOfficial={() => {
+              setCharacterMenu(null);
+              setOfficialImportOpen(true);
+            }}
           />
         )}
         {portraitPreview && portraitPreview.details?.image_url && (
@@ -1228,6 +1234,18 @@ export function Phase1CharactersPage() {
             if (!creating) setRandomOpen(false);
           }}
           onConfirm={(picks) => void createRandomCharacter(picks)}
+        />
+      )}
+      {officialImportOpen && (
+        <OfficialImportDialog
+          accessToken={session?.access_token}
+          slotsRemaining={
+            hasPatreonAccess(getCachedPublicUser(), 2)
+              ? null
+              : Math.max(0, CHARACTER_SLOT_CAP - (characters.data?.length ?? 0))
+          }
+          onClose={() => setOfficialImportOpen(false)}
+          onImported={() => queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] })}
         />
       )}
       {pathbuilderOpen && (
@@ -3920,7 +3938,7 @@ function CreateNameModal({ title, label, confirmLabel, skipLabel, onCancel, onSk
   );
 }
 
-function CharacterGridContextMenu({ x, y, onClose, onJoinMyCampaign, onJoinOthersCampaign, onUnassign, onOpenStatBlock, onRename, onExportJson, onExportPdf, onDelete }: { x: number; y: number; onClose: () => void; onJoinMyCampaign: () => void; onJoinOthersCampaign: () => void; onUnassign?: () => void; onOpenStatBlock: () => void; onRename: () => void; onExportJson: () => void; onExportPdf: () => void; onDelete: () => void }) {
+function CharacterGridContextMenu({ x, y, onClose, onJoinMyCampaign, onJoinOthersCampaign, onUnassign, onOpenStatBlock, onRename, onExportJson, onExportPdf, onDelete, onImportOfficial }: { x: number; y: number; onClose: () => void; onJoinMyCampaign: () => void; onJoinOthersCampaign: () => void; onUnassign?: () => void; onOpenStatBlock: () => void; onRename: () => void; onExportJson: () => void; onExportPdf: () => void; onDelete: () => void; onImportOfficial: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -3929,7 +3947,7 @@ function CharacterGridContextMenu({ x, y, onClose, onJoinMyCampaign, onJoinOther
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
   const left = Math.min(x, window.innerWidth - 220);
-  const top = Math.min(y, window.innerHeight - 280);
+  const top = Math.min(y, window.innerHeight - 320);
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onPointerDown={onClose} />
@@ -3956,6 +3974,9 @@ function CharacterGridContextMenu({ x, y, onClose, onJoinMyCampaign, onJoinOther
             <UserMinus size={14} /> Unassign
           </button>
         )}
+        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onImportOfficial(); }}>
+          <Upload size={14} /> Import from wanderersguide.app
+        </button>
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onExportJson(); }}>
           <Download size={14} /> Export to JSON
         </button>
@@ -4252,7 +4273,10 @@ function EncounterDifficultyModal({ difficulty, onClose }: { difficulty: Encount
                 {difficulty.status} ({difficulty.xp} XP)
               </span>
             </div>
-            <p className='mt-1 text-xs text-p1-muted'>Pathfinder 2e encounter budget from creature levels vs party level. Not an operations formula.</p>
+            <p className='mt-1 text-xs text-p1-muted'>Pathfinder 2e encounter budget from creature levels vs party level. Awards stay on the four-PC table.</p>
+            {difficulty.exceedsBudget && (
+              <p className='mt-1 text-xs text-p1-muted'>Exceeds the {difficulty.status} budget ({difficulty.budget} XP) and stays {difficulty.status} until the next budget.</p>
+            )}
           </div>
           <button type='button' className='icon-button shrink-0' onClick={onClose} title='Close'><X size={18} /></button>
         </header>
@@ -4266,7 +4290,7 @@ function EncounterDifficultyModal({ difficulty, onClose }: { difficulty: Encount
             <div className='border border-p1-border bg-p1-inset px-3 py-2'>
               <p className='text-[10px] uppercase text-p1-faint'>Party size</p>
               <p className='mt-0.5 font-semibold'>{difficulty.partySize}</p>
-              <p className='text-xs text-p1-muted'>{difficulty.partySizeFromEncounter ? 'Stored on the encounter' : 'Allies in the encounter'} · thresholds use size − 4 = {difficulty.partySize - 4}</p>
+              <p className='text-xs text-p1-muted'>{difficulty.partySizeFromEncounter ? 'Stored on the encounter' : 'Allies in the encounter'} · each PC past or short of 4 adds or removes that difficulty&apos;s fixed adjustment</p>
             </div>
           </div>
           <div className='border border-p1-border'>
@@ -4300,6 +4324,9 @@ function EncounterDifficultyModal({ difficulty, onClose }: { difficulty: Encount
           </div>
           <div className='border border-p1-border'>
             <div className='border-b border-p1-border bg-p1-inset px-3 py-2 text-sm font-semibold'>Difficulty bands</div>
+            <p className='border-b border-p1-border px-3 py-2 text-xs text-p1-muted'>
+              Building XP uses these party-size budgets. Each PC still receives the four-PC award for this difficulty: {difficulty.awardXp / 4} XP ({difficulty.awardXp} XP for a group of four).
+            </p>
             <ul className='divide-y divide-p1-border text-sm'>
               {difficulty.thresholds.map((band) => (
                 <li key={band.status} className={`flex items-center justify-between px-3 py-2 ${band.status === difficulty.status ? 'bg-p1-accent/[0.08]' : ''}`}>
