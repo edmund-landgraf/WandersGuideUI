@@ -7,7 +7,7 @@ const CONTEXT_CHARS = Number(import.meta.env.VITE_OLLAMA_CONTEXT_CHARS) || 12000
 const BASIC_ACTIONS = ['stride', 'step', 'strike', 'seek', 'demoralize', 'grapple', 'trip', 'shove', 'disarm', 'raise a shield', 'take cover', 'stand', 'crawl', 'leap', 'ready', 'delay', 'aid', 'recall knowledge'];
 
 const TURN_SYSTEM =
-  'You are offering Pathfinder 2e enemy turns to a GM. Use only actions named in the Abilities list or described in the creature description, plus Stride, Step, Strike, Seek, Demoralize, Grapple, Trip, and Shove. Do not invent spells. Each turn has 3 actions. Do not default to three Strikes. The three turns must differ. Do not print ability ids. Name the creature, the action, the defense or DC, and only numbers already in the notes. Reply as JSON {"choices":[{"lines":["..."],"tip":"...","abilityIds":["..."]},{"lines":["..."],"tip":"...","abilityIds":["..."]},{"lines":["..."],"tip":"...","abilityIds":["..."]}]}.';
+  'You offer three different Pathfinder 2e turns for the one creature named Acting. Each turn is a list of 3 action sentences for that same creature. Do not split one turn across the three choices. Do not number the creature as (1) (2) (3). A line that is only a name, weapon, AC, DC, or bare number is invalid. Each line names the action and, when there is a roll, the defense and the number from the notes. Use only actions named in the Abilities list or creature description, plus Stride, Step, Strike, Seek, Demoralize, Grapple, Trip, and Shove. Do not invent spells. Do not default to three Strikes. Merging with a ward costs 1 action, has concentrate, and the kami cannot move, speak, or control the ward afterward. Reply as JSON {"choices":[{"lines":["Stride to Ada.","Strike Ada with Spade. Attack roll vs AC 18, bonus +7. Damage 1d6 piercing.","Demoralize Ada. Intimidation vs Will DC 16."],"tip":"Close, strike once, then frighten.","abilityIds":["spade"]},{"lines":["..."],"tip":"...","abilityIds":[]},{"lines":["..."],"tip":"...","abilityIds":[]}]}';
 
 type ChatResult = { text: string } | { error: string; contextExceeded: boolean };
 
@@ -128,9 +128,16 @@ function inventedActions(lines: string[], actor: TacticsCombatant): string[] {
   return invented;
 }
 
+function playableLine(line: string): boolean {
+  const words = line.trim().split(/\s+/);
+  if (words.length < 3) return false;
+  if (/^(ac|dc|hp)\b/i.test(line.trim())) return false;
+  return BASIC_ACTIONS.concat(['merge', 'emerge', 'attack']).some((verb) => new RegExp(`\\b${verb}\\b`, 'i').test(line));
+}
+
 function oneChoice(raw: { lines?: string[]; tip?: string; abilityIds?: string[] }, actor: TacticsCombatant, index: number): { choice: TacticsChoice } | { rejected: string } | null {
-  const lines = (raw.lines ?? []).map((line) => line.trim()).filter(Boolean);
-  if (!lines.length) return null;
+  const lines = (raw.lines ?? []).map((line) => line.trim()).filter(playableLine);
+  if (lines.length < 2) return null;
   const invented = inventedActions(lines, actor);
   if (invented.length) {
     const listed = actor.abilities.map((ability) => ability.name).join(', ') || 'no special actions';
@@ -193,7 +200,7 @@ export async function proposeTurn(input: {
     report(`${MODEL} finished writing. Reading the turn.`);
     const parsed = await enoughChoices(direct.text, actor, brief, onStatus, report);
     if (parsed && 'rejected' in parsed) return { choices: [], comment: parsed.rejected, modelDown: false };
-    if (parsed && 'choices' in parsed) return { choices: parsed.choices, comment: parsed.choices[0]?.tip ?? '', modelDown: false };
+    if (parsed && 'choices' in parsed) return { choices: parsed.choices, comment: `${parsed.choices.length} turns for ${actor.name}. Pick one.`, modelDown: false };
     return { choices: [], comment: 'The model replied, but the turn was not usable.', modelDown: false };
   }
   if (!direct.contextExceeded && direct.error !== 'context') {
@@ -236,7 +243,7 @@ export async function proposeTurn(input: {
   const parsed = await enoughChoices(finale.text, actor, `Acting: ${actor.name}\n\nRoster:\n${roster(combatants)}\n\nNotes:\n${notes}`, onStatus, report);
   if (parsed && 'rejected' in parsed) return { choices: [], comment: parsed.rejected, modelDown: false };
   if (!parsed || !('choices' in parsed)) return { choices: [], comment: 'The model replied from the saved notes, but the turn was not usable.', modelDown: false };
-  return { choices: parsed.choices, comment: parsed.choices[0]?.tip ?? '', modelDown: false };
+  return { choices: parsed.choices, comment: `${parsed.choices.length} turns for ${actor.name}. Pick one.`, modelDown: false };
 }
 
 async function enoughChoices(

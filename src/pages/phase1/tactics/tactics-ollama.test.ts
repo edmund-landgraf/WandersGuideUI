@@ -60,7 +60,7 @@ describe('proposeTurn', () => {
           choices: [
             { lines: ['Stride to Ada.', 'Strike Ada with Spade. Attack roll vs AC 18, bonus +7. Damage 1d6 piercing.'], tip: 'One Strike, then movement already spent.', abilityIds: ['spade'] },
             { lines: ['Demoralize Ada.', 'Stride away.', 'Take cover.'], tip: 'Frighten, then leave.', abilityIds: [] },
-            { lines: ['Step.', 'Strike Ada with Spade.', 'Seek.'], tip: 'A short step, then one Strike.', abilityIds: ['spade'] },
+            { lines: ['Step away from Ada.', 'Strike Ada with Spade. Attack roll vs AC 18.', 'Seek Nemeia.'], tip: 'A short step, then one Strike.', abilityIds: ['spade'] },
           ],
         }),
       ),
@@ -119,7 +119,7 @@ describe('proposeTurn', () => {
       vi.fn().mockResolvedValue(
         streamReply(
           JSON.stringify({
-            lines: ['Shikigami (1) merges with its ward using Ward. One action, concentrate.'],
+            lines: ['Shikigami (1) merges with its ward using Ward. One action, concentrate.', 'It stays merged and does not Stride.', 'It does not Strike.'],
             tip: 'Merged, it can sense but cannot move.',
             abilityIds: [],
           }),
@@ -159,7 +159,7 @@ describe('proposeTurn', () => {
         return streamReply(
           JSON.stringify({
             choices: [0, 1, 2].map((index) => ({
-              lines: [`Use Ability ${index} once.`],
+              lines: [`Strike with Ability ${index} once.`, 'Stride away from Ada.'],
               tip: 'Built from saved notes.',
               abilityIds: [`ability-${index}`],
             })),
@@ -178,7 +178,7 @@ describe('proposeTurn', () => {
     });
     expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
     expect(localStorage.getItem('wgui-tactics-memory:1:2:nemeia')).toContain('Kept the numbers');
-    expect(result.choices[0].lines[0]).toBe('Use Ability 0 once.');
+    expect(result.choices[0].lines[0]).toBe('Strike with Ability 0 once.');
     expect(result.comment).toBe('Built from saved notes.');
   });
 });
