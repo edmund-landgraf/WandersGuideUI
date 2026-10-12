@@ -59,14 +59,14 @@ function FunctionStatus() {
       style={{ fontFamily: '"Courier New", Courier, monospace' }}
     >
       <p className='px-0.5 pb-1.5 text-[10px] tracking-wide text-muted-foreground'>WGUI extended · supabase</p>
-      <div className='grid grid-cols-[7.5rem_1fr_1.25rem] gap-x-2 gap-y-1'>
+      <ul className='m-0 flex list-none flex-col gap-1 p-0'>
         {WGUI_FUNCTIONS.map(({ name, label, desc }) => {
           const probe = status[name] ?? 'pending';
           return (
-            <div className='contents text-[11px] leading-4 text-foreground' key={name} title={name}>
-              <span className='truncate'>{label}</span>
-              <span className='truncate text-muted-foreground'>{desc}</span>
-              <span className='flex justify-end' aria-label={probe === 'pending' ? 'checking' : probe}>
+            <li className='flex items-baseline gap-2 text-[11px] leading-4 text-foreground' key={name} title={name}>
+              <span className='w-[5.5rem] shrink-0 truncate'>{label}</span>
+              <span className='min-w-0 flex-1 truncate text-muted-foreground'>{desc}</span>
+              <span className='flex shrink-0 justify-end self-center' aria-label={probe === 'pending' ? 'checking' : probe}>
                 {probe === 'pending' ? (
                   <span className='inline-block size-3.5 rounded-full bg-white/20' />
                 ) : probe === 'up' ? (
@@ -77,10 +77,10 @@ function FunctionStatus() {
                   <ArrowDownCircle className='size-3.5 text-red-400' />
                 )}
               </span>
-            </div>
+            </li>
           );
         })}
-      </div>
+      </ul>
     </div>
   );
 }
@@ -96,7 +96,7 @@ function Launcher() {
         <LauncherHeader />
         <section className='px-8 pt-10 pb-16'>
           <div className='mx-auto grid max-w-6xl content-start gap-8'>
-          <div className='grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-x-8'>
+          <div className='grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-x-8'>
             <h1 className='font-heading text-4xl leading-tight sm:text-5xl bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/60 lg:col-start-1'>
               A faster table workspace
             </h1>

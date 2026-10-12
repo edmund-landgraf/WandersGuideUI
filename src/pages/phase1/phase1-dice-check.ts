@@ -190,9 +190,9 @@ export function buildDiceRollLog(
   };
 }
 
-/** GM rolls default to private when the toolbar has not been set to public. */
+/** GM rolls default to public when the toolbar has not been set to private. */
 export function gmDiceAudience(audience: DiceRollLog['audience'] | undefined): 'public' | 'private' {
-  return audience === 'public' ? 'public' : 'private';
+  return audience === 'private' ? 'private' : 'public';
 }
 
 export function playerVisibleDiceRollLog<T extends { audience?: 'public' | 'private'; entries: { ally: boolean }[] }>(log: T[]): T[] {

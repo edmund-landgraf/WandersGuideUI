@@ -8,7 +8,7 @@ import { convertToHardcodedLink } from '@content/hardcoded-links';
 import type { Character, Combatant, CombatantActionLogEntry, CombatantChangeLogEntry, Condition, Hazard, InitiativeRoundLog, InitiativeRoundLogEntry, Inventory, Item, LivingEntity, Spell } from '@schemas/content';
 import { loadEntityAbilities, type Phase1Ability, type Phase1FeatCategory } from './phase1-abilities';
 import { readStoredDefenses } from './phase1-creature-defenses';
-import { type Phase1CreatureStatus } from './phase1-stats';
+import { applyStoredCreatureStats, type Phase1CreatureStatus } from './phase1-stats';
 import type { Phase1EntityCombatant } from './phase1-entity';
 import { StatDetailModal, type Phase1StatKey, type Phase1StatTarget } from './phase1-stat-modal';
 import { loadEntityDetails, type Phase1ProfRow } from './phase1-details';
@@ -1972,13 +1972,13 @@ function entityDescription(entity: LivingEntity) {
 }
 export function fallbackStatus(entity: LivingEntity): Phase1CreatureStatus {
   const stats = statsFor(entity);
-  return {
+  return applyStoredCreatureStats({
     maxHp: stats.maxHp, ac: stats.ac, fortitude: stats.fort, reflex: stats.reflex, will: stats.will, classDc: 10,
     perception: stats.perception, speed: 0, otherSpeeds: [], vision: 'Normal vision',
     attributes: { strength: 0, dexterity: 0, constitution: 0, intelligence: 0, wisdom: 0, charisma: 0 },
     conditions: entity.details?.conditions?.map((condition) => condition.value ? `${condition.name} ${condition.value}` : condition.name) ?? [],
     resistances: [], weaknesses: [], immunities: [], recallKnowledge: null,
-  };
+  }, entity);
 }
 
 type OverflowSnapshot = { el: HTMLElement; top: number; left: number };

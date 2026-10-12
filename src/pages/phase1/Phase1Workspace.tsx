@@ -1988,7 +1988,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const benchPlayers = players.filter((player) => !activeCharacterIds.has(player.id));
   const diceState = selectedEncounter?.meta_data.dice_roll_state;
   const ambaChallenges = useMemo(() => readAmbaChallenges(selectedEncounter?.meta_data), [selectedEncounter?.meta_data]);
-  const diceSide = diceState?.side;
+  const diceSide = isGm ? (diceState?.side ?? 'allies') : diceState?.side;
   const diceStat = diceState?.stat ?? undefined;
   const diceDc = diceState?.dc ?? null;
   const playerDiceRows = playerPartyDiceCombatants(activeCombatants.filter((combatant) => combatant.type !== 'HAZARD'));
@@ -2343,7 +2343,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
       setCheckOpen(false);
       return;
     }
-    const rows = isGm ? filterCombatantsBySide(livingActive, state.side) : playerPartyDiceCombatants(livingActive);
+    const rows = isGm ? filterCombatantsBySide(livingActive, state.side ?? 'allies') : playerPartyDiceCombatants(livingActive);
     const existingLog = diceLogRef.current.length ? diceLogRef.current : encounter.meta_data.dice_roll_log ?? [];
     const challenge = isGm ? findAmbaChallenge(readAmbaChallenges(encounter.meta_data), state.challenge_id) : undefined;
     const audience = isGm ? gmDiceAudience(state.audience) : undefined;
@@ -4398,7 +4398,7 @@ function DiceRollToolbar({ isGm, side, audience, title, dc, stat, challenges, ch
           <legend className='sr-only'>Who to include</legend>
           {(['enemies', 'allies', 'both'] as const).map((value) => (
             <label key={value} className='flex items-center gap-1.5 text-xs text-p1-muted'>
-              <input type='radio' name='dice-roll-side' checked={side === value} onChange={() => onSide(value)} />
+              <input type='radio' name='dice-roll-side' checked={(side ?? 'allies') === value} onChange={() => onSide(value)} />
               {value === 'enemies' ? 'Enemies' : value === 'allies' ? 'Allies' : 'Both'}
             </label>
           ))}
@@ -4409,7 +4409,7 @@ function DiceRollToolbar({ isGm, side, audience, title, dc, stat, challenges, ch
           <legend className='sr-only'>Who can see this roll</legend>
           {(['private', 'public'] as const).map((value) => (
             <label key={value} className='flex items-center gap-1.5 text-xs text-p1-muted'>
-              <input type='radio' name='dice-roll-audience' checked={(audience ?? 'private') === value} onChange={() => onAudience(value)} />
+              <input type='radio' name='dice-roll-audience' checked={(audience ?? 'public') === value} onChange={() => onAudience(value)} />
               {value === 'private' ? 'Private' : 'Public'}
             </label>
           ))}

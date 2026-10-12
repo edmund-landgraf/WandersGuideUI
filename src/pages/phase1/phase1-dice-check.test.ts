@@ -23,7 +23,8 @@ describe('playerVisibleDiceRollLog', () => {
       { entries: [{ ally: true }] },
     ];
     expect(playerVisibleDiceRollLog(log)).toEqual([log[1], log[2]]);
-    expect(gmDiceAudience(undefined)).toBe('private');
+    expect(gmDiceAudience(undefined)).toBe('public');
+    expect(gmDiceAudience('private')).toBe('private');
     expect(gmDiceAudience('public')).toBe('public');
   });
 });

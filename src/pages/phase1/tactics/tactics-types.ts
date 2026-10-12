@@ -42,6 +42,7 @@ export type TacticsCombatant = {
   reflex?: number;
   will?: number;
   speedFeet?: number;
+  description?: string;
   abilities: TacticsAbility[];
 };
 
@@ -50,6 +51,7 @@ export type TacticsSpend = { combatantId: string; abilityId: string; used: numbe
 export type TacticsChoice = {
   id: string;
   text: string;
+  lines: string[];
   score: number;
   tip: string;
   abilityIds: string[];

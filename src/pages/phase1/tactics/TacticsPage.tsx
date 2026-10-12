@@ -7,10 +7,9 @@ import { phase1Request, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers,
 import { loadEntityAbilities } from '../phase1-abilities';
 import { calculateEntityStatus } from '../phase1-stats';
 import type { Phase1EntityCombatant } from '../phase1-entity';
-import { ollamaComment, ollamaDesign } from './tactics-ollama';
+import { ollamaDesign, proposeTurn } from './tactics-ollama';
 import { postChoice, postSnapshot } from './tactics-export';
 import { confirmSpend, listSpends } from './tactics-spends';
-import { composeTurns, sheetVetoReasons } from './tactics-turns';
 import { parseAbility } from './tactics-parse';
 import type { TacticsChoice, TacticsCombatant, TacticsSnapshot } from './tactics-types';
 
@@ -47,7 +46,12 @@ export function TacticsPage() {
   });
   const [index, setIndex] = useState(0);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [comment, setComment] = useState('Commentary appears after the turns are built.');
+  const [comment, setComment] = useState('');
+  const [statusLog, setStatusLog] = useState<string[]>([]);
+  const [waiting, setWaiting] = useState(false);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const [choices, setChoices] = useState<TacticsChoice[]>([]);
+  const [picked, setPicked] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
   const [didText, setDidText] = useState('');
   const [designText, setDesignText] = useState('');
@@ -60,10 +64,43 @@ export function TacticsPage() {
     () => (bundle.data ? listSpends(campaignId, encounterId) : []),
     [bundle.data, campaignId, encounterId, spendTick]
   );
-  const choices = useMemo(() => {
-    if (!bundle.data || !enemy) return [];
-    return composeTurns(enemy, bundle.data.combatants, spends);
-  }, [bundle.data, enemy, spends]);
+  const turnKey = enemy ? `${campaignId}:${encounterId}:${bundle.data?.round}:${enemy.id}:${spends.map((spend) => `${spend.abilityId}:${spend.used}`).join(',')}` : '';
+  useEffect(() => {
+    if (!bundle.data || !enemy || !turnKey) return;
+    let cancelled = false;
+    setWaiting(true);
+    setElapsedSec(0);
+    setPicked(false);
+    setChoices([]);
+    setStatusLog([]);
+    setComment(`Preparing ${enemy.name}'s sheet for llama3.1.`);
+    const started = Date.now();
+    const clock = window.setInterval(() => setElapsedSec(Math.floor((Date.now() - started) / 1000)), 1000);
+    void proposeTurn({
+      campaignId,
+      encounterId,
+      actor: enemy,
+      combatants: bundle.data.combatants,
+      spends,
+      onStatus: (status) => {
+        if (cancelled) return;
+        setComment(status.detail);
+        setStatusLog((current) => (current[current.length - 1] === status.detail ? current : [...current, status.detail]));
+      },
+    }).then((result) => {
+      window.clearInterval(clock);
+      if (cancelled) return;
+      setChoices(result.choices);
+      setComment(result.comment);
+      setWaiting(false);
+    });
+    return () => {
+      cancelled = true;
+      window.clearInterval(clock);
+    };
+    // turnKey already covers the enemy, round, and spends being sent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turnKey]);
 
   const snapshot: TacticsSnapshot | null = bundle.data && enemy
     ? {
@@ -80,16 +117,15 @@ export function TacticsPage() {
 
   const snapshotId = snapshot?.snapshotId;
   useEffect(() => {
-    if (!snapshot || !enemy || !bundle.data) return;
+    if (!snapshot || choices.length === 0) return;
     void postSnapshot(snapshot);
-    const reasons = sheetVetoReasons(enemy, bundle.data.combatants, choices);
-    void ollamaComment(reasons, snapshotBlock(snapshot)).then((result) => setComment(result.text));
-    // The snapshot id already covers the turn being offered.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshotId]);
 
   function selectChoice(choice: TacticsChoice) {
-    if (!enemy) return;
+    if (!enemy || picked) return;
+    setPicked(true);
+    setChoices([]);
     for (const abilityId of new Set(choice.abilityIds)) {
       const ability = enemy.abilities.find((item) => item.id === abilityId);
       if (ability?.usesMax != null) confirmSpend(campaignId, encounterId, enemy.id, abilityId);
@@ -148,15 +184,31 @@ export function TacticsPage() {
             </p>
           ))}
         </div>
+        {waiting && (
+          <section className='border border-p1-border bg-p1-surface px-3 py-2 text-sm'>
+            <p className='text-p1-text'>{comment} · {elapsedSec}s</p>
+            {statusLog.length > 1 && (
+              <ul className='mt-2 space-y-1 text-xs text-p1-muted'>
+                {statusLog.slice(0, -1).map((line, lineIndex) => (
+                  <li key={lineIndex}>{line}</li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
         <div className='flex flex-col gap-2'>
           {choices.map((choice) => (
-            <button key={choice.id} type='button' className='border border-p1-border bg-p1-surface px-3 py-2 text-left text-sm' onClick={() => selectChoice(choice)}>
-              <span className='block'>{choice.text}</span>
+            <button key={choice.id} type='button' disabled={picked} className='border border-p1-border bg-p1-surface px-3 py-2 text-left text-sm disabled:opacity-50' onClick={() => selectChoice(choice)}>
+              <ul className='list-disc space-y-1 pl-4'>
+                {choice.lines.map((line, lineIndex) => (
+                  <li key={lineIndex}>{line}</li>
+                ))}
+              </ul>
               <span className='mt-1 block text-xs text-p1-muted'>{choice.tip}</span>
             </button>
           ))}
         </div>
-        <div className='rounded border border-[#e7e1d6] bg-[#f6f1e8] px-3 py-2 text-sm text-[#3d3830]'>{comment}</div>
+        {!waiting && comment && <div className='rounded border border-[#e7e1d6] bg-[#f6f1e8] px-3 py-2 text-sm text-[#3d3830]'>{comment}</div>}
         <div className='flex flex-wrap gap-2'>
           <button type='button' className='toolbar-button' onClick={() => setIndex((value) => value + 1)}>Next enemy</button>
           <button type='button' className='toolbar-button' onClick={() => setIndex((value) => value + 1)}>Skip</button>
@@ -227,6 +279,7 @@ async function loadTacticsBundle(campaignId: number, encounterId: number, userId
       reflex: status.reflex,
       will: status.will,
       speedFeet: status.speed,
+      description: data.details && 'description' in data.details ? data.details.description : undefined,
       abilities: abilities.map((ability) =>
         parseAbility({
           id: ability.id,

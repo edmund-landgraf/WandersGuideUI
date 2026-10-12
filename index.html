@@ -60,6 +60,7 @@
         : location.pathname.startsWith('/phase0')
         ? import('/src/pages/phase0/main.tsx')
         : location.pathname.startsWith('/phase1') ||
+            location.pathname.startsWith('/tactics') ||
             location.pathname.startsWith('/sheet') ||
             location.pathname.startsWith('/builder') ||
             location.pathname.startsWith('/stat-block') ||

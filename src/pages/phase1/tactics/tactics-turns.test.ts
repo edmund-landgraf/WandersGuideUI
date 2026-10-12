@@ -52,6 +52,19 @@ describe('composeTurns', () => {
     expect(choices.some((choice) => choice.text.includes('ends fascination'))).toBe(true);
   });
 
+  it('lists three actions and keeps Fist as the last bullet', () => {
+    const spade = parseAbility({ id: 'spade', name: 'Spade', actions: 'ONE-ACTION', description: 'Melee Strike +7, Damage 1d6 piercing.' });
+    const fist = parseAbility({ id: 'fist', name: 'Fist', actions: 'ONE-ACTION', description: 'Melee Strike +7, Damage 1d4 bludgeoning.' });
+    const actor = fighter({ id: 'mob', name: 'Mob', side: 'enemy', abilities: [fist, spade] });
+    const hunnger = fighter({ id: 'hunnger', name: 'Hunnger', side: 'ally', ac: 18 });
+    const [choice] = composeTurns(actor, [actor, hunnger], []);
+    expect(choice.lines).toHaveLength(3);
+    expect(choice.lines[0]).toContain('with Spade');
+    expect(choice.lines[1]).toContain('with Spade');
+    expect(choice.lines[2]).toContain('with Fist');
+    expect(choice.lines[0]).not.toContain('with Fist');
+  });
+
   it('drops healing when every ally is at full hit points', () => {
     const heal = parseAbility({ id: 'heal', name: 'Heal', actions: 'ONE-ACTION', description: 'You heal an ally.' });
     const actor = fighter({ id: 'cleric', name: 'Cleric', side: 'enemy', abilities: [heal] });

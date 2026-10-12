@@ -68,7 +68,7 @@ export async function calculateEntityStatus(combatant: Phase1EntityCombatant): P
     }
   }
 
-  return overlayStoredStats({
+  return applyStoredCreatureStats({
     maxHp: resolveMaxHp(getFinalHealthValue(storeId), entity),
     ac: getFinalAcValue(storeId, getBestArmor(storeId, entity.inventory)?.item),
     fortitude: parseSigned(getFinalProfValue(storeId, 'SAVE_FORT')),
@@ -100,26 +100,94 @@ function parseSigned(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+type StoredCreature = {
+  hp_current?: number | null;
+  operations?: Array<{ type?: string; data?: { variable?: string; value?: unknown } | null }> | null;
+  meta_data?: { calculated_stats?: { hp_max?: number; ac?: number; profs?: Record<string, { total?: number }> } | null } | null;
+};
+
+const ATTRIBUTE_VARIABLES = {
+  strength: 'ATTRIBUTE_STR',
+  dexterity: 'ATTRIBUTE_DEX',
+  constitution: 'ATTRIBUTE_CON',
+  intelligence: 'ATTRIBUTE_INT',
+  wisdom: 'ATTRIBUTE_WIS',
+  charisma: 'ATTRIBUTE_CHA',
+} as const;
+
+function operationNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (value && typeof value === 'object' && 'value' in value) {
+    const inner = (value as { value?: unknown }).value;
+    if (typeof inner === 'number' && Number.isFinite(inner)) return inner;
+  }
+  return undefined;
+}
+
+function setValueNumber(entity: StoredCreature, variable: string): number | undefined {
+  for (const operation of entity.operations ?? []) {
+    if (operation.type !== 'setValue' || operation.data?.variable !== variable) continue;
+    const value = operationNumber(operation.data.value);
+    if (value != null) return value;
+  }
+  return undefined;
+}
+
+function adjStrings(entity: StoredCreature, variable: string): string[] {
+  const values: string[] = [];
+  for (const operation of entity.operations ?? []) {
+    if (operation.type !== 'adjValue' || operation.data?.variable !== variable) continue;
+    if (typeof operation.data.value === 'string' && operation.data.value.trim()) values.push(operation.data.value.trim());
+  }
+  return values;
+}
+
 function resolveMaxHp(computed: number, entity: { hp_current?: number | null; meta_data?: { calculated_stats?: { hp_max?: number } } | null }) {
-  if (computed > 0) return computed;
   const stored = entity.meta_data?.calculated_stats?.hp_max;
+  if (computed > 1) return computed;
+  if (typeof stored === 'number' && stored > 1) return stored;
+  if (computed > 0) return computed;
   if (typeof stored === 'number' && stored > 0) return stored;
   return entity.hp_current ?? computed;
 }
 
-function overlayStoredStats(live: Phase1CreatureStatus, entity: { hp_current?: number | null; meta_data?: { calculated_stats?: { hp_max?: number; ac?: number; profs?: Record<string, { total: number }> } } | null }): Phase1CreatureStatus {
+export function applyStoredCreatureStats(live: Phase1CreatureStatus, entity: StoredCreature): Phase1CreatureStatus {
   const stored = entity.meta_data?.calculated_stats;
   const profs = stored?.profs;
-  const pick = (liveValue: number, storedValue: number | undefined, empty = 0) =>
-    liveValue !== empty ? liveValue : storedValue ?? liveValue;
+  const attributes = { ...live.attributes };
+  const liveAttributesBlank = Object.values(live.attributes).every((value) => value === 0);
+  if (liveAttributesBlank) {
+    for (const [key, variable] of Object.entries(ATTRIBUTE_VARIABLES)) {
+      const value = setValueNumber(entity, variable);
+      if (value != null) attributes[key as keyof Phase1CreatureStatus['attributes']] = value;
+    }
+  }
+  const recoveredAttributes = Object.values(attributes).some((value) => value !== 0);
+  const preferExported = liveAttributesBlank && recoveredAttributes;
+  const pick = (liveValue: number, storedValue: number | undefined, empty = 0) => {
+    if (preferExported && storedValue != null) return storedValue;
+    return liveValue !== empty ? liveValue : storedValue ?? liveValue;
+  };
+  const storedHp = typeof stored?.hp_max === 'number' ? stored.hp_max : undefined;
+  const speed = live.speed > 0 ? live.speed : setValueNumber(entity, 'SPEED') ?? live.speed;
+  const otherSpeeds = live.otherSpeeds.length > 0 ? live.otherSpeeds : ['FLY', 'CLIMB', 'BURROW', 'SWIM'].flatMap((name) => {
+    const value = setValueNumber(entity, `SPEED_${name}`);
+    return value != null && value > 0 ? [`${name[0]}${name.slice(1).toLowerCase()} ${value} ft.`] : [];
+  });
   return {
     ...live,
-    maxHp: live.maxHp > 0 ? live.maxHp : stored?.hp_max || entity.hp_current || 0,
-    ac: live.ac > 10 ? live.ac : stored?.ac ?? live.ac,
+    attributes,
+    maxHp: live.maxHp > 1 ? live.maxHp : storedHp && storedHp > 1 ? storedHp : live.maxHp || storedHp || entity.hp_current || 0,
+    ac: preferExported && stored?.ac != null ? stored.ac : live.ac > 10 ? live.ac : stored?.ac ?? live.ac,
     fortitude: pick(live.fortitude, profs?.SAVE_FORT?.total),
     reflex: pick(live.reflex, profs?.SAVE_REFLEX?.total),
     will: pick(live.will, profs?.SAVE_WILL?.total),
     classDc: live.classDc !== 10 ? live.classDc : profs?.CLASS_DC?.total ?? live.classDc,
     perception: pick(live.perception, profs?.PERCEPTION?.total),
+    speed,
+    otherSpeeds,
+    resistances: live.resistances.length > 0 ? live.resistances : adjStrings(entity, 'RESISTANCES'),
+    weaknesses: live.weaknesses.length > 0 ? live.weaknesses : adjStrings(entity, 'WEAKNESSES'),
+    immunities: live.immunities.length > 0 ? live.immunities : adjStrings(entity, 'IMMUNITIES'),
   };
 }

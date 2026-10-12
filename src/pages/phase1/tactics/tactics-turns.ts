@@ -103,8 +103,17 @@ type Script = { parts: string[]; score: number; tip: string; abilityIds: string[
 
 function push(scripts: Script[], script: Script) {
   if (script.actions <= 0 || script.actions > 3) return;
+  if (script.parts.length !== 3) return;
   if (scripts.some((item) => item.parts.join('|') === script.parts.join('|'))) return;
   scripts.push(script);
+}
+
+function isFist(ability: TacticsAbility): boolean {
+  return /\bfist\b/i.test(ability.name);
+}
+
+function leadsWithFist(parts: string[]): boolean {
+  return /^Attack .+ with Fist\b/i.test(parts[0] ?? '');
 }
 
 export function composeTurns(actor: TacticsCombatant, all: TacticsCombatant[], spends: TacticsSpend[]): TacticsChoice[] {
@@ -117,12 +126,14 @@ export function composeTurns(actor: TacticsCombatant, all: TacticsCombatant[], s
   for (const ability of abilities) {
     if (ability.kind === 'area') {
       const score = 40 + (cluster ? 25 : 0) + (ability.fascinates ? 8 : 0) - (ability.actions > 2 ? 4 : 0);
+      const parts = [areaLine(ability, actor)];
+      while (parts.length < 3) parts.push('Wait.');
       push(scripts, {
-        parts: [areaLine(ability, actor)],
+        parts,
         score,
         tip: cluster ? 'The area is built to catch several creatures.' : 'The area stays legal even against one creature.',
         abilityIds: [ability.id],
-        actions: ability.actions,
+        actions: 3,
       });
     }
     if (ability.kind === 'heal') {
@@ -130,78 +141,100 @@ export function composeTurns(actor: TacticsCombatant, all: TacticsCombatant[], s
       if (!patient) continue;
       const ratio = patient.hpCurrent / Math.max(1, patient.hpMax);
       const scratch = ratio > 0.85;
+      const healParts = [`Heal ${patient.name} with ${ability.name}. ${rangeHold(ability, allies)}`.trim()];
+      while (healParts.length < 3) healParts.push('Wait.');
       push(scripts, {
-        parts: [`Heal ${patient.name} with ${ability.name}. ${rangeHold(ability, allies)}`.trim()],
+        parts: healParts,
         score: scratch && cluster ? 8 : ratio < 0.35 ? 55 : 28,
         tip: scratch && cluster ? 'Healing a scratch while a cluster is standing in an area ranks low.' : 'An ally is below maximum hit points.',
         abilityIds: [ability.id],
-        actions: ability.actions,
+        actions: 3,
       });
     }
     if (ability.kind === 'buff' || ability.kind === 'aid') {
       const pays = /strike|attack|damage|off-guard|bonus/.test(ability.description.toLowerCase());
+      const buffParts = [`${ability.name}. ${rangeHold(ability, allies)}`.trim()];
+      while (buffParts.length < 3) buffParts.push('Wait.');
       push(scripts, {
-        parts: [`${ability.name}. ${rangeHold(ability, allies)}`.trim()],
+        parts: buffParts,
         score: pays ? 36 : 14,
         tip: pays ? 'The block pays off for staying next to that ally.' : 'Aid or a buff with nothing on the block that benefits ranks low.',
         abilityIds: [ability.id],
-        actions: ability.actions,
+        actions: 3,
       });
     }
-    if (ability.kind === 'strike') {
-      for (const target of foes) {
-        const lines = [1, 2, 3].map((count) => {
-          const bits = Array.from({ length: count }, (_, index) => strikeLine(ability, actor, target, index));
-          const finished = target.hpMax > 0 && target.hpCurrent / target.hpMax <= 0.25;
-          const third = count === 3;
-          return {
-            parts: bits,
-            score: 30 - (count - 1) * 12 + (offGuard(target) ? 6 : 0) + (finished && third ? 10 : third ? -8 : 0),
-            tip: third && !finished ? 'A third Strike takes the full multiple attack penalty and ranks near the bottom.' : offGuard(target) ? 'The target is off-guard.' : 'A Strike stays legal for each living player character.',
-            abilityIds: Array.from({ length: count }, () => ability.id),
-            actions: ability.actions * count,
-          };
+  }
+
+  const strikes = abilities.filter((ability) => ability.kind === 'strike' && ability.actions === 1);
+  const ordered = [...strikes].sort((a, b) => Number(isFist(a)) - Number(isFist(b)) || a.name.localeCompare(b.name));
+  const lead = ordered.find((ability) => !isFist(ability)) ?? ordered[0];
+  const fist = ordered.find((ability) => isFist(ability));
+  if (lead) {
+    for (const target of foes) {
+      const sequence = fist && fist.id !== lead.id ? [lead, lead, fist] : [lead, lead, lead];
+      const finished = target.hpMax > 0 && target.hpCurrent / target.hpMax <= 0.25;
+      push(scripts, {
+        parts: sequence.map((ability, mapIndex) => strikeLine(ability, actor, target, mapIndex)),
+        score: 30 + (offGuard(target) ? 6 : 0) + (finished ? 10 : -8) + (fist && fist.id !== lead.id ? 4 : 0),
+        tip: finished
+          ? 'The target is nearly finished, so the third Strike is worth the penalty.'
+          : 'Three Strikes. Fist is the last action.',
+        abilityIds: sequence.map((ability) => ability.id),
+        actions: 3,
+      });
+      if (allies.length) {
+        const follow = fist && fist.id !== lead.id ? fist : lead;
+        push(scripts, {
+          parts: [
+            `Stride next to ${allies[0].name}.`,
+            strikeLine(lead, actor, target, 0),
+            strikeLine(follow, actor, target, 1),
+          ],
+          score: /adjacent/.test(actor.abilities.map((item) => item.description).join(' ').toLowerCase()) ? 34 : 22,
+          tip: 'Stride next to the other enemy, then Strike. Fist stays the last action.',
+          abilityIds: [lead.id, follow.id],
+          actions: 3,
         });
-        for (const line of lines) push(scripts, line);
-        if (allies.length && ability.actions === 1) {
-          push(scripts, {
-            parts: [`Stride next to ${allies[0].name}, then ${strikeLine(ability, actor, target, 0)}`],
-            score: /adjacent/.test(actor.abilities.map((item) => item.description).join(' ').toLowerCase()) ? 34 : 22,
-            tip: 'Stride next to the other enemy, then Strike, only outranks a lone Strike when the block pays for that adjacency.',
-            abilityIds: [ability.id],
-            actions: 2,
-          });
-        }
       }
     }
+  }
+  for (const ability of abilities) {
     if (ability.kind === 'skill') {
       for (const target of foes) {
+        const skillParts = [skillLine(ability, actor, target)];
+        while (skillParts.length < 3) skillParts.push('Wait.');
         push(scripts, {
-          parts: [skillLine(ability, actor, target)],
+          parts: skillParts,
           score: 26,
           tip: 'The check names both sides.',
           abilityIds: [ability.id],
-          actions: ability.actions,
+          actions: 3,
         });
       }
     }
   }
 
-  const strike = abilities.find((ability) => ability.kind === 'strike');
+  const strike = lead ?? abilities.find((ability) => ability.kind === 'strike' && !isFist(ability)) ?? abilities.find((ability) => ability.kind === 'strike');
   const area = abilities.find((ability) => ability.kind === 'area');
   if (area && strike && foes[0] && area.actions + strike.actions <= 3) {
+    const follow = fist && fist.id !== strike.id ? fist : strike;
+    const areaParts = [areaLine(area, actor), strikeLine(strike, actor, foes[0], 0)];
+    if (area.actions + strike.actions < 3) areaParts.push(strikeLine(follow, actor, foes[0], 1));
+    while (areaParts.length < 3) areaParts.push('Wait.');
     push(scripts, {
-      parts: [areaLine(area, actor), strikeLine(strike, actor, foes[0], 0)],
+      parts: areaParts.slice(0, 3),
       score: area.fascinates ? 18 : 24,
       tip: area.fascinates
         ? 'Cloud then Strike ends fascination. Cloud-then-wait keeps the condition the creature just applied.'
-        : 'Area, then a Strike.',
-      abilityIds: [area.id, strike.id],
-      actions: area.actions + strike.actions,
+        : 'Area, then a Strike. Fist stays the last action.',
+      abilityIds: [area.id, strike.id, follow.id],
+      actions: 3,
     });
     if (area.fascinates && area.actions < 3) {
+      const waitParts = [areaLine(area, actor), 'Wait. Do not Strike, or fascination ends.'];
+      while (waitParts.length < 3) waitParts.push('Wait.');
       push(scripts, {
-        parts: [areaLine(area, actor), 'Wait. Do not Strike, or fascination ends.'],
+        parts: waitParts,
         score: 48,
         tip: 'A later Strike by this creature on a fascinated player character ends fascination. Waiting keeps the condition.',
         abilityIds: [area.id],
@@ -211,11 +244,12 @@ export function composeTurns(actor: TacticsCombatant, all: TacticsCombatant[], s
   }
 
   return scripts
-    .sort((a, b) => b.score - a.score || a.parts[0].localeCompare(b.parts[0]))
+    .sort((a, b) => Number(leadsWithFist(a.parts)) - Number(leadsWithFist(b.parts)) || b.score - a.score || a.parts[0].localeCompare(b.parts[0]))
     .slice(0, 8)
     .map((script, index) => ({
       id: `${actor.id}-${index}`,
       text: script.parts.join(' '),
+      lines: script.parts,
       score: script.score,
       tip: script.tip,
       abilityIds: script.abilityIds,
