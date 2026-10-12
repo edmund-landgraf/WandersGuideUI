@@ -1,0 +1,258 @@
+import { useAuthSession } from '@auth/useAuthSession';
+import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import type { Character, Combatant, Condition, Creature, Encounter, LivingEntity } from '@schemas/content';
+import { phase1Request, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId } from '../phase1-api';
+import { loadEntityAbilities } from '../phase1-abilities';
+import { calculateEntityStatus } from '../phase1-stats';
+import type { Phase1EntityCombatant } from '../phase1-entity';
+import { ollamaComment, ollamaDesign } from './tactics-ollama';
+import { postChoice, postSnapshot } from './tactics-export';
+import { confirmSpend, listSpends } from './tactics-spends';
+import { composeTurns, sheetVetoReasons } from './tactics-turns';
+import { parseAbility } from './tactics-parse';
+import type { TacticsChoice, TacticsCombatant, TacticsSnapshot } from './tactics-types';
+
+type Message = { id: string; side: 'guide' | 'gm'; text: string };
+
+function isHazard(combatant: Combatant) {
+  return combatant.type === 'HAZARD';
+}
+
+function livingEnemy(combatant: { ally?: boolean | null; data?: { hp_current?: number | null } | null }) {
+  if (combatant.ally === true) return false;
+  const hp = combatant.data?.hp_current;
+  if (hp == null) return true;
+  return hp > 0;
+}
+
+function conditionParts(conditions: Condition[] | null | undefined) {
+  return (conditions ?? []).map((condition) => ({
+    name: condition.name,
+    value: condition.value ?? undefined,
+  }));
+}
+
+export function TacticsPage() {
+  const session = useAuthSession();
+  const { campaignId: rawCampaign, encounterId: rawEncounter } = useParams();
+  const campaignId = Number(rawCampaign);
+  const encounterId = Number(rawEncounter);
+  const enabled = Boolean(session && Number.isFinite(campaignId) && Number.isFinite(encounterId));
+  const bundle = useQuery({
+    queryKey: ['tactics-window', campaignId, encounterId, session?.user.id],
+    enabled,
+    queryFn: () => loadTacticsBundle(campaignId, encounterId, session!.user.id),
+  });
+  const [index, setIndex] = useState(0);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [comment, setComment] = useState('Commentary appears after the turns are built.');
+  const [customOpen, setCustomOpen] = useState(false);
+  const [didText, setDidText] = useState('');
+  const [designText, setDesignText] = useState('');
+  const [designLine, setDesignLine] = useState('');
+  const [designComment, setDesignComment] = useState('');
+  const [spendTick, setSpendTick] = useState(0);
+
+  const enemy = bundle.data?.enemies[index];
+  const spends = useMemo(
+    () => (bundle.data ? listSpends(campaignId, encounterId) : []),
+    [bundle.data, campaignId, encounterId, spendTick]
+  );
+  const choices = useMemo(() => {
+    if (!bundle.data || !enemy) return [];
+    return composeTurns(enemy, bundle.data.combatants, spends);
+  }, [bundle.data, enemy, spends]);
+
+  const snapshot: TacticsSnapshot | null = bundle.data && enemy
+    ? {
+        snapshotId: `${campaignId}:${encounterId}:${bundle.data.round}:${enemy.id}:${choices.map((choice) => choice.id).join(',')}`,
+        campaignId,
+        encounterId,
+        round: bundle.data.round,
+        enemyId: enemy.id,
+        combatants: bundle.data.combatants,
+        spends,
+        choices,
+      }
+    : null;
+
+  const snapshotId = snapshot?.snapshotId;
+  useEffect(() => {
+    if (!snapshot || !enemy || !bundle.data) return;
+    void postSnapshot(snapshot);
+    const reasons = sheetVetoReasons(enemy, bundle.data.combatants, choices);
+    void ollamaComment(reasons, snapshotBlock(snapshot)).then((result) => setComment(result.text));
+    // The snapshot id already covers the turn being offered.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshotId]);
+
+  function selectChoice(choice: TacticsChoice) {
+    if (!enemy) return;
+    for (const abilityId of new Set(choice.abilityIds)) {
+      const ability = enemy.abilities.find((item) => item.id === abilityId);
+      if (ability?.usesMax != null) confirmSpend(campaignId, encounterId, enemy.id, abilityId);
+    }
+    setSpendTick((value) => value + 1);
+    setMessages((current) => [
+      ...current,
+      { id: crypto.randomUUID(), side: 'guide', text: choice.text },
+      { id: crypto.randomUUID(), side: 'gm', text: `Selected: ${choice.text}` },
+    ]);
+    void postChoice({ snapshotId: snapshot?.snapshotId ?? '', combatantId: enemy.id, choiceText: choice.text, source: 'menu' });
+  }
+
+  function recordDid() {
+    if (!enemy || !didText.trim()) return;
+    const text = didText.trim();
+    setMessages((current) => [...current, { id: crypto.randomUUID(), side: 'gm', text }]);
+    void postChoice({ snapshotId: snapshot?.snapshotId ?? '', combatantId: enemy.id, choiceText: text, source: 'already-did' });
+    setDidText('');
+    setCustomOpen(false);
+  }
+
+  async function design() {
+    if (!snapshot || !designText.trim()) return;
+    const result = await ollamaDesign(designText.trim(), snapshotBlock(snapshot));
+    setDesignLine(result.line);
+    setDesignComment(result.comment);
+    setComment(result.comment);
+  }
+
+  function acceptDesign() {
+    if (!enemy || !designLine.trim()) return;
+    const text = designLine.trim();
+    setMessages((current) => [...current, { id: crypto.randomUUID(), side: 'gm', text }]);
+    void postChoice({ snapshotId: snapshot?.snapshotId ?? '', combatantId: enemy.id, choiceText: text, source: 'custom-design' });
+    setDesignText('');
+    setDesignLine('');
+    setCustomOpen(false);
+  }
+
+  return (
+    <div className='min-h-screen bg-p1-bg text-p1-text'>
+      <header className='border-b border-p1-border px-5 py-4'>
+        <p className='text-[10px] uppercase tracking-wide text-p1-faint'>GM tactics</p>
+        <h1 className='text-xl font-semibold'>
+          Round {bundle.data?.round ?? '—'} · {enemy?.name ?? 'No living enemy'}
+        </h1>
+      </header>
+      <div className='mx-auto flex max-w-3xl flex-col gap-4 px-5 py-4'>
+        {bundle.isLoading && <p className='text-sm text-p1-muted'>Loading the encounter snapshot…</p>}
+        {bundle.error && <p className='text-sm text-p1-danger-soft'>{bundle.error instanceof Error ? bundle.error.message : 'Could not load the encounter.'}</p>}
+        <div className='flex flex-col gap-2'>
+          {messages.map((message) => (
+            <p key={message.id} className={`max-w-[85%] rounded px-3 py-2 text-sm ${message.side === 'guide' ? 'self-start bg-p1-surface' : 'self-end bg-p1-accent/20'}`}>
+              {message.text}
+            </p>
+          ))}
+        </div>
+        <div className='flex flex-col gap-2'>
+          {choices.map((choice) => (
+            <button key={choice.id} type='button' className='border border-p1-border bg-p1-surface px-3 py-2 text-left text-sm' onClick={() => selectChoice(choice)}>
+              <span className='block'>{choice.text}</span>
+              <span className='mt-1 block text-xs text-p1-muted'>{choice.tip}</span>
+            </button>
+          ))}
+        </div>
+        <div className='rounded border border-[#e7e1d6] bg-[#f6f1e8] px-3 py-2 text-sm text-[#3d3830]'>{comment}</div>
+        <div className='flex flex-wrap gap-2'>
+          <button type='button' className='toolbar-button' onClick={() => setIndex((value) => value + 1)}>Next enemy</button>
+          <button type='button' className='toolbar-button' onClick={() => setIndex((value) => value + 1)}>Skip</button>
+          <button type='button' className='toolbar-button' onClick={() => setCustomOpen(true)}>Custom</button>
+        </div>
+        {customOpen && (
+          <section className='border border-p1-border bg-p1-surface p-3 text-sm'>
+            <label className='block text-xs text-p1-muted'>
+              Tell you what I did
+              <textarea className='mt-1 w-full border border-p1-border bg-p1-inset p-2' rows={2} value={didText} onChange={(event) => setDidText(event.target.value)} />
+            </label>
+            <button type='button' className='toolbar-button mt-2' onClick={recordDid}>Select</button>
+            <label className='mt-4 block text-xs text-p1-muted'>
+              Add a custom choice
+              <textarea className='mt-1 w-full border border-p1-border bg-p1-inset p-2' rows={2} value={designText} onChange={(event) => setDesignText(event.target.value)} />
+            </label>
+            <button type='button' className='toolbar-button mt-2' onClick={() => void design()}>Check</button>
+            {designLine && (
+              <label className='mt-3 block text-xs text-p1-muted'>
+                Rules line
+                <textarea className='mt-1 w-full border border-p1-border bg-p1-inset p-2' rows={3} value={designLine} onChange={(event) => setDesignLine(event.target.value)} />
+              </label>
+            )}
+            {designComment && <p className='mt-2 text-xs text-p1-muted'>{designComment}</p>}
+            <div className='mt-2 flex gap-2'>
+              <button type='button' className='toolbar-button' onClick={acceptDesign}>Accept</button>
+              <button type='button' className='toolbar-button' onClick={() => { setDesignLine(''); setDesignComment(''); setCustomOpen(false); }}>Discard</button>
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function snapshotBlock(snapshot: TacticsSnapshot) {
+  return snapshot.combatants
+    .map((combatant) => `${combatant.name} (${combatant.side}) HP ${combatant.hpCurrent}/${combatant.hpMax} AC ${combatant.ac ?? '?'}`)
+    .join('\n');
+}
+
+async function loadTacticsBundle(campaignId: number, encounterId: number, userId: string) {
+  const encounters = campaignId > 0
+    ? await loadPhase1CampaignEncounters(campaignId)
+    : await phase1Request<Encounter[]>('find-encounter', { user_id: userId });
+  const encounter = (encounters ?? []).find((item) => item.id === encounterId);
+  if (!encounter) throw new Error('Encounter not found.');
+  const players = campaignId > 0 ? await loadPhase1CampaignPlayers(campaignId, userId) : await phase1Request<Character[]>('find-character', { user_id: userId });
+  const combatants: TacticsCombatant[] = [];
+  for (const combatant of encounter.combatants?.list ?? []) {
+    if (isHazard(combatant)) continue;
+    const data = resolveData(combatant, players ?? []);
+    if (!data) continue;
+    const prepared = { ...combatant, data } as Phase1EntityCombatant;
+    const [status, abilities] = await Promise.all([calculateEntityStatus(prepared), loadEntityAbilities(prepared)]);
+    const hp = data.hp_current ?? status.maxHp;
+    combatants.push({
+      id: combatant._id,
+      name: data.name,
+      side: combatant.ally === true || combatant.type === 'CHARACTER' ? 'ally' : 'enemy',
+      level: data.level,
+      hpCurrent: hp,
+      hpMax: status.maxHp || hp,
+      ac: status.ac,
+      conditions: conditionParts(data.details?.conditions),
+      perception: status.perception,
+      fortitude: status.fortitude,
+      reflex: status.reflex,
+      will: status.will,
+      speedFeet: status.speed,
+      abilities: abilities.map((ability) =>
+        parseAbility({
+          id: ability.id,
+          name: ability.name,
+          actions: ability.actions,
+          traits: ability.traitNames,
+          frequency: ability.frequency,
+          description: ability.description,
+        })
+      ),
+    });
+  }
+  const enemies = combatants.filter((combatant) => livingEnemy({ ally: combatant.side === 'ally', data: { hp_current: combatant.hpCurrent } }));
+  enemies.sort((a, b) => initiativeOf(encounter, b.id) - initiativeOf(encounter, a.id));
+  return { round: Math.max(1, encounter.meta_data?.initiative_log?.length ?? 1), combatants, enemies };
+}
+
+function resolveData(combatant: Combatant, players: Character[]): LivingEntity | undefined {
+  if (combatant.type === 'CHARACTER') {
+    const id = numericId(combatant.character);
+    return players.find((player) => numericId(player.id) === id) ?? (combatant.data as LivingEntity | undefined);
+  }
+  return (combatant.creature as Creature | undefined) ?? (combatant.data as LivingEntity | undefined);
+}
+
+function initiativeOf(encounter: Encounter, id: string) {
+  const combatant = encounter.combatants?.list?.find((item) => item._id === id);
+  return combatant?.initiative ?? -999;
+}

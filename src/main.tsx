@@ -104,6 +104,22 @@ const router = createBrowserRouter([
     },
   },
   {
+    path: '/tactics/:campaignId/:encounterId',
+    lazy: async () => {
+      const { Phase1Shell } = await import('@pages/phase1/Phase1App');
+      return { Component: Phase1Shell };
+    },
+    children: [
+      {
+        index: true,
+        lazy: async () => {
+          const { TacticsPage } = await import('@pages/phase1/tactics/TacticsPage');
+          return { Component: TacticsPage };
+        },
+      },
+    ],
+  },
+  {
     path: '/phase1',
     lazy: async () => {
       const { Phase1Shell } = await import('@pages/phase1/Phase1App');

@@ -1,12 +1,13 @@
 import { browserSupabaseUrl } from '../../supabase-client';
 import { PATREON_URL } from '@constants/urls';
-import { ArrowDownCircle, ArrowRight, ArrowUpCircle } from 'lucide-react';
+import { ArrowDownCircle, ArrowRight, ArrowUpCircle, CircleAlert } from 'lucide-react';
+import { classifyFunctionProbe, type Probe } from './function-probe';
 import { LauncherHeader } from './launcher-header';
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './launcher.css';
 
-/** Edge functions. A worker that answers is up; 404 or no response is down. */
+/** Edge functions. Green when the worker answers, yellow when only the gateway does, red when it is missing. */
 const WGUI_FUNCTIONS = [
   { name: 'wgui-ext-ensure-public-user', label: 'ensure-user', desc: 'backfill profile' },
   { name: 'wgui-ext-join-campaign', label: 'join', desc: 'attach by key' },
@@ -15,8 +16,6 @@ const WGUI_FUNCTIONS = [
   { name: 'wgui-ext-patch-encounter-dice', label: 'dice', desc: 'shared rolls' },
   { name: 'wgui-export-character', label: 'export', desc: 'character file' },
 ] as const;
-
-type Probe = 'pending' | 'up' | 'down';
 
 async function probeFunction(name: string): Promise<Probe> {
   const base = browserSupabaseUrl(import.meta.env.VITE_SUPABASE_URL, window.location.origin);
@@ -32,10 +31,7 @@ async function probeFunction(name: string): Promise<Probe> {
       },
       body: '{}',
     });
-    if (response.status === 404) return 'down';
-    const text = await response.text();
-    if (/function not found|requested function was not found/i.test(text)) return 'down';
-    return 'up';
+    return classifyFunctionProbe(response.status, await response.text());
   } catch {
     return 'down';
   }
@@ -66,16 +62,17 @@ function FunctionStatus() {
       <div className='grid grid-cols-[7.5rem_1fr_1.25rem] gap-x-2 gap-y-1'>
         {WGUI_FUNCTIONS.map(({ name, label, desc }) => {
           const probe = status[name] ?? 'pending';
-          const up = probe === 'up';
           return (
             <div className='contents text-[11px] leading-4 text-foreground' key={name} title={name}>
               <span className='truncate'>{label}</span>
               <span className='truncate text-muted-foreground'>{desc}</span>
-              <span className='flex justify-end' aria-label={probe === 'pending' ? 'checking' : up ? 'up' : 'down'}>
+              <span className='flex justify-end' aria-label={probe === 'pending' ? 'checking' : probe}>
                 {probe === 'pending' ? (
                   <span className='inline-block size-3.5 rounded-full bg-white/20' />
-                ) : up ? (
+                ) : probe === 'up' ? (
                   <ArrowUpCircle className='size-3.5 text-emerald-400' />
+                ) : probe === 'unconfirmed' ? (
+                  <CircleAlert className='size-3.5 text-amber-400' />
                 ) : (
                   <ArrowDownCircle className='size-3.5 text-red-400' />
                 )}

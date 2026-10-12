@@ -10,6 +10,7 @@ import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
 import { phase1Request, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
 import { isEnemyCreature, playerAllyRoundLog, playerEnemyLabel, playerVisibleCombatants } from './phase1-player-combat';
+import { TacticsLaunchButton } from './tactics/TacticsLaunch';
 import { loadEntityAbilities, type Phase1Ability } from './phase1-abilities';
 import { readStoredDefenses } from './phase1-creature-defenses';
 import { calculateEntityStatus, type Phase1CreatureStatus } from './phase1-stats';
@@ -1280,6 +1281,11 @@ function phase1EncounterPath(encounterId: number, campaignId?: number | null) {
   return campaignId != null ? `/phase1/campaign/${campaignId}/encounters/${encounterId}` : `/phase1/encounters/${encounterId}`;
 }
 
+function defaultEncounterTab(encounter: Encounter | null | undefined): 'combat' | 'dice' {
+  const list = encounter?.combatants.list ?? [];
+  return list.some((item) => !item.ally) ? 'combat' : 'dice';
+}
+
 function encounterSideCounts(encounter: Encounter) {
   const list = encounter.combatants.list ?? [];
   return {
@@ -1915,7 +1921,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const [resetOpen, setResetOpen] = useState(false);
   const [pendingCampaignRemove, setPendingCampaignRemove] = useState<{ id: number; name: string } | null>(null);
   const [statBlocksOpen, setStatBlocksOpen] = useState(false);
-  const [encounterTab, setEncounterTab] = useState<'combat' | 'dice'>('combat');
+  const [encounterTab, setEncounterTab] = useState<'combat' | 'dice'>(() => defaultEncounterTab(selectedEncounter));
   const [checkOpen, setCheckOpen] = useState(false);
   const [checkToast, setCheckToast] = useState<{ log: DiceRollLog; x: number; y: number } | null>(null);
   const [dice3dThrows, setDice3dThrows] = useState<{ throws: Dice3dThrow[]; title?: string } | null>(null);
@@ -2717,7 +2723,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     setCreaturePickerOpen(false);
     setResetOpen(false);
     setCheckOpen(false);
-    setEncounterTab('combat');
+    setEncounterTab(defaultEncounterTab(selectedEncounter));
     setTitleDraft(selectedEncounter?.meta_data.dice_roll_state?.title ?? '');
     setDcDraft(selectedEncounter?.meta_data.dice_roll_state?.dc != null ? String(selectedEncounter.meta_data.dice_roll_state.dc) : '');
   }, [selectedEncounter?.id]);
@@ -2765,7 +2771,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
             <NoteSurface note={selectedNote} isGm={isGm} encounterLink={noteEncounter ? { href: phase1EncounterPath(noteEncounter.id, campaign?.id), name: noteEncounter.name } : undefined} />
           ) : (
             <>
-              <EncounterHeader encounter={selectedEncounter} combatants={activeCombatants} count={activeCombatants.length} isGm={isGm} noteLink={!standalone && encounterNote && campaign ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} tab={encounterTab} onTab={setEncounterTab} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} showAddHazard={campaign?.meta_data?.settings?.show_hazards_button === true} canAddHazard={isGm && !rosterSaving} onAddHazard={() => setHazardPickerOpen(true)} canRollInitiative={isGm && activeCombatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && activeCombatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} onOpenStatBlocks={() => setStatBlocksOpen(true)} />
+              <EncounterHeader encounter={selectedEncounter} combatants={activeCombatants} count={activeCombatants.length} isGm={isGm} campaignId={campaign?.id ?? null} noteLink={!standalone && encounterNote && campaign ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} tab={encounterTab} onTab={setEncounterTab} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} showAddHazard={campaign?.meta_data?.settings?.show_hazards_button === true} canAddHazard={isGm && !rosterSaving} onAddHazard={() => setHazardPickerOpen(true)} canRollInitiative={isGm && activeCombatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && activeCombatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} onOpenStatBlocks={() => setStatBlocksOpen(true)} />
               {rosterError && <div className='border-b border-p1-danger/40 bg-p1-danger/10 px-5 py-2 text-xs text-p1-danger-soft'>Roster update failed: {rosterError.message}</div>}
               {encounterTab === 'dice' && (
                 <DiceRollToolbar
@@ -2863,6 +2869,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               {creaturePickerOpen && (
                 <SelectCreatureModal
                   busy={rosterSaving}
+                  sourceIds={campaign?.recommended_content_sources?.enabled ?? []}
                   onSelect={addCreature}
                   onClose={() => setCreaturePickerOpen(false)}
                 />
@@ -2870,6 +2877,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               {hazardPickerOpen && (
                 <SelectHazardModal
                   busy={rosterSaving}
+                  sourceIds={campaign?.recommended_content_sources?.enabled ?? []}
                   onSelect={addHazard}
                   onClose={() => setHazardPickerOpen(false)}
                 />
@@ -4308,7 +4316,7 @@ function EncounterDifficultyModal({ difficulty, onClose }: { difficulty: Encount
   );
 }
 
-function EncounterHeader({ encounter, combatants, count, isGm, noteLink, tab, onTab, canAddCreature, onAddCreature, showAddHazard, canAddHazard, onAddHazard, canRollInitiative, onRollInitiative, canClearInitiative, onClearInitiative, canMaxStats, onMaxStats, canReset, onReset, onOpenStatBlocks }: { encounter: Encounter | null; combatants: PopulatedCombatant[]; count: number; isGm: boolean; noteLink?: { href: string; name: string }; tab: 'combat' | 'dice'; onTab: (tab: 'combat' | 'dice') => void; canAddCreature?: boolean; onAddCreature?: () => void; showAddHazard?: boolean; canAddHazard?: boolean; onAddHazard?: () => void; canRollInitiative?: boolean; onRollInitiative?: () => void; canClearInitiative?: boolean; onClearInitiative?: () => void; canMaxStats?: boolean; onMaxStats?: () => void; canReset?: boolean; onReset?: () => void; onOpenStatBlocks?: () => void }) {
+function EncounterHeader({ encounter, combatants, count, isGm, campaignId, noteLink, tab, onTab, canAddCreature, onAddCreature, showAddHazard, canAddHazard, onAddHazard, canRollInitiative, onRollInitiative, canClearInitiative, onClearInitiative, canMaxStats, onMaxStats, canReset, onReset, onOpenStatBlocks }: { encounter: Encounter | null; combatants: PopulatedCombatant[]; count: number; isGm: boolean; campaignId?: number | null; noteLink?: { href: string; name: string }; tab: 'combat' | 'dice'; onTab: (tab: 'combat' | 'dice') => void; canAddCreature?: boolean; onAddCreature?: () => void; showAddHazard?: boolean; canAddHazard?: boolean; onAddHazard?: () => void; canRollInitiative?: boolean; onRollInitiative?: () => void; canClearInitiative?: boolean; onClearInitiative?: () => void; canMaxStats?: boolean; onMaxStats?: () => void; canReset?: boolean; onReset?: () => void; onOpenStatBlocks?: () => void }) {
   const [xpOpen, setXpOpen] = useState(false);
   const difficulty = encounter && shouldDisplayEncounterDifficulty(combatants) ? calculateDifficulty(encounter, combatants) : null;
   return (
@@ -4345,6 +4353,7 @@ function EncounterHeader({ encounter, combatants, count, isGm, noteLink, tab, on
             <button className='toolbar-button' disabled={!canClearInitiative} title={!isGm ? 'GM only' : canClearInitiative ? 'Clear initiative and restore roster order' : 'No initiative to clear'} onClick={onClearInitiative}><Eraser size={15} /> Clear init</button>
             <button className='toolbar-button' disabled={!canMaxStats} title={!isGm ? 'GM only' : canMaxStats ? 'Restore HP, spells, focus, wands/staves, and other encounter consumables' : count === 0 ? 'Add combatants first' : 'Wait for the roster to finish saving'} onClick={onMaxStats}><HeartPulse size={15} /> Max stats</button>
             <button className='toolbar-button' disabled={!canReset} title={!isGm ? 'GM only' : canReset ? 'Reset HP, temp HP, conditions, spells, initiative, and logs' : 'Wait for the roster to finish saving'} onClick={onReset}><RotateCcw size={15} /> Reset</button>
+            {isGm && encounter && <TacticsLaunchButton campaignId={campaignId ?? 0} encounterId={encounter.id} />}
             <button className='toolbar-button' disabled title='Available after read-only parity'><Shield size={15} /> Group check</button>
           </>
         )}

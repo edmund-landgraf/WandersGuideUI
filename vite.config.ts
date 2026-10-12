@@ -192,6 +192,11 @@ export default defineConfig(({ mode }) => ({
       '/storage': { target: 'http://[::1]:8000', changeOrigin: true },
       '/functions': { target: 'http://[::1]:8000', changeOrigin: true },
       '/realtime': { target: 'http://[::1]:8000', changeOrigin: true, ws: true },
+      '/ollama': {
+        target: 'http://127.0.0.1:11434',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ollama/, ''),
+      },
     },
   },
   test: {

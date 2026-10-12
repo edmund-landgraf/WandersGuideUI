@@ -114,10 +114,13 @@ export function SelectCompanionModal({
 
 export function SelectCreatureModal({
   busy,
+  sourceIds,
   onSelect,
   onClose,
 }: {
   busy?: boolean;
+  /** Campaign (or page) books. Creatures outside this list stay out of the picker. */
+  sourceIds: number[];
   onSelect: (creature: Creature, ally: boolean) => void;
   onClose: () => void;
 }) {
@@ -127,10 +130,15 @@ export function SelectCreatureModal({
   const [added, setAdded] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [artUnlocked, setArtUnlocked] = useState(() => Boolean(readArtPassword()));
+  const bookIds = useMemo(
+    () => [...new Set(sourceIds.filter((id) => Number.isFinite(id)))].sort((a, b) => a - b),
+    [sourceIds]
+  );
   const catalog = useQuery({
-    queryKey: ['phase1-creature-catalog', getDefaultSourcesKey('PAGE')],
+    queryKey: ['phase1-creature-catalog', bookIds.join(',')],
     queryFn: async () => {
-      const creatures = await fetchContentAll<Creature>('creature', getDefaultSources('PAGE'));
+      if (bookIds.length === 0) return [];
+      const creatures = await fetchContentAll<Creature>('creature', bookIds);
       return (creatures ?? [])
         .filter((creature) => creature.level !== -100 && !creature.deprecated)
         .sort((a, b) => a.name.localeCompare(b.name));
@@ -171,7 +179,7 @@ export function SelectCreatureModal({
       }
       loading={catalog.isLoading}
       error={catalog.isError ? (catalog.error instanceof Error ? catalog.error.message : 'Could not load creatures.') : null}
-      empty='No matching creatures.'
+      empty={bookIds.length === 0 ? 'Enable books in campaign settings to add creatures.' : 'No matching creatures.'}
       onClose={onClose}
       maxWidthClass='max-w-4xl'
       maxHeightClass='max-h-[min(86vh,760px)]'
@@ -238,19 +246,26 @@ const EMPTY_HAZARDS: Hazard[] = [];
 
 export function SelectHazardModal({
   busy,
+  sourceIds,
   onSelect,
   onClose,
 }: {
   busy?: boolean;
+  sourceIds: number[];
   onSelect: (hazard: Hazard) => void;
   onClose: () => void;
 }) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [added, setAdded] = useState<string | null>(null);
+  const bookIds = useMemo(
+    () => [...new Set(sourceIds.filter((id) => Number.isFinite(id)))].sort((a, b) => a - b),
+    [sourceIds]
+  );
   const catalog = useQuery({
-    queryKey: ['phase1-hazard-catalog', getDefaultSourcesKey('PAGE'), getDefaultSourcesKey('INFO')],
+    queryKey: ['phase1-hazard-catalog', bookIds.join(',')],
     queryFn: async () => {
-      const hazards = await fetchHazards();
+      if (bookIds.length === 0) return [];
+      const hazards = await fetchHazards(bookIds);
       return hazards.filter((hazard) => !hazard.deprecated).sort((a, b) => a.name.localeCompare(b.name));
     },
     staleTime: Number.POSITIVE_INFINITY,
