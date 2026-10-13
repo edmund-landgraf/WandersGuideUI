@@ -3,7 +3,7 @@ import {
   officialCharacterSummary,
   parseOfficialAuthUrl,
   trimOfficialCharacter,
-} from '../../../../supabase/wgui-ext/_wgui-ext/trim-official-character.ts';
+} from './trim-official-character';
 
 const fixture: Record<string, unknown> = {
   id: 221090,
@@ -55,6 +55,13 @@ describe('parseOfficialAuthUrl', () => {
       userId: '3c90c3cc-0d44-4b50-8888-8dd25736052a',
       clientId: 'client-1',
     });
+  });
+
+  it('accepts the numeric public id from the authorization template', () => {
+    const parsed = parseOfficialAuthUrl(
+      'https://wanderersguide.app/oauth/access?user_id=80879&client_id=a4dac272&character_id=<ID>'
+    );
+    expect(parsed).toEqual({ userId: '80879', clientId: 'a4dac272' });
   });
 
   it('rejects a URL that is missing the account ids', () => {

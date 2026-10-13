@@ -29,7 +29,8 @@ export function parseOfficialAuthUrl(raw: string): { userId: string; clientId: s
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
   const userId = url.searchParams.get('user_id')?.trim() ?? '';
   const clientId = url.searchParams.get('client_id')?.trim() ?? '';
-  if (!UUID.test(userId) || !clientId) return null;
+  const publicId = /^\d+$/.test(userId);
+  if ((!UUID.test(userId) && !publicId) || !clientId) return null;
   return { userId, clientId };
 }
 

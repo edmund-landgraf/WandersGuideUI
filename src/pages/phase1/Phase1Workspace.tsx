@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, EyeOff, ExternalLink, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Menu, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Menu, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -284,6 +284,26 @@ export function Phase1IndexPage() {
   );
 }
 
+type CharacterLayout = 'list' | 'campaign';
+
+const CHARACTER_LAYOUT_KEY = 'phase1-character-layout';
+
+function readCharacterLayout(): CharacterLayout {
+  try {
+    return localStorage.getItem(CHARACTER_LAYOUT_KEY) === 'campaign' ? 'campaign' : 'list';
+  } catch {
+    return 'list';
+  }
+}
+
+function persistCharacterLayout(layout: CharacterLayout) {
+  try {
+    localStorage.setItem(CHARACTER_LAYOUT_KEY, layout);
+  } catch {
+    /* private mode */
+  }
+}
+
 type AddAllJoinResult = {
   assigned: number;
   skippedSame: number;
@@ -291,6 +311,112 @@ type AddAllJoinResult = {
   firstError?: string;
   campaignName?: string;
 };
+
+function CharacterRosterRow({
+  character,
+  showCampaign,
+  campaignName,
+  unresolvedCampaign,
+  onOpen,
+  onContextMenu,
+  onPortrait,
+  onAssign,
+  className,
+  compact,
+}: {
+  character: Character;
+  showCampaign: boolean;
+  campaignName?: string;
+  unresolvedCampaign?: boolean;
+  onOpen: () => void;
+  onContextMenu: (event: ReactMouseEvent) => void;
+  onPortrait: () => void;
+  onAssign: () => void;
+  className?: string;
+  compact?: boolean;
+}) {
+  const identity = [character.details?.ancestry?.name, character.details?.class?.name].filter(Boolean).join(' · ');
+  const portraitUrl = character.details?.image_url?.trim();
+  const sheetArtUrl = character.details?.background_image_url?.trim();
+  return (
+    <div
+      className={`p1-char-row group grid w-full items-center gap-4 px-2 text-left${compact ? ' py-1' : ' py-4'}${showCampaign ? ' grid-cols-[auto_1fr_minmax(7.5rem,11rem)_auto]' : ' grid-cols-[auto_1fr_auto]'}${sheetArtUrl ? ' p1-char-row-has-art' : ''}${className ? ` ${className}` : ''}`}
+      onContextMenu={onContextMenu}
+    >
+      {sheetArtUrl && (
+        <div className='p1-char-row-art' aria-hidden>
+          <img src={sheetArtUrl} alt='' loading='lazy' decoding='async' />
+          <div className='p1-char-row-art-veil' />
+        </div>
+      )}
+      {portraitUrl ? (
+        <button
+          type='button'
+          className='h-14 w-14 shrink-0 overflow-hidden border border-p1-border bg-p1-inset hover:border-p1-accent/60'
+          title={`View portrait for ${character.name}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onPortrait();
+          }}
+        >
+          <img src={portraitUrl} alt='' className='h-full w-full object-cover' />
+        </button>
+      ) : (
+        <button
+          type='button'
+          className='grid h-14 w-14 shrink-0 place-items-center border border-p1-border bg-p1-inset text-p1-faint hover:border-p1-accent/60 hover:text-p1-muted'
+          title={`Choose portrait for ${character.name}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onPortrait();
+          }}
+        >
+          <User size={22} />
+        </button>
+      )}
+      <button type='button' className='min-w-0 text-left' onClick={onOpen}>
+        <div className='font-semibold'>{character.name}</div>
+        <div className={`${compact ? 'mt-0.5' : 'mt-1'} line-clamp-1 text-sm text-p1-muted`}>Level {character.level}{identity ? ` · ${identity}` : ''}</div>
+      </button>
+      {showCampaign && (
+        <div className='min-w-0 text-right'>
+          {campaignName ? (
+            <button
+              type='button'
+              className='toolbar-button h-8 max-w-full px-2 text-xs'
+              title={campaignName}
+              onClick={(event) => {
+                event.stopPropagation();
+                onAssign();
+              }}
+            >
+              <span className='truncate'>{campaignName}</span>
+            </button>
+          ) : unresolvedCampaign ? null : (
+            <button
+              type='button'
+              className='toolbar-button h-8 px-2 text-xs'
+              onClick={(event) => {
+                event.stopPropagation();
+                onAssign();
+              }}
+            >
+              Assign
+            </button>
+          )}
+        </div>
+      )}
+      <button
+        type='button'
+        className='grid h-10 w-10 place-items-center text-p1-faint group-hover:text-p1-accent'
+        aria-label={`Open ${character.name}`}
+        onClick={onOpen}
+      >
+        <ChevronRight size={18} />
+      </button>
+    </div>
+  );
+}
 
 export function Phase1CharactersPage() {
   const session = useAuthSession();
@@ -319,6 +445,8 @@ export function Phase1CharactersPage() {
   const [pendingDelete, setPendingDelete] = useState<{ id: number; name: string } | null>(null);
   const [pendingRename, setPendingRename] = useState<Character | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [characterLayout, setCharacterLayout] = useState<CharacterLayout>(() => readCharacterLayout());
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set());
   const [exportAllOpen, setExportAllOpen] = useState(false);
   const [exportAllProgress, setExportAllProgress] = useState<{
     kind: 'json' | 'pdf';
@@ -352,6 +480,29 @@ export function Phase1CharactersPage() {
       ),
     [campaigns.data]
   );
+  const campaignFolders = useMemo(() => {
+    const groups = new Map<number, Character[]>();
+    const unassigned: Character[] = [];
+    for (const character of characters.data ?? []) {
+      const campaignId = numericId(character.campaign_id);
+      if (campaignId == null) {
+        unassigned.push(character);
+        continue;
+      }
+      const members = groups.get(campaignId) ?? [];
+      members.push(character);
+      groups.set(campaignId, members);
+    }
+    const folders = [...groups.entries()]
+      .map(([id, members]) => ({
+        key: String(id),
+        name: campaignById.get(id)?.name?.trim() || `Campaign ${id}`,
+        members,
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    folders.push({ key: 'unassigned', name: 'Unassigned', members: unassigned });
+    return folders;
+  }, [campaignById, characters.data]);
   const assignableCampaigns = useMemo(
     () => (campaigns.data ?? []).filter((campaign) => sameUserId(campaign.user_id, session?.user.id)).slice(0, 6),
     [campaigns.data, session?.user.id]
@@ -875,13 +1026,14 @@ export function Phase1CharactersPage() {
               <div className='relative'>
                 <button type='button' className='toolbar-button' disabled={createDisabled} title={reachedCharacterLimit ? 'Character slot limit reached' : 'Upload character'} onClick={() => { setCreateOpen(false); setExportAllOpen(false); setUploadOpen((open) => !open); }}>
                   <Upload size={15} />
-                  {importing ? 'Uploading…' : 'Upload'}
+                  {importing ? 'Uploading…' : 'Upload/Import'}
                 </button>
                 {uploadOpen && (
                   <div className='absolute right-0 z-20 mt-1 min-w-[14rem] border border-p1-border bg-p1-surface py-1'>
                     <button type='button' className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => { setUploadOpen(false); jsonInputRef.current?.click(); }}>Import from JSON</button>
                     <button type='button' className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => { setUploadOpen(false); setPathbuilderOpen(true); }}>Import from Pathbuilder</button>
                     <button type='button' className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => { setUploadOpen(false); guidecharInputRef.current?.click(); }}>Import from GUIDECHAR</button>
+                    <button type='button' className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => { setUploadOpen(false); setOfficialImportOpen(true); }}>Import from wanderersguide.app</button>
                   </div>
                 )}
               </div>
@@ -917,102 +1069,122 @@ export function Phase1CharactersPage() {
             <CreateMenu className='mt-4 inline-flex' />
           </EmptyState>
         )}
-        <div className='divide-y divide-p1-border border-y border-p1-border'>
-          {characters.data?.map((character) => {
-            const identity = [character.details?.ancestry?.name, character.details?.class?.name].filter(Boolean).join(' · ');
-            const portraitUrl = character.details?.image_url?.trim();
-            const sheetArtUrl = character.details?.background_image_url?.trim();
-            const assignedCampaign =
-              numericId(character.campaign_id) != null ? campaignById.get(numericId(character.campaign_id)!) : undefined;
-            return (
-              <div
-                key={character.id}
-                className={`p1-char-row group grid w-full grid-cols-[auto_1fr_minmax(7.5rem,11rem)_auto] items-center gap-4 px-2 py-4 text-left${sheetArtUrl ? ' p1-char-row-has-art' : ''}`}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setCharacterMenu({ character, x: event.clientX, y: event.clientY });
-                }}
-              >
-                {sheetArtUrl && (
-                  <div className='p1-char-row-art' aria-hidden>
-                    <img src={sheetArtUrl} alt='' loading='lazy' decoding='async' />
-                    <div className='p1-char-row-art-veil' />
-                  </div>
-                )}
-                {portraitUrl ? (
+        {(characters.data?.length ?? 0) > 0 && (
+          <div className='mb-4 flex justify-end'>
+            <div className='phase1-theme-switch stat-block-layout-switch' role='radiogroup' aria-label='Character list layout'>
+              {([
+                ['list', 'List'],
+                ['campaign', 'By campaign'],
+              ] as const).map(([id, label]) => {
+                const selected = characterLayout === id;
+                return (
                   <button
+                    key={id}
                     type='button'
-                    className='h-14 w-14 shrink-0 overflow-hidden border border-p1-border bg-p1-inset hover:border-p1-accent/60'
-                    title={`View portrait for ${character.name}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setPortraitPreview(character);
-                      setPortraitPickerOpen(false);
+                    role='radio'
+                    aria-checked={selected}
+                    className={selected ? 'is-active' : undefined}
+                    onClick={() => {
+                      persistCharacterLayout(id);
+                      setCharacterLayout(id);
                     }}
                   >
-                    <img src={portraitUrl} alt='' className='h-full w-full object-cover' />
+                    {label}
                   </button>
-                ) : (
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {characterLayout === 'campaign' && (characters.data?.length ?? 0) > 0 ? (
+          <div className='divide-y divide-p1-border border-y border-p1-border'>
+            {campaignFolders.map((folder) => {
+              const expanded = !collapsedFolders.has(folder.key);
+              return (
+                <div key={folder.key}>
                   <button
                     type='button'
-                    className='grid h-14 w-14 shrink-0 place-items-center border border-p1-border bg-p1-inset text-p1-faint hover:border-p1-accent/60 hover:text-p1-muted'
-                    title={`Choose portrait for ${character.name}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setPortraitPreview(character);
-                      setPortraitPickerOpen(true);
+                    className='flex w-full items-center gap-3 px-2 py-2 text-left hover:bg-p1-hover'
+                    aria-expanded={expanded}
+                    aria-label={`${expanded ? 'Collapse' : 'Expand'} ${folder.name}`}
+                    onClick={() => {
+                      setCollapsedFolders((current) => {
+                        const next = new Set(current);
+                        if (next.has(folder.key)) next.delete(folder.key);
+                        else next.add(folder.key);
+                        return next;
+                      });
                     }}
                   >
-                    <User size={22} />
+                    {expanded ? (
+                      <FolderOpen size={40} strokeWidth={1.25} className='shrink-0 text-p1-accent' aria-hidden />
+                    ) : (
+                      <Folder size={40} strokeWidth={1.25} className='shrink-0 text-p1-muted' aria-hidden />
+                    )}
+                    <span className='min-w-0 truncate text-base font-semibold'>{folder.name}</span>
+                    <span className='text-sm text-p1-muted'>{folder.members.length}</span>
                   </button>
-                )}
-                <button
-                  type='button'
-                  className='min-w-0 text-left'
-                  onClick={() => navigate(`/sheet/${character.id}`)}
-                >
-                  <div className='font-semibold'>{character.name}</div>
-                  <div className='mt-1 line-clamp-1 text-sm text-p1-muted'>Level {character.level}{identity ? ` · ${identity}` : ''}</div>
-                </button>
-                <div className='min-w-0 text-right'>
-                  {assignedCampaign ? (
-                    <button
-                      type='button'
-                      className='toolbar-button h-8 max-w-full px-2 text-xs'
-                      title={assignedCampaign.name}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setAssignPicker(character);
-                      }}
-                    >
-                      <span className='truncate'>{assignedCampaign.name}</span>
-                    </button>
-                  ) : numericId(character.campaign_id) != null ? null : (
-                    <button
-                      type='button'
-                      className='toolbar-button h-8 px-2 text-xs'
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setAssignPicker(character);
-                      }}
-                    >
-                      Assign
-                    </button>
+                  {expanded && (
+                    <div className='divide-y divide-p1-border border-t border-p1-border'>
+                      {folder.members.length === 0 ? (
+                        <p className='px-10 py-3 text-sm text-p1-muted'>No characters</p>
+                      ) : (
+                        folder.members.map((character) => (
+                          <CharacterRosterRow
+                            key={character.id}
+                            character={character}
+                            className='pl-8'
+                            compact
+                            showCampaign={false}
+                            campaignName={undefined}
+                            onOpen={() => navigate(`/sheet/${character.id}`)}
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setCharacterMenu({ character, x: event.clientX, y: event.clientY });
+                            }}
+                            onPortrait={() => {
+                              setPortraitPreview(character);
+                              setPortraitPickerOpen(!character.details?.image_url?.trim());
+                            }}
+                            onAssign={() => setAssignPicker(character)}
+                          />
+                        ))
+                      )}
+                    </div>
                   )}
                 </div>
-                <button
-                  type='button'
-                  className='grid h-10 w-10 place-items-center text-p1-faint group-hover:text-p1-accent'
-                  aria-label={`Open ${character.name}`}
-                  onClick={() => navigate(`/sheet/${character.id}`)}
-                >
-                  <ChevronRight size={18} />
-                </button>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className='divide-y divide-p1-border border-y border-p1-border'>
+            {characters.data?.map((character) => {
+              const campaignId = numericId(character.campaign_id);
+              const assignedCampaign = campaignId != null ? campaignById.get(campaignId) : undefined;
+              return (
+                <CharacterRosterRow
+                  key={character.id}
+                  character={character}
+                  showCampaign
+                  campaignName={assignedCampaign?.name}
+                  unresolvedCampaign={campaignId != null && !assignedCampaign}
+                  onOpen={() => navigate(`/sheet/${character.id}`)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setCharacterMenu({ character, x: event.clientX, y: event.clientY });
+                  }}
+                  onPortrait={() => {
+                    setPortraitPreview(character);
+                    setPortraitPickerOpen(!character.details?.image_url?.trim());
+                  }}
+                  onAssign={() => setAssignPicker(character)}
+                />
+              );
+            })}
+          </div>
+        )}
         {characterMenu && (
           <CharacterGridContextMenu
             x={characterMenu.x}
@@ -1065,10 +1237,6 @@ export function Phase1CharactersPage() {
             onDelete={() => {
               setPendingDelete({ id: characterMenu.character.id, name: characterMenu.character.name });
               setCharacterMenu(null);
-            }}
-            onImportOfficial={() => {
-              setCharacterMenu(null);
-              setOfficialImportOpen(true);
             }}
           />
         )}
@@ -3938,7 +4106,7 @@ function CreateNameModal({ title, label, confirmLabel, skipLabel, onCancel, onSk
   );
 }
 
-function CharacterGridContextMenu({ x, y, onClose, onJoinMyCampaign, onJoinOthersCampaign, onUnassign, onOpenStatBlock, onRename, onExportJson, onExportPdf, onDelete, onImportOfficial }: { x: number; y: number; onClose: () => void; onJoinMyCampaign: () => void; onJoinOthersCampaign: () => void; onUnassign?: () => void; onOpenStatBlock: () => void; onRename: () => void; onExportJson: () => void; onExportPdf: () => void; onDelete: () => void; onImportOfficial: () => void }) {
+function CharacterGridContextMenu({ x, y, onClose, onJoinMyCampaign, onJoinOthersCampaign, onUnassign, onOpenStatBlock, onRename, onExportJson, onExportPdf, onDelete }: { x: number; y: number; onClose: () => void; onJoinMyCampaign: () => void; onJoinOthersCampaign: () => void; onUnassign?: () => void; onOpenStatBlock: () => void; onRename: () => void; onExportJson: () => void; onExportPdf: () => void; onDelete: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -3974,9 +4142,6 @@ function CharacterGridContextMenu({ x, y, onClose, onJoinMyCampaign, onJoinOther
             <UserMinus size={14} /> Unassign
           </button>
         )}
-        <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onImportOfficial(); }}>
-          <Upload size={14} /> Import from wanderersguide.app
-        </button>
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); onExportJson(); }}>
           <Download size={14} /> Export to JSON
         </button>
@@ -4325,7 +4490,7 @@ function EncounterDifficultyModal({ difficulty, onClose }: { difficulty: Encount
           <div className='border border-p1-border'>
             <div className='border-b border-p1-border bg-p1-inset px-3 py-2 text-sm font-semibold'>Difficulty bands</div>
             <p className='border-b border-p1-border px-3 py-2 text-xs text-p1-muted'>
-              Building XP uses these party-size budgets. Each PC still receives the four-PC award for this difficulty: {difficulty.awardXp / 4} XP ({difficulty.awardXp} XP for a group of four).
+              Encounter XP: {difficulty.awardXp / 4}. Party size adjusts difficulty budgets, not creature XP values. XP awarded per PC may differ.
             </p>
             <ul className='divide-y divide-p1-border text-sm'>
               {difficulty.thresholds.map((band) => (
