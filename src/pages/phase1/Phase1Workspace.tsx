@@ -74,7 +74,7 @@ import { uploadImage } from '@upload/image-upload';
 import { getFileContents } from '@import/json/import-from-json';
 import exportToJSON, { downloadObjectAsJson } from '@export/export-to-json';
 import exportToPDF from '@export/export-to-pdf';
-import { openExportDirectory, pickExportDirectory, writeFileToDirectory } from '@export/export-to-directory';
+import { canPickExportDirectory, downloadBlob, openExportDirectory, pickExportDirectory, writeFileToDirectory, zipStored } from '@export/export-to-directory';
 import { buildJsonV4Export, characterExportFileStem } from '@export/json/json-v4';
 import importFromGUIDECHAR from '@import/guidechar/import-from-guidechar';
 import { importFromFTC } from '@import/ftc/import-from-ftc';
@@ -135,13 +135,13 @@ export function Phase1IndexPage() {
     enabled: Boolean(session),
     queryFn: () => phase1Request<Character[]>('find-character', { user_id: session!.user.id }),
   });
-  const characterNamesByCampaign = useMemo(() => {
-    const names = new Map<number, { id: number; name: string; imageUrl: string }[]>();
+  const charactersByCampaign = useMemo(() => {
+    const names = new Map<number, Character[]>();
     for (const character of characters.data ?? []) {
       const campaignId = numericId(character.campaign_id);
       if (campaignId == null) continue;
       const list = names.get(campaignId) ?? [];
-      list.push({ id: character.id, name: character.name, imageUrl: character.details?.image_url?.trim() ?? '' });
+      list.push(character);
       names.set(campaignId, list);
     }
     return names;
@@ -268,7 +268,8 @@ export function Phase1IndexPage() {
               key={campaign.id}
               campaign={campaign}
               canDelete={sameUserId(campaign.user_id, session.user.id)}
-              memberNames={characterNamesByCampaign.get(numericId(campaign.id) ?? -1) ?? []}
+              members={charactersByCampaign.get(numericId(campaign.id) ?? -1) ?? []}
+              ownedCampaigns={ownedCampaigns}
               onOpen={() => navigate(`/phase1/campaign/${campaign.id}`)}
               onDeleted={() => queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] })}
               onFrame={(url) => setArtFrame({ id: campaign.id, preview: url, focus: campaignFocusY(campaign.meta_data?.image_focus_y) })}
@@ -504,7 +505,7 @@ export function Phase1CharactersPage() {
     failed: number;
     done: boolean;
     summary: string;
-    directory: FileSystemDirectoryHandle;
+    directory?: FileSystemDirectoryHandle;
   } | null>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const guidecharInputRef = useRef<HTMLInputElement>(null);
@@ -761,14 +762,19 @@ export function Phase1CharactersPage() {
     const roster = characters.data ?? [];
     if (!roster.length || exporting) return;
     setExportAllOpen(false);
-    let directory: FileSystemDirectoryHandle | null;
-    try {
-      directory = await pickExportDirectory();
-    } catch (error) {
-      setJoinStatus(error instanceof Error ? error.message : 'Could not open the export folder.');
-      return;
+    const folderExport = canPickExportDirectory();
+    let directory: FileSystemDirectoryHandle | null = null;
+    if (folderExport) {
+      try {
+        directory = await pickExportDirectory();
+      } catch (error) {
+        setJoinStatus(error instanceof Error ? error.message : 'Could not open the export folder.');
+        return;
+      }
+      if (!directory) return;
     }
-    if (!directory) return;
+    const zipFiles: { name: string; data: Uint8Array }[] = [];
+    const usedNames = new Set<string>();
 
     const format = kind === 'json' ? 'JSON' : 'PDF';
     setExporting(true);
@@ -780,9 +786,9 @@ export function Phase1CharactersPage() {
       succeeded: 0,
       failed: 0,
       done: false,
-      summary: `Exporting ${roster.length} ${format} file${roster.length === 1 ? '' : 's'}…`,
-      directory,
-    });
+          summary: `Exporting ${roster.length} ${format} file${roster.length === 1 ? '' : 's'}…`,
+          directory: directory ?? undefined,
+        });
     let succeeded = 0;
     let failed = 0;
     try {
@@ -797,11 +803,19 @@ export function Phase1CharactersPage() {
           failed,
           done: false,
           summary: `Exporting ${index + 1} of ${roster.length}: “${source.name}”`,
-          directory,
+          directory: directory ?? undefined,
         });
         try {
           const character = await loadCharacterForExport(source.id);
           const stem = characterExportFileStem(character.name);
+          const extension = kind === 'json' ? 'json' : 'pdf';
+          let fileName = `${stem}.${extension}`;
+          if (usedNames.has(fileName)) {
+            let copy = 2;
+            while (usedNames.has(`${stem}-${copy}.${extension}`)) copy += 1;
+            fileName = `${stem}-${copy}.${extension}`;
+          }
+          usedNames.add(fileName);
           if (kind === 'json') {
             let payload: Record<string, unknown>;
             try {
@@ -810,10 +824,14 @@ export function Phase1CharactersPage() {
               console.error(error);
               payload = { version: 4, character };
             }
-            await writeFileToDirectory(directory, `${stem}.json`, JSON.stringify(payload), 'application/json');
+            const json = JSON.stringify(payload);
+            if (directory) await writeFileToDirectory(directory, fileName, json, 'application/json');
+            else zipFiles.push({ name: fileName, data: new TextEncoder().encode(json) });
           } else {
             const { pdfV2Bytes } = await import('@export/pdf/pdf-v2');
-            await writeFileToDirectory(directory, `${stem}.pdf`, await pdfV2Bytes(character), 'application/pdf');
+            const bytes = await pdfV2Bytes(character);
+            if (directory) await writeFileToDirectory(directory, fileName, bytes, 'application/pdf');
+            else zipFiles.push({ name: fileName, data: bytes });
           }
           succeeded += 1;
         } catch (error) {
@@ -821,9 +839,14 @@ export function Phase1CharactersPage() {
           failed += 1;
         }
       }
-      const summary = failed
+      let summary = failed
         ? `Exported ${succeeded} ${format} file${succeeded === 1 ? '' : 's'}; ${failed} failed.`
         : `Exported ${succeeded} ${format} file${succeeded === 1 ? '' : 's'}.`;
+      if (!directory && zipFiles.length > 0) {
+        const zipName = `characters-${kind}.zip`;
+        downloadBlob(zipStored(zipFiles), zipName);
+        summary = `${summary} Downloaded ${zipName}.`;
+      }
       setJoinStatus(summary);
       setExportAllProgress({
         kind,
@@ -834,7 +857,7 @@ export function Phase1CharactersPage() {
         failed,
         done: true,
         summary,
-        directory,
+        directory: directory ?? undefined,
       });
     } finally {
       setExporting(false);
@@ -1421,15 +1444,17 @@ export function Phase1CharactersPage() {
               </p>
               {exportAllProgress.done && (
                 <div className='mt-5 flex flex-wrap justify-end gap-2'>
-                  <button
-                    type='button'
-                    className='toolbar-button'
-                    style={{ background: 'var(--p1-accent)', color: 'var(--p1-accent-ink)', borderColor: 'var(--p1-accent)' }}
-                    onClick={() => void openExportDirectory(exportAllProgress.directory)}
-                  >
-                    <FolderOpen size={15} />
-                    Open folder
-                  </button>
+                  {exportAllProgress.directory && (
+                    <button
+                      type='button'
+                      className='toolbar-button'
+                      style={{ background: 'var(--p1-accent)', color: 'var(--p1-accent-ink)', borderColor: 'var(--p1-accent)' }}
+                      onClick={() => void openExportDirectory(exportAllProgress.directory!)}
+                    >
+                      <FolderOpen size={15} />
+                      Open folder
+                    </button>
+                  )}
                   <button type='button' className='toolbar-button' onClick={() => setExportAllProgress(null)}>
                     OK
                   </button>
@@ -4343,7 +4368,7 @@ function CampaignAssignPickerModal({
   );
 }
 
-function RailContextMenu({ x, y, onClose, onRename, onPickColor, onClearColor, onDelete, onDeleteAll, onRemove }: { x: number; y: number; onClose: () => void; onRename?: () => void; onPickColor?: () => void; onClearColor?: () => void; onDelete?: () => void; onDeleteAll?: () => void; onRemove?: () => void }) {
+function RailContextMenu({ x, y, onClose, onRename, onPickColor, onClearColor, onDelete, onDeleteAll, onRemove, removeLabel }: { x: number; y: number; onClose: () => void; onRename?: () => void; onPickColor?: () => void; onClearColor?: () => void; onDelete?: () => void; onDeleteAll?: () => void; onRemove?: () => void; removeLabel?: string }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -4375,7 +4400,7 @@ function RailContextMenu({ x, y, onClose, onRename, onPickColor, onClearColor, o
         )}
         {onRemove && (
           <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onRemove}>
-            <UserMinus size={14} /> Remove from campaign
+            <UserMinus size={14} /> {removeLabel ?? 'Remove from campaign'}
           </button>
         )}
         {onDelete && (
@@ -5984,7 +6009,7 @@ function CampaignStripDialog({ url, initial, busy, error, onCancel, onConfirm }:
     const image = event.currentTarget;
     setFrameHeight(image.clientHeight || image.offsetHeight || 420);
     if (!image.naturalWidth || !image.naturalHeight) return;
-    const rowAspect = 72 / 720;
+    const rowAspect = 88 / 720;
     const imageAspect = image.naturalWidth / image.naturalHeight;
     const visible = Math.min(100, Math.max(8, (rowAspect / imageAspect) * 100));
     setBand(visible);
@@ -6044,7 +6069,7 @@ function CampaignStripDialog({ url, initial, busy, error, onCancel, onConfirm }:
             onChange={(event) => setFocusY(Number(event.target.value))}
           />
         </div>
-        <div className='relative mt-4 h-[4.5rem] overflow-hidden border border-p1-border'>
+        <div className='relative mt-4 h-[5.5rem] overflow-hidden border border-p1-border'>
           <img src={url} alt='' referrerPolicy='no-referrer' className='h-full w-full object-cover' style={{ objectPosition: `center ${focusY}%` }} />
         </div>
         <div className='mt-5 flex justify-end gap-2'>
@@ -6102,7 +6127,7 @@ function CampaignColorDialog({ initial, busy, canClear, onCancel, onConfirm, onC
   );
 }
 
-function CampaignWorkspaceRow({ campaign, canDelete, memberNames, onOpen, onDeleted, onFrame, onUploaded, onFrameError }: { campaign: Campaign; canDelete: boolean; memberNames: { id: number; name: string; imageUrl: string }[]; onOpen: () => void; onDeleted: () => void; onFrame: (url: string) => void; onUploaded: (url: string) => void; onFrameError: (message: string) => void }) {
+function CampaignWorkspaceRow({ campaign, canDelete, members, ownedCampaigns, onOpen, onDeleted, onFrame, onUploaded, onFrameError }: { campaign: Campaign; canDelete: boolean; members: Character[]; ownedCampaigns: Campaign[]; onOpen: () => void; onDeleted: () => void; onFrame: (url: string) => void; onUploaded: (url: string) => void; onFrameError: (message: string) => void }) {
   const queryClient = useQueryClient();
   const [visible, setVisible] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
@@ -6114,6 +6139,12 @@ function CampaignWorkspaceRow({ campaign, canDelete, memberNames, onOpen, onDele
   const [pendingLeave, setPendingLeave] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [characterMenu, setCharacterMenu] = useState<{ character: Character; x: number; y: number } | null>(null);
+  const [assignPicker, setAssignPicker] = useState<Character | null>(null);
+  const [joinOtherPicker, setJoinOtherPicker] = useState<Character | null>(null);
+  const [joinResult, setJoinResult] = useState<{ title: string; message: string } | null>(null);
+  const [pendingCharRename, setPendingCharRename] = useState<Character | null>(null);
+  const [pendingCharDelete, setPendingCharDelete] = useState<{ id: number; name: string } | null>(null);
   const hasKey = Boolean(campaign.join_key);
 
   async function revealAndCopy(event: ReactMouseEvent) {
@@ -6134,12 +6165,57 @@ function CampaignWorkspaceRow({ campaign, canDelete, memberNames, onOpen, onDele
     setLeaveMenu({ x: event.clientX, y: event.clientY });
   }
 
+  function openCharacterMenu(event: ReactMouseEvent, character: Character) {
+    event.preventDefault();
+    event.stopPropagation();
+    setActionError(null);
+    setCharacterMenu({ character, x: event.clientX, y: event.clientY });
+  }
+
+  async function refreshCharacters() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['phase1-characters'] }),
+      queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] }),
+    ]);
+  }
+
+  async function exportRosterCharacter(kind: 'json' | 'pdf', source: Character) {
+    setActionError(null);
+    try {
+      const result = await phase1Request<Character | Character[]>('find-character', { id: source.id });
+      const loaded = Array.isArray(result) ? result[0] : result;
+      if (!loaded) throw new Error('Could not load character for export.');
+      if (kind === 'json') {
+        try {
+          await exportToJSON(loaded);
+        } catch (error) {
+          console.error(error);
+          downloadObjectAsJson({ version: 4, character: loaded }, characterExportFileStem(loaded.name));
+        }
+        return;
+      }
+      await exportToPDF(loaded);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : kind === 'json' ? 'JSON export failed.' : 'PDF export failed.');
+    }
+  }
+
+  async function unassignRosterCharacter(target: Character) {
+    if (numericId(target.campaign_id) == null) return;
+    if (canDelete) {
+      await phase1Request('remove-from-campaign', { character_id: target.id, campaign_id: target.campaign_id });
+    } else {
+      await phase1Request('update-character', { id: target.id, campaign_id: null });
+    }
+    await refreshCharacters();
+  }
+
   async function confirmLeave() {
     if (busy) return;
     setBusy(true);
     setActionError(null);
     try {
-      for (const member of memberNames) {
+      for (const member of members) {
         await phase1Request('update-character', { id: member.id, campaign_id: null });
       }
       setPendingLeave(false);
@@ -6207,7 +6283,7 @@ function CampaignWorkspaceRow({ campaign, canDelete, memberNames, onOpen, onDele
   }
 
   return (
-    <div className={`p1-char-row group grid w-full grid-cols-[1fr_auto] items-center gap-6 px-2 py-5${showStrip ? ' p1-char-row-has-art' : ''}`} onContextMenu={openMenu}>
+    <div className={`p1-char-row group grid min-h-[5.5rem] w-full grid-cols-[1fr_auto] items-center gap-6 px-2 py-4${showStrip ? ' p1-char-row-has-art' : ''}`} onContextMenu={openMenu}>
       {showStrip && (
         <div className='p1-char-row-art' aria-hidden>
           {artUrl ? (
@@ -6231,19 +6307,20 @@ function CampaignWorkspaceRow({ campaign, canDelete, memberNames, onOpen, onDele
             <span className={visible ? 'font-mono' : ''}>{visible ? campaign.join_key : 'Copy key'}</span>
           </button>
         )}
-        {memberNames.length > 0 && (
+        {members.length > 0 && (
           <span className='flex items-center gap-1'>
-            {memberNames.map((member) => (
-              member.imageUrl ? (
-                <a key={member.id} href={`/sheet/${member.id}`} title={member.name} className='block h-14 w-14 overflow-hidden border border-p1-border hover:border-p1-accent/60'>
-                  <img src={member.imageUrl} alt='' className='h-full w-full object-cover' />
+            {members.map((member) => {
+              const imageUrl = member.details?.image_url?.trim();
+              return imageUrl ? (
+                <a key={member.id} href={`/sheet/${member.id}`} title={member.name} className='block h-14 w-14 overflow-hidden border border-p1-border hover:border-p1-accent/60' onContextMenu={(event) => openCharacterMenu(event, member)}>
+                  <img src={imageUrl} alt='' className='h-full w-full object-cover' />
                 </a>
               ) : (
-                <a key={member.id} href={`/sheet/${member.id}`} title={member.name} className='grid h-14 w-14 place-items-center border border-p1-border bg-p1-inset text-p1-faint hover:border-p1-accent/60 hover:text-p1-muted'>
+                <a key={member.id} href={`/sheet/${member.id}`} title={member.name} className='grid h-14 w-14 place-items-center border border-p1-border bg-p1-inset text-p1-faint hover:border-p1-accent/60 hover:text-p1-muted' onContextMenu={(event) => openCharacterMenu(event, member)}>
                   <User size={22} />
                 </a>
-              )
-            ))}
+              );
+            })}
           </span>
         )}
         <button type='button' className='icon-button' title={`Open ${campaign.name}`} onClick={onOpen}>
@@ -6300,6 +6377,7 @@ function CampaignWorkspaceRow({ campaign, canDelete, memberNames, onOpen, onDele
           x={leaveMenu.x}
           y={leaveMenu.y}
           onClose={() => setLeaveMenu(null)}
+          removeLabel={members.length > 1 ? 'Remove all PCs from campaign' : 'Remove from campaign'}
           onRemove={() => {
             setLeaveMenu(null);
             setPendingLeave(true);
@@ -6319,16 +6397,146 @@ function CampaignWorkspaceRow({ campaign, canDelete, memberNames, onOpen, onDele
       )}
       {pendingLeave && (
         <ConfirmDialog
-          title='Remove from campaign'
-          message={memberNames.length > 0
-            ? `${memberNames.map((member) => member.name).join(', ')} will leave "${campaign.name}". Character sheets stay.`
+          title={members.length > 1 ? 'Remove all PCs from campaign' : 'Remove from campaign'}
+          message={members.length > 0
+            ? `${members.map((member) => member.name).join(', ')} will leave "${campaign.name}". Character sheets stay.`
             : `Leave "${campaign.name}"? Character sheets stay.`}
-          confirmLabel={busy ? 'Removing…' : 'Remove from campaign'}
+          confirmLabel={busy ? 'Removing…' : members.length > 1 ? 'Remove all PCs from campaign' : 'Remove from campaign'}
           onCancel={() => {
             if (!busy) setPendingLeave(false);
           }}
           onConfirm={() => void confirmLeave()}
         />
+      )}
+      {characterMenu && (
+        <CharacterGridContextMenu
+          x={characterMenu.x}
+          y={characterMenu.y}
+          onClose={() => setCharacterMenu(null)}
+          onJoinMyCampaign={() => {
+            const target = characterMenu.character;
+            setCharacterMenu(null);
+            setAssignPicker(target);
+          }}
+          onJoinOthersCampaign={() => {
+            const target = characterMenu.character;
+            setCharacterMenu(null);
+            setJoinOtherPicker(target);
+          }}
+          onUnassign={
+            numericId(characterMenu.character.campaign_id) == null
+              ? undefined
+              : () => {
+                  const target = characterMenu.character;
+                  setCharacterMenu(null);
+                  void unassignRosterCharacter(target).catch((error) => {
+                    setJoinResult({
+                      title: 'Could not unassign campaign',
+                      message: error instanceof Error ? error.message : `Could not remove ${target.name} from the campaign.`,
+                    });
+                  });
+                }
+          }
+          onExportJson={() => {
+            const target = characterMenu.character;
+            setCharacterMenu(null);
+            void exportRosterCharacter('json', target);
+          }}
+          onOpenStatBlock={() => {
+            const target = characterMenu.character;
+            setCharacterMenu(null);
+            window.open(`/stat-block/character/${target.id}`, '_blank');
+          }}
+          onRename={() => {
+            setPendingCharRename(characterMenu.character);
+            setCharacterMenu(null);
+          }}
+          onExportPdf={() => {
+            const target = characterMenu.character;
+            setCharacterMenu(null);
+            void exportRosterCharacter('pdf', target);
+          }}
+          onDelete={() => {
+            setPendingCharDelete({ id: characterMenu.character.id, name: characterMenu.character.name });
+            setCharacterMenu(null);
+          }}
+        />
+      )}
+      {pendingCharRename && (
+        <RenameDialog
+          title='Rename character'
+          initialName={pendingCharRename.name}
+          onCancel={() => setPendingCharRename(null)}
+          onConfirm={(name) => {
+            const target = pendingCharRename;
+            setPendingCharRename(null);
+            void phase1Request('update-character', { id: target.id, name }).then(
+              () => refreshCharacters(),
+              (error) => setActionError(error instanceof Error ? error.message : 'Could not rename character.')
+            );
+          }}
+        />
+      )}
+      {pendingCharDelete && (
+        <ConfirmDialog
+          title='Delete character'
+          message={`Are you sure you want to delete "${pendingCharDelete.name}"? They'll be gone for a very, very long time.`}
+          confirmLabel={busy ? 'Deleting…' : 'Delete'}
+          onCancel={() => {
+            if (!busy) setPendingCharDelete(null);
+          }}
+          onConfirm={() => {
+            const id = pendingCharDelete.id;
+            setPendingCharDelete(null);
+            setBusy(true);
+            void phase1Request('delete-content', { id, type: 'character' })
+              .then(() => refreshCharacters())
+              .catch((error) => setActionError(error instanceof Error ? error.message : 'Could not delete character.'))
+              .finally(() => setBusy(false));
+          }}
+        />
+      )}
+      {assignPicker && (
+        <CampaignAssignPickerModal
+          characterName={assignPicker.name}
+          campaigns={ownedCampaigns}
+          onCancel={() => setAssignPicker(null)}
+          onPick={(picked) => {
+            const target = assignPicker;
+            setAssignPicker(null);
+            const campaignId = numericId(picked.id);
+            if (campaignId == null) return;
+            void phase1Request('update-character', { id: target.id, campaign_id: campaignId })
+              .then(() => refreshCharacters())
+              .catch((error) => {
+                setJoinResult({
+                  title: 'Could not assign campaign',
+                  message: error instanceof Error ? error.message : `Could not add ${target.name} to the campaign.`,
+                });
+              });
+          }}
+        />
+      )}
+      {joinOtherPicker && (
+        <JoinKeyModal
+          characterName={joinOtherPicker.name}
+          onCancel={() => setJoinOtherPicker(null)}
+          onConfirm={(key) => {
+            const target = joinOtherPicker;
+            setJoinOtherPicker(null);
+            void joinPhase1CharacterByKey(numericId(target.id) ?? target.id, key.trim())
+              .then(() => refreshCharacters())
+              .catch((error) => {
+                setJoinResult({
+                  title: 'Could not join campaign',
+                  message: error instanceof Error ? error.message : `Could not add ${target.name} to the campaign.`,
+                });
+              });
+          }}
+        />
+      )}
+      {joinResult && (
+        <MessageDialog title={joinResult.title} message={joinResult.message} onClose={() => setJoinResult(null)} />
       )}
     </div>
   );

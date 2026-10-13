@@ -175,6 +175,12 @@ export default defineConfig(({ mode }) => ({
     }),
     ...(mode === 'development' ? [] : [VitePWA(manifestForPlugin)]),
   ],
+  optimizeDeps: {
+    // pdf-lib is only reached through the PDF export's dynamic import. Vite
+    // otherwise discovers it mid-export, answers 504, and the failed import
+    // stays cached so every character in the batch fails.
+    include: ['pdf-lib'],
+  },
   build: {
     // Was: a @babel/preset-env pass (targets ios15) running over the whole bundle on top
     // of esbuild - a redundant second transpile. esbuild lowers syntax to the same target

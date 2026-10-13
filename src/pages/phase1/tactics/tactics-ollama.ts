@@ -1,4 +1,5 @@
 import type { TacticsAbility, TacticsChoice, TacticsCombatant, TacticsSpend } from './tactics-types';
+import { annotatePenalties, choiceFaults, legalMenu, rankChoices, separateActions, unusedActions } from './tactics-legal';
 import { readMemory, writeMemory } from './tactics-memory';
 
 const MODEL = import.meta.env.VITE_OLLAMA_MODEL || 'llama3.1';
@@ -7,7 +8,7 @@ const CONTEXT_CHARS = Number(import.meta.env.VITE_OLLAMA_CONTEXT_CHARS) || 12000
 const BASIC_ACTIONS = ['stride', 'step', 'strike', 'seek', 'demoralize', 'grapple', 'trip', 'shove', 'disarm', 'raise a shield', 'take cover', 'stand', 'crawl', 'leap', 'ready', 'delay', 'aid', 'recall knowledge'];
 
 const TURN_SYSTEM =
-  'You offer three different Pathfinder 2e turns for the one creature named Acting. Each turn is a list of 3 action sentences for that same creature. Do not split one turn across the three choices. Do not number the creature as (1) (2) (3). A line that is only a name, weapon, AC, DC, or bare number is invalid. Each line names the action and, when there is a roll, the defense and the number from the notes. Use only actions named in the Abilities list or creature description, plus Stride, Step, Strike, Seek, Demoralize, Grapple, Trip, and Shove. Do not invent spells. Do not default to three Strikes. Merging with a ward costs 1 action, has concentrate, and the kami cannot move, speak, or control the ward afterward. Reply as JSON {"choices":[{"lines":["Stride to Ada.","Strike Ada with Spade. Attack roll vs AC 18, bonus +7. Damage 1d6 piercing.","Demoralize Ada. Intimidation vs Will DC 16."],"tip":"Close, strike once, then frighten.","abilityIds":["spade"]},{"lines":["..."],"tip":"...","abilityIds":[]},{"lines":["..."],"tip":"...","abilityIds":[]}]}';
+  'You offer three different Pathfinder 2e turns for the one creature named Acting. The first choice must be fully legal. Use only the names, action costs, and numbers in the user message. Do not copy an example and do not invent a creature, weapon, spell, bonus, or DC. Each line is exactly one action. A Strike names one attack from that creature\'s Strikes. Seek only looks for a hidden creature. The action costs on the first choice add up to 3. Reply as JSON {"choices":[{"lines":["..."],"tip":"...","abilityIds":["..."]},{"lines":["..."],"tip":"...","abilityIds":[]},{"lines":["..."],"tip":"...","abilityIds":[]}]}';
 
 type ChatResult = { text: string } | { error: string; contextExceeded: boolean };
 
@@ -89,10 +90,10 @@ function roster(combatants: TacticsCombatant[]) {
   return combatants.map(combatantLine).join('\n');
 }
 
-function fullBrief(actor: TacticsCombatant, combatants: TacticsCombatant[], spends: TacticsSpend[]) {
+function fullBrief(actor: TacticsCombatant, combatants: TacticsCombatant[], spends: TacticsSpend[], catalog?: TacticsAbility[]) {
   const abilities = actor.abilities.map((ability) => abilityLine(ability, actor.id, spends)).join('\n');
   const description = actor.description?.trim() ? `\n\nDescription:\n${actor.description.trim()}` : '';
-  return `Acting: ${actor.name}\n\nRoster:\n${roster(combatants)}${description}\n\nAbilities:\n${abilities}`;
+  return `Acting: ${actor.name}\n\nRoster:\n${roster(combatants)}${description}\n\nLegal actions:\n${legalMenu(actor, catalog)}\n\nAbilities:\n${abilities}`;
 }
 
 function abilityChunks(actor: TacticsCombatant, spends: TacticsSpend[]): string[] {
@@ -128,36 +129,42 @@ function inventedActions(lines: string[], actor: TacticsCombatant): string[] {
   return invented;
 }
 
-function playableLine(line: string): boolean {
+function playableLine(line: string, catalog?: TacticsAbility[], actor?: TacticsCombatant): boolean {
   const words = line.trim().split(/\s+/);
-  if (words.length < 3) return false;
+  if (words.length < 2) return false;
   if (/^(ac|dc|hp)\b/i.test(line.trim())) return false;
-  return BASIC_ACTIONS.concat(['merge', 'emerge', 'attack']).some((verb) => new RegExp(`\\b${verb}\\b`, 'i').test(line));
+  const names = (catalog?.length ? catalog.map((ability) => ability.name.toLowerCase()) : BASIC_ACTIONS)
+    .concat((actor?.abilities ?? []).map((ability) => ability.name.toLowerCase()))
+    .concat(['merge', 'merges', 'merging', 'emerge', 'emerges', 'attack']);
+  return names.some((verb) => new RegExp(`\\b${verb.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(line));
 }
 
-function oneChoice(raw: { lines?: string[]; tip?: string; abilityIds?: string[] }, actor: TacticsCombatant, index: number): { choice: TacticsChoice } | { rejected: string } | null {
-  const lines = (raw.lines ?? []).map((line) => line.trim()).filter(playableLine);
-  if (lines.length < 2) return null;
-  const invented = inventedActions(lines, actor);
+function oneChoice(raw: { lines?: string[]; tip?: string; abilityIds?: string[] }, actor: TacticsCombatant, index: number, catalog?: TacticsAbility[]): { choice: TacticsChoice } | { rejected: string } | null {
+  const rawLines = (raw.lines ?? []).map((line) => line.trim()).filter(Boolean);
+  const invented = inventedActions(rawLines, actor);
   if (invented.length) {
     const listed = actor.abilities.map((ability) => ability.name).join(', ') || 'no special actions';
     return { rejected: `${actor.name} does not have ${invented.join(', ')}. The sheet lists: ${listed}.` };
   }
+  const lines = annotatePenalties(separateActions(rawLines, actor, catalog).filter((line) => playableLine(line, catalog, actor)), actor, catalog);
+  if (lines.length < 2) return null;
   const abilityIds = (raw.abilityIds ?? []).filter((id) => actor.abilities.some((ability) => ability.id === id));
+  const unused = unusedActions(lines, actor, catalog);
+  const unusedNote = unused ? `${unused} action${unused === 1 ? '' : 's'} unused.` : '';
   return {
     choice: {
       id: `${actor.id}-model-${index}`,
       text: lines.join(' '),
       lines,
       score: 0,
-      tip: raw.tip?.trim() || 'Proposed from the encounter notes.',
+      tip: [raw.tip?.trim(), unusedNote].filter(Boolean).join(' ') || 'Proposed from the encounter notes.',
       abilityIds,
       source: 'menu',
     },
   };
 }
 
-function parseTurn(raw: string, actor: TacticsCombatant): { choices: TacticsChoice[] } | { rejected: string } | null {
+function parseTurn(raw: string, actor: TacticsCombatant, catalog?: TacticsAbility[]): { choices: TacticsChoice[] } | { rejected: string } | null {
   const json = raw.match(/\{[\s\S]*\}/);
   if (!json) return null;
   try {
@@ -166,14 +173,14 @@ function parseTurn(raw: string, actor: TacticsCombatant): { choices: TacticsChoi
     const choices: TacticsChoice[] = [];
     const rejections: string[] = [];
     for (const item of items) {
-      const result = oneChoice(item, actor, choices.length);
+      const result = oneChoice(item, actor, choices.length, catalog);
       if (!result) continue;
       if ('rejected' in result) rejections.push(result.rejected);
       else choices.push(result.choice);
     }
     if (!choices.length && rejections.length) return { rejected: rejections[0] };
     if (!choices.length) return null;
-    return { choices };
+    return { choices: rankChoices(choices, actor, catalog) };
   } catch {
     return null;
   }
@@ -185,10 +192,11 @@ export async function proposeTurn(input: {
   actor: TacticsCombatant;
   combatants: TacticsCombatant[];
   spends: TacticsSpend[];
+  catalog?: TacticsAbility[];
   onStatus?: (status: TurnStatus) => void;
 }): Promise<{ choices: TacticsChoice[]; comment: string; modelDown: boolean }> {
-  const { campaignId, encounterId, actor, combatants, spends, onStatus } = input;
-  const brief = fullBrief(actor, combatants, spends);
+  const { campaignId, encounterId, actor, combatants, spends, catalog, onStatus } = input;
+  const brief = fullBrief(actor, combatants, spends, catalog);
   const report = (detail: string) => onStatus?.({ detail });
   if (!fits(brief)) {
     report(`${actor.name}'s sheet is ${brief.length.toLocaleString()} characters, past one ${MODEL} context window. Saving notes in parts.`);
@@ -198,9 +206,9 @@ export async function proposeTurn(input: {
   const direct = fits(brief) ? await chat(TURN_SYSTEM, brief, onStatus, `${MODEL} is writing ${actor.name}'s turn.`) : { error: 'context', contextExceeded: true };
   if ('text' in direct) {
     report(`${MODEL} finished writing. Reading the turn.`);
-    const parsed = await enoughChoices(direct.text, actor, brief, onStatus, report);
+    const parsed = await enoughChoices(direct.text, actor, brief, catalog, onStatus, report);
+    if (parsed && 'choices' in parsed && parsed.choices.length) return { choices: parsed.choices, comment: parsed.note || `${parsed.choices.length} turns for ${actor.name}. Pick one.`, modelDown: false };
     if (parsed && 'rejected' in parsed) return { choices: [], comment: parsed.rejected, modelDown: false };
-    if (parsed && 'choices' in parsed) return { choices: parsed.choices, comment: `${parsed.choices.length} turns for ${actor.name}. Pick one.`, modelDown: false };
     return { choices: [], comment: 'The model replied, but the turn was not usable.', modelDown: false };
   }
   if (!direct.contextExceeded && direct.error !== 'context') {
@@ -237,37 +245,63 @@ export async function proposeTurn(input: {
   }
 
   report(`Asking ${MODEL} for ${actor.name}'s turn from the saved notes.`);
-  const finale = await chat(TURN_SYSTEM, `Acting: ${actor.name}\n\nRoster:\n${roster(combatants)}\n\nNotes:\n${notes}`, onStatus, `${MODEL} is writing ${actor.name}'s turn from the saved notes.`);
+  const finaleBrief = `Acting: ${actor.name}\n\nRoster:\n${roster(combatants)}\n\nLegal actions:\n${legalMenu(actor, catalog)}\n\nNotes:\n${notes}`;
+  const finale = await chat(TURN_SYSTEM, finaleBrief, onStatus, `${MODEL} is writing ${actor.name}'s turn from the saved notes.`);
   if ('error' in finale) return { choices: [], comment: `${MODEL} stopped while reading the saved notes: ${finale.error}`, modelDown: true };
   report(`${MODEL} finished writing. Reading the turn.`);
-  const parsed = await enoughChoices(finale.text, actor, `Acting: ${actor.name}\n\nRoster:\n${roster(combatants)}\n\nNotes:\n${notes}`, onStatus, report);
+  const parsed = await enoughChoices(finale.text, actor, finaleBrief, catalog, onStatus, report);
+  if (parsed && 'choices' in parsed && parsed.choices.length) return { choices: parsed.choices, comment: parsed.note || `${parsed.choices.length} turns for ${actor.name}. Pick one.`, modelDown: false };
   if (parsed && 'rejected' in parsed) return { choices: [], comment: parsed.rejected, modelDown: false };
-  if (!parsed || !('choices' in parsed)) return { choices: [], comment: 'The model replied from the saved notes, but the turn was not usable.', modelDown: false };
-  return { choices: parsed.choices, comment: `${parsed.choices.length} turns for ${actor.name}. Pick one.`, modelDown: false };
+  return { choices: [], comment: 'The model replied from the saved notes, but the turn was not usable.', modelDown: false };
 }
 
 async function enoughChoices(
   raw: string,
   actor: TacticsCombatant,
   brief: string,
+  catalog: TacticsAbility[] | undefined,
   onStatus: ((status: TurnStatus) => void) | undefined,
   report: (detail: string) => void,
-): Promise<{ choices: TacticsChoice[] } | { rejected: string } | null> {
-  const first = parseTurn(raw, actor);
-  if (!first || 'rejected' in first || first.choices.length >= 3) return first;
-  report(`${MODEL} offered ${first.choices.length}. Asking for three different turns.`);
-  const again = await chat(TURN_SYSTEM, `${brief}\n\nOffer three different turns. Do not repeat a turn you already gave.`, onStatus, `${MODEL} is writing more turns for ${actor.name}.`);
-  if ('error' in again) return first;
-  const second = parseTurn(again.text, actor);
-  if (!second || 'rejected' in second) return first;
-  const seen = new Set(first.choices.map((choice) => choice.text));
-  const merged = [...first.choices];
-  for (const choice of second.choices) {
-    if (seen.has(choice.text)) continue;
-    seen.add(choice.text);
-    merged.push({ ...choice, id: `${actor.id}-model-${merged.length}` });
+): Promise<{ choices: TacticsChoice[]; note?: string } | { rejected: string } | null> {
+  let current = parseTurn(raw, actor, catalog);
+  if (!current) {
+    report(`${MODEL} replied, but it was not a turn. Asking for the turn in the required shape.`);
+    const shaped = await chat(TURN_SYSTEM, `${brief}\n\nReply with only the JSON object of three turns. No notes.`, onStatus, `${MODEL} is rewriting ${actor.name}'s turn.`);
+    if ('text' in shaped) current = parseTurn(shaped.text, actor, catalog);
   }
-  return { choices: merged.slice(0, 3) };
+  if (current && 'choices' in current && current.choices.length < 3) {
+    report(`${MODEL} offered ${current.choices.length}. Asking for three different turns.`);
+    const again = await chat(TURN_SYSTEM, `${brief}\n\nOffer three different turns. Do not repeat a turn you already gave.`, onStatus, `${MODEL} is writing more turns for ${actor.name}.`);
+    if ('text' in again) {
+      const second = parseTurn(again.text, actor, catalog);
+      if (second && 'choices' in second) {
+        const seen = new Set(current.choices.map((choice) => choice.text));
+        const merged = [...current.choices];
+        for (const choice of second.choices) {
+          if (seen.has(choice.text)) continue;
+          seen.add(choice.text);
+          merged.push({ ...choice, id: `${actor.id}-model-${merged.length}` });
+        }
+        current = { choices: rankChoices(merged, actor, catalog).slice(0, 3) };
+      }
+    }
+  }
+  if (!current || 'rejected' in current) return current;
+  const faults = choiceFaults(current.choices[0], actor, catalog);
+  if (!faults.length) return current;
+  report(`The top turn is not legal: ${faults[0]} Asking again.`);
+  const repaired = await chat(
+    TURN_SYSTEM,
+    `${brief}\n\nThe top turn was rejected:\n${faults.map((fault) => `- ${fault}`).join('\n')}\n\nReply again. The first choice must be a legal turn from the Legal actions list.`,
+    onStatus,
+    `${MODEL} is rewriting the top turn for ${actor.name}.`,
+  );
+  if ('error' in repaired) return { choices: current.choices, note: faults.join(' ') };
+  const next = parseTurn(repaired.text, actor, catalog);
+  if (!next || 'rejected' in next || !next.choices.length) return { choices: current.choices, note: faults.join(' ') };
+  const ranked = rankChoices(next.choices, actor, catalog);
+  const still = choiceFaults(ranked[0], actor, catalog);
+  return { choices: ranked, note: still[0] };
 }
 
 export async function ollamaComment(facts: string[], encounterBlock: string): Promise<{ text: string; modelDown: boolean }> {

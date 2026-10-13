@@ -6,12 +6,13 @@ import type { Character, Combatant, Condition, Creature, Encounter, LivingEntity
 import { phase1Request, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId } from '../phase1-api';
 import { loadEntityAbilities } from '../phase1-abilities';
 import { calculateEntityStatus } from '../phase1-stats';
-import type { Phase1EntityCombatant } from '../phase1-entity';
+import { skillCatalogFromContent } from '../phase1-skills';
+import { preparePhase1Entity, type Phase1EntityCombatant } from '../phase1-entity';
 import { ollamaDesign, proposeTurn } from './tactics-ollama';
 import { postChoice, postSnapshot } from './tactics-export';
 import { confirmSpend, listSpends } from './tactics-spends';
 import { parseAbility } from './tactics-parse';
-import type { TacticsChoice, TacticsCombatant, TacticsSnapshot } from './tactics-types';
+import type { TacticsAbility, TacticsChoice, TacticsCombatant, TacticsSnapshot } from './tactics-types';
 
 type Message = { id: string; side: 'guide' | 'gm'; text: string };
 
@@ -82,6 +83,7 @@ export function TacticsPage() {
       actor: enemy,
       combatants: bundle.data.combatants,
       spends,
+      catalog: bundle.data.catalog,
       onStatus: (status) => {
         if (cancelled) return;
         setComment(status.detail);
@@ -258,12 +260,31 @@ async function loadTacticsBundle(campaignId: number, encounterId: number, userId
   if (!encounter) throw new Error('Encounter not found.');
   const players = campaignId > 0 ? await loadPhase1CampaignPlayers(campaignId, userId) : await phase1Request<Character[]>('find-character', { user_id: userId });
   const combatants: TacticsCombatant[] = [];
+  let catalog: TacticsAbility[] = [];
   for (const combatant of encounter.combatants?.list ?? []) {
     if (isHazard(combatant)) continue;
     const data = resolveData(combatant, players ?? []);
     if (!data) continue;
     const prepared = { ...combatant, data } as Phase1EntityCombatant;
-    const [status, abilities] = await Promise.all([calculateEntityStatus(prepared), loadEntityAbilities(prepared)]);
+    const [status, abilities, content] = await Promise.all([
+      calculateEntityStatus(prepared),
+      loadEntityAbilities(prepared),
+      catalog.length ? Promise.resolve(null) : preparePhase1Entity(prepared).then((loaded) => loaded.content),
+    ]);
+    if (content && !catalog.length) {
+      catalog = skillCatalogFromContent(content)
+        .filter((ability) => !ability.traitNames.some((trait) => trait === 'Exploration' || trait === 'Downtime'))
+        .map((ability) =>
+          parseAbility({
+            id: ability.id,
+            name: ability.name,
+            actions: ability.actions,
+            traits: ability.traitNames,
+            frequency: ability.frequency,
+            description: ability.description,
+          }),
+        );
+    }
     const hp = data.hp_current ?? status.maxHp;
     combatants.push({
       id: combatant._id,
@@ -294,7 +315,7 @@ async function loadTacticsBundle(campaignId: number, encounterId: number, userId
   }
   const enemies = combatants.filter((combatant) => livingEnemy({ ally: combatant.side === 'ally', data: { hp_current: combatant.hpCurrent } }));
   enemies.sort((a, b) => initiativeOf(encounter, b.id) - initiativeOf(encounter, a.id));
-  return { round: Math.max(1, encounter.meta_data?.initiative_log?.length ?? 1), combatants, enemies };
+  return { round: Math.max(1, encounter.meta_data?.initiative_log?.length ?? 1), combatants, enemies, catalog };
 }
 
 function resolveData(combatant: Combatant, players: Character[]): LivingEntity | undefined {

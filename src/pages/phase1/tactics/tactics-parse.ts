@@ -6,12 +6,26 @@ const ACTION_COUNTS: Record<string, number> = {
   'ONE-ACTION': 1,
   'TWO-ACTIONS': 2,
   'THREE-ACTIONS': 3,
+  'ONE-TO-TWO-ACTIONS': 1,
+  'ONE-TO-THREE-ACTIONS': 1,
+  'TWO-TO-THREE-ACTIONS': 2,
+};
+
+const ACTION_MAX: Record<string, number> = {
+  'ONE-TO-TWO-ACTIONS': 2,
+  'ONE-TO-THREE-ACTIONS': 3,
+  'TWO-TO-THREE-ACTIONS': 3,
 };
 
 export function actionCount(actions: string | null | undefined, description: string): number {
-  if (actions && ACTION_COUNTS[actions] != null && ACTION_COUNTS[actions] > 0) return ACTION_COUNTS[actions];
-  const glyphs = (description.match(/\[\[(?:one-action|two-actions|three-actions)\]\]/gi) ?? []).length;
-  if (glyphs > 0) return Math.min(3, glyphs);
+  if (actions && ACTION_COUNTS[actions] != null) return ACTION_COUNTS[actions];
+  const prose = `${actions ?? ''} ${description}`.toLowerCase();
+  if (/\b(three-actions|three actions|3 actions)\b/.test(prose)) return 3;
+  if (/\b(two-actions|two actions|2 actions)\b/.test(prose)) return 2;
+  const glyphs = (description.match(/\[\[(one-action|two-actions|three-actions)\]\]/gi) ?? []);
+  if (glyphs.some((glyph) => /three/i.test(glyph))) return 3;
+  if (glyphs.some((glyph) => /two/i.test(glyph))) return 2;
+  if (glyphs.length > 0) return 1;
   return 1;
 }
 
@@ -56,7 +70,8 @@ export function parseAbility(input: {
   return {
     id: String(input.id),
     name: input.name,
-    actions: Math.max(1, actionCount(input.actions, description)),
+    actions: actionCount(input.actions, description),
+    actionsMax: input.actions ? ACTION_MAX[input.actions] : undefined,
     traits: input.traits ?? [],
     rangeFeet: kind === 'strike' || kind === 'skill' ? rangeFeet : rangeFeet,
     areaFeet,

@@ -589,11 +589,19 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   position: absolute;
   inset: 0;
   z-index: 0;
+  width: auto;
+  height: auto;
+  align-self: stretch;
+  justify-self: stretch;
   pointer-events: none;
 }
 .p1-char-row-art img {
+  position: absolute;
+  inset: 0;
   height: 100%;
   width: 100%;
+  max-width: none;
+  max-height: none;
   object-fit: cover;
   object-position: center var(--campaign-art-focus, 30%);
 }

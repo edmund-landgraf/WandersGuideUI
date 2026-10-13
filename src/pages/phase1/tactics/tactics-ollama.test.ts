@@ -58,8 +58,8 @@ describe('proposeTurn', () => {
       streamReply(
         JSON.stringify({
           choices: [
-            { lines: ['Stride to Ada.', 'Strike Ada with Spade. Attack roll vs AC 18, bonus +7. Damage 1d6 piercing.'], tip: 'One Strike, then movement already spent.', abilityIds: ['spade'] },
-            { lines: ['Demoralize Ada.', 'Stride away.', 'Take cover.'], tip: 'Frighten, then leave.', abilityIds: [] },
+            { lines: ['Stride to Ada.', 'Strike Ada with Spade. Attack roll vs AC 18, bonus +7. Damage 1d6 piercing.', 'Seek Ada.'], tip: 'One Strike, then movement already spent.', abilityIds: ['spade'] },
+            { lines: ['Demoralize Ada.', 'Stride away from Ada.', 'Take cover behind the statue.'], tip: 'Frighten, then leave.', abilityIds: [] },
             { lines: ['Step away from Ada.', 'Strike Ada with Spade. Attack roll vs AC 18.', 'Seek Nemeia.'], tip: 'A short step, then one Strike.', abilityIds: ['spade'] },
           ],
         }),
@@ -119,7 +119,7 @@ describe('proposeTurn', () => {
       vi.fn().mockResolvedValue(
         streamReply(
           JSON.stringify({
-            lines: ['Shikigami (1) merges with its ward using Ward. One action, concentrate.', 'It stays merged and does not Stride.', 'It does not Strike.'],
+            lines: ['Stride to the ward.', 'Shikigami (1) merges with its ward using Ward.', 'Seek around the statue.'],
             tip: 'Merged, it can sense but cannot move.',
             abilityIds: [],
           }),
@@ -139,7 +139,7 @@ describe('proposeTurn', () => {
       spends: [],
     });
     expect(result.choices).toHaveLength(1);
-    expect(result.choices[0].lines[0]).toContain('using Ward');
+    expect(result.choices[0].lines.join(' ')).toContain('using Ward');
     const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1].body)) as { messages: { content: string }[] };
     expect(body.messages[1].content).toContain('merge with or emerge from their ward');
   });
@@ -159,7 +159,7 @@ describe('proposeTurn', () => {
         return streamReply(
           JSON.stringify({
             choices: [0, 1, 2].map((index) => ({
-              lines: [`Strike with Ability ${index} once.`, 'Stride away from Ada.'],
+              lines: [`Strike with Ability ${index} once.`, 'Stride away from Ada.', 'Seek Ada.'],
               tip: 'Built from saved notes.',
               abilityIds: [`ability-${index}`],
             })),
@@ -179,6 +179,6 @@ describe('proposeTurn', () => {
     expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
     expect(localStorage.getItem('wgui-tactics-memory:1:2:nemeia')).toContain('Kept the numbers');
     expect(result.choices[0].lines[0]).toBe('Strike with Ability 0 once.');
-    expect(result.comment).toBe('Built from saved notes.');
+    expect(result.comment).toBe('3 turns for Nemeia. Pick one.');
   });
 });

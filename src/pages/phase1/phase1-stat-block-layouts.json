@@ -1,5 +1,5 @@
 {
-  "storageKey": "phase1-stat-block-layout",
+  "storageKey": "phase1-stat-block-layout-v2",
   "default": "current",
   "notes": "Frozen board snapshots. Switch in the stat-block chrome to compare; add a new id when replacing Experimental.",
   "layouts": [

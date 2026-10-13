@@ -66,6 +66,49 @@ export function Component() {
 
   const signinSection = () => {
     return (
+      <form
+        method='post'
+        autoComplete='on'
+        onSubmit={async (event) => {
+          event.preventDefault();
+          const data = new FormData(event.currentTarget);
+          const submittedEmail = String(data.get('email') ?? '').trim();
+          const submittedPassword = String(data.get('password') ?? '');
+          setEmail(submittedEmail);
+          setPassword(submittedPassword);
+
+          if (!submittedEmail || !submittedPassword) {
+            setError('Email and password are required.');
+            return;
+          }
+          if (!submittedEmail.includes('@')) {
+            setError('Please enter a valid email address.');
+            return;
+          }
+
+          const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+            email: submittedEmail,
+            password: submittedPassword,
+          });
+
+          if (authError) {
+            if (authError.code === 'invalid_credentials') {
+              setError('Invalid email or password. Please try again.');
+            } else if (authError.code === 'user_not_found') {
+              setError('No user found with this email. Please register.');
+            } else {
+              setError(authError.message);
+            }
+          } else {
+            setError(null);
+          }
+
+          if (authData.user) {
+            setEmail('');
+            setPassword('');
+          }
+        }}
+      >
       <Stack>
         <Title order={5} pb={0} ta='center' c='gray'>
           Sign in to continue
@@ -110,6 +153,8 @@ export function Component() {
           <Stack gap={0}>
             <TextInput
               name='email'
+              type='email'
+              autoComplete='username'
               label='Email address'
               placeholder='Your email address'
               value={email}
@@ -117,6 +162,7 @@ export function Component() {
             />
             <PasswordInput
               name='password'
+              autoComplete='current-password'
               label='Password'
               placeholder='Your password'
               value={password}
@@ -124,43 +170,9 @@ export function Component() {
             />
           </Stack>
           <Button
+            type='submit'
             color='dark'
             leftSection={<IconMail size={20} color='#6e7173' />}
-            onClick={async () => {
-              if (!email || !password) {
-                setError('Email and password are required.');
-                return;
-              }
-              if (!email.includes('@')) {
-                setError('Please enter a valid email address.');
-                return;
-              }
-
-              // Attempt to sign in the user
-              const { data, error } = await supabase.auth.signInWithPassword({
-                email,
-                password,
-              });
-
-              if (error) {
-                if (error.code === 'invalid_credentials') {
-                  setError('Invalid email or password. Please try again.');
-                } else if (error.code === 'user_not_found') {
-                  setError('No user found with this email. Please register.');
-                } else {
-                  setError(error.message);
-                }
-              } else {
-                setError(null);
-              }
-
-              if (data.user) {
-                // Will automatically update and redirect
-                console.log('Sign in data:', data);
-                setEmail('');
-                setPassword('');
-              }
-            }}
           >
             Sign in with Email
           </Button>
@@ -182,6 +194,7 @@ export function Component() {
           </Anchor>
         </Stack>
       </Stack>
+      </form>
     );
   };
 

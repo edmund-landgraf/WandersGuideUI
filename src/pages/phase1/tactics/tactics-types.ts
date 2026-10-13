@@ -8,6 +8,7 @@ export type TacticsAbility = {
   id: string;
   name: string;
   actions: number;
+  actionsMax?: number;
   traits: string[];
   rangeFeet?: number;
   areaFeet?: number;
