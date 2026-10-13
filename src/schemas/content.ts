@@ -935,6 +935,8 @@ export const CampaignSchema = z.object({
         })
         .optional(),
       image_url: z.string().optional(),
+              image_focus_y: z.union([z.number(), z.string()]).optional(),
+      row_color: z.string().optional(),
       dice: DicePresetsSchema.optional(),
       roll_history: RollHistorySchema.optional(),
     })

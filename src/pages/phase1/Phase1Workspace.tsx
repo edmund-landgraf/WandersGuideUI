@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, KeyRound, ListChecks, LogOut, Menu, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, Image, KeyRound, ListChecks, LogOut, Menu, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { AmbaChallengeTable, Campaign, Character, Combatant, Condition, Creature, DiceCheckResult, DiceRollLog, DiceRollLogEntry, DiceRollSide, DiceRollState, Encounter, Hazard, InitiativeRoundLog, InitiativeRoundLogEntry, LivingEntity } from '@schemas/content';
@@ -70,6 +70,7 @@ import { PATREON_URL } from '@constants/urls';
 import { getCachedPublicUser, getPublicUser } from '@auth/user-manager';
 import { hasPatreonAccess } from '@utils/patreon';
 import { getAllBackgroundImages } from '@utils/background-images';
+import { uploadImage } from '@upload/image-upload';
 import { getFileContents } from '@import/json/import-from-json';
 import exportToJSON, { downloadObjectAsJson } from '@export/export-to-json';
 import exportToPDF from '@export/export-to-pdf';
@@ -113,6 +114,8 @@ export function Phase1IndexPage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [limitModalOpen, setLimitModalOpen] = useState(false);
+  const [artFrame, setArtFrame] = useState<{ id: number; preview: string; savedUrl?: string; focus: number; error?: string } | null>(null);
+  const [artFrameBusy, setArtFrameBusy] = useState(false);
   const [emailVisible, setEmailVisible] = useState(() => {
     try {
       return sessionStorage.getItem('phase1-show-account-email') !== '0';
@@ -268,6 +271,9 @@ export function Phase1IndexPage() {
               memberNames={characterNamesByCampaign.get(numericId(campaign.id) ?? -1) ?? []}
               onOpen={() => navigate(`/phase1/campaign/${campaign.id}`)}
               onDeleted={() => queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] })}
+              onFrame={(url) => setArtFrame({ id: campaign.id, preview: url, focus: campaignFocusY(campaign.meta_data?.image_focus_y) })}
+              onUploaded={(url) => setArtFrame((current) => (current?.id === campaign.id ? { ...current, savedUrl: url, error: undefined } : current))}
+              onFrameError={(message) => setArtFrame((current) => (current?.id === campaign.id ? { ...current, error: message } : current))}
             />
           ))}
         </div>
@@ -278,6 +284,47 @@ export function Phase1IndexPage() {
           slotCap={CAMPAIGN_SLOT_CAP}
           onClose={() => !creating && setLimitModalOpen(false)}
           onDeleteAndCreate={() => void deleteExistingAndCreateNew()}
+        />
+      )}
+      {artFrame && (
+        <CampaignStripDialog
+          url={artFrame.preview}
+          initial={artFrame.focus}
+          busy={artFrameBusy || !artFrame.savedUrl}
+          error={artFrame.error}
+          onCancel={() => {
+            if (artFrameBusy) return;
+            if (artFrame.preview.startsWith('blob:')) URL.revokeObjectURL(artFrame.preview);
+            setArtFrame(null);
+          }}
+          onConfirm={(focus) => {
+            const savedUrl = artFrame.savedUrl;
+            if (!savedUrl) return;
+            const framed = artFrame;
+            const current = campaigns.data?.find((item) => item.id === framed.id);
+            if (!current) {
+              setArtFrame(null);
+              return;
+            }
+            setArtFrameBusy(true);
+            void phase1Request('create-campaign', {
+              ...current,
+              meta_data: { ...current.meta_data, image_url: savedUrl, image_focus_y: focus },
+            })
+              .then(() => {
+                queryClient.setQueriesData<Campaign[]>({ queryKey: ['phase1-campaigns'] }, (list) =>
+                  list?.map((item) =>
+                    item.id === framed.id
+                      ? { ...item, meta_data: { ...item.meta_data, image_url: savedUrl, image_focus_y: focus } }
+                      : item
+                  )
+                );
+                if (framed.preview.startsWith('blob:')) URL.revokeObjectURL(framed.preview);
+                setArtFrame(null);
+                return queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] });
+              })
+              .finally(() => setArtFrameBusy(false));
+          }}
         />
       )}
     </div>
@@ -335,7 +382,7 @@ function CharacterRosterRow({
   className?: string;
   compact?: boolean;
 }) {
-  const identity = [character.details?.ancestry?.name, character.details?.class?.name].filter(Boolean).join(' · ');
+  const identity = [character.details?.ancestry?.name, character.details?.background?.name, character.details?.class?.name].filter(Boolean).join(' · ');
   const portraitUrl = character.details?.image_url?.trim();
   const sheetArtUrl = character.details?.background_image_url?.trim();
   return (
@@ -446,7 +493,7 @@ export function Phase1CharactersPage() {
   const [pendingRename, setPendingRename] = useState<Character | null>(null);
   const [exporting, setExporting] = useState(false);
   const [characterLayout, setCharacterLayout] = useState<CharacterLayout>(() => readCharacterLayout());
-  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set());
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
   const [exportAllOpen, setExportAllOpen] = useState(false);
   const [exportAllProgress, setExportAllProgress] = useState<{
     kind: 'json' | 'pdf';
@@ -1099,7 +1146,7 @@ export function Phase1CharactersPage() {
         {characterLayout === 'campaign' && (characters.data?.length ?? 0) > 0 ? (
           <div className='divide-y divide-p1-border border-y border-p1-border'>
             {campaignFolders.map((folder) => {
-              const expanded = !collapsedFolders.has(folder.key);
+              const expanded = expandedFolders.has(folder.key);
               return (
                 <div key={folder.key}>
                   <button
@@ -1108,7 +1155,7 @@ export function Phase1CharactersPage() {
                     aria-expanded={expanded}
                     aria-label={`${expanded ? 'Collapse' : 'Expand'} ${folder.name}`}
                     onClick={() => {
-                      setCollapsedFolders((current) => {
+                      setExpandedFolders((current) => {
                         const next = new Set(current);
                         if (next.has(folder.key)) next.delete(folder.key);
                         else next.add(folder.key);
@@ -4296,7 +4343,7 @@ function CampaignAssignPickerModal({
   );
 }
 
-function RailContextMenu({ x, y, onClose, onRename, onDelete, onDeleteAll, onRemove }: { x: number; y: number; onClose: () => void; onRename?: () => void; onDelete?: () => void; onDeleteAll?: () => void; onRemove?: () => void }) {
+function RailContextMenu({ x, y, onClose, onRename, onPickColor, onClearColor, onDelete, onDeleteAll, onRemove }: { x: number; y: number; onClose: () => void; onRename?: () => void; onPickColor?: () => void; onClearColor?: () => void; onDelete?: () => void; onDeleteAll?: () => void; onRemove?: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -4304,8 +4351,9 @@ function RailContextMenu({ x, y, onClose, onRename, onDelete, onDeleteAll, onRem
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
+  const itemCount = [onRename, onPickColor, onClearColor, onRemove, onDelete, onDeleteAll].filter(Boolean).length;
   const left = Math.min(x, window.innerWidth - 220);
-  const top = Math.min(y, window.innerHeight - (onDeleteAll ? 128 : 88));
+  const top = Math.min(y, window.innerHeight - (itemCount * 40 + 16));
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
@@ -4313,6 +4361,16 @@ function RailContextMenu({ x, y, onClose, onRename, onDelete, onDeleteAll, onRem
         {onRename && (
           <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onRename}>
             <Pencil size={14} /> Rename
+          </button>
+        )}
+        {onPickColor && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onPickColor}>
+            <Image size={14} /> Pick for color
+          </button>
+        )}
+        {onClearColor && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onClearColor}>
+            <Eraser size={14} /> Clear color
           </button>
         )}
         {onRemove && (
@@ -5595,13 +5653,463 @@ function EncounterListRow({ encounter, onOpen, onChanged }: { encounter: Encount
   );
 }
 
-function CampaignWorkspaceRow({ campaign, canDelete, memberNames, onOpen, onDeleted }: { campaign: Campaign; canDelete: boolean; memberNames: { id: number; name: string; imageUrl: string }[]; onOpen: () => void; onDeleted: () => void }) {
+const CAMPAIGN_ART_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+
+function artPanelStyle(rect: DOMRect): { top: number; left: number } {
+  const width = 288;
+  const height = 220;
+  const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
+  const below = rect.bottom + 6;
+  const top = below + height > window.innerHeight - 8 ? Math.max(8, rect.top - height - 6) : below;
+  return { top, left };
+}
+
+async function shrinkCampaignArt(file: File): Promise<File> {
+  const maxBytes = 700_000;
+  const bitmap = await createImageBitmap(file);
+  let edge = Math.min(1600, Math.max(bitmap.width, bitmap.height));
+  let blob: Blob | null = null;
+  while (edge >= 480) {
+    const scale = edge / Math.max(bitmap.width, bitmap.height);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * Math.min(1, scale)));
+    canvas.height = Math.max(1, Math.round(bitmap.height * Math.min(1, scale)));
+    const context = canvas.getContext('2d');
+    if (!context) break;
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    let quality = 0.8;
+    while (quality >= 0.4) {
+      blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+      if (blob && blob.size <= maxBytes) {
+        bitmap.close();
+        return new File([blob], 'campaign-art.jpg', { type: 'image/jpeg' });
+      }
+      quality -= 0.1;
+    }
+    edge = Math.round(edge * 0.75);
+  }
+  bitmap.close();
+  if (blob && blob.size < file.size) return new File([blob], 'campaign-art.jpg', { type: 'image/jpeg' });
+  return file;
+}
+
+function campaignArtFile(file: File | null): File | null {
+  if (!file) return null;
+  const named = file.type.startsWith('image/')
+    ? file.type
+    : /\.png$/i.test(file.name)
+      ? 'image/png'
+      : /\.jpe?g$/i.test(file.name)
+        ? 'image/jpeg'
+        : /\.webp$/i.test(file.name)
+          ? 'image/webp'
+          : '';
+  if (!named.startsWith('image/')) return null;
+  if (named === file.type) return file;
+  return new File([file], file.name || 'campaign-art', { type: named });
+}
+
+function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameError }: { campaign: Campaign; onSaved: () => void; onFrame: (url: string) => void; onUploaded: (url: string) => void; onFrameError: (message: string) => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const blockArtClick = useRef(false);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [linkText, setLinkText] = useState('');
+  const hasArt = Boolean(campaign.meta_data?.image_url?.trim());
+
+  useEffect(() => {
+    if (!open) return;
+    panelRef.current?.focus();
+    function onWindowPaste(event: ClipboardEvent) {
+      const text = event.clipboardData?.getData('text/plain').trim() ?? '';
+      if (/^https?:\/\//i.test(text)) {
+        setLinkText(text);
+        if (event.target === panelRef.current) {
+          event.preventDefault();
+          void saveImageUrl(text);
+        }
+        return;
+      }
+      // Clipboard image paste is off for now. URL links only.
+      // const file = imageFileFromClipboard(event.clipboardData);
+      // if (!file) return;
+      // event.preventDefault();
+      // void saveArt(file);
+    }
+    window.addEventListener('paste', onWindowPaste);
+    return () => window.removeEventListener('paste', onWindowPaste);
+  }, [open]);
+
+  async function saveArt(file: File) {
+    const accepted = campaignArtFile(file);
+    if (!accepted) {
+      setError('Use a PNG, JPEG, or WebP image.');
+      return;
+    }
+    if (accepted.size > 3 * 1024 * 1024) {
+      setError('Image must be 3 MB or smaller.');
+      return;
+    }
+    const blobUrl = URL.createObjectURL(accepted);
+    setError(null);
+    setOpen(false);
+    onFrame(blobUrl);
+    setBusy(true);
+    try {
+      const uploadFile = await shrinkCampaignArt(accepted);
+      const url = await uploadImage(uploadFile, 'backgrounds');
+      if (!url) throw new Error('Upload failed.');
+      await phase1Request('create-campaign', {
+        ...campaign,
+        meta_data: { ...campaign.meta_data, image_url: url },
+      });
+      onUploaded(url);
+      onSaved();
+    } catch (cause) {
+      onFrameError(cause instanceof Error ? cause.message : 'Could not save campaign art.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearArt() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await phase1Request('create-campaign', {
+        ...campaign,
+        meta_data: { ...campaign.meta_data, image_url: '' },
+      });
+      setOpen(false);
+      onSaved();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not clear campaign art.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveImageUrl(raw: string) {
+    const url = raw.trim().replace(/&amp;/g, '&');
+    setBusy(true);
+    setError(null);
+    try {
+      const loads = await new Promise<boolean>((resolve) => {
+        const image = document.createElement('img');
+        image.referrerPolicy = 'no-referrer';
+        image.onload = () => resolve(image.naturalWidth > 0);
+        image.onerror = () => resolve(false);
+        image.src = url;
+      });
+      if (!loads) throw new Error('That link is not a direct image.');
+      await phase1Request('create-campaign', {
+        ...campaign,
+        meta_data: { ...campaign.meta_data, image_url: url },
+      });
+      setOpen(false);
+      onFrame(url);
+      onUploaded(url);
+      onSaved();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not use that image link.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className='relative' onClick={(event) => event.stopPropagation()}>
+      <button
+        ref={buttonRef}
+        type='button'
+        className='toolbar-button'
+        title='Set campaign art from an image link'
+        disabled={busy}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (blockArtClick.current) return;
+          setError(null);
+          setOpen((current) => !current);
+        }}
+      >
+        <Image size={14} />
+        Art
+      </button>
+      {open && buttonRef.current && createPortal(
+        <>
+          <div className='fixed inset-0 z-[350]' onMouseDown={() => { if (!busy) setOpen(false); }} />
+          <div
+            ref={panelRef}
+            tabIndex={-1}
+            className='fixed z-[360] w-72 border border-p1-border bg-p1-surface p-3 text-left shadow-lg outline-none'
+            style={artPanelStyle(buttonRef.current.getBoundingClientRect())}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+          <p className='text-xs text-p1-muted'>Paste or type a direct image link.</p>
+          <label className='mt-2 block'>
+            <span className='text-[10px] uppercase text-p1-faint'>Image URL</span>
+            <input
+              className='mt-1 h-9 w-full border border-p1-border bg-p1-inset px-2 text-sm text-p1-text outline-none focus:border-p1-accent/60'
+              value={linkText}
+              placeholder='https://'
+              disabled={busy}
+              onChange={(event) => setLinkText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void saveImageUrl(linkText.trim());
+                }
+              }}
+            />
+          </label>
+          <div className='mt-2 flex flex-wrap gap-2'>
+            <button
+              type='button'
+              className='toolbar-button'
+              disabled={busy || !/^https?:\/\//i.test(linkText.trim())}
+              onClick={() => void saveImageUrl(linkText.trim())}
+            >
+              {busy ? 'Saving…' : 'Use link'}
+            </button>
+            {/* Local file pick is off for now. URL links only.
+            <label className={`toolbar-button${busy ? ' pointer-events-none opacity-50' : ''}`}>
+              Choose file
+              <input
+                ref={fileRef}
+                type='file'
+                accept='image/png,image/jpeg,image/webp,image/*'
+                className='sr-only'
+                disabled={busy}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = '';
+                  if (!file) return;
+                  blockArtClick.current = true;
+                  window.setTimeout(() => {
+                    blockArtClick.current = false;
+                  }, 700);
+                  void saveArt(file);
+                }}
+              />
+            </label>
+            */}
+            <button type='button' className='toolbar-button' disabled={busy} onClick={() => setOpen(false)}>
+              Cancel
+            </button>
+            {hasArt && (
+              <button
+                type='button'
+                className='toolbar-button'
+                disabled={busy}
+                onClick={() => {
+                  const url = campaign.meta_data?.image_url?.trim();
+                  if (!url) return;
+                  setOpen(false);
+                  onFrame(campaignArtSrc(url));
+                  onUploaded(url);
+                }}
+              >
+                Adjust band
+              </button>
+            )}
+            {hasArt && (
+              <button type='button' className='toolbar-button' disabled={busy} onClick={() => void clearArt()}>
+                Clear
+              </button>
+            )}
+          </div>
+          {error && <p className='mt-2 text-xs text-p1-danger-soft'>{error}</p>}
+          </div>
+        </>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+function imageFileFromClipboard(data: DataTransfer | null): File | null {
+  if (!data) return null;
+  const fromItems = Array.from(data.items)
+    .map((entry) => (entry.type.startsWith('image/') ? entry.getAsFile() : null))
+    .find((entry): entry is File => Boolean(entry));
+  if (fromItems) return fromItems;
+  return Array.from(data.files).find((entry) => entry.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(entry.name)) ?? null;
+}
+
+/** Dev pages talk to Kong through the Vite origin. Upload returns :8000, which the image tag cannot reach. */
+function campaignArtSrc(url: string): string {
+  if (!import.meta.env.DEV || typeof window === 'undefined') return url;
+  try {
+    const parsed = new URL(url, window.location.origin);
+    const localHost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '::1' || parsed.hostname === 'kong';
+    if (!localHost || !parsed.pathname.startsWith('/storage/')) return url;
+    return window.location.origin + parsed.pathname + parsed.search;
+  } catch {
+    return url;
+  }
+}
+
+function campaignFocusY(value?: number | string | null): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed)) return 30;
+  return Math.min(100, Math.max(0, parsed));
+}
+
+function CampaignStripDialog({ url, initial, busy, error, onCancel, onConfirm }: { url: string; initial: number; busy: boolean; error?: string; onCancel: () => void; onConfirm: (focusY: number) => void }) {
+  const [focusY, setFocusY] = useState(initial);
+  const [band, setBand] = useState(18);
+  const [frameHeight, setFrameHeight] = useState(420);
+  const allowDismiss = useRef(false);
+  const frameRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      allowDismiss.current = true;
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape' && !busy) onCancel();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [busy, onCancel]);
+
+  function measureBand(event: React.SyntheticEvent<HTMLImageElement>) {
+    const image = event.currentTarget;
+    setFrameHeight(image.clientHeight || image.offsetHeight || 420);
+    if (!image.naturalWidth || !image.naturalHeight) return;
+    const rowAspect = 72 / 720;
+    const imageAspect = image.naturalWidth / image.naturalHeight;
+    const visible = Math.min(100, Math.max(8, (rowAspect / imageAspect) * 100));
+    setBand(visible);
+  }
+
+  const bandTop = Math.min(100 - band, Math.max(0, focusY - band / 2));
+
+  function focusFromPointer(clientY: number) {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const rect = frame.getBoundingClientRect();
+    if (rect.height <= 0) return;
+    const ratio = (clientY - rect.top) / rect.height;
+    setFocusY(Math.min(100, Math.max(0, ratio * 100)));
+  }
+
+  function onBandPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || busy) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    focusFromPointer(event.clientY);
+  }
+
+  return createPortal(
+    <div
+      className='fixed inset-0 z-[400] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]'
+      role='presentation'
+      onMouseDown={(event) => {
+        if (!allowDismiss.current || busy) return;
+        if (event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <section role='dialog' aria-modal='true' aria-labelledby='campaign-strip-title' className='w-full max-w-6xl border border-p1-border bg-p1-surface p-5 shadow-2xl'>
+        <h2 id='campaign-strip-title' className='text-lg font-semibold'>Choose the band</h2>
+        <p className='mt-1 text-sm text-p1-muted'>Drag the band up and down, or use the slider.</p>
+        {error && <p className='mt-2 text-sm text-p1-danger-soft'>{error}</p>}
+        <div className='mt-4 flex items-start justify-center gap-3'>
+          <div ref={frameRef} className='relative w-full overflow-hidden border border-p1-border'>
+            <img src={url} alt='' referrerPolicy='no-referrer' className='block max-h-[72vh] w-full object-contain' onLoad={measureBand} />
+            <div
+              className='absolute inset-x-0 cursor-ns-resize border-y-2 border-white/90 bg-white/15'
+              style={{ top: `${bandTop}%`, height: `${band}%` }}
+              onPointerDown={onBandPointerDown}
+              onPointerMove={(event) => {
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) focusFromPointer(event.clientY);
+              }}
+            />
+          </div>
+          <input
+            type='range'
+            min={0}
+            max={100}
+            aria-label='Band position'
+            value={focusY}
+            className='w-8 cursor-pointer'
+            style={{ writingMode: 'vertical-lr', direction: 'rtl', height: frameHeight }}
+            onChange={(event) => setFocusY(Number(event.target.value))}
+          />
+        </div>
+        <div className='relative mt-4 h-[4.5rem] overflow-hidden border border-p1-border'>
+          <img src={url} alt='' referrerPolicy='no-referrer' className='h-full w-full object-cover' style={{ objectPosition: `center ${focusY}%` }} />
+        </div>
+        <div className='mt-5 flex justify-end gap-2'>
+          <button type='button' className='toolbar-button' disabled={busy} onClick={onCancel}>Cancel</button>
+          <button type='button' className='toolbar-button' disabled={busy} onClick={() => onConfirm(focusY)}>{busy ? 'Saving…' : 'Use band'}</button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+function normalizeRowColor(value?: string | null): string {
+  const color = value?.trim() ?? '';
+  return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(color) ? color : '';
+}
+
+function CampaignColorDialog({ initial, busy, canClear, onCancel, onConfirm, onClear }: { initial: string; busy: boolean; canClear: boolean; onCancel: () => void; onConfirm: (color: string) => void; onClear: () => void }) {
+  const [color, setColor] = useState(initial);
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape' && !busy) onCancel();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [busy, onCancel]);
+  return createPortal(
+    <div
+      className='fixed inset-0 z-[120] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]'
+      role='presentation'
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onCancel();
+      }}
+    >
+      <section role='dialog' aria-modal='true' aria-labelledby='campaign-color-title' className='w-full max-w-sm border border-p1-border bg-p1-surface p-5 shadow-2xl'>
+        <h2 id='campaign-color-title' className='text-lg font-semibold'>Pick for color</h2>
+        <p className='mt-1 text-sm text-p1-muted'>This color replaces the campaign image on the row.</p>
+        <input
+          type='color'
+          aria-label='Row color'
+          className='mt-4 h-40 w-full cursor-pointer border border-p1-border bg-transparent'
+          value={color}
+          onChange={(event) => setColor(event.target.value)}
+        />
+        <div className='mt-5 flex justify-end gap-2'>
+          {canClear && (
+            <button type='button' className='toolbar-button mr-auto' disabled={busy} onClick={onClear}>Clear color</button>
+          )}
+          <button type='button' className='toolbar-button' disabled={busy} onClick={onCancel}>Cancel</button>
+          <button type='button' className='toolbar-button' disabled={busy} onClick={() => onConfirm(color)}>Use color</button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+function CampaignWorkspaceRow({ campaign, canDelete, memberNames, onOpen, onDeleted, onFrame, onUploaded, onFrameError }: { campaign: Campaign; canDelete: boolean; memberNames: { id: number; name: string; imageUrl: string }[]; onOpen: () => void; onDeleted: () => void; onFrame: (url: string) => void; onUploaded: (url: string) => void; onFrameError: (message: string) => void }) {
   const queryClient = useQueryClient();
   const [visible, setVisible] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [leaveMenu, setLeaveMenu] = useState<{ x: number; y: number } | null>(null);
   const [pendingRename, setPendingRename] = useState(false);
+  const [pendingColor, setPendingColor] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(false);
   const [pendingLeave, setPendingLeave] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -5675,14 +6183,48 @@ function CampaignWorkspaceRow({ campaign, canDelete, memberNames, onOpen, onDele
     }
   }
 
+  const artUrl = campaign.meta_data?.image_url?.trim();
+  const focusY = campaignFocusY(campaign.meta_data?.image_focus_y);
+  const rowColor = normalizeRowColor(campaign.meta_data?.row_color);
+  const showStrip = Boolean(rowColor || artUrl);
+
+  async function saveRowColor(color: string) {
+    if (busy) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      await phase1Request('create-campaign', {
+        ...campaign,
+        meta_data: { ...campaign.meta_data, row_color: color },
+      });
+      setPendingColor(false);
+      onDeleted();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not save row color.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <div className='group grid w-full grid-cols-[1fr_auto] items-center gap-6 px-2 py-5 hover:bg-p1-hover' onContextMenu={openMenu}>
+    <div className={`p1-char-row group grid w-full grid-cols-[1fr_auto] items-center gap-6 px-2 py-5${showStrip ? ' p1-char-row-has-art' : ''}`} onContextMenu={openMenu}>
+      {showStrip && (
+        <div className='p1-char-row-art' aria-hidden>
+          {artUrl ? (
+            <img src={campaignArtSrc(artUrl)} alt='' referrerPolicy='no-referrer' loading='lazy' decoding='async' style={{ ['--campaign-art-focus' as string]: `${focusY}%` }} />
+          ) : (
+            <div className='h-full w-full' style={{ backgroundColor: rowColor }} />
+          )}
+          <div className='p1-char-row-art-veil' />
+        </div>
+      )}
       <button type='button' className='min-w-0 text-left' onClick={onOpen} onContextMenu={openMenu}>
         <div className='font-semibold'>{campaign.name}</div>
         <div className='mt-1 line-clamp-1 text-sm text-p1-muted'>{campaign.description || 'No campaign description'}</div>
         {actionError && <div className='mt-1 text-xs text-p1-danger-soft'>{actionError}</div>}
       </button>
       <div className='flex items-center gap-2'>
+        {canDelete && <CampaignArtControl campaign={campaign} onSaved={onDeleted} onFrame={onFrame} onUploaded={onUploaded} onFrameError={onFrameError} />}
         {hasKey && (
           <button type='button' className='toolbar-button' title='Reveal and copy join key' onClick={revealAndCopy}>
             {copyState === 'copied' ? <Check size={14} /> : visible ? <Copy size={14} /> : <KeyRound size={14} />}
@@ -5717,6 +6259,14 @@ function CampaignWorkspaceRow({ campaign, canDelete, memberNames, onOpen, onDele
             setMenu(null);
             setPendingRename(true);
           }}
+          onPickColor={() => {
+            setMenu(null);
+            setPendingColor(true);
+          }}
+          onClearColor={rowColor ? () => {
+            setMenu(null);
+            void saveRowColor('');
+          } : undefined}
           onDelete={() => {
             setMenu(null);
             setPendingDelete(true);
@@ -5731,6 +6281,18 @@ function CampaignWorkspaceRow({ campaign, canDelete, memberNames, onOpen, onDele
             if (!busy) setPendingRename(false);
           }}
           onConfirm={(name) => { void confirmRename(name); }}
+        />
+      )}
+      {pendingColor && (
+        <CampaignColorDialog
+          initial={rowColor || '#5c6b4a'}
+          busy={busy}
+          canClear={Boolean(rowColor)}
+          onCancel={() => {
+            if (!busy) setPendingColor(false);
+          }}
+          onConfirm={(color) => { void saveRowColor(color); }}
+          onClear={() => { void saveRowColor(''); }}
         />
       )}
       {leaveMenu && (

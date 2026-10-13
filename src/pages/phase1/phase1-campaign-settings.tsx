@@ -1,7 +1,6 @@
 import { getPublicUser } from '@auth/user-manager';
 import { fetchContentSources, findRequiredContentSources } from '@content/content-store';
 import type { Campaign, Character, ContentSource } from '@schemas/content';
-import { isValidImage } from '@utils/images';
 import { useQuery } from '@tanstack/react-query';
 import {
   Archive,
@@ -114,8 +113,6 @@ export function SettingsSurface({
   const [tab, setTab] = useState<SettingsTab>('books');
   const [name, setName] = useState(campaign.name);
   const [description, setDescription] = useState(campaign.description ?? '');
-  const [imageUrl, setImageUrl] = useState(campaign.meta_data?.image_url ?? '');
-  const [imageValid, setImageValid] = useState(true);
   const [joinKeyVisible, setJoinKeyVisible] = useState(false);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [resettingKey, setResettingKey] = useState(false);
@@ -128,23 +125,21 @@ export function SettingsSurface({
   useEffect(() => {
     setName(campaign.name);
     setDescription(campaign.description ?? '');
-    setImageUrl(campaign.meta_data?.image_url ?? '');
   }, [campaign.id]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
-      if (name === campaign.name && description === (campaign.description ?? '') && imageUrl === (campaign.meta_data?.image_url ?? '')) return;
+      if (name === campaign.name && description === (campaign.description ?? '')) return;
       onUpdateCampaign({
         ...campaign,
         name,
         description: description || null,
-        meta_data: { ...campaign.meta_data, image_url: imageUrl || undefined },
       });
     }, 200);
     return () => window.clearTimeout(timeout);
     // Debounce text fields only; campaign snapshot is read at save time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, description, imageUrl]);
+  }, [name, description]);
 
   useEffect(() => {
     if (copyState !== 'copied') return;
@@ -221,11 +216,6 @@ export function SettingsSurface({
     } finally {
       setResettingKey(false);
     }
-  }
-
-  async function validateImageUrl(value: string) {
-    const valid = value.trim() ? await isValidImage(value) : true;
-    setImageValid(valid);
   }
 
   const partyStatus = campaign.meta_data?.settings?.show_party_member_status ?? 'STATUS';
@@ -381,14 +371,6 @@ export function SettingsSurface({
                   <option value='STATUS'>Status Only</option>
                   <option value='DETAILED'>Detailed</option>
                 </select>
-              </Field>
-              <Field label='Image URL' error={imageValid ? undefined : 'Invalid URL'}>
-                <input
-                  className='settings-input'
-                  value={imageUrl}
-                  onChange={(event) => setImageUrl(event.target.value)}
-                  onBlur={(event) => validateImageUrl(event.target.value)}
-                />
               </Field>
               <Field label='Join Key'>
                 <div className='flex flex-wrap gap-2'>
