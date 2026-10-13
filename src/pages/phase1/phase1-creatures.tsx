@@ -119,8 +119,8 @@ export function SelectCreatureModal({
   onClose,
 }: {
   busy?: boolean;
-  /** Campaign (or page) books. Creatures outside this list stay out of the picker. */
-  sourceIds: number[];
+  /** Campaign books. `null` means a standalone encounter: use the page's default sources. */
+  sourceIds: number[] | null;
   onSelect: (creature: Creature, ally: boolean) => void;
   onClose: () => void;
 }) {
@@ -130,15 +130,17 @@ export function SelectCreatureModal({
   const [added, setAdded] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [artUnlocked, setArtUnlocked] = useState(() => Boolean(readArtPassword()));
+  const usePageSources = sourceIds == null;
   const bookIds = useMemo(
-    () => [...new Set(sourceIds.filter((id) => Number.isFinite(id)))].sort((a, b) => a - b),
+    () => (sourceIds == null ? [] : [...new Set(sourceIds.filter((id) => Number.isFinite(id)))].sort((a, b) => a - b)),
     [sourceIds]
   );
   const catalog = useQuery({
-    queryKey: ['phase1-creature-catalog', bookIds.join(',')],
+    queryKey: ['phase1-creature-catalog', usePageSources ? getDefaultSourcesKey('PAGE') : bookIds.join(',')],
     queryFn: async () => {
-      if (bookIds.length === 0) return [];
-      const creatures = await fetchContentAll<Creature>('creature', bookIds);
+      const sources = usePageSources ? getDefaultSources('PAGE') : bookIds;
+      if (!usePageSources && bookIds.length === 0) return [];
+      const creatures = await fetchContentAll<Creature>('creature', sources);
       return (creatures ?? [])
         .filter((creature) => creature.level !== -100 && !creature.deprecated)
         .sort((a, b) => a.name.localeCompare(b.name));
@@ -179,7 +181,7 @@ export function SelectCreatureModal({
       }
       loading={catalog.isLoading}
       error={catalog.isError ? (catalog.error instanceof Error ? catalog.error.message : 'Could not load creatures.') : null}
-      empty={bookIds.length === 0 ? 'Enable books in campaign settings to add creatures.' : 'No matching creatures.'}
+      empty={usePageSources || bookIds.length > 0 ? 'No matching creatures.' : 'Enable books in campaign settings to add creatures.'}
       onClose={onClose}
       maxWidthClass='max-w-4xl'
       maxHeightClass='max-h-[min(86vh,760px)]'
@@ -251,21 +253,24 @@ export function SelectHazardModal({
   onClose,
 }: {
   busy?: boolean;
-  sourceIds: number[];
+  /** Campaign books. `null` means a standalone encounter: use the page's default sources. */
+  sourceIds: number[] | null;
   onSelect: (hazard: Hazard) => void;
   onClose: () => void;
 }) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [added, setAdded] = useState<string | null>(null);
+  const usePageSources = sourceIds == null;
   const bookIds = useMemo(
-    () => [...new Set(sourceIds.filter((id) => Number.isFinite(id)))].sort((a, b) => a - b),
+    () => (sourceIds == null ? [] : [...new Set(sourceIds.filter((id) => Number.isFinite(id)))].sort((a, b) => a - b)),
     [sourceIds]
   );
   const catalog = useQuery({
-    queryKey: ['phase1-hazard-catalog', bookIds.join(',')],
+    queryKey: ['phase1-hazard-catalog', usePageSources ? getDefaultSourcesKey('PAGE') : bookIds.join(',')],
     queryFn: async () => {
-      if (bookIds.length === 0) return [];
-      const hazards = await fetchHazards(bookIds);
+      const sources = usePageSources ? getDefaultSources('PAGE') : bookIds;
+      if (!usePageSources && bookIds.length === 0) return [];
+      const hazards = await fetchHazards(sources);
       return hazards.filter((hazard) => !hazard.deprecated).sort((a, b) => a.name.localeCompare(b.name));
     },
     staleTime: Number.POSITIVE_INFINITY,

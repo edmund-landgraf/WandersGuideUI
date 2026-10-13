@@ -3127,7 +3127,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               {creaturePickerOpen && (
                 <SelectCreatureModal
                   busy={rosterSaving}
-                  sourceIds={campaign?.recommended_content_sources?.enabled ?? []}
+                  sourceIds={campaign ? (campaign.recommended_content_sources?.enabled ?? []) : null}
                   onSelect={addCreature}
                   onClose={() => setCreaturePickerOpen(false)}
                 />
@@ -3135,7 +3135,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               {hazardPickerOpen && (
                 <SelectHazardModal
                   busy={rosterSaving}
-                  sourceIds={campaign?.recommended_content_sources?.enabled ?? []}
+                  sourceIds={campaign ? (campaign.recommended_content_sources?.enabled ?? []) : null}
                   onSelect={addHazard}
                   onClose={() => setHazardPickerOpen(false)}
                 />
