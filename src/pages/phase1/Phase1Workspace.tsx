@@ -352,6 +352,24 @@ function persistCharacterLayout(layout: CharacterLayout) {
   }
 }
 
+const SHOW_CAMPAIGN_ART_KEY = 'phase1-character-show-campaign-art';
+
+function readShowCampaignArt(): boolean {
+  try {
+    return localStorage.getItem(SHOW_CAMPAIGN_ART_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+function persistShowCampaignArt(show: boolean) {
+  try {
+    localStorage.setItem(SHOW_CAMPAIGN_ART_KEY, show ? '1' : '0');
+  } catch {
+    /* private mode */
+  }
+}
+
 type AddAllJoinResult = {
   assigned: number;
   skippedSame: number;
@@ -494,6 +512,7 @@ export function Phase1CharactersPage() {
   const [pendingRename, setPendingRename] = useState<Character | null>(null);
   const [exporting, setExporting] = useState(false);
   const [characterLayout, setCharacterLayout] = useState<CharacterLayout>(() => readCharacterLayout());
+  const [showCampaignArt, setShowCampaignArt] = useState(() => readShowCampaignArt());
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
   const [exportAllOpen, setExportAllOpen] = useState(false);
   const [exportAllProgress, setExportAllProgress] = useState<{
@@ -546,9 +565,10 @@ export function Phase1CharactersPage() {
         key: String(id),
         name: campaignById.get(id)?.name?.trim() || `Campaign ${id}`,
         members,
+        campaign: campaignById.get(id),
       }))
       .sort((left, right) => left.name.localeCompare(right.name));
-    folders.push({ key: 'unassigned', name: 'Unassigned', members: unassigned });
+    folders.push({ key: 'unassigned', name: 'Unassigned', members: unassigned, campaign: undefined });
     return folders;
   }, [campaignById, characters.data]);
   const assignableCampaigns = useMemo(
@@ -1140,7 +1160,21 @@ export function Phase1CharactersPage() {
           </EmptyState>
         )}
         {(characters.data?.length ?? 0) > 0 && (
-          <div className='mb-4 flex justify-end'>
+          <div className='mb-4 flex items-center justify-end gap-4'>
+            {characterLayout === 'campaign' && campaignFolders.some((folder) => campaignHasRowArt(folder.campaign)) && (
+              <label className='flex cursor-pointer items-center gap-2 text-sm text-p1-muted'>
+                <input
+                  type='checkbox'
+                  className='accent-[var(--p1-accent)]'
+                  checked={showCampaignArt}
+                  onChange={(event) => {
+                    persistShowCampaignArt(event.target.checked);
+                    setShowCampaignArt(event.target.checked);
+                  }}
+                />
+                Campaign art
+              </label>
+            )}
             <div className='phase1-theme-switch stat-block-layout-switch' role='radiogroup' aria-label='Character list layout'>
               {([
                 ['list', 'List'],
@@ -1170,11 +1204,15 @@ export function Phase1CharactersPage() {
           <div className='divide-y divide-p1-border border-y border-p1-border'>
             {campaignFolders.map((folder) => {
               const expanded = expandedFolders.has(folder.key);
+              const artUrl = folder.campaign?.meta_data?.image_url?.trim();
+              const rowColor = normalizeRowColor(folder.campaign?.meta_data?.row_color);
+              const showStrip = showCampaignArt && Boolean(artUrl || rowColor);
+              const focusY = campaignFocusY(folder.campaign?.meta_data?.image_focus_y);
               return (
                 <div key={folder.key}>
                   <button
                     type='button'
-                    className='flex w-full items-center gap-3 px-2 py-2 text-left hover:bg-p1-hover'
+                    className={`flex w-full items-center gap-3 px-2 py-2 text-left${showStrip ? ' p1-char-row p1-char-row-has-art' : ' hover:bg-p1-hover'}`}
                     aria-expanded={expanded}
                     aria-label={`${expanded ? 'Collapse' : 'Expand'} ${folder.name}`}
                     onClick={() => {
@@ -1186,6 +1224,16 @@ export function Phase1CharactersPage() {
                       });
                     }}
                   >
+                    {showStrip && (
+                      <div className='p1-char-row-art' aria-hidden>
+                        {artUrl ? (
+                          <img src={campaignArtSrc(artUrl)} alt='' referrerPolicy='no-referrer' loading='lazy' decoding='async' style={{ ['--campaign-art-focus' as string]: `${focusY}%` }} />
+                        ) : (
+                          <div className='h-full w-full' style={{ backgroundColor: rowColor }} />
+                        )}
+                        <div className='p1-char-row-art-veil' />
+                      </div>
+                    )}
                     {expanded ? (
                       <FolderOpen size={40} strokeWidth={1.25} className='shrink-0 text-p1-accent' aria-hidden />
                     ) : (
@@ -3278,7 +3326,7 @@ function useCombatantStatuses(encounterId: number | null, combatants: PopulatedC
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
-function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, viewingSettings, railOpen, onToggleRail }: { label?: string; section?: 'campaigns' | 'characters' | 'encounters'; campaignId?: number | null; encounterId?: number | null; noteIndex?: number | null; viewingSettings?: boolean; railOpen?: boolean; onToggleRail?: () => void }) {
+export function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, viewingSettings, railOpen, onToggleRail }: { label?: string; section?: 'campaigns' | 'characters' | 'encounters'; campaignId?: number | null; encounterId?: number | null; noteIndex?: number | null; viewingSettings?: boolean; railOpen?: boolean; onToggleRail?: () => void }) {
   const navClass = (active: boolean) => `text-sm ${active ? 'text-p1-text' : 'text-p1-muted hover:text-p1-text'}`;
   const user = useQuery({
     queryKey: ['phase1-public-user'],
@@ -3307,6 +3355,7 @@ function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, v
         <Phase1ThemeToggle />
         <Phase1CssThemeToggle />
         <PhaseViewSwitch current='phase1' section={section} campaignId={campaignId} encounterId={encounterId} noteIndex={noteIndex} viewingSettings={viewingSettings} />
+        <Link to='/phase1/account' className='icon-button' title='Account'><User size={15} /></Link>
         <button className='icon-button' title='Switch account' onClick={() => void signOut()}><LogOut size={15} /></button>
       </div>
     </header>
@@ -6085,6 +6134,11 @@ function CampaignStripDialog({ url, initial, busy, error, onCancel, onConfirm }:
 function normalizeRowColor(value?: string | null): string {
   const color = value?.trim() ?? '';
   return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(color) ? color : '';
+}
+
+function campaignHasRowArt(campaign?: Campaign): boolean {
+  if (!campaign) return false;
+  return Boolean(campaign.meta_data?.image_url?.trim() || normalizeRowColor(campaign.meta_data?.row_color));
 }
 
 function CampaignColorDialog({ initial, busy, canClear, onCancel, onConfirm, onClear }: { initial: string; busy: boolean; canClear: boolean; onCancel: () => void; onConfirm: (color: string) => void; onClear: () => void }) {
