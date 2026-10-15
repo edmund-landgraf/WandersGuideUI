@@ -4,7 +4,7 @@
 
 ## Closed choices
 
-- Human login for ChatGPT is Supabase (`SUPABASE_URL` and `SUPABASE_ANON_KEY`): Google, GitHub, or Discord, the same providers as the campaign UI. `GET /oauth/mcp/authorize` shows that choice, then sends the browser to GoTrue. The token endpoint still accepts only the code and PKCE verifier. ChatGPT never receives the provider token. `MCP_PUBLIC_ORIGIN` is the issuer ChatGPT and GoTrue redirect to, and that origin must be on the GoTrue redirect allow-list.
+- Human login for ChatGPT is Supabase (`SUPABASE_URL` and `SUPABASE_ANON_KEY`): Google, GitHub, Discord, or email and password, the same choices as the campaign UI. `GET /oauth/mcp/authorize` shows that choice, then sends the browser to GoTrue. The token endpoint still accepts only the code and PKCE verifier. ChatGPT never receives the provider token. `MCP_PUBLIC_ORIGIN` is the issuer ChatGPT and GoTrue redirect to, and that origin must be on the GoTrue redirect allow-list.
 - Tokens are stored as a SHA-256 hash. No pepper until a hashing scheme is chosen.
 - Account-settings mint and the OAuth token endpoint create the same row.
 - Consent may use a Supabase access token to learn who is asking and returns a short-lived code. The token endpoint accepts that code and a PKCE S256 verifier. It does not read a session.

@@ -134,6 +134,20 @@ async function exchangeGotrueCode(authCode: string, verifier: string) {
   return body.access_token ?? null;
 }
 
+async function passwordGrant(email: string, password: string) {
+  const supabaseUrl = process.env.SUPABASE_URL?.trim().replace(/\/$/, "");
+  const anon = process.env.SUPABASE_ANON_KEY?.trim();
+  if (!supabaseUrl || !anon) return null;
+  const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: { apikey: anon, "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!response.ok) return null;
+  const body = (await response.json()) as { access_token?: string };
+  return body.access_token ?? null;
+}
+
 async function supabaseUser(accessToken: string) {
   const supabaseUrl = process.env.SUPABASE_URL?.trim().replace(/\/$/, "");
   const anon = process.env.SUPABASE_ANON_KEY?.trim();
@@ -255,7 +269,7 @@ export function startTacticsHttp() {
             return `<a href="${next.pathname}${next.search}">${label}</a>`;
           }).join("");
           res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Set-Cookie": cookie });
-          res.end(`<!doctype html><meta charset="utf-8"><title>Sign in</title><p>Sign in to Wanderer's Guide to connect ChatGPT.</p><p>${links}</p>`);
+          res.end(`<!doctype html><meta charset="utf-8"><title>Sign in</title><p>Sign in to Wanderer's Guide to connect ChatGPT.</p><p>${links}</p><form method="post" action="/oauth/mcp/authorize"><p><label>Email <input name="email" type="email" autocomplete="username" required></label></p><p><label>Password <input name="password" type="password" autocomplete="current-password" required></label></p><button type="submit">Sign in with email</button></form>`);
           return;
         }
         if (path === "/oauth/mcp/callback" && req.method === "GET") {
@@ -288,6 +302,26 @@ else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "
           dest.searchParams.set("code", code);
           dest.searchParams.set("state", pending.state);
           sendJson(res, 200, { redirect: dest.toString() });
+          return;
+        }
+        if (req.method === "POST" && path === "/oauth/mcp/authorize" && (req.headers["content-type"] ?? "").includes("application/x-www-form-urlencoded")) {
+          const body = await readBody(req);
+          const email = typeof body?.email === "string" ? body.email : "";
+          const password = typeof body?.password === "string" ? body.password : "";
+          const pending = takeLogin(readCookie(req, "wgui_mcp_login"));
+          const accessToken = email && password ? await passwordGrant(email, password) : null;
+          const userId = accessToken ? await supabaseUser(accessToken) : null;
+          if (!pending || !userId) {
+            res.writeHead(401, { "Content-Type": "text/html; charset=utf-8" });
+            res.end("<!doctype html><meta charset=\"utf-8\"><title>Sign in</title><p>Email or password was not accepted. Go back and try again.</p>");
+            return;
+          }
+          const code = issueCode({ userId, codeChallenge: pending.challenge, redirectUri: pending.redirectUri });
+          const dest = new URL(pending.redirectUri);
+          dest.searchParams.set("code", code);
+          dest.searchParams.set("state", pending.state);
+          res.writeHead(302, { Location: dest.toString() });
+          res.end();
           return;
         }
         if (req.method === "POST" && path === "/oauth/mcp/authorize") {
