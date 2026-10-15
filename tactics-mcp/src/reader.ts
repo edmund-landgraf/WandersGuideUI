@@ -46,7 +46,7 @@ export type CombatantSheet = {
   feats: { section: "class" | "ancestry" | "general" | "other"; name: string; level?: number; hasAction: boolean }[];
   classFeatures: { name: string; level?: number }[];
   skills: { name: string; modifier?: number; proficiency?: string }[];
-  spells: { tradition?: string; rank?: number; name: string; spent?: number; max?: number; prepared?: boolean }[];
+  spells: { tradition?: string; rank?: number; name: string; spent?: number; max?: number; prepared?: boolean; attack?: number; dc?: number }[];
   inventory?: unknown;
   notes?: string;
   details?: unknown;
