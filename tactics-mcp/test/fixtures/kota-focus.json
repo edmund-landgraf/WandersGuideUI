@@ -1,0 +1,577 @@
+{
+  "character": {
+    "name": "Kota",
+    "spells": {
+      "list": [
+        {
+          "spell_id": 4554,
+          "rank": 0,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 4562,
+          "rank": 0,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 5012,
+          "rank": 0,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 5063,
+          "rank": 0,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 4831,
+          "rank": 0,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 4937,
+          "rank": 0,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 4890,
+          "rank": 0,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 4649,
+          "rank": 0,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 6756,
+          "rank": 1,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 4616,
+          "rank": 1,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 4648,
+          "rank": 1,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 4415,
+          "rank": 1,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 4720,
+          "rank": 0,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 5008,
+          "rank": 0,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 8829,
+          "rank": 1,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 6155,
+          "rank": 1,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 4678,
+          "rank": 1,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 4528,
+          "rank": 1,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 8971,
+          "rank": 1,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 4782,
+          "rank": 1,
+          "source": "NECROMANCER"
+        },
+        {
+          "spell_id": 7366,
+          "rank": 1,
+          "source": "NECROMANCER"
+        }
+      ]
+    },
+    "level": 2,
+    "id": 66,
+    "details": {
+      "class": {
+        "operations": [
+          {
+            "id": "2d33cede-1439-4b6b-86b4-dab7cb4dbb60",
+            "type": "adjValue",
+            "data": {
+              "variable": "ATTRIBUTE_INT",
+              "value": {
+                "value": 1
+              }
+            }
+          },
+          {
+            "id": "a579292a-feb3-4a27-a983-c192f7238c1d",
+            "type": "setValue",
+            "data": {
+              "variable": "MAX_HEALTH_CLASS_PER_LEVEL",
+              "value": 8
+            }
+          },
+          {
+            "id": "b0225a7f-9537-4760-8739-12a2804671fb",
+            "type": "adjValue",
+            "data": {
+              "variable": "PERCEPTION",
+              "value": {
+                "value": "T"
+              }
+            }
+          },
+          {
+            "id": "e750b9cd-44c7-4af0-8c3a-5ab6b445c666",
+            "type": "adjValue",
+            "data": {
+              "variable": "SAVE_FORT",
+              "value": {
+                "value": "E"
+              }
+            }
+          },
+          {
+            "id": "cdd6358f-b2c4-4436-908f-cc2dcf3ba10a",
+            "type": "adjValue",
+            "data": {
+              "variable": "SAVE_REFLEX",
+              "value": {
+                "value": "T"
+              }
+            }
+          },
+          {
+            "id": "2c27dae1-96b4-4c24-ad1b-06e82880f0b7",
+            "type": "adjValue",
+            "data": {
+              "variable": "SAVE_WILL",
+              "value": {
+                "value": "T"
+              }
+            }
+          },
+          {
+            "id": "bec0a014-f009-4caa-8f7b-12bc86dbe71c",
+            "type": "adjValue",
+            "data": {
+              "variable": "SKILL_OCCULTISM",
+              "value": {
+                "value": "T"
+              }
+            }
+          },
+          {
+            "id": "fe6add6d-0e9d-4359-aec9-3996c919be39",
+            "type": "adjValue",
+            "data": {
+              "variable": "SIMPLE_WEAPONS",
+              "value": {
+                "value": "T"
+              }
+            }
+          },
+          {
+            "id": "d4508c98-0069-4c23-a306-c191c46f3427",
+            "type": "adjValue",
+            "data": {
+              "variable": "UNARMED_ATTACKS",
+              "value": {
+                "value": "T"
+              }
+            }
+          },
+          {
+            "id": "7d1a39fc-5c87-4630-ae18-5bd537435217",
+            "type": "adjValue",
+            "data": {
+              "variable": "LIGHT_ARMOR",
+              "value": {
+                "value": "T"
+              }
+            }
+          },
+          {
+            "id": "021a5970-47dd-4443-a468-7ba99474cc48",
+            "type": "adjValue",
+            "data": {
+              "variable": "UNARMORED_DEFENSE",
+              "value": {
+                "value": "T"
+              }
+            }
+          },
+          {
+            "id": "d1eab920-e5b4-44cf-a8bc-c94875be7d09",
+            "type": "setValue",
+            "data": {
+              "variable": "CLASS_DC",
+              "value": {
+                "value": "T",
+                "attribute": "ATTRIBUTE_INT"
+              }
+            }
+          },
+          {
+            "id": "a8ff7596-fce9-444a-995a-782d0cd60a05",
+            "type": "adjValue",
+            "data": {
+              "variable": "SPELL_ATTACK",
+              "value": {
+                "value": "T"
+              }
+            }
+          },
+          {
+            "id": "4edec14c-4291-4d91-94ae-8dde52a53624",
+            "type": "adjValue",
+            "data": {
+              "variable": "SPELL_DC",
+              "value": {
+                "value": "T"
+              }
+            }
+          }
+        ],
+        "id": 337,
+        "trait_id": 5135,
+        "name": "Necromancer"
+      }
+    },
+    "operation_data": {
+      "selections": {
+        "class-feature-57683_00680f99-771f-4473-a23d-7a8bc1dd170c": "d8d3f980-ee4b-479c-8691-babf47a55a07",
+        "class-feature-57841_a265caa4-3865-470c-8679-bb2c2f1c4a78": "58014",
+        "class-feature-57841_a265caa4-3865-470c-8679-bb2c2f1c4a78_58014_6f02e4e1-eb76-429e-b8e8-37355e8c78cf": "3c6b28df-f56e-4c69-b944-6c2c5f728dde"
+      }
+    }
+  },
+  "classFeatures": [
+    {
+      "id": 57841,
+      "name": "Necromancer Feat",
+      "level": 2,
+      "type": null,
+      "operations": [
+        {
+          "id": "a265caa4-3865-470c-8679-bb2c2f1c4a78",
+          "type": "select",
+          "data": {
+            "title": "Select a Feat",
+            "modeType": "FILTERED",
+            "optionType": "ABILITY_BLOCK",
+            "optionsPredefined": [],
+            "optionsFilters": {
+              "id": "68374f43-c7e7-471c-a9fa-3b54632f7202",
+              "type": "ABILITY_BLOCK",
+              "level": {
+                "max": 2
+              },
+              "traits": [
+                "Necromancer"
+              ],
+              "abilityBlockType": "feat"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 57685,
+      "name": "Grave Spells",
+      "level": 1,
+      "type": null,
+      "operations": [
+        {
+          "id": "fc54bea7-7428-4b0e-99a9-8728a381b3d1",
+          "type": "giveSpell",
+          "data": {
+            "spellId": 8763,
+            "type": "FOCUS",
+            "castingSource": "NECROMANCER",
+            "rank": 1
+          }
+        },
+        {
+          "id": "e36e8c0c-89f5-484e-9760-a1ac678bf453",
+          "type": "giveSpell",
+          "data": {
+            "spellId": 8770,
+            "type": "FOCUS",
+            "castingSource": "NECROMANCER",
+            "rank": 0
+          }
+        },
+        {
+          "id": "f94eb800-ad36-4aa5-bc37-31b334b11cce",
+          "type": "giveSpell",
+          "data": {
+            "spellId": 8754,
+            "type": "FOCUS",
+            "castingSource": "NECROMANCER",
+            "rank": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": 57683,
+      "name": "Grim Fascination",
+      "level": 1,
+      "type": null,
+      "operations": [
+        {
+          "id": "00680f99-771f-4473-a23d-7a8bc1dd170c",
+          "type": "select",
+          "data": {
+            "title": "Select a Grim Fascination",
+            "modeType": "PREDEFINED",
+            "optionType": "CUSTOM",
+            "optionsPredefined": [
+              {
+                "id": "4375be18-c356-4e20-83bc-c542a75b4897",
+                "type": "CUSTOM",
+                "title": "Blood",
+                "description": "Blood necromancers, also known as sanguimancers, manipulate their own blood and the flowing blood of their enemies. Your thralls often resemble vampiric spawn or constructs of hardened blood.\n\n**Grave Spell** [blood infusion](link_spell_8778)\n\n**Thrall Enhancement** You thralls are enhanced with a drop of your blood, and when they fall, your blood returns to you. Whenever a [thrall](link_trait_5139) is destroyed, you regain 1 Hit Point. At 5th level and every 4 levels thereafter, the amount of Hit Points you regain when a [thrall](link_trait_5139) is destroyed increases by 1.",
+                "operations": [
+                  {
+                    "id": "80347760-5dbd-4255-802d-61f2cd4374d2",
+                    "type": "giveSpell",
+                    "data": {
+                      "spellId": 8778,
+                      "type": "FOCUS",
+                      "castingSource": "NECROMANCER",
+                      "rank": 1
+                    }
+                  },
+                  {
+                    "id": "3cddfa4a-3707-4c4d-8ace-90552f4fe410",
+                    "type": "injectText",
+                    "data": {
+                      "type": "trait",
+                      "id": 5139,
+                      "text": "**Thrall Enhancement—Blood** You thralls are enhanced with a drop of your blood, and when they fall, your blood returns to you. Whenever a thrall is destroyed, you regain 1 Hit Point. At 5th level and every 4 levels thereafter, the amount of Hit Points you regain when a thrall is destroyed increases by 1."
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "4dbeeb40-e69d-4b6b-9b77-a880fc30585f",
+                "type": "CUSTOM",
+                "title": "Bone",
+                "description": "Bone necromancers, also known as osteomancers, craft what they desire from the skeletons of the dead or simply create new skeletons by expanding and shaping small bone pieces.\n\n**Grave Spell** [bone spear](link_spell_8775)\n\n**Thrall Enhancement** Your thralls are well constructed and nimble. Each of your [thralls'](link_trait_5139) Speed is increased by 5 feet.",
+                "operations": [
+                  {
+                    "id": "10193416-cfc6-49c8-ab74-c57f9bf26c26",
+                    "type": "giveSpell",
+                    "data": {
+                      "spellId": 8775,
+                      "type": "FOCUS",
+                      "castingSource": "NECROMANCER",
+                      "rank": 1
+                    }
+                  },
+                  {
+                    "id": "f50f81c6-d645-454b-b16c-2f232f9f0dad",
+                    "type": "injectText",
+                    "data": {
+                      "type": "trait",
+                      "id": 5139,
+                      "text": "**Thrall Enhancement—Bone** Your thralls are well constructed and nimble. Each of your thralls' Speed is increased by 5 feet."
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "e895bb2a-f53b-4693-ab06-2a75b1f269ac",
+                "type": "CUSTOM",
+                "title": "Flesh",
+                "description": "Flesh necromancers, also known as caromancers, are experts at the destruction, production, and manipulation of flesh and muscles. Your thralls generally take on the form of zombies and other creatures of dead flesh.\n\n**Grave Spell** [dead weight](link_spell_8769)\n\n**Thrall Enhancement** You can still make use of a destroyed thrall's flesh. Whenever one of your [thralls](link_trait_5139) is destroyed, you can cause the [thrall](link_trait_5139) to leave behind difficult terrain in the space it was destroyed. The difficult terrain lasts 10 minutes.",
+                "operations": [
+                  {
+                    "id": "6a09ec23-89f0-4be8-bdc3-d526ccd0e056",
+                    "type": "giveSpell",
+                    "data": {
+                      "spellId": 8769,
+                      "type": "FOCUS",
+                      "castingSource": "NECROMANCER",
+                      "rank": 1
+                    }
+                  },
+                  {
+                    "id": "007a7060-79d4-4c9c-bbce-a3c9d3885709",
+                    "type": "injectText",
+                    "data": {
+                      "type": "trait",
+                      "id": 5139,
+                      "text": "**Thrall Enhancement—Flesh** You can still make use of a destroyed thrall's flesh. Whenever one of your thralls is destroyed, you can cause the thrall to leave behind difficult terrain in the space it was destroyed. The difficult terrain lasts 10 minutes."
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "d8d3f980-ee4b-479c-8691-babf47a55a07",
+                "type": "CUSTOM",
+                "title": "Spirit",
+                "description": "Spirit necromancers, also known as vitamancers, seek the secrets of the soul and play with the eternal energies of the living and dead. Your thralls often resemble ghosts and spirits.\n\n**Grave Spell** [life tap](link_spell_8765)\n\n**Thrall Enhancement** Your thralls, while still being tied to the physical world, have an incorporeal essence. Whenever one of your [thralls](link_trait_5139) [Strikes](link_action_19856), you can choose for that damage to be [spirit](link_trait_1556) or [void](link_trait_1485) damage instead of physical damage.",
+                "operations": [
+                  {
+                    "id": "88849f61-eaf3-4b78-a759-beef5ffc8b0b",
+                    "type": "giveSpell",
+                    "data": {
+                      "spellId": 8765,
+                      "type": "FOCUS",
+                      "castingSource": "NECROMANCER",
+                      "rank": 1
+                    }
+                  },
+                  {
+                    "id": "4af760a5-c248-4b91-b6a0-28f5e43eccc3",
+                    "type": "injectText",
+                    "data": {
+                      "type": "trait",
+                      "id": 5139,
+                      "text": "**Thrall Enhancement—Spirit** Your thralls, while still being tied to the physical world, have an incorporeal essence. Whenever one of your thralls [Strikes](link_action_19856), you can choose for that damage to be [spirit](link_trait_1556) or [void](link_trait_1485) damage instead of physical damage."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "blocks": [
+    {
+      "id": 58014,
+      "name": "Widespread Fascination",
+      "type": "feat",
+      "operations": [
+        {
+          "id": "6f02e4e1-eb76-429e-b8e8-37355e8c78cf",
+          "type": "select",
+          "data": {
+            "title": "Select a Grave Spell",
+            "modeType": "PREDEFINED",
+            "optionType": "SPELL",
+            "optionsPredefined": [
+              {
+                "id": "1202ae1d-9f1d-424c-9ed4-bece44003760",
+                "type": "SPELL",
+                "operation": {
+                  "id": "2665a5ad-db78-4ae7-ad89-b70803dba655",
+                  "type": "giveSpell",
+                  "data": {
+                    "type": "FOCUS",
+                    "spellId": 8778,
+                    "castingSource": "NECROMANCER"
+                  }
+                }
+              },
+              {
+                "id": "3c6b28df-f56e-4c69-b944-6c2c5f728dde",
+                "type": "SPELL",
+                "operation": {
+                  "id": "1596f359-bed1-42dd-a108-721489b66fe0",
+                  "type": "giveSpell",
+                  "data": {
+                    "type": "NORMAL",
+                    "spellId": 8775
+                  }
+                }
+              },
+              {
+                "id": "4f4b0e46-2fa8-4ed3-adfd-7e91d59f3bf9",
+                "type": "SPELL",
+                "operation": {
+                  "id": "0c948ec0-88fe-42da-a9d0-b7c9ae5fe77c",
+                  "type": "giveSpell",
+                  "data": {
+                    "type": "NORMAL",
+                    "spellId": 8769
+                  }
+                }
+              },
+              {
+                "id": "33f37128-5f60-45e4-8384-a26bf48f1a2b",
+                "type": "SPELL",
+                "operation": {
+                  "id": "40ab3e43-1e61-466f-bab6-9d23c918d695",
+                  "type": "giveSpell",
+                  "data": {
+                    "type": "NORMAL",
+                    "spellId": 8765
+                  }
+                }
+              }
+            ],
+            "optionsFilters": {
+              "id": "c5a9c9ec-d584-4ca2-8fdd-534ed912562d",
+              "type": "SPELL",
+              "level": {},
+              "traits": [
+                "Necromancer",
+                "Focus"
+              ],
+              "traditions": [],
+              "spellData": {
+                "type": "FOCUS",
+                "castingSource": "NECROMANCER"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "spells": [
+    {
+      "id": 8754,
+      "name": "Thrall Charge",
+      "rank": 0
+    },
+    {
+      "id": 8763,
+      "name": "Necrotic Bomb",
+      "rank": 1
+    },
+    {
+      "id": 8765,
+      "name": "Life Tap",
+      "rank": 1
+    },
+    {
+      "id": 8770,
+      "name": "Create Thrall",
+      "rank": 0
+    },
+    {
+      "id": 8775,
+      "name": "Bone Spear",
+      "rank": 1
+    }
+  ]
+}

@@ -52,9 +52,13 @@ function optionKey(value: unknown) {
   return typeof value === "string" || typeof value === "number" ? String(value) : "";
 }
 
-function chosenFrom(entity: Json) {
+function chosenFrom(entity: Json, classFeatures: Json[] = []) {
   const selections = ((entity.operation_data as Json | undefined)?.selections ?? {}) as Record<string, string>;
   const blockIds = new Set<number>();
+  for (const feature of classFeatures) {
+    const id = num(feature.id);
+    if (id && id > 0) blockIds.add(id);
+  }
   // These roots are executed by the sheet outside the class's own operations.
   for (const path of Object.keys(selections)) {
     const root = /^(?:class-feature|ability)-(\d+)(?:_|$)/.exec(path);
@@ -67,9 +71,9 @@ function chosenFrom(entity: Json) {
   const custom: { name: string; description?: string }[] = [];
   const focus: { spellId: number; rank?: number; source?: string }[] = [];
   const seen = new Set<string>();
-  function addFocus(spellId: number | undefined, rank: unknown, source: unknown) {
+  function addFocus(spellId: number | undefined, rank: unknown) {
     if (!spellId || spellId <= 0 || focus.some((grant) => grant.spellId === spellId)) return;
-    focus.push({ spellId, rank: num(rank), source: typeof source === "string" ? source : undefined });
+    focus.push({ spellId, rank: num(rank), source: "focus" });
   }
   function walk(value: unknown, active: boolean, depth: number) {
     if (!active || depth > 12 || !value || typeof value !== "object") return;
@@ -92,20 +96,20 @@ function chosenFrom(entity: Json) {
       const filters = data?.optionsFilters as Json | undefined;
       const spellData = filters?.spellData as Json | undefined;
       for (const value of selectedValues) {
-      const selected = num(value);
-      if (data?.optionType === "ABILITY_BLOCK" && data.modeType !== "PREDEFINED" && selected) blockIds.add(selected);
-      const sourceName = typeof spellData?.castingSource === "string" ? spellData.castingSource : "";
-      const title = typeof data?.title === "string" ? data.title : "";
-      const focusSelect = String(spellData?.type ?? "").toUpperCase() === "FOCUS" || sourceName.toLowerCase().includes("focus") || title.toLowerCase().includes("focus");
-      if (data?.optionType === "SPELL" && focusSelect) addFocus(selected, spellData?.rank, "focus");
-      if (data?.optionType === "SPELL") {
-        for (const option of options) {
-          if (!option || typeof option !== "object") continue;
-          const grant = ((option as Json).operation as Json | undefined)?.data as Json | undefined;
-          const chosen = optionKey((option as Json).id) === value;
-          if (chosen && grant?.type === "FOCUS") addFocus(num(grant.spellId), grant.rank, "focus");
+        const selected = num(value);
+        if (data?.optionType === "ABILITY_BLOCK" && data.modeType !== "PREDEFINED" && selected) blockIds.add(selected);
+        const sourceName = typeof spellData?.castingSource === "string" ? spellData.castingSource : "";
+        const title = typeof data?.title === "string" ? data.title : "";
+        const focusSelect = String(spellData?.type ?? "").toUpperCase() === "FOCUS" || sourceName.toLowerCase().includes("focus") || title.toLowerCase().includes("focus");
+        if (data?.optionType === "SPELL" && focusSelect) {
+          if (data.modeType === "PREDEFINED") {
+            const option = options.find((item) => item && typeof item === "object" && optionKey((item as Json).id) === value) as Json | undefined;
+            const grant = (option?.operation as Json | undefined)?.data as Json | undefined;
+            addFocus(num(grant?.spellId), spellData?.rank ?? grant?.rank);
+          } else {
+            addFocus(selected, spellData?.rank);
+          }
         }
-      }
       }
       return;
     }
@@ -119,11 +123,11 @@ function chosenFrom(entity: Json) {
     }
     if (row.type === "SPELL") {
       const meta = row._meta_data as Json | undefined;
-      if (meta?.type === "FOCUS") addFocus(num(row.id), meta.rank, meta.castingSource);
+      if (meta?.type === "FOCUS") addFocus(num(row.id), meta.rank);
     }
     if (row.type === "giveSpell") {
       const data = row.data as Json | undefined;
-      if (data?.type === "FOCUS") addFocus(num(data.spellId), data.rank, data.castingSource);
+      if (data?.type === "FOCUS") addFocus(num(data.spellId), data.rank);
     }
     for (const child of Object.values(row)) walk(child, true, depth + 1);
   }
@@ -177,6 +181,33 @@ async function rest(path: string): Promise<Json[]> {
   if (!response.ok) throw new Error("EXTENSION");
   const body = (await response.json()) as unknown;
   return Array.isArray(body) ? (body as Json[]) : [];
+}
+
+async function classFeaturesOf(entity: Json) {
+  const details = entity.details as Json | undefined;
+  const features = new Map<number, Json>();
+  for (const [classKey, archetypeKey] of [["class", "class_archetype"], ["class_2", "class_archetype_2"]]) {
+    const classRow = details?.[classKey] as Json | undefined;
+    const traitId = num(classRow?.trait_id);
+    if (!traitId) continue;
+    const level = num(entity.level) ?? 0;
+    // The sheet runs every eligible class feature, including automatic grants
+    // which never appear in operation_data.selections.
+    const rows = await rest(`ability_block?type=eq.class-feature&traits=cs.%7B${traitId}%7D&or=(level.lte.${level},level.is.null)&select=id,name,type,level,operations,actions,description`);
+    const classFeatures = new Map(rows.map((row) => [num(row.id)!, row]));
+    const archetype = details?.[archetypeKey] as Json | undefined;
+    const adjustments = Array.isArray(archetype?.feature_adjustments) ? archetype.feature_adjustments as Json[] : [];
+    for (const adjustment of adjustments) {
+      if (adjustment.type === "REMOVE" || adjustment.type === "REPLACE") classFeatures.delete(num(adjustment.prev_id)!);
+      const added = adjustment.data as Json | undefined;
+      const id = num(added?.id);
+      if ((adjustment.type === "ADD" || adjustment.type === "REPLACE") && added && id && (num(added.level) ?? 0) <= level) {
+        classFeatures.set(id, added);
+      }
+    }
+    for (const [id, feature] of classFeatures) features.set(id, feature);
+  }
+  return [...features.values()];
 }
 
 async function campaignAccess(userId: string, campaignId: number) {
@@ -369,7 +400,7 @@ function sheetFor(entity: Json): CombatantSheet {
 function equippedWeapons(entity: Json) {
   const inventory = entity.inventory as Json | undefined;
   const items = Array.isArray(inventory?.items) ? (inventory.items as Json[]) : [];
-  const found: { name: string; actions: number; description?: string }[] = [];
+  const found: { name: string; actions: number; description: string | undefined }[] = [];
   function walk(list: Json[]) {
     for (const entry of list) {
       if (Array.isArray(entry.container_contents)) walk(entry.container_contents as Json[]);
@@ -408,7 +439,7 @@ function entitiesFor(raw: Json, characters: Json[]) {
   return entities;
 }
 
-function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, blocks: Json[], spellRows: Json[]) {
+function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, blocks: Json[], spellRows: Json[], classFeatures: Record<string, Json[]>) {
   const blockById = new Map(blocks.flatMap((row) => {
     const id = num(row.id);
     return id ? [[id, row] as const] : [];
@@ -420,7 +451,7 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
   for (const [id, entity] of Object.entries(entities)) {
     const sheet = record.sheets[id];
     if (!sheet) continue;
-    const chosen = chosenFrom(entity);
+    const chosen = chosenFrom(entity, classFeatures[id]);
     const wanted = chosen.blockIds;
     const resolved = [...wanted].flatMap((blockId) => {
       const row = blockById.get(blockId);
@@ -525,6 +556,7 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
     findSelects(operations, 0);
     sheet.details = {
       reader: "focus-scan",
+      revision: "class-feature-grants-v2",
       classId: num(classRow?.id) ?? null,
       className: typeof classRow?.name === "string" ? classRow.name : null,
       classOperations: operations.length,
@@ -532,6 +564,7 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
       selects,
       selectionCount: Object.keys(selections).length,
       blocksWalked: seenBlocks.size,
+      classFeatureIds: (classFeatures[id] ?? []).map((row) => row.id),
       focusSpellIds: [...new Set(grants.map((grant) => grant.spellId))],
       spellIds: spellIdsOf(entity).length,
     };
@@ -585,19 +618,24 @@ export function createSupabaseReader(): EncounterReader {
         };
       });
     },
-    async loadEncounter(userId, campaignId, encounterId, _combatantId) {
+    async loadEncounter(userId, campaignId, encounterId, combatantId) {
       const rows = await encountersFor(userId, campaignId, encounterId);
       if (!rows.length) return null;
       const characters = await rest(`character?campaign_id=eq.${campaignId}&select=*`);
       const record = mapEncounter(rows[0], characters);
-      const entities = entitiesFor(rows[0], characters);
+      const allEntities = entitiesFor(rows[0], characters);
+      const entities = combatantId
+        ? Object.fromEntries(Object.entries(allEntities).filter(([id]) => id === combatantId))
+        : allEntities;
       for (const id of Object.keys(entities)) entities[id] = await hydrateSources(entities[id]);
+      const classFeatures: Record<string, Json[]> = {};
+      for (const [id, entity] of Object.entries(entities)) classFeatures[id] = await classFeaturesOf(entity);
       const blockIds = new Set<number>();
       const spellIds = new Set<number>();
       let customAbilities = 0;
       let focusSpells = 0;
-      for (const entity of Object.values(entities)) {
-        const chosen = chosenFrom(entity);
+      for (const [combatantId, entity] of Object.entries(entities)) {
+        const chosen = chosenFrom(entity, classFeatures[combatantId]);
         customAbilities += chosen.custom.length;
         focusSpells += chosen.focus.length;
         for (const id of chosen.blockIds) blockIds.add(id);
@@ -609,14 +647,19 @@ export function createSupabaseReader(): EncounterReader {
         for (const id of spellIdsOf(entity)) spellIds.add(id);
         for (const grant of chosen.focus) spellIds.add(grant.spellId);
       }
-      const blocks: Json[] = [];
-      let pending = [...blockIds];
-      while (pending.length) {
+      const blocks: Json[] = Object.values(classFeatures).flat();
+      const loadedIds = new Set(blocks.map((block) => num(block.id)));
+      let pending = [...blockIds].filter((id) => !loadedIds.has(id));
+      let initialFeatures = blocks.slice();
+      // Scan prefetched class features even when there are no selected feats.
+      while (pending.length || initialFeatures.length) {
         const loaded = await contentRows("find-ability-block", pending);
         blocks.push(...loaded);
+        const toScan = [...initialFeatures, ...loaded];
+        initialFeatures = [];
         const more = new Set<number>();
         for (const entity of Object.values(entities)) {
-          for (const block of loaded) {
+          for (const block of toScan) {
             const nested = chosenFrom({ operation_data: entity.operation_data, custom_operations: block.operations });
             focusSpells += nested.focus.length;
             for (const grant of nested.focus) spellIds.add(grant.spellId);
@@ -628,7 +671,7 @@ export function createSupabaseReader(): EncounterReader {
         pending = [...more];
       }
       const spellRows = await contentRows("find-spell", [...spellIds]);
-      applyCatalog(record, entities, blocks, spellRows);
+      applyCatalog(record, entities, blocks, spellRows, classFeatures);
       console.error(`[wgui-mcp] encounter ${record.encounterId} combatants=${record.combatants.length} abilityIds=${blockIds.size} resolved=${blocks.length} custom=${customAbilities} focus=${focusSpells} spellIds=${spellIds.size} spells=${spellRows.length}`);
       return record;
     },

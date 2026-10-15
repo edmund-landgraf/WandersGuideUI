@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/http.ts",
+    "test": "tsx --test test/*.test.ts",
     "smoke": "tsx src/smoke.ts"
   },
   "dependencies": {
