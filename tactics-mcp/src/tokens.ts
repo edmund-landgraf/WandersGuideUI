@@ -1,4 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 export type McpTokenRow = {
   id: string;
@@ -14,8 +16,34 @@ export type McpTokenRow = {
 
 const rows = new Map<string, McpTokenRow>();
 
+function tokenFile() {
+  return process.env.TACTICS_MCP_TOKEN_FILE?.trim() || "data/tokens.json";
+}
+
+function load() {
+  rows.clear();
+  try {
+    const parsed = JSON.parse(readFileSync(tokenFile(), "utf8")) as McpTokenRow[];
+    if (!Array.isArray(parsed)) return;
+    for (const row of parsed) {
+      if (row?.id && row.tokenHash && row.userId) rows.set(row.id, row);
+    }
+  } catch {
+    // First start has no file yet.
+  }
+}
+
+function save() {
+  const file = tokenFile();
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify([...rows.values()], null, 2));
+}
+
+load();
+
 export function resetTokens() {
   rows.clear();
+  save();
 }
 
 export function hashToken(token: string) {
@@ -53,6 +81,7 @@ export function mintToken(input: { userId: string; label?: string; scopes?: unkn
     revokedAt: null,
   };
   rows.set(id, row);
+  save();
   return { token: secret, row: publicRow(row) };
 }
 
@@ -64,6 +93,7 @@ export function revokeToken(userId: string, id: string) {
   const row = rows.get(id);
   if (!row || row.userId !== userId) return false;
   row.revokedAt = new Date().toISOString();
+  save();
   return true;
 }
 
@@ -74,6 +104,7 @@ export function resolveBearer(secret: string): McpTokenRow | null {
     if (row.revokedAt) return null;
     if (row.expiresAt && Date.parse(row.expiresAt) <= Date.now()) return null;
     row.lastUsedAt = new Date().toISOString();
+    save();
     return row;
   }
   return null;
