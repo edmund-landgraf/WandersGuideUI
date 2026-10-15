@@ -5940,6 +5940,46 @@ async function shrinkCampaignArt(file: File): Promise<File> {
   return file;
 }
 
+const DIRECT_ART_PATH = /\.(png|jpe?g|gif|webp|avif)(?:$|[?#])/i;
+
+function normalizeArtLink(raw: string): string {
+  const cleaned = raw.trim().replace(/&amp;/g, '&').replace(/[\u200B-\u200D\uFEFF]/g, '');
+  const match = cleaned.match(/https?:\/\/\S+/i);
+  return (match ? match[0] : cleaned).replace(/[),.;]+$/, '');
+}
+
+function probeArtImage(url: string, referrerPolicy: ReferrerPolicy): Promise<boolean> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.referrerPolicy = referrerPolicy;
+    image.onload = () => resolve(image.naturalWidth > 0);
+    image.onerror = () => resolve(false);
+    image.src = url;
+  });
+}
+
+async function downloadArtFile(url: string): Promise<File | null> {
+  try {
+    const response = await fetch(url, { mode: 'cors', referrerPolicy: 'no-referrer' });
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    const named = /\.png(?:$|[?#])/i.test(url)
+      ? 'image/png'
+      : /\.webp(?:$|[?#])/i.test(url)
+        ? 'image/webp'
+        : /\.gif(?:$|[?#])/i.test(url)
+          ? 'image/gif'
+          : /\.jpe?g(?:$|[?#])/i.test(url)
+            ? 'image/jpeg'
+            : '';
+    const type = blob.type.startsWith('image/') ? blob.type : named;
+    if (!type.startsWith('image/') || blob.size === 0) return null;
+    return new File([blob], 'campaign-art', { type });
+  } catch {
+    return null;
+  }
+}
+
 function campaignArtFile(file: File | null): File | null {
   if (!file) return null;
   const named = file.type.startsWith('image/')
@@ -6041,18 +6081,20 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
   }
 
   async function saveImageUrl(raw: string) {
-    const url = raw.trim().replace(/&amp;/g, '&');
+    const url = normalizeArtLink(raw);
     setBusy(true);
     setError(null);
     try {
-      const loads = await new Promise<boolean>((resolve) => {
-        const image = document.createElement('img');
-        image.referrerPolicy = 'no-referrer';
-        image.onload = () => resolve(image.naturalWidth > 0);
-        image.onerror = () => resolve(false);
-        image.src = url;
-      });
-      if (!loads) throw new Error('That link is not a direct image.');
+      let loads = await probeArtImage(url, 'no-referrer');
+      if (!loads) loads = await probeArtImage(url, '');
+      if (!loads) {
+        const downloaded = await downloadArtFile(url);
+        if (downloaded) {
+          await saveArt(downloaded);
+          return;
+        }
+      }
+      if (!loads && !DIRECT_ART_PATH.test(url)) throw new Error('That link is not a direct image.');
       await phase1Request('create-campaign', {
         ...campaign,
         meta_data: { ...campaign.meta_data, image_url: url },
