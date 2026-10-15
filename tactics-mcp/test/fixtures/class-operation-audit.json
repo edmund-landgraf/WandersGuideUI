@@ -1,0 +1,3344 @@
+{
+  "classes": [
+    {
+      "id": 336,
+      "name": "Runesmith",
+      "trait_id": 5134,
+      "content_source_id": 842,
+      "operations": [
+        {
+          "id": "14067962-9f6d-468e-8609-198ca07a2a54",
+          "type": "adjValue",
+          "data": {
+            "variable": "PERCEPTION",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "e9b47402-0fc7-48ae-af84-e8732dca0f2b",
+          "type": "adjValue",
+          "data": {
+            "variable": "SAVE_FORT",
+            "value": {
+              "value": "E"
+            }
+          }
+        },
+        {
+          "id": "8b0476d9-1394-48d7-81e6-eeb8a33f20ee",
+          "type": "adjValue",
+          "data": {
+            "variable": "SAVE_REFLEX",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "3c897c8d-a343-409a-b52e-7da417e4f5de",
+          "type": "adjValue",
+          "data": {
+            "variable": "SAVE_WILL",
+            "value": {
+              "value": "E"
+            }
+          }
+        },
+        {
+          "id": "bb15a5b6-1fcb-48ae-8c1b-d860e3af69e4",
+          "type": "adjValue",
+          "data": {
+            "variable": "SIMPLE_WEAPONS",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "e1a93100-5803-4cff-b2af-449b9b836a04",
+          "type": "adjValue",
+          "data": {
+            "variable": "MARTIAL_WEAPONS",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "9e88b080-54bf-4721-8771-f4c4c4ba61c9",
+          "type": "adjValue",
+          "data": {
+            "variable": "UNARMED_ATTACKS",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "e97ed170-d1de-4379-b909-077d30aeecb9",
+          "type": "adjValue",
+          "data": {
+            "variable": "LIGHT_ARMOR",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "ab34dc1d-13f9-45f1-b6b3-3c9e505d57da",
+          "type": "adjValue",
+          "data": {
+            "variable": "MEDIUM_ARMOR",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "5401c6ea-51c8-4c41-9b05-dbf6ca3436a3",
+          "type": "adjValue",
+          "data": {
+            "variable": "UNARMORED_DEFENSE",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "05aa2544-d6df-43a2-aebe-14ccce50f4d7",
+          "type": "setValue",
+          "data": {
+            "variable": "MAX_HEALTH_CLASS_PER_LEVEL",
+            "value": 8
+          }
+        },
+        {
+          "id": "485e06a6-5dc6-4aed-a57a-7ec35c557558",
+          "type": "setValue",
+          "data": {
+            "variable": "CLASS_DC",
+            "value": {
+              "value": "T",
+              "attribute": "ATTRIBUTE_INT"
+            }
+          }
+        },
+        {
+          "id": "5bd0237f-d430-43bd-b52a-2e92261930e5",
+          "type": "adjValue",
+          "data": {
+            "variable": "SKILL_CRAFTING",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "ad35e3fb-ee79-4e0e-8833-4520861a8f9f",
+          "type": "select",
+          "data": {
+            "title": "Select a Skill",
+            "modeType": "PREDEFINED",
+            "optionType": "ADJ_VALUE",
+            "optionsPredefined": [
+              {
+                "id": "401c0485-9e3e-475f-ab3e-a600febaa633",
+                "type": "ADJ_VALUE",
+                "operation": {
+                  "id": "963826c1-c89b-4400-8997-e5714975eb86",
+                  "type": "adjValue",
+                  "data": {
+                    "variable": "SKILL_ARCANA",
+                    "value": {
+                      "value": "T"
+                    }
+                  }
+                }
+              },
+              {
+                "id": "bc003575-1a36-4024-96ca-7bdbb02833f9",
+                "type": "ADJ_VALUE",
+                "operation": {
+                  "id": "3b51d3a1-ec2a-43ea-98db-5e17d185c105",
+                  "type": "adjValue",
+                  "data": {
+                    "variable": "SKILL_NATURE",
+                    "value": {
+                      "value": "T"
+                    }
+                  }
+                }
+              },
+              {
+                "id": "a1a2f0db-3cd0-4f3b-859a-e15e5e826190",
+                "type": "ADJ_VALUE",
+                "operation": {
+                  "id": "10203209-17aa-4f57-af53-033c13f248bb",
+                  "type": "adjValue",
+                  "data": {
+                    "variable": "SKILL_OCCULTISM",
+                    "value": {
+                      "value": "T"
+                    }
+                  }
+                }
+              },
+              {
+                "id": "e57818ec-97cb-4641-b9d0-8e65de036625",
+                "type": "ADJ_VALUE",
+                "operation": {
+                  "id": "f98596ff-bd27-4647-88cf-6959fb9eb070",
+                  "type": "adjValue",
+                  "data": {
+                    "variable": "SKILL_RELIGION",
+                    "value": {
+                      "value": "T"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "b22895b7-cefb-4fd1-84eb-3894a18ee6a4",
+          "type": "adjValue",
+          "data": {
+            "variable": "ATTRIBUTE_INT",
+            "value": {
+              "value": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 148,
+      "name": "Animist",
+      "trait_id": 4078,
+      "content_source_id": 400,
+      "operations": [
+        {
+          "id": "93faf2c9-574f-4787-82a9-bd98dae7faac",
+          "type": "adjValue",
+          "data": {
+            "variable": "PERCEPTION",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "8b45c12e-bfde-4e87-93c8-5226d583d648",
+          "type": "adjValue",
+          "data": {
+            "variable": "SAVE_FORT",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "668e26c0-35cc-415f-8890-2a4b164376d2",
+          "type": "adjValue",
+          "data": {
+            "variable": "SAVE_REFLEX",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "b32c0a51-e32e-4477-af08-f2311f9d547c",
+          "type": "adjValue",
+          "data": {
+            "variable": "SAVE_WILL",
+            "value": {
+              "value": "E"
+            }
+          }
+        },
+        {
+          "id": "f3a2b167-49a9-42bb-8636-a462e957f749",
+          "type": "adjValue",
+          "data": {
+            "variable": "SIMPLE_WEAPONS",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "159501fb-ddef-493e-99ce-7269ceac9f32",
+          "type": "adjValue",
+          "data": {
+            "variable": "UNARMED_ATTACKS",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "1f3f2080-df88-4dcd-8c20-71ad1c2131c6",
+          "type": "adjValue",
+          "data": {
+            "variable": "LIGHT_ARMOR",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "87f2cbd7-57a7-4941-946b-2cf2b9f6cb41",
+          "type": "adjValue",
+          "data": {
+            "variable": "MEDIUM_ARMOR",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "77aa6df4-47e8-4534-a944-aa6f4f23230f",
+          "type": "adjValue",
+          "data": {
+            "variable": "UNARMORED_DEFENSE",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "eef29cea-d0a6-44c7-9e2a-efc75fb1f4ab",
+          "type": "setValue",
+          "data": {
+            "variable": "MAX_HEALTH_CLASS_PER_LEVEL",
+            "value": 8
+          }
+        },
+        {
+          "id": "7aabf5e9-ee1a-40a0-b117-14e96c767f4d",
+          "type": "adjValue",
+          "data": {
+            "variable": "SKILL_RELIGION",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "4bef9b2d-4a67-4a8d-ab93-681e3b15dbda",
+          "type": "select",
+          "data": {
+            "title": "Select a Skill",
+            "modeType": "PREDEFINED",
+            "optionType": "ADJ_VALUE",
+            "optionsPredefined": [
+              {
+                "id": "774010fd-a49b-40bc-82ff-e4af63e9fff1",
+                "type": "ADJ_VALUE",
+                "operation": {
+                  "id": "61d2eaec-52d8-422c-8b34-66bf7229ace2",
+                  "type": "adjValue",
+                  "data": {
+                    "variable": "SKILL_NATURE",
+                    "value": {
+                      "value": "T"
+                    }
+                  }
+                }
+              },
+              {
+                "id": "ac4ea798-b325-49d0-98e8-803635621f98",
+                "type": "ADJ_VALUE",
+                "operation": {
+                  "id": "eb6f54c9-a238-4763-89cf-9306984b3f11",
+                  "type": "adjValue",
+                  "data": {
+                    "variable": "SKILL_OCCULTISM",
+                    "value": {
+                      "value": "T"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "52ef3e47-798d-4ad7-8d65-3fa6ac89bc11",
+          "type": "setValue",
+          "data": {
+            "variable": "CLASS_DC",
+            "value": {
+              "value": "T",
+              "attribute": "ATTRIBUTE_WIS"
+            }
+          }
+        },
+        {
+          "id": "31228a72-a862-405e-93ae-812eb4b06928",
+          "type": "adjValue",
+          "data": {
+            "variable": "SPELL_ATTACK",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "7e7c3e01-d332-4920-93ce-ceafe85a0d98",
+          "type": "adjValue",
+          "data": {
+            "variable": "SPELL_DC",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "ae3b92c8-45d7-4047-8c24-49de9c46ca5e",
+          "type": "adjValue",
+          "data": {
+            "variable": "ATTRIBUTE_WIS",
+            "value": {
+              "value": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 149,
+      "name": "Exemplar",
+      "trait_id": 4079,
+      "content_source_id": 400,
+      "operations": [
+        {
+          "id": "a70dfae0-8c4d-45cf-9b17-2d89a1bcbb54",
+          "type": "adjValue",
+          "data": {
+            "variable": "PERCEPTION",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "d2ee3ecf-9acb-4dde-a0a4-5b727408f8e6",
+          "type": "adjValue",
+          "data": {
+            "variable": "SAVE_FORT",
+            "value": {
+              "value": "E"
+            }
+          }
+        },
+        {
+          "id": "e348ec9c-cd43-46e7-9575-109e3cc191cf",
+          "type": "adjValue",
+          "data": {
+            "variable": "SAVE_REFLEX",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "14e3cce7-9c3b-4b44-baa9-f874b9c350a1",
+          "type": "adjValue",
+          "data": {
+            "variable": "SAVE_WILL",
+            "value": {
+              "value": "E"
+            }
+          }
+        },
+        {
+          "id": "2d792de3-1f94-4b2f-acb0-06e9791236ac",
+          "type": "adjValue",
+          "data": {
+            "variable": "SIMPLE_WEAPONS",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "5f2f4c16-8a76-41c8-9fc3-d296dea76351",
+          "type": "adjValue",
+          "data": {
+            "variable": "MARTIAL_WEAPONS",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "cffe3564-3d6a-4eca-aa32-f3efb59e66ab",
+          "type": "adjValue",
+          "data": {
+            "variable": "UNARMED_ATTACKS",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "1ce9b83b-8d24-4548-8298-2ae36b2e8810",
+          "type": "adjValue",
+          "data": {
+            "variable": "LIGHT_ARMOR",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "05887cb7-193c-4b35-82d1-fa3255edb99c",
+          "type": "adjValue",
+          "data": {
+            "variable": "MEDIUM_ARMOR",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "b649ee76-9c41-424f-8c29-48dd3564a45d",
+          "type": "adjValue",
+          "data": {
+            "variable": "UNARMORED_DEFENSE",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "44597605-dc76-4b34-b791-6681a38c87f3",
+          "type": "setValue",
+          "data": {
+            "variable": "MAX_HEALTH_CLASS_PER_LEVEL",
+            "value": 10
+          }
+        },
+        {
+          "id": "78e231b8-a494-45d2-b5d3-5edcf4b38b52",
+          "type": "adjValue",
+          "data": {
+            "variable": "SKILL_RELIGION",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "177da19f-5883-41a8-b390-4d7a0d815616",
+          "type": "select",
+          "data": {
+            "title": "Select a Key Attribute",
+            "modeType": "PREDEFINED",
+            "optionType": "CUSTOM",
+            "optionsPredefined": [
+              {
+                "id": "050967b8-f2ee-45cc-a1cd-f9cfec205e5e",
+                "type": "CUSTOM",
+                "title": "Strength",
+                "description": "Your key attribute is Strength.",
+                "operations": [
+                  {
+                    "id": "ca138b90-5971-4ea6-af89-f3161186c7db",
+                    "type": "setValue",
+                    "data": {
+                      "variable": "CLASS_DC",
+                      "value": {
+                        "value": "T",
+                        "attribute": "ATTRIBUTE_STR"
+                      }
+                    }
+                  },
+                  {
+                    "id": "a7486935-9920-4b5c-9fe6-a76b84d67ff4",
+                    "type": "adjValue",
+                    "data": {
+                      "variable": "ATTRIBUTE_STR",
+                      "value": {
+                        "value": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "240c35c7-f58c-4250-9227-75363c4c8f4d",
+                "type": "CUSTOM",
+                "title": "Dexterity",
+                "description": "Your key attribute is Dexterity.",
+                "operations": [
+                  {
+                    "id": "297acd3f-1000-4af7-91d8-b19d6b3f13c8",
+                    "type": "setValue",
+                    "data": {
+                      "variable": "CLASS_DC",
+                      "value": {
+                        "value": "T",
+                        "attribute": "ATTRIBUTE_DEX"
+                      }
+                    }
+                  },
+                  {
+                    "id": "ffaa22c0-8453-4c58-afbb-deb7803db5b1",
+                    "type": "adjValue",
+                    "data": {
+                      "variable": "ATTRIBUTE_DEX",
+                      "value": {
+                        "value": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 107,
+      "name": "Alchemist",
+      "trait_id": 3626,
+      "content_source_id": 256,
+      "operations": [
+        {
+          "id": "a609fa9c-25f4-491c-b4b2-01298359611f",
+          "type": "adjValue",
+          "data": {
+            "variable": "ATTRIBUTE_INT",
+            "value": {
+              "value": 1
+            }
+          }
+        },
+        {
+          "id": "12968691-c867-4ca6-991e-c55f779a6f30",
+          "type": "setValue",
+          "data": {
+            "variable": "MAX_HEALTH_CLASS_PER_LEVEL",
+            "value": 8
+          }
+        },
+        {
+          "id": "9fddf749-1098-40bc-a75e-9183be0ac959",
+          "type": "adjValue",
+          "data": {
+            "variable": "PERCEPTION",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "ee832f86-dc1d-44a6-a18a-89857a6e520c",
+          "type": "adjValue",
+          "data": {
+            "variable": "SAVE_FORT",
+            "value": {
+              "value": "E"
+            }
+          }
+        },
+        {
+          "id": "c4d53c88-cf5b-4939-b349-2a068acbd052",
+          "type": "adjValue",
+          "data": {
+            "variable": "SAVE_REFLEX",
+            "value": {
+              "value": "E"
+            }
+          }
+        },
+        {
+          "id": "e4a46187-197c-4923-b8d5-a4cffa9b674b",
+          "type": "adjValue",
+          "data": {
+            "variable": "SAVE_WILL",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "58bc2058-a07f-4304-b947-efe818dab9eb",
+          "type": "adjValue",
+          "data": {
+            "variable": "SKILL_CRAFTING",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "e67b6af3-fca7-4416-a486-166a611dfbea",
+          "type": "adjValue",
+          "data": {
+            "variable": "SIMPLE_WEAPONS",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "1d49045f-ec40-4978-9a1d-c0d30e57b9a7",
+          "type": "adjValue",
+          "data": {
+            "variable": "WEAPON_GROUP_BOMB",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "56f5a140-adb7-49a3-8ae1-bc4eaaf4fdc6",
+          "type": "adjValue",
+          "data": {
+            "variable": "UNARMED_ATTACKS",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "cab72eaa-6625-4066-94aa-91338a4719d0",
+          "type": "adjValue",
+          "data": {
+            "variable": "LIGHT_ARMOR",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "67e1d52b-c6e2-41dc-be2e-8c97722a3125",
+          "type": "adjValue",
+          "data": {
+            "variable": "MEDIUM_ARMOR",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "34d6ad1a-ac99-4a99-9a03-3fb7bff0f259",
+          "type": "adjValue",
+          "data": {
+            "variable": "UNARMORED_DEFENSE",
+            "value": {
+              "value": "T"
+            }
+          }
+        },
+        {
+          "id": "68e6640d-b41e-4033-aab8-771c6a177524",
+          "type": "setValue",
+          "data": {
+            "variable": "CLASS_DC",
+            "value": {
+              "value": "T",
+              "attribute": "ATTRIBUTE_INT"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "features": [
+    {
+      "id": 31207,
+      "name": "Alchemy",
+      "type": "class-feature",
+      "level": 1,
+      "operations": [
+        {
+          "id": "07e40798-34d1-488e-be8f-29262bfd704c",
+          "type": "giveAbilityBlock",
+          "data": {
+            "type": "feat",
+            "abilityBlockId": 19894
+          }
+        },
+        {
+          "id": "83dd9fd5-b6d5-4e9d-9e7b-6cfb3bea4e93",
+          "type": "giveAbilityBlock",
+          "data": {
+            "type": "feat",
+            "abilityBlockId": 31176
+          }
+        },
+        {
+          "id": "1b22b10f-0e12-4eb4-9c5e-b3f3c2db3998",
+          "type": "conditional",
+          "data": {
+            "conditions": [
+              {
+                "id": "056b90f9-b262-4706-8abc-d6b5af0e71c2",
+                "name": "LEVEL",
+                "data": {
+                  "name": "LEVEL",
+                  "type": "num",
+                  "value": 0
+                },
+                "type": "num",
+                "operator": "LESS_THAN",
+                "value": 4
+              }
+            ],
+            "trueOperations": [
+              {
+                "id": "1fe3ceef-0cc1-40bd-8587-fe02044d07af",
+                "type": "giveItem",
+                "data": {
+                  "itemId": 15516
+                }
+              }
+            ],
+            "falseOperations": []
+          }
+        },
+        {
+          "id": "c680873d-d6a4-48cf-b3ae-6ab4840c6cb2",
+          "type": "conditional",
+          "data": {
+            "conditions": [
+              {
+                "id": "6c22d1ac-0c78-4329-9a1d-eed21c6315e5",
+                "name": "LEVEL",
+                "data": {
+                  "name": "LEVEL",
+                  "type": "num",
+                  "value": 0
+                },
+                "type": "num",
+                "operator": "GREATER_THAN_OR_EQUALS",
+                "value": 4
+              },
+              {
+                "id": "68985b98-ae4f-4f95-aee7-9f3b136788a6",
+                "name": "LEVEL",
+                "data": {
+                  "name": "LEVEL",
+                  "type": "num",
+                  "value": 0
+                },
+                "type": "num",
+                "operator": "LESS_THAN",
+                "value": 12
+              }
+            ],
+            "trueOperations": [
+              {
+                "id": "6261b2e7-2eb7-4331-98d4-ad42e272f8a2",
+                "type": "giveItem",
+                "data": {
+                  "itemId": 15517
+                }
+              }
+            ],
+            "falseOperations": []
+          }
+        },
+        {
+          "id": "53ff98a5-9839-4dba-be8f-5f52d838a09b",
+          "type": "conditional",
+          "data": {
+            "conditions": [
+              {
+                "id": "ddbd60f7-182f-4413-b6a3-236fd8aed1c4",
+                "name": "LEVEL",
+                "data": {
+                  "name": "LEVEL",
+                  "type": "num",
+                  "value": 0
+                },
+                "type": "num",
+                "operator": "GREATER_THAN_OR_EQUALS",
+                "value": 12
+              },
+              {
+                "id": "d1d68935-434b-42eb-a456-72d822785b3f",
+                "name": "LEVEL",
+                "data": {
+                  "name": "LEVEL",
+                  "type": "num",
+                  "value": 0
+                },
+                "type": "num",
+                "operator": "LESS_THAN",
+                "value": 18
+              }
+            ],
+            "trueOperations": [
+              {
+                "id": "ee1e4bba-7973-4e86-a14a-5c85f1791c8e",
+                "type": "giveItem",
+                "data": {
+                  "itemId": 15518
+                }
+              }
+            ],
+            "falseOperations": []
+          }
+        },
+        {
+          "id": "2b7e96e5-36d9-4d17-8516-823d7c3b1376",
+          "type": "conditional",
+          "data": {
+            "conditions": [
+              {
+                "id": "979cb37f-7db3-42ed-acdf-19fed2154250",
+                "name": "LEVEL",
+                "data": {
+                  "name": "LEVEL",
+                  "type": "num",
+                  "value": 0
+                },
+                "type": "num",
+                "operator": "GREATER_THAN_OR_EQUALS",
+                "value": 18
+              }
+            ],
+            "trueOperations": [
+              {
+                "id": "f734f28d-bc1b-4c88-8a3c-05cc2fb6c37f",
+                "type": "giveItem",
+                "data": {
+                  "itemId": 15519
+                }
+              }
+            ],
+            "falseOperations": []
+          }
+        }
+      ],
+      "actions": null,
+      "traits": [
+        3626
+      ],
+      "description": "You understand the reactions between all manner of reagents and can concoct alchemical items to meet your needs. You can do this using normal reagents and the [Craft](link_action_19617) activity, or you can use specially prepared chemicals that allow you to craft temporary items quickly and at no cost. Over time, you can create more and more alchemical items for free, and since each of them becomes more and more powerful, you advance in power dramatically, leaving behind those who don’t understand your strange science.\n\nYou gain the [Alchemical Crafting](link_feat_19894) feat, and you can automatically identify alchemical items that you have the formula for.\n\n### Formula Book\n\nAn alchemist keeps meticulous formulas for every item they can create. You start with a standard [formula book](link_item_6972) for free. The [formula book](link_item_6972) contains the formulas for two common 1st-level [alchemical](link_trait_1529) items of your choice, in addition to any formulas you gained from [Alchemical Crafting](link_feat_19894) and your research field.\n\nEach time you gain a level, you can add the formulas for two common [alchemical](link_trait_1529) items to your [formula book](link_item_6972). These new formulas can be for any level of item you can create. You learn these formulas automatically, but it’s also possible to find or buy additional formulas in settlements or from other alchemists, or to select the [Inventor](link_feat_20270) skill feat so you can invent them.\n\nAs normal, having the base formula is sufficient when [Crafting](link_action_19617) upgraded types of the item—you don’t need to learn higher-level formulas. For instance, if you have the 1st-level formula for a minor [elixir of life](link_item_6905), you can create a [minor](link_item_6905), [lesser](link_item_6903), [moderate](link_item_6906), [greater](link_item_6902), [major](link_item_6904), or [true elixir of life](link_item_6907) as long as you meet the level and other prerequisites. Items with type entries that have widely varied functions require separate formulas, but most [alchemical](link_trait_1529) items have a structure similar to [elixir of life](link_item_6905).\n\n### Advanced Alchemy\n\nDuring your daily preparations, you spend some time to create [alchemical](link_trait_1529) items that can be used over the course of the day. You don’t need to attempt a Crafting check to do this, you can use an [alchemist’s toolkit](link_item_6694) instead of an [alchemist’s lab](link_item_6693), and you ignore both the number of days typically required to create the items and any [alchemical](link_trait_1529) raw materials requirements. You can [Craft](link_action_19617) a number of [alchemical](link_trait_1529) items up to 4 + your Intelligence modifier (⬆️{{4+attribute\\_int}}). Each item must be in your formula book, have an item level equal to or lower than your level, and have the [consumable](link_trait_1531) trait. These items have the [infused](link_trait_3540) trait and remain potent for 24 hours or until your next daily preparations, whichever comes first.\n\n### Versatile Vials\n\nYou know how to prepare fast-acting chemicals into [versatile vials](link_item_15516), special items that can be used as bombs and be turned into other alchemical items by introducing special reagents. During your daily preparations, you can create a number of [versatile vials](link_item_15516) up to 2 + your Intelligence modifier (⬆️{{2+attribute\\_int}}), which is also your maximum number of vials. If you’re below your maximum number, you can gather reagents from the environment around you. For every 10 minutes you spend in exploration mode, you regain 2 vials; this doesn’t prevent you from participating in other exploration activities.\n\n[Versatile vials](link_item_15516) are [infused](link_trait_3540) items, and are destroyed if not used by the next time you make your daily preparations. A vial you create is always the highest type you could [Craft](link_action_19617). You can also use vials for [Quick Alchemy](link_feat_31176) and your research field can add to the ways you can use a vial.\n\nYou can store all your [versatile vials](link_item_15516) within your [alchemist’s toolkit](link_item_6694), with no increase to its Bulk. Though [versatile vials](link_item_15516) are physical objects, they can’t be duplicated or preserved in any way.\n\n### Quick Alchemy\n\nYou gain the [Quick Alchemy](link_feat_31176) action to make the items you need on the fly.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Classes.aspx?ID=56",
+          "book": "Player Core 2",
+          "page": "56"
+        }
+      },
+      "content_source_id": 256
+    },
+    {
+      "id": 31299,
+      "name": "Research Field",
+      "type": "class-feature",
+      "level": 1,
+      "operations": [
+        {
+          "id": "0e582969-7d82-4a55-9f3c-03c8a3f35c91",
+          "type": "select",
+          "data": {
+            "title": "Select a Research Field",
+            "modeType": "FILTERED",
+            "optionType": "ABILITY_BLOCK",
+            "optionsPredefined": [],
+            "optionsFilters": {
+              "id": "b5d3cc33-7058-4a18-90e6-80d8ac85ae55",
+              "type": "ABILITY_BLOCK",
+              "level": {},
+              "traits": [
+                "Alchemist Research Field"
+              ],
+              "abilityBlockType": "feat"
+            }
+          }
+        }
+      ],
+      "actions": null,
+      "traits": [
+        3626
+      ],
+      "description": "Your inquiries into the alchemical nature of the universe have led you to focus on a particular field of research. At 1st level, you choose your research field. This choice gives you more formulas, a special benefit, other abilities for your [versatile vials](link_item_15516), and other benefits as you level up.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Classes.aspx?ID=56",
+          "book": "Player Core 2",
+          "page": "56"
+        }
+      },
+      "content_source_id": 256
+    },
+    {
+      "id": 38638,
+      "name": "Root Epithet",
+      "type": "class-feature",
+      "level": 3,
+      "operations": [
+        {
+          "id": "523e838e-957b-4930-8f54-a48fcd7bd789",
+          "data": {
+            "title": "Select an Epithet",
+            "modeType": "PREDEFINED",
+            "optionType": "CUSTOM",
+            "optionsPredefined": [
+              {
+                "id": "5cd5899e-0bf8-498c-8c82-77251da45a7f",
+                "type": "CUSTOM",
+                "title": "The Brave",
+                "operations": [
+                  {
+                    "id": "523644b2-1781-4e21-9656-2b99436f5589",
+                    "data": {
+                      "value": {
+                        "value": "T"
+                      },
+                      "variable": "SKILL_ATHLETICS"
+                    },
+                    "type": "adjValue"
+                  },
+                  {
+                    "id": "c60e2f47-7092-413f-a74b-4ca722093cdb",
+                    "data": {
+                      "id": 38705,
+                      "text": "**Root Epithet—The Brave** After you Spark Transcendence, your body carries you forward, allowing you to [Stride](link_action_19855) up to half your Speed in a straight line toward one enemy of your choice as a free action. Once you have used this ability on a given enemy, you can’t use it against that enemy again for 10 minutes.",
+                      "type": "feat"
+                    },
+                    "type": "injectText"
+                  }
+                ],
+                "description": "Your deeds show fearlessness: when a beast surfaces, you’re there to fight it; when someone’s lost in the dark, you’re first to the rescue. You’re trained in Athletics. After you [Spark Transcendence](link_feat_38705), your body carries you forward, allowing you to [Stride](link_action_19855) up to half your Speed in a straight line toward one enemy of your choice as a free action. Once you have used this ability on a given enemy, you can’t use it against that enemy again for 10 minutes."
+              },
+              {
+                "id": "042faa96-4859-4b27-be9c-56ae788006e8",
+                "type": "CUSTOM",
+                "title": "The Cunning",
+                "operations": [
+                  {
+                    "id": "79b035cf-13ec-4867-8dc3-a40a19f0a66e",
+                    "data": {
+                      "value": {
+                        "value": "T"
+                      },
+                      "variable": "SKILL_DECEPTION"
+                    },
+                    "type": "adjValue"
+                  },
+                  {
+                    "id": "586d39cb-5b7d-4501-a48c-42f42ecb8d4a",
+                    "data": {
+                      "id": 38705,
+                      "text": "**Root Epithet—The Cunning** After you Spark Transcendence, you can [Create a Diversion](link_action_19619) or [Feint](link_action_19633) as a free action.",
+                      "type": "feat"
+                    },
+                    "type": "injectText"
+                  }
+                ],
+                "description": "Why race a hare across a meadow, or a salmon up a waterfall? Why face a titan in a test of strength? Wouldn’t it be better to best your foes with a bit of creativity? After all, the stories that echo throughout history are always those where wits and trickery, rather than raw talent or power, win the day. You are trained in Deception. After you [Spark Transcendence](link_feat_38705), you can [Create a Diversion](link_action_19619) or [Feint](link_action_19633) as a free action."
+              },
+              {
+                "id": "66264e60-c1de-4ec8-b957-833cf055243c",
+                "type": "CUSTOM",
+                "title": "The Deft",
+                "operations": [
+                  {
+                    "id": "3fd82f05-a1a4-4662-9825-5410ef548805",
+                    "data": {
+                      "value": {
+                        "value": "T"
+                      },
+                      "variable": "SKILL_THIEVERY"
+                    },
+                    "type": "adjValue"
+                  },
+                  {
+                    "id": "421dfe2e-34e0-405b-bc01-dbd18c5abe89",
+                    "data": {
+                      "id": 38705,
+                      "text": "**Root Epithet—The Deft** After you Spark Transcendence, you can attempt to [Steal](link_action_19852) or [Palm an Object](link_action_19743). When you Spark Transcendence, you can [Interact](link_action_19733) as a free action to reload or draw a weapon ikon, either directly before or directly after your transcendence action. The weapon ikon must be a ranged weapon with the reload trait or a one-handed melee weapon with the [thrown](link_trait_1575) trait.",
+                      "type": "feat"
+                    },
+                    "type": "injectText"
+                  }
+                ],
+                "description": "Speed, subtlety, and precision. Your feet rush as fast as a gale, but your fingers touch as lightly as a breeze. You are trained in Thievery. After you [Spark Transcendence](link_feat_38705), you can attempt to [Steal](link_action_19852) or [Palm an Object](link_action_19743). When you [Spark Transcendence](link_feat_38705), you can [Interact](link_action_19733) as a free action to reload or draw a weapon ikon, either directly before or directly after your transcendence action. The weapon ikon must be a ranged weapon with the reload trait or a one-handed melee weapon with the [thrown](link_trait_1575) trait."
+              },
+              {
+                "id": "80a5461a-e223-445d-828b-74130c42f0ae",
+                "type": "CUSTOM",
+                "title": "The Proud",
+                "operations": [
+                  {
+                    "id": "a98f1fa4-d69d-4b77-a391-cbd078539ccb",
+                    "data": {
+                      "value": {
+                        "value": "T"
+                      },
+                      "variable": "SKILL_INTIMIDATION"
+                    },
+                    "type": "adjValue"
+                  },
+                  {
+                    "id": "ef0a02d1-762f-4f85-b0bb-432cc40c64a4",
+                    "data": {
+                      "id": 38705,
+                      "text": "**Root Epithet—The Proud** After you Spark Transcendence, you can boast to one enemy within 30 feet to draw its attention; this effect has the [auditory](link_trait_1469), [emotion](link_trait_1486), [mental](link_trait_1448), and [linguistic](link_trait_1458) traits. Until the start of your next turn, the target takes a –1 status penalty to attack rolls, damage rolls, and skill checks against creatures other than you, and it gains a +1 status bonus to these rolls when targeting you.",
+                      "type": "feat"
+                    },
+                    "type": "injectText"
+                  }
+                ],
+                "description": "Whether out of overconfidence, a desire to protect your comrades, or the unslakable thirst for glory, you invite challengers to strike you down. You are trained in Intimidation. After you [Spark Transcendence](link_feat_38705), you can boast to one enemy within 30 feet to draw its attention; this effect has the [auditory](link_trait_1469), [emotion](link_trait_1486), [mental](link_trait_1448), and [linguistic](link_trait_1458) traits. Until the start of your next turn, the target takes a –1 status penalty to attack rolls, damage rolls, and skill checks against creatures other than you, and it gains a +1 status bonus to these rolls when targeting you."
+              },
+              {
+                "id": "1cd2e78a-a294-48e6-97fa-4f949194aa27",
+                "type": "CUSTOM",
+                "title": "The Mournful",
+                "operations": [
+                  {
+                    "id": "7782c74d-ed19-4509-a6d1-f5b4a91e282f",
+                    "data": {
+                      "value": {
+                        "value": "T"
+                      },
+                      "variable": "SKILL_DIPLOMACY"
+                    },
+                    "type": "adjValue"
+                  },
+                  {
+                    "id": "2d7882a3-9830-4876-8a42-69d3d986c4a2",
+                    "data": {
+                      "id": 38705,
+                      "text": "**Root Epithet—The Mournful** After you Spark Transcendence, your act resonates with bittersweet poignancy, making one enemy of your choice within 30 feet who witnessed the act dazzled as tears or memories dance in their eyes. This is an [emotion](link_trait_1486) and [mental](link_trait_1448) effect. The enemy remains dazzled until the start of your next turn, and then they are temporarily immune for 10 minutes.",
+                      "type": "feat"
+                    },
+                    "type": "injectText"
+                  }
+                ],
+                "description": "To be a hero is to endure countless hardships and stand where others have fallen, shouldering dreams and destinies in their stead. Though this weight may reach your eyes, you bear this burden so that those under you can live smiling. You are trained in Diplomacy. After you [Spark Transcendence](link_feat_38705), your act resonates with bittersweet poignancy, making one enemy of your choice within 30 feet who witnessed the act dazzled as tears or memories dance in their eyes. This is an [emotion](link_trait_1486) and [mental](link_trait_1448) effect. The enemy remains dazzled until the start of your next turn, and then they are temporarily immune for 10 minutes."
+              },
+              {
+                "id": "2fdc1b49-e3a1-4664-8a70-ad71c606fe54",
+                "type": "CUSTOM",
+                "title": "The Radiant",
+                "operations": [
+                  {
+                    "id": "8416d8cf-42b0-4dde-841d-99afbf061b3d",
+                    "data": {
+                      "value": {
+                        "value": "T"
+                      },
+                      "variable": "SKILL_DIPLOMACY"
+                    },
+                    "type": "adjValue"
+                  },
+                  {
+                    "id": "e8750be8-d3a1-4bf6-9b16-dbc5f52e89a8",
+                    "data": {
+                      "id": 38705,
+                      "text": "**Root Epithet—The Radiant** After you Spark Transcendence, you inspire an ally within 30 feet to push on, restoring Hit Points equal to 2 + double your level; this is a [mental](link_trait_1448) and [emotion](link_trait_1486) effect. The ally is then temporarily immune for 10 minutes.",
+                      "type": "feat"
+                    },
+                    "type": "injectText"
+                  }
+                ],
+                "description": "Leaders must live bigger lives than any other, shining so brightly that they attract followers, inspire troops, and change the course of kingdoms. You are trained in Diplomacy. After you [Spark Transcendence](link_feat_38705), you inspire an ally within 30 feet to push on, restoring Hit Points equal to 2 + double your level; this is a [mental](link_trait_1448) and [emotion](link_trait_1486) effect. The ally is then temporarily immune for 10 minutes."
+              }
+            ]
+          },
+          "type": "select"
+        }
+      ],
+      "actions": null,
+      "traits": [
+        4079
+      ],
+      "description": "As your story unfolds, your personality and deeds begin to shape the potential of your divine spark. You come to bear an epithet—a word or phrase that seems to always stick in the mind of those describing you. Your epithets grant you additional abilities, especially when your divine spark is brought to the surface.\n\nYou first gain a root epithet to describe an aspect of your personality. This grants you a skill, as well as a special effect that occurs when you [Spark Transcendence](link_feat_38705). If you are already trained in the granted skill, you become trained in a different skill of your choice, as normal. An effect that occurs after you [Spark Transcendence](link_feat_38705) happens immediately after your transcendence action is completely resolved.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Classes.aspx?ID=65",
+          "book": "War of Immortals",
+          "page": "28"
+        }
+      },
+      "content_source_id": 400
+    },
+    {
+      "id": 38661,
+      "name": "Divine Spark and Ikons",
+      "type": "class-feature",
+      "level": 1,
+      "operations": [
+        {
+          "id": "248ee367-bddc-4a60-9f1d-bf4907cdf194",
+          "type": "select",
+          "data": {
+            "title": "Select an Ikon",
+            "modeType": "FILTERED",
+            "optionType": "ABILITY_BLOCK",
+            "optionsPredefined": [],
+            "optionsFilters": {
+              "id": "9432407a-b85c-4ff5-a9ec-148478c3be8a",
+              "type": "ABILITY_BLOCK",
+              "level": {},
+              "traits": [
+                "Exemplar Ikon"
+              ],
+              "abilityBlockType": "feat"
+            }
+          }
+        },
+        {
+          "id": "519a9be9-55cc-4f20-aaaa-abcc4b9a7664",
+          "type": "select",
+          "data": {
+            "title": "Select an Ikon",
+            "modeType": "FILTERED",
+            "optionType": "ABILITY_BLOCK",
+            "optionsPredefined": [],
+            "optionsFilters": {
+              "id": "294ec10d-d00f-44f3-89d4-1e4e2e2b367f",
+              "type": "ABILITY_BLOCK",
+              "level": {},
+              "traits": [
+                "Exemplar Ikon"
+              ],
+              "abilityBlockType": "feat"
+            }
+          }
+        },
+        {
+          "id": "3844fde7-9006-4410-911a-a282ca0d012d",
+          "type": "select",
+          "data": {
+            "title": "Select an Ikon",
+            "modeType": "FILTERED",
+            "optionType": "ABILITY_BLOCK",
+            "optionsPredefined": [],
+            "optionsFilters": {
+              "id": "7b9b529a-775c-4a54-b481-248b4e2f0efd",
+              "type": "ABILITY_BLOCK",
+              "level": {},
+              "traits": [
+                "Exemplar Ikon"
+              ]
+            }
+          }
+        },
+        {
+          "id": "5c3f2c0b-76cd-4cc6-8871-5c99f282a6cc",
+          "type": "giveAbilityBlock",
+          "data": {
+            "type": "feat",
+            "abilityBlockId": 38584
+          }
+        },
+        {
+          "id": "f2c89774-9c30-4818-8b2a-220fdb0876e5",
+          "type": "giveAbilityBlock",
+          "data": {
+            "type": "feat",
+            "abilityBlockId": 38705
+          }
+        }
+      ],
+      "actions": null,
+      "traits": [
+        4079
+      ],
+      "description": "Within your soul is a tiny spark of divine power that belongs not to a deity, but is something you’ve claimed all your own. You can focus this divine power through special items known as ikons. Ikons are items or bodily features intrinsically linked to you—sacred vessels forged from your divinity that are capable of conducting its power. Select three ikons.\n\nBy placing your divine spark into one of your ikons, you empower that ikon to accomplish deeds beyond what it could in mortal hands. Each ikon has both a passive immanence effect and an active transcendence effect. Both of these effects require your divine spark to be in the item. You can place your spark into an ikon by using the [Shift Immanence](link_feat_38584) action.\n\n### Spark Transcendence\n\nWhile your spark dwells within an ikon, you get that ikon’s immanence effect continually. However, you can also Spark Transcendence in a mighty deed, channeling your divinity through the ikon—though when you Spark Transcendence, the force of the act temporarily casts your divine spark out of the ikon. Each ikon’s transcendence action appears in its stat block.\n\n### Expanding Immanence and Transcendence\n\nEach ikon has one immanence and one transcendence ability when acquired, but you can imbue your ikons with additional abilities through higher-level exemplar class features and feats. These abilities have the [ikon](link_trait_4077) trait.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Classes.aspx?ID=65",
+          "book": "War of Immortals",
+          "page": "28"
+        }
+      },
+      "content_source_id": 400
+    },
+    {
+      "id": 38684,
+      "name": "Apparition Attunement",
+      "type": "class-feature",
+      "level": 1,
+      "operations": [
+        {
+          "id": "78ad8521-362f-40d7-bc10-f18c0a1d1d5a",
+          "type": "select",
+          "data": {
+            "title": "Select an Apparition",
+            "modeType": "FILTERED",
+            "optionType": "ABILITY_BLOCK",
+            "optionsPredefined": [],
+            "optionsFilters": {
+              "id": "c5e4aca3-c06b-42ab-b8ae-b6193295c70f",
+              "type": "ABILITY_BLOCK",
+              "level": {},
+              "traits": [
+                "Animist Apparition"
+              ],
+              "abilityBlockType": "feat"
+            }
+          }
+        },
+        {
+          "id": "f734f08e-1f76-4717-b015-e00e6db597e4",
+          "type": "select",
+          "data": {
+            "title": "Select an Apparition",
+            "modeType": "FILTERED",
+            "optionType": "ABILITY_BLOCK",
+            "optionsPredefined": [],
+            "optionsFilters": {
+              "id": "1a157530-91b0-42ee-bb50-64a01ebb9707",
+              "type": "ABILITY_BLOCK",
+              "level": {},
+              "traits": [
+                "Animist Apparition"
+              ],
+              "abilityBlockType": "feat"
+            }
+          }
+        }
+      ],
+      "actions": null,
+      "traits": [
+        4078
+      ],
+      "description": "Animists have a gift for divine magic that allows them to serve as conduits or bridges for otherworldly spiritual entities known collectively as apparitions; through them, these entities can commune and interact with the physical world in a process called attunement. Apparitions are myriad and diverse: they may be human spirits lingering on the border between becoming phantoms or ghosts, animal spirits with particularly strong connections to the physical world but lacking the malice that would spur a transition into true undeath, manifestations of natural locations that have grown thought and purpose over time, or they may be a different variation altogether. Some animists attune to one or more specific apparitions that accompany them in their travels, forming deep partnerships over time, while others adapt to their surroundings by befriending the local apparitions who dwell wherever the animist’s journey takes them.\n\nEach day during your daily preparations, choose two apparitions to attune to. Of these, choose one to be your primary apparition. Your attuned apparitions each grant you knowledge in the form of Lore skills and a repertoire of additional spells you can cast using [apparition spellcasting](link_class-feature_38637), and your primary apparition grants you even further power in the form a unique vessel focus spell and, when you are higher level, a unique [avatar](link_spell_4407) form.\n\nWhen you [Refocus](link_action_19754), you can change which of your currently attuned apparitions is your primary apparition, selecting from any of the apparitions you attuned to during your daily preparations. All your apparitions typically remain attuned to you until your next daily preparations, but some animist abilities can temporarily disperse them, usually in exchange for a powerful boon. If an apparition is dispersed, you lose access to its gifts—you forget its apparition skills, its spells are removed from your apparition spell repertoire, and you can’t use its vessel spell or [avatar](link_spell_4407) form—until you attune to it again. When you disperse your primary apparition, one of your remaining apparitions becomes your primary apparition, chosen by you at the time of dispersal.\n\n### Reading an Apparition Entry\n\nAn apparition entry contains the following information.\n\n**Apparition Skills** Each apparition has amassed knowledge on a particular set of Lore skills that cover their areas of interest and expertise. When you are attuned to an apparition, you are trained in these Lore skills, channeling the apparition into your body to share its knowledge on the subject. At 8th level and beyond, you can draw upon even more of the apparition’s knowledge, gaining expert proficiency in their apparition skills; at 16th level and beyond, your harmony of mind and spirit grants you master proficiency in their apparition skills.\n\n**Apparition Spell Repertoire** Your attuned apparitions each contribute a number of spells to your apparition spell repertoire. You add the spells of all your attuned apparitions together to create a spell repertoire, which you cast with your apparition spellcasting.\n\n**Vessel Spell** Your primary apparition grants you the listed vessel spell at 1st level.\n\n**Avatar** When you cast avatar using the apparition slot granted by the supreme incarnation class feature, you temporarily fuse with one of your primary attuned apparitions into a powerful battle form of near-deific power, using the limited stats here instead of a deity’s.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Classes.aspx?ID=64",
+          "book": "War of Immortals",
+          "page": "10"
+        }
+      },
+      "content_source_id": 400
+    },
+    {
+      "id": 38685,
+      "name": "Animistic Practice",
+      "type": "class-feature",
+      "level": 1,
+      "operations": [
+        {
+          "id": "9b56c553-3fdd-41c2-b6ec-83a4ee612efa",
+          "type": "select",
+          "data": {
+            "title": "Select a Practice",
+            "modeType": "PREDEFINED",
+            "optionType": "CUSTOM",
+            "optionsPredefined": [
+              {
+                "id": "d9e14ed7-6a7b-44d6-8f68-17a85fa0f5a4",
+                "type": "CUSTOM",
+                "title": "Liturgist",
+                "description": "You draw forth your apparitions through the power of song and dance, connecting the spiritual to the physical. These performances can be of your own creation or follow the specific rites of your religion.\n\n**Song of Invocation (1st):** You can sing out to the spirits to have them spin and twirl around you. You gain the [Circle of Spirits](link_feat_38743) feat.\n\n**Dancing Invocation (9th):** The movement of your body grants power to your magic. When you [Leap](link_action_19735), [Step](link_action_19853), or [Tumble Through](link_action_19867), you also [Sustain](link_action_19858) an apparition spell or vessel spell.\n\n**Invocation of Praise (17th):** Your liturgies call to the spirits even in the heat of battle. When you roll initiative, you can use [Circle of Spirits](link_feat_38743) as a free action. If your first action on your first turn is to cast an apparition cantrip granted by your primary apparition, you reduce the number of actions it takes to cast it by 1 (minimum 1 action).",
+                "operations": [
+                  {
+                    "id": "a6a3ce69-693f-486d-b9e7-f18dc3bf49b5",
+                    "type": "giveAbilityBlock",
+                    "data": {
+                      "type": "feat",
+                      "abilityBlockId": 38743
+                    }
+                  },
+                  {
+                    "id": "cf5b7441-3fa1-4262-afd1-a360a9bb7750",
+                    "type": "conditional",
+                    "data": {
+                      "conditions": [
+                        {
+                          "id": "455246c0-c716-413d-9515-414f1ebac759",
+                          "name": "LEVEL",
+                          "data": {
+                            "name": "LEVEL",
+                            "type": "num",
+                            "value": 0
+                          },
+                          "type": "num",
+                          "operator": "GREATER_THAN_OR_EQUALS",
+                          "value": 9
+                        }
+                      ],
+                      "trueOperations": [
+                        {
+                          "id": "d45e04b9-a2e3-4765-9994-2a2cd6241ae2",
+                          "type": "injectText",
+                          "data": {
+                            "type": "action",
+                            "id": 19735,
+                            "text": "**Liturgist Practise** When you [Leap](link_action_19735), you also [Sustain](link_action_19858) an apparition spell or vessel spell."
+                          }
+                        },
+                        {
+                          "id": "d8ce8a80-0499-4cc8-8bae-cbc3d6774943",
+                          "type": "injectText",
+                          "data": {
+                            "type": "action",
+                            "id": 19853,
+                            "text": "**Liturgist Practise** When you [Step](link_action_19853), you also [Sustain](link_action_19858) an apparition spell or vessel spell."
+                          }
+                        },
+                        {
+                          "id": "fec8ced6-56df-4f90-95af-815d4f8911a6",
+                          "type": "injectText",
+                          "data": {
+                            "type": "action",
+                            "id": 19867,
+                            "text": "**Liturgist Practise** When you [Tumble Through](link_action_19867), you also [Sustain](link_action_19858) an apparition spell or vessel spell."
+                          }
+                        }
+                      ],
+                      "falseOperations": []
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "353e2954-4ac4-49fe-a425-de128ed39ca0",
+                "type": "CUSTOM",
+                "title": "Medium",
+                "description": "You are particularly good at acting as a conduit for spiritual energy and tend to associate more freely with a wide array of apparitions, though you tend not to form the deep bond with a single apparition that other animists often develop.\n\n**Invocation of Unity (1st):** The lines between your body and your apparition are blurry. You gain the [Relinquish Control](link_feat_38744) feat.\n\n**Dual Invocation (9th):** You can build powerful bonds with multiple apparitions. You can select two of your attuned apparitions to be your primary apparitions. If you have the [supreme incarnation](link_class-feature_38688) class feature, you choose which apparition’s avatar form you manifest each time you cast the avatar spell. The number of Focus Points in your focus pool is equal to the number of focus spells you have or the number of primary apparitions you are attuned to, whichever is higher (maximum 3).\n\n**Invocation of Synchronization (17th):** The line between your intentions and those of the apparition possessing you blurs, leaving you better able to support each other in the throes of combat. While you have [Relinquished Control](link_feat_38744) to an apparition, you gain the following additional benefits:\n\n*   Once per round, you can attempt a [Recall Knowledge](link_action_19753) check as a free action.\n    \n*   All [Strikes](link_action_19856) you make with a weapon or unarmed attack deal an additional 2 points of [spirit](link_trait_1556) damage.\n    \n*   You gain resistance equal to half your level against all physical damage, but have weakness equal to your level to [spirit](link_trait_1556) damage.",
+                "operations": [
+                  {
+                    "id": "f1473af5-e91c-438e-a903-f0ae4cdc54db",
+                    "type": "giveAbilityBlock",
+                    "data": {
+                      "type": "feat",
+                      "abilityBlockId": 38744
+                    }
+                  },
+                  {
+                    "id": "59b371e7-f656-47f3-b8ad-806f892ccfd7",
+                    "type": "conditional",
+                    "data": {
+                      "conditions": [
+                        {
+                          "id": "7b88af0e-96cf-4847-a4e7-2e14c387b9be",
+                          "name": "LEVEL",
+                          "data": {
+                            "name": "LEVEL",
+                            "type": "num",
+                            "value": 0
+                          },
+                          "type": "num",
+                          "operator": "GREATER_THAN_OR_EQUALS",
+                          "value": 9
+                        },
+                        {
+                          "id": "a949c240-d3f0-432b-beb0-220ba940c8cc",
+                          "name": "FEAT_NAMES",
+                          "data": {
+                            "name": "FEAT_NAMES",
+                            "type": "list-str",
+                            "value": []
+                          },
+                          "type": "list-str",
+                          "operator": "NOT_INCLUDES",
+                          "value": "circle of spirits"
+                        }
+                      ],
+                      "trueOperations": [
+                        {
+                          "id": "602ffb73-acff-4a37-b936-da72975a5749",
+                          "type": "adjValue",
+                          "data": {
+                            "variable": "FOCUS_POINT_BONUS",
+                            "value": 1
+                          }
+                        }
+                      ],
+                      "falseOperations": []
+                    }
+                  },
+                  {
+                    "id": "3577405c-ec23-4f34-9fc6-be007c2529a0",
+                    "type": "conditional",
+                    "data": {
+                      "conditions": [
+                        {
+                          "id": "3c42d54d-1f6a-41cf-beb3-1b2e92cb7541",
+                          "name": "LEVEL",
+                          "data": {
+                            "name": "LEVEL",
+                            "type": "num",
+                            "value": 0
+                          },
+                          "type": "num",
+                          "operator": "GREATER_THAN_OR_EQUALS",
+                          "value": 17
+                        }
+                      ],
+                      "trueOperations": [
+                        {
+                          "id": "c87a6891-4765-4a74-91a4-4e18a3e5c4df",
+                          "type": "injectText",
+                          "data": {
+                            "type": "feat",
+                            "id": 38744,
+                            "text": "**Medium—Invocation of Synchronization** While you have Relinquished Control to an apparition, you gain the following additional benefits:\n\n*   Once per round, you can attempt a [Recall Knowledge](link_action_19753) check as a free action.\n    \n*   All [Strikes](link_action_19856) you make with a weapon or unarmed attack deal an additional 2 points of [spirit](link_trait_1556) damage.\n    \n*   You gain resistance equal to half your level against all physical damage, but have weakness equal to your level to [spirit](link_trait_1556) damage."
+                          }
+                        }
+                      ],
+                      "falseOperations": []
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "704ca7ec-2f41-4f2e-953e-a56f1bbd8119",
+                "type": "CUSTOM",
+                "title": "Seer",
+                "description": "You are particularly sensitive to the presence and influence of spirits and undead. You can detect lingering spirits, offering you some defense against them.\n\n**Invocation of Sight (1st):** You shift your eyes easily to the spirit world, intuiting the needs of apparitions and other spiritual entities based on how they appear to you. You gain the [Apparition Sense](link_feat_38742) feat. You also gain a +1 status bonus to saving throws and AC against the effects of [haunts](link_trait_2967) and the abilities of [spirits](link_trait_1556) and [incorporeal](link_trait_2424) [undead](link_trait_2425).\n\n**Invocation of Protection (9th):** Your status as an intermediary across planar boundaries grants you further defenses against spiritual ailments. You gain [spirit](link_trait_1556) resistance and [void](link_trait_1485) resistance equal to half your level, and your status bonus to saving throws and AC against the effects of haunts and the abilities of [spirits](link_trait_1556) and [incorporeal](link_trait_2424) [undead](link_trait_2425) increases to +2.\n\n**Invocation of Resilience (17th):** You are a bulwark against the terrible spirits that lurk in the dark. Your apparition sight becomes a precise sense and your status bonus to saving throws and AC against the effects of haunts and the abilities of [spirits](link_trait_1556) and [incorporeal](link_trait_2424) [undead](link_trait_2425) increases to +3.",
+                "operations": [
+                  {
+                    "id": "39415f1f-8855-401d-86f4-7e7fc4918d37",
+                    "type": "giveAbilityBlock",
+                    "data": {
+                      "type": "feat",
+                      "abilityBlockId": 38742
+                    }
+                  },
+                  {
+                    "id": "21d28384-712b-4f83-80aa-69bdeeff5284",
+                    "type": "addBonusToValue",
+                    "data": {
+                      "variable": "SAVE_FORT",
+                      "value": "1",
+                      "type": "status",
+                      "text": "against the effects of haunts and the abilities of spirits and incorporeal undead."
+                    }
+                  },
+                  {
+                    "id": "f588252e-b2a7-419e-b74a-029d3c3bfee9",
+                    "type": "addBonusToValue",
+                    "data": {
+                      "variable": "SAVE_REFLEX",
+                      "value": "1",
+                      "type": "status",
+                      "text": "against the effects of haunts and the abilities of spirits and incorporeal undead."
+                    }
+                  },
+                  {
+                    "id": "b11752ab-dbc6-49bf-944a-1be5235c9ddb",
+                    "type": "addBonusToValue",
+                    "data": {
+                      "variable": "SAVE_WILL",
+                      "value": "1",
+                      "type": "status",
+                      "text": "against the effects of haunts and the abilities of spirits and incorporeal undead."
+                    }
+                  },
+                  {
+                    "id": "743d78a7-5530-41ce-9377-da50a1809666",
+                    "type": "addBonusToValue",
+                    "data": {
+                      "variable": "AC_BONUS",
+                      "value": "1",
+                      "type": "status",
+                      "text": "against the effects of haunts and the abilities of spirits and incorporeal undead."
+                    }
+                  },
+                  {
+                    "id": "0b18f859-030c-462b-ae59-b80e69444362",
+                    "type": "conditional",
+                    "data": {
+                      "conditions": [
+                        {
+                          "id": "71a1ef42-6f38-451a-bbfe-83c97b4a15af",
+                          "name": "LEVEL",
+                          "data": {
+                            "name": "LEVEL",
+                            "type": "num",
+                            "value": 0
+                          },
+                          "type": "num",
+                          "operator": "GREATER_THAN_OR_EQUALS",
+                          "value": 9
+                        }
+                      ],
+                      "trueOperations": [
+                        {
+                          "id": "de0cf9e2-5227-43b1-91f2-6300fd03935b",
+                          "type": "adjValue",
+                          "data": {
+                            "variable": "RESISTANCES",
+                            "value": "spirit, {level/2}"
+                          }
+                        },
+                        {
+                          "id": "f7d35c62-8458-4589-bd79-911af4d22ff9",
+                          "type": "adjValue",
+                          "data": {
+                            "variable": "RESISTANCES",
+                            "value": "void, {level/2}"
+                          }
+                        },
+                        {
+                          "id": "caadff19-1ec0-46ff-83a4-3c4358a7c666",
+                          "type": "addBonusToValue",
+                          "data": {
+                            "variable": "SAVE_FORT",
+                            "value": "2",
+                            "type": "status",
+                            "text": "against the effects of haunts and the abilities of spirits and incorporeal undead."
+                          }
+                        },
+                        {
+                          "id": "ca576703-27d0-4249-855b-49f96c6c8072",
+                          "type": "addBonusToValue",
+                          "data": {
+                            "variable": "SAVE_REFLEX",
+                            "value": "2",
+                            "type": "status",
+                            "text": "against the effects of haunts and the abilities of spirits and incorporeal undead."
+                          }
+                        },
+                        {
+                          "id": "c4fb16ab-15a5-4689-85c6-d4b1c43ad055",
+                          "type": "addBonusToValue",
+                          "data": {
+                            "variable": "SAVE_WILL",
+                            "value": "2",
+                            "type": "status",
+                            "text": "against the effects of haunts and the abilities of spirits and incorporeal undead."
+                          }
+                        },
+                        {
+                          "id": "cb82c63f-ca68-4ff9-9bcf-ac2170a85947",
+                          "type": "addBonusToValue",
+                          "data": {
+                            "variable": "AC_BONUS",
+                            "value": "2",
+                            "type": "status",
+                            "text": "against the effects of haunts and the abilities of spirits and incorporeal undead."
+                          }
+                        }
+                      ],
+                      "falseOperations": []
+                    }
+                  },
+                  {
+                    "id": "45994cb7-0083-45ef-839e-24760a26ef9a",
+                    "type": "conditional",
+                    "data": {
+                      "conditions": [
+                        {
+                          "id": "2d7f37b4-97b1-4951-8306-7730f0a0a1d8",
+                          "name": "LEVEL",
+                          "data": {
+                            "name": "LEVEL",
+                            "type": "num",
+                            "value": 0
+                          },
+                          "type": "num",
+                          "operator": "GREATER_THAN_OR_EQUALS",
+                          "value": 17
+                        }
+                      ],
+                      "trueOperations": [
+                        {
+                          "id": "f3354506-55c6-4e5c-b629-439eeeeb73a4",
+                          "type": "adjValue",
+                          "data": {
+                            "variable": "SENSES_PRECISE",
+                            "value": "apparition sight,30"
+                          }
+                        },
+                        {
+                          "id": "ceac025e-860c-4176-be2e-f7c679fb2d64",
+                          "type": "addBonusToValue",
+                          "data": {
+                            "variable": "SAVE_FORT",
+                            "value": "3",
+                            "type": "status",
+                            "text": "against the effects of haunts and the abilities of spirits and incorporeal undead."
+                          }
+                        },
+                        {
+                          "id": "d8a90055-8f84-4a71-8c3e-e56e903410e2",
+                          "type": "addBonusToValue",
+                          "data": {
+                            "variable": "SAVE_REFLEX",
+                            "value": "3",
+                            "type": "status",
+                            "text": "against the effects of haunts and the abilities of spirits and incorporeal undead."
+                          }
+                        },
+                        {
+                          "id": "1cdebbcb-b76d-4a47-b196-d4fe2975e55c",
+                          "type": "addBonusToValue",
+                          "data": {
+                            "variable": "SAVE_WILL",
+                            "value": "3",
+                            "type": "status",
+                            "text": "against the effects of haunts and the abilities of spirits and incorporeal undead."
+                          }
+                        },
+                        {
+                          "id": "e6f44b48-d61f-4bbd-a519-b3aed1fafb18",
+                          "type": "addBonusToValue",
+                          "data": {
+                            "variable": "AC_BONUS",
+                            "value": "3",
+                            "type": "status",
+                            "text": "against the effects of haunts and the abilities of spirits and incorporeal undead."
+                          }
+                        }
+                      ],
+                      "falseOperations": []
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "980af212-2059-4fd8-a088-d5b85ed5068d",
+                "type": "CUSTOM",
+                "title": "Shaman",
+                "description": "You form close bonds with your apparitions that allow you to invest them with the rare ability to take on a material form and directly affect the physical world.\n\n**Invocation of Embodiment (1st):** You allow your apparition to inhabit a physical form. You gain the [Spirit Familiar](link_feat_38745) feat. At 2nd level, you gain the [Enhanced Familiar](link_feat_38748) feat.\n\n**Invocation of Growth (9th):** Your bond with the physical form of your chosen apparition grows stronger. You gain the [Incredible Familiar](link_feat_38765) feat.\n\n**Invocation of Otherworldliness (17th):** Your apparition familiar becomes ever more powerful, straddling the line between physical and spiritual. Your spirit familiar can take a single action that has the [concentrate](link_trait_1432) trait to become [incorporeal](link_trait_2424) for 1 minute. It gains the [incorporeal](link_trait_2424) trait, meaning it can move through physical creatures and such creatures can move through it. It can’t attempt Strength-based checks (such as [Grapple](link_action_19725)) against corporeal creatures, and corporeal creatures can’t attempt such checks against it. It gains immunity to precision damage and resistance to physical damage (except damage from [Strikes](link_action_19856) with the [ghost touch](link_item_6992) property rune) equal to half your level (double against non-[magical](link_trait_1504) damage) but weakness to [force](link_trait_1560) damage equal to half your level. However, when [incorporeal](link_trait_2424), your spirit familiar can travel no more than 60 feet from you and must maintain line of effect to you; this typically prevents it from moving through walls. Your spirit familiar can [Dismiss](link_action_19627) this effect.",
+                "operations": [
+                  {
+                    "id": "25c501a7-4e42-4edb-953e-ff042647f171",
+                    "type": "giveAbilityBlock",
+                    "data": {
+                      "type": "feat",
+                      "abilityBlockId": 38745
+                    }
+                  },
+                  {
+                    "id": "65f4c27b-dd52-4012-8fcd-948bc314d4fc",
+                    "type": "conditional",
+                    "data": {
+                      "conditions": [
+                        {
+                          "id": "128d4627-e2f0-4acf-9e3a-bb7df7879e7d",
+                          "name": "LEVEL",
+                          "data": {
+                            "name": "LEVEL",
+                            "type": "num",
+                            "value": 0
+                          },
+                          "type": "num",
+                          "operator": "GREATER_THAN_OR_EQUALS",
+                          "value": 2
+                        }
+                      ],
+                      "trueOperations": [
+                        {
+                          "id": "8ab927f1-ba44-4db3-8d88-052648b44328",
+                          "type": "giveAbilityBlock",
+                          "data": {
+                            "type": "feat",
+                            "abilityBlockId": 38748
+                          }
+                        }
+                      ],
+                      "falseOperations": []
+                    }
+                  },
+                  {
+                    "id": "45253f22-c76a-4d53-99b2-16682fac8efc",
+                    "type": "conditional",
+                    "data": {
+                      "conditions": [
+                        {
+                          "id": "6ccd7a11-3d60-49c7-8616-b1517e1ff728",
+                          "name": "LEVEL",
+                          "data": {
+                            "name": "LEVEL",
+                            "type": "num",
+                            "value": 0
+                          },
+                          "type": "num",
+                          "operator": "GREATER_THAN_OR_EQUALS",
+                          "value": 9
+                        }
+                      ],
+                      "trueOperations": [
+                        {
+                          "id": "de63c095-6caf-41ab-a35b-14de799953ec",
+                          "type": "giveAbilityBlock",
+                          "data": {
+                            "type": "feat",
+                            "abilityBlockId": 38765
+                          }
+                        }
+                      ],
+                      "falseOperations": []
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "actions": null,
+      "traits": [
+        4078
+      ],
+      "description": "At 1st level, you choose an animistic practice that influences the way your power grows and develops, and you gain its first invocation. At 9th level, you gain its second invocation, and at 17th, you gain its third.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Classes.aspx?ID=64",
+          "book": "War of Immortals",
+          "page": "10"
+        }
+      },
+      "content_source_id": 400
+    },
+    {
+      "id": 38686,
+      "name": "Third Apparition",
+      "type": "class-feature",
+      "level": 7,
+      "operations": [
+        {
+          "id": "b28ef0bc-95bd-452d-8172-91218d8f82d2",
+          "type": "adjValue",
+          "data": {
+            "variable": "FOCUS_POINT_BONUS",
+            "value": 1
+          }
+        },
+        {
+          "id": "fa2326db-f5f4-489d-953c-625176704fda",
+          "type": "select",
+          "data": {
+            "title": "Select an Apparition",
+            "modeType": "FILTERED",
+            "optionType": "ABILITY_BLOCK",
+            "optionsPredefined": [],
+            "optionsFilters": {
+              "id": "70868d04-5f45-4e10-a8d6-e065a359e024",
+              "type": "ABILITY_BLOCK",
+              "level": {},
+              "traits": [
+                "Animist Apparition"
+              ],
+              "abilityBlockType": "feat"
+            }
+          }
+        }
+      ],
+      "actions": null,
+      "traits": [
+        4078
+      ],
+      "description": "You’ve learned to shelter more spirits, gaining access to more magic. When you attune to apparitions during your daily preparations, you choose three apparitions to attune to, with one of them being your primary apparition. The number of Focus Points in your focus pool increases by 1 (maximum 3).",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Classes.aspx?ID=64",
+          "book": "War of Immortals",
+          "page": "10"
+        }
+      },
+      "content_source_id": 400
+    },
+    {
+      "id": 38720,
+      "name": "Fourth Apparition",
+      "type": "class-feature",
+      "level": 15,
+      "operations": [
+        {
+          "id": "af1c14a5-4963-4c49-8381-c3af363ca637",
+          "type": "adjValue",
+          "data": {
+            "variable": "FOCUS_POINT_BONUS",
+            "value": 1
+          }
+        },
+        {
+          "id": "45f6b422-656d-44be-90f5-b029190fcd01",
+          "type": "select",
+          "data": {
+            "title": "Select an Apparition",
+            "modeType": "FILTERED",
+            "optionType": "ABILITY_BLOCK",
+            "optionsPredefined": [],
+            "optionsFilters": {
+              "id": "70868d04-5f45-4e10-a8d6-e065a359e024",
+              "type": "ABILITY_BLOCK",
+              "level": {},
+              "traits": [
+                "Animist Apparition"
+              ],
+              "abilityBlockType": "feat"
+            }
+          }
+        }
+      ],
+      "actions": null,
+      "traits": [
+        4078
+      ],
+      "description": "You’re truly loved by the spirits, with apparitions flocking to you from far and wide. When you attune to apparitions during your daily preparations, you choose four apparitions to attune to, with one of them being your primary apparition. The number of Focus Points in your focus pool increases by 1 (maximum 3).",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Classes.aspx?ID=64",
+          "book": "War of Immortals",
+          "page": "10"
+        }
+      },
+      "content_source_id": 400
+    },
+    {
+      "id": 57711,
+      "name": "Runic Crafter",
+      "type": "class-feature",
+      "level": 2,
+      "operations": [
+        {
+          "id": "c581010e-cc11-4640-afe5-ac8e5f2b37d0",
+          "type": "giveAbilityBlock",
+          "data": {
+            "type": "feat",
+            "abilityBlockId": 20319
+          }
+        }
+      ],
+      "actions": null,
+      "traits": [
+        5134
+      ],
+      "description": "Your study of secret runes leaves you well practiced in crafting their more common cousins. You gain the [Magical Crafting](link_feat_20319) skill feat, even if you don't meet the prerequisites. You automatically learn the formulas for the fundamental armor runes ([armor potency](link_item_6719) and [resilient](link_item_7703)), fundamental shield rune ([reinforcing](link_item_7693)), and fundamental weapon runes ([weapon potency](link_item_7950) and [striking](link_item_7862)) as soon as your level equals each item's. You practice your runes so thoroughly you can draw them by heart and thus do not need a formula book to record the formula of any runes you learn how to create.\n\nAt 4th level and every 2 levels thereafter, you learn the formula for an armor or weapon property rune of your choice. The rune must be of your level or lower, and can be a common rune or another rune to which you have access.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Classes.aspx?ID=76",
+          "book": "Impossible Magic",
+          "page": "43"
+        }
+      },
+      "content_source_id": 842
+    },
+    {
+      "id": 57715,
+      "name": "Runic Repertoire",
+      "type": "class-feature",
+      "level": 1,
+      "operations": [
+        {
+          "id": "16372d8e-0a3c-4373-8296-dda225b502e2",
+          "data": {
+            "title": "Select a Rune",
+            "modeType": "FILTERED",
+            "optionType": "ABILITY_BLOCK",
+            "optionsFilters": {
+              "id": "a6002d7b-d1cf-4794-963a-efb0f3f7138c",
+              "type": "ABILITY_BLOCK",
+              "level": {
+                "max": 1
+              },
+              "traits": [
+                5137
+              ],
+              "abilityBlockType": "feat"
+            },
+            "optionsPredefined": []
+          },
+          "type": "select"
+        },
+        {
+          "id": "21a0a85d-0fc2-4b13-a380-6541580dd822",
+          "data": {
+            "title": "Select a Rune",
+            "modeType": "FILTERED",
+            "optionType": "ABILITY_BLOCK",
+            "optionsFilters": {
+              "id": "a6002d7b-d1cf-4794-963a-efb0f3f7138c",
+              "type": "ABILITY_BLOCK",
+              "level": {
+                "max": 1
+              },
+              "traits": [
+                5137
+              ],
+              "abilityBlockType": "feat"
+            },
+            "optionsPredefined": []
+          },
+          "type": "select"
+        },
+        {
+          "id": "6cf6419b-48bf-4450-9dca-941a463071a1",
+          "data": {
+            "title": "Select a Rune",
+            "modeType": "FILTERED",
+            "optionType": "ABILITY_BLOCK",
+            "optionsFilters": {
+              "id": "a6002d7b-d1cf-4794-963a-efb0f3f7138c",
+              "type": "ABILITY_BLOCK",
+              "level": {
+                "max": 1
+              },
+              "traits": [
+                5137
+              ],
+              "abilityBlockType": "feat"
+            },
+            "optionsPredefined": []
+          },
+          "type": "select"
+        },
+        {
+          "id": "bd6a4ed5-263f-453b-b0e2-51cf98f32301",
+          "data": {
+            "title": "Select a Rune",
+            "modeType": "FILTERED",
+            "optionType": "ABILITY_BLOCK",
+            "optionsFilters": {
+              "id": "a6002d7b-d1cf-4794-963a-efb0f3f7138c",
+              "type": "ABILITY_BLOCK",
+              "level": {
+                "max": 1
+              },
+              "traits": [
+                5137
+              ],
+              "abilityBlockType": "feat"
+            },
+            "optionsPredefined": []
+          },
+          "type": "select"
+        }
+      ],
+      "actions": null,
+      "traits": [
+        5134
+      ],
+      "description": "The collection of runes that you now is called your runic repertoire. At 1st level, you learn for 1st-level runes of your choice. You choose these from the common runes on the rune list as well as any uncommon or rarer runes you have access to.\n\nAs you increase in level, you add more runes to your repertoire. You can add any rune to your repertoire as long as it is common (or you have access to it) and its level is equal to or less than your own.\n\n| Your Level | Runic Repertoire | Maximum Etched Runes |\n\n| --- | --- | --- |\n\n| 1 | 4 | 2 |\n\n| 2 | 4 | 2 |\n\n|3 | 4 | 2 |\n\n|4 | 4 | 2|\n\n| 5 | 6 | 3 |\n\n| 6 | 6 | 3 |\n\n| 7 | 6 | 3 |\n\n| 8 | 6 | 3 |\n\n| 9 | 8 | 4 |\n\n| 10 | 8 | 4 |\n\n| 11 | 8 | 4 |\n\n| 12 | 8 | 4 |\n\n| 13 | 10 | 5 |\n\n| 14 | 10 | 5 |\n\n| 15 | 10 | 5 |\n\n| 16 | 10 | 5 |\n\n| 17 | 12 | 6 |\n\n| 18 | 12 | 6 |\n\n| 19 | 12 | 6 |\n\n| 20 | 12 | 6 |",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Classes.aspx?ID=76",
+          "book": "Impossible Magic",
+          "page": "43"
+        }
+      },
+      "content_source_id": 842
+    },
+    {
+      "id": 57716,
+      "name": "Runes",
+      "type": "class-feature",
+      "level": 1,
+      "operations": [
+        {
+          "id": "e284a8d6-6adf-4af8-911e-88b2fa2e89e3",
+          "type": "giveAbilityBlock",
+          "data": {
+            "type": "feat",
+            "abilityBlockId": 57839
+          }
+        },
+        {
+          "id": "b4561db0-9c71-46e8-8976-c7e8d5032e6b",
+          "type": "giveAbilityBlock",
+          "data": {
+            "type": "feat",
+            "abilityBlockId": 57840
+          }
+        }
+      ],
+      "actions": null,
+      "traits": [
+        5134
+      ],
+      "description": "Through meticulous study, you have carved the knowledge of secret runes into your mind and body. You can apply special **runesmith runes** onto objects and creatures, which grant the bearer magical effects. You must know a rune to use it, and you learn runes via the runic repertoire class feature.\n\n### Applying Runes\n\nAll runes can be applied in one of two ways: a rune can be **etched** on or merely **traced**. An etched rune is carved, inked, or branded in; this application doesn't damage the creature or item. Etching runes requires an artisan's toolkit. Your magic can sustain up to two etched runes at a time, and this maximum increases as you go up in level. You can etch any number of runes up to your maximum during your daily preparations or by spending 10 minutes in exploration mode. Your etched runes remain indefinitely until they are expended or removed or until you etch more runes than your maximum, which causes your oldest rune to fade.\n\nA traced rune is drawn lightly in dust, light, or a similar fleeting medium. You can trace a rune with the [Trace Rune](link_feat_57839) action.\n\n### Invoking Runes\n\nMagic on your lips, you can pronounce the trune name of a rune you have applied, calling it to power using invocation actions. You gain the [Invoke Rune](link_feat_57840) action.\n\n### Runic Magic\n\nRunes are magical effects. Some runes have specific tradition trait; for instance, the elemental ranshu, rune of thunder is a primal rune. If a rune has the magical trait, you can choose to replace the magical trait with a specific tradition trait, provided you're trained int he skill matching that tradition. For instance, you could create an arcane pluuna, rune of illumination if you were trained in Arcana.\n\nThough runes aren't spells, some things that affect spells also affect runes. Abilities that restrict you from casting spells (such as being polymorphed into a battle form) or protect against spells (such as a spell that protects against other spells or a creature's bonus to saves against spells) also apply to tracing or invoking runes, though you can continue to benefit from the effects of a rune that's already been applied.\n\nAny runes that require a saving throw use your runesmith class DC. Runes you etch or trace have the same level as you, even if this would increase the rune's initial level. For instance, if you're 5th level, your runes would be 5th level (and their counteract rank would be 3rd rank), even if you gained the rune at 1st level. Similar to spells, many runes get more powerful as you increase in level. In theses cases, the rune ends with one or more Level entries. This either lists the levels the rune gets an upgrade or has an entry with a plus sign that describes a benefit that increases on a regular basis. For instance, a 1st-level rune with a \"Level (+4)\" entry would get stronger at 5th, 9th, 13th, and 17th levels.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Classes.aspx?ID=76",
+          "book": "Impossible Magic",
+          "page": "43"
+        }
+      },
+      "content_source_id": 842
+    },
+    {
+      "id": 57822,
+      "name": "Runic Repertoire (5th)",
+      "type": "class-feature",
+      "level": 5,
+      "operations": [
+        {
+          "id": "5cae3867-2111-4e7e-9292-ea55697a2d34",
+          "data": {
+            "title": "Select a Rune",
+            "modeType": "FILTERED",
+            "optionType": "ABILITY_BLOCK",
+            "optionsFilters": {
+              "id": "a6002d7b-d1cf-4794-963a-efb0f3f7138c",
+              "type": "ABILITY_BLOCK",
+              "level": {
+                "max": 5
+              },
+              "traits": [
+                5137
+              ],
+              "abilityBlockType": "feat"
+            },
+            "optionsPredefined": []
+          },
+          "type": "select"
+        },
+        {
+          "id": "e445cadb-6815-4bc0-8287-0eb59020bed6",
+          "data": {
+            "title": "Select a Rune",
+            "modeType": "FILTERED",
+            "optionType": "ABILITY_BLOCK",
+            "optionsFilters": {
+              "id": "a6002d7b-d1cf-4794-963a-efb0f3f7138c",
+              "type": "ABILITY_BLOCK",
+              "level": {
+                "max": 5
+              },
+              "traits": [
+                5137
+              ],
+              "abilityBlockType": "feat"
+            },
+            "optionsPredefined": []
+          },
+          "type": "select"
+        }
+      ],
+      "actions": null,
+      "traits": [
+        5134
+      ],
+      "description": "The collection of runes that you now is called your runic repertoire. At 1st level, you learn for 1st-level runes of your choice. You choose these from the common runes on the rune list as well as any uncommon or rarer runes you have access to.\n\nAs you increase in level, you add more runes to your repertoire. You can add any rune to your repertoire as long as it is common (or you have access to it) and its level is equal to or less than your own.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Classes.aspx?ID=76",
+          "book": "Impossible Magic",
+          "page": "43"
+        }
+      },
+      "content_source_id": 842
+    },
+    {
+      "id": 57714,
+      "name": "Shield Block",
+      "type": "class-feature",
+      "level": 1,
+      "operations": [
+        {
+          "id": "c7a7fcf7-4d3b-4970-8712-d149177ad6ad",
+          "type": "giveAbilityBlock",
+          "data": {
+            "type": "feat",
+            "abilityBlockId": 20534
+          }
+        }
+      ],
+      "actions": null,
+      "traits": [
+        5134
+      ],
+      "description": "You gain the [Shield Block](link_feat_20534) general feat, a reaction that lets you reduce damage with your shield.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Classes.aspx?ID=76",
+          "book": "Impossible Magic",
+          "page": "43"
+        }
+      },
+      "content_source_id": 842
+    }
+  ],
+  "blocks": [
+    {
+      "id": 19894,
+      "name": "Alchemical Crafting",
+      "type": "feat",
+      "level": 1,
+      "operations": [],
+      "actions": null,
+      "traits": [
+        1437,
+        1438
+      ],
+      "description": "You can use the [Craft](link_action_19617) activity to create [alchemical](link_trait_1529) items. When you select this feat, you immediately add the formulas for four common 1st-level alchemical items to your [formula book](link_item_6972).",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Feats.aspx?ID=5117",
+          "book": "Player Core",
+          "page": "252"
+        },
+        "foundry": {
+          "rules": []
+        }
+      }
+    },
+    {
+      "id": 20319,
+      "name": "Magical Crafting",
+      "type": "feat",
+      "level": 2,
+      "operations": null,
+      "actions": null,
+      "traits": [
+        1437,
+        1438
+      ],
+      "description": "You can [Craft](link_action_19617) magic items, though some have other requirements. When you select this feat, you gain formulas for four common magic items of 2nd level or lower.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Feats.aspx?ID=5178",
+          "book": "Player Core",
+          "page": "258"
+        },
+        "foundry": {
+          "rules": []
+        }
+      }
+    },
+    {
+      "id": 20534,
+      "name": "Shield Block",
+      "type": "feat",
+      "level": 1,
+      "operations": null,
+      "actions": "REACTION",
+      "traits": [
+        1437
+      ],
+      "description": "You snap your shield in place to ward off a blow. Your shield prevents you from taking an amount of damage up to the shield's Hardness. You and the shield each take any remaining damage, possibly breaking or destroying the shield.",
+      "meta_data": {
+        "foundry": {
+          "rules": []
+        }
+      }
+    },
+    {
+      "id": 31176,
+      "name": "Quick Alchemy",
+      "type": "feat",
+      "level": 1,
+      "operations": [],
+      "actions": "ONE-ACTION",
+      "traits": [
+        3626,
+        1433
+      ],
+      "description": "You can either use up a versatile vial to make another [alchemical](link_trait_1529) [consumable](link_trait_1531) at a moment’s notice or create an especially short-lived versatile vial. Any effect created by an item made with Quick Alchemy that would have a duration longer than 10 minutes lasts for 10 minutes instead.\n\n*   **Create Consumable** You expend one of your versatile vials to create a single [alchemical](link_trait_1529) [consumable](link_trait_1531) item of your level or lower that’s in your [formula book](link_item_6972). You don’t have to spend the normal monetary cost in [alchemical](link_trait_1529) raw materials or need to attempt a Crafting check. This item has the [infused](link_trait_3540) trait, but it remains potent only until the start of your next turn. (As normal, you need only one formula for an item to create any level of that item.)\n    \n*   **Quick Vial** You create a versatile vial that can be used only as a [bomb](link_trait_1530) or for the versatile vial option from your research field (it can’t be used to create a [consumable](link_trait_1531), for example). This item has the [infused](link_trait_3540) trait, but it remains potent only until the end of your current turn.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Actions.aspx?ID=2801",
+          "book": "Player Core 2",
+          "page": "59"
+        },
+        "unselectable": true
+      }
+    },
+    {
+      "id": 32985,
+      "name": "Bomber Research Field",
+      "type": "feat",
+      "level": 1,
+      "operations": [
+        {
+          "id": "7da4845f-1c4a-41d0-bdfb-7d4bb7a38621",
+          "type": "injectText",
+          "data": {
+            "type": "item",
+            "id": 15516,
+            "text": "**Field Vials** When you [Strike](link_action_19856) with a versatile vial, you can choose to have it deal [cold](link_trait_1519), [electricity](link_trait_1576), or [fire](link_trait_1542) damage instead of [acid](link_trait_1528) damage."
+          }
+        },
+        {
+          "id": "274249b2-a662-4572-a033-1d0df9085bac",
+          "type": "injectText",
+          "data": {
+            "type": "item",
+            "id": 15517,
+            "text": "**Field Vials** When you [Strike](link_action_19856) with a versatile vial, you can choose to have it deal [cold](link_trait_1519), [electricity](link_trait_1576), or [fire](link_trait_1542) damage instead of [acid](link_trait_1528) damage."
+          }
+        },
+        {
+          "id": "a8e4be93-061f-4652-82a2-e306a4fe46b9",
+          "type": "injectText",
+          "data": {
+            "type": "item",
+            "id": 15518,
+            "text": "**Field Vials** When you [Strike](link_action_19856) with a versatile vial, you can choose to have it deal [cold](link_trait_1519), [electricity](link_trait_1576), or [fire](link_trait_1542) damage instead of [acid](link_trait_1528) damage."
+          }
+        },
+        {
+          "id": "822f543b-6317-4e20-97f2-e53329d46350",
+          "type": "injectText",
+          "data": {
+            "type": "item",
+            "id": 15519,
+            "text": "**Field Vials** When you [Strike](link_action_19856) with a versatile vial, you can choose to have it deal [cold](link_trait_1519), [electricity](link_trait_1576), or [fire](link_trait_1542) damage instead of [acid](link_trait_1528) damage."
+          }
+        },
+        {
+          "id": "cac37e6e-7435-4581-84bf-b1c63e60da43",
+          "type": "conditional",
+          "data": {
+            "conditions": [
+              {
+                "id": "1d035958-e0c4-4a1e-a752-7ad8e5ad5e16",
+                "name": "CLASS_FEATURE_NAMES",
+                "data": {
+                  "name": "CLASS_FEATURE_NAMES",
+                  "type": "list-str",
+                  "value": []
+                },
+                "type": "list-str",
+                "operator": "INCLUDES",
+                "value": "advanced vials"
+              }
+            ],
+            "trueOperations": [
+              {
+                "id": "4e961c02-a8e6-44ff-97c7-88a5e5345b71",
+                "type": "injectText",
+                "data": {
+                  "type": "item",
+                  "id": 15516,
+                  "text": "**Advanced Vials** You can mix special ingredients into your vials, such as magical dust or flakes of precious minerals. When you create a versatile vial, you can choose to have it treated as one special material of your choice, chosen from [adamantine](link_item_15064), [cold iron](link_item_15059), and [dawnsilver](link_item_15369). If you’re wearing or wielding an item of a different precious material when you make the vial, you can choose that material instead."
+                }
+              },
+              {
+                "id": "9434c8b8-176d-4104-92ae-5a9ec9005a0b",
+                "type": "injectText",
+                "data": {
+                  "type": "item",
+                  "id": 15517,
+                  "text": "**Advanced Vials** You can mix special ingredients into your vials, such as magical dust or flakes of precious minerals. When you create a versatile vial, you can choose to have it treated as one special material of your choice, chosen from [adamantine](link_item_15064), [cold iron](link_item_15059), and [dawnsilver](link_item_15369). If you’re wearing or wielding an item of a different precious material when you make the vial, you can choose that material instead."
+                }
+              },
+              {
+                "id": "497146bc-21b8-42d7-93a1-d7bb26ef08e9",
+                "type": "injectText",
+                "data": {
+                  "type": "item",
+                  "id": 15518,
+                  "text": "**Advanced Vials** You can mix special ingredients into your vials, such as magical dust or flakes of precious minerals. When you create a versatile vial, you can choose to have it treated as one special material of your choice, chosen from [adamantine](link_item_15064), [cold iron](link_item_15059), and [dawnsilver](link_item_15369). If you’re wearing or wielding an item of a different precious material when you make the vial, you can choose that material instead."
+                }
+              },
+              {
+                "id": "56d9f917-d341-4d65-81db-99b813ec96be",
+                "type": "injectText",
+                "data": {
+                  "type": "item",
+                  "id": 15519,
+                  "text": "**Advanced Vials** You can mix special ingredients into your vials, such as magical dust or flakes of precious minerals. When you create a versatile vial, you can choose to have it treated as one special material of your choice, chosen from [adamantine](link_item_15064), [cold iron](link_item_15059), and [dawnsilver](link_item_15369). If you’re wearing or wielding an item of a different precious material when you make the vial, you can choose that material instead."
+                }
+              }
+            ],
+            "falseOperations": []
+          }
+        }
+      ],
+      "actions": null,
+      "traits": [
+        3855
+      ],
+      "description": "You specialize in explosions and other violent reactions.\n\n**Formulas** Two common 1st-level [alchemical](link_trait_1529) [bombs](link_trait_1530).\n\n**Field Benefit** When throwing an [alchemical](link_trait_1529) [bomb](link_trait_1530) with the splash trait, you can choose to deal splash damage to only your primary target instead of the usual splash area.\n\n**Field Vials** When you [Strike](link_action_19856) with a [versatile vial](link_item_15516), you can choose to have it deal [cold](link_trait_1519), [electricity](link_trait_1576), or [fire](link_trait_1542) damage instead of [acid](link_trait_1528) damage.\n\n**Field Discovery (5th)** You have calculated all the angles to maximize a bomb’s splash. When you throw an [alchemical](link_trait_1529) [bomb](link_trait_1530) with the [splash](link_trait_1532) trait, you can cause the bomb to deal [splash](link_trait_1532) damage equal to your Intelligence modifier (minimum 1) instead of the normal amount.\n\n**Advanced Vials (11th)** You can mix special ingredients into your vials, such as magical dust or flakes of precious minerals. When you create a [versatile vial](link_item_15516), you can choose to have it treated as one special material of your choice, chosen from [adamantine](link_item_15064), [cold iron](link_item_15059), and [dawnsilver](link_item_15369). If you’re wearing or wielding an item of a different precious material when you make the vial, you can choose that material instead.\n\n**Greater Field Discovery (13th)** You can increase the [splash](link_trait_1532) on your [bombs](link_trait_1530) to damage creatures within 10 feet, or 15 feet if you have Expanded Splash.",
+      "meta_data": {
+        "unselectable": false
+      }
+    },
+    {
+      "id": 38584,
+      "name": "Shift Immanence",
+      "type": "feat",
+      "level": 1,
+      "operations": [],
+      "actions": "ONE-ACTION",
+      "traits": [
+        1475,
+        4079
+      ],
+      "description": "You shift your power, filling one of your ikons with your divine spark. That ikon softly glows with radiant light, emits subtle chimes as it moves, or is otherwise obviously empowered in a way that matches your growing divinity, granting the ikon the [divine](link_trait_1475) trait and granting you that ikon’s immanence effects for as long as your divine spark is empowering it. Your spark is indivisible, so it can empower only one ikon at a time. You can also Shift Immanence to return your spark to the depths of your soul, leaving none of your ikons empowered.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Actions.aspx?ID=3030",
+          "book": "War of Immortals",
+          "page": "25"
+        },
+        "unselectable": true
+      }
+    },
+    {
+      "id": 38667,
+      "name": "Gleaming Blade",
+      "type": "feat",
+      "level": 1,
+      "operations": [],
+      "actions": null,
+      "traits": [
+        4080
+      ],
+      "description": "**Usage** a weapon in the sword or knife group, or a melee [unarmed](link_trait_2398) attack that deals slashing damage\n\n* * *\n\nThis blade glitters with such sharpness it seems to cut the very air in front of it.\n\n**Immanence** [Strikes](link_action_19856) with the _gleaming blade_ deal 2 additional [spirit](link_trait_1556) damage per weapon damage die.\n\n**Transcendence—Flowing Spirit Strike** <abbr cost=\"TWO-ACTIONS\" class=\"action-symbol\">2</abbr> ([spirit](link_trait_1556), [transcendence](link_trait_4089)) Make two [Strikes](link_action_19856) with the _gleaming blade_, each against the same target and using your current multiple attack penalty. If the _gleaming blade_ doesn’t have the [agile](link_trait_1569) trait, the second [Strike](link_action_19856) takes a –2 penalty. If both attacks hit, you combine their damage, which is all dealt as [spirit](link_trait_1556) damage. You add any precision damage only once. Combine the damage from both [Strikes](link_action_19856) and apply resistances and weaknesses only once. This counts as two attacks when calculating your multiple attack penalty.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Ikons.aspx?ID=6",
+          "book": "War of Immortals",
+          "page": "44"
+        }
+      }
+    },
+    {
+      "id": 38705,
+      "name": "Spark Transcendence",
+      "type": "feat",
+      "level": 1,
+      "operations": [],
+      "actions": "ONE-TO-THREE-ACTIONS",
+      "traits": [
+        4079,
+        4089
+      ],
+      "description": "While your spark dwells within an ikon, you get that ikon’s immanence effect continually. However, you can also Spark Transcendence in a mighty deed, channeling your divinity through the ikon—though when you Spark Transcendence, the force of the act temporarily casts your divine spark out of the ikon. Each ikon’s [transcendence](link_trait_4089) action appears in its stat block.",
+      "meta_data": {
+        "unselectable": true
+      }
+    },
+    {
+      "id": 38706,
+      "name": "Energized Spark",
+      "type": "feat",
+      "level": 1,
+      "operations": [
+        {
+          "id": "f6b7f702-2517-426a-a61d-0b381d788f95",
+          "type": "select",
+          "data": {
+            "title": "Select a Trait",
+            "modeType": "PREDEFINED",
+            "optionType": "CUSTOM",
+            "optionsPredefined": [
+              {
+                "id": "37283c22-0798-4de8-b4e1-9233f8ee44b4",
+                "type": "CUSTOM",
+                "title": "Air",
+                "description": "Any [spirit](link_trait_1556) damage dealt by your exemplar abilities instead gain the [air](link_trait_1524) trait and deal slashing damage.",
+                "operations": []
+              },
+              {
+                "id": "cba04a94-b336-4913-82ec-17ae6563fbde",
+                "type": "CUSTOM",
+                "title": "Cold",
+                "description": "Any [spirit](link_trait_1556) damage dealt by your exemplar abilities instead gain the [cold](link_trait_1519) trait and deal [cold](link_trait_1519) damage.",
+                "operations": []
+              },
+              {
+                "id": "6e596aac-87bc-4d02-8590-b65cb4453796",
+                "type": "CUSTOM",
+                "title": "Earth",
+                "description": "Any [spirit](link_trait_1556) damage dealt by your exemplar abilities instead gain the [earth](link_trait_1523) trait and deal bludgeoning damage.",
+                "operations": []
+              },
+              {
+                "id": "8209381d-fbcf-4580-aff8-709b2fcd7d72",
+                "type": "CUSTOM",
+                "title": "Electricity",
+                "description": "Any [spirit](link_trait_1556) damage dealt by your exemplar abilities instead gain the [electricity](link_trait_1576) trait and deal [electricity](link_trait_1576) damage.",
+                "operations": []
+              },
+              {
+                "id": "44888f7f-4535-4079-841d-bef4f2f8228d",
+                "type": "CUSTOM",
+                "title": "Fire",
+                "description": "Any [spirit](link_trait_1556) damage dealt by your exemplar abilities instead gain the [fire](link_trait_1542) trait and deal [fire](link_trait_1542) damage.",
+                "operations": []
+              },
+              {
+                "id": "815881c4-ab9b-4364-ade2-e8dded968ffa",
+                "type": "CUSTOM",
+                "title": "Metal",
+                "description": "Any [spirit](link_trait_1556) damage dealt by your exemplar abilities instead gain the [metal](link_trait_2132) trait and deal slashing damage.",
+                "operations": []
+              },
+              {
+                "id": "7bedf42e-419f-4afe-b750-a9a16d41dbf4",
+                "type": "CUSTOM",
+                "title": "Poison",
+                "description": "Any [spirit](link_trait_1556) damage dealt by your exemplar abilities instead gain the [poison](link_trait_1476) trait and deal [poison](link_trait_1476) damage.",
+                "operations": []
+              },
+              {
+                "id": "45ab4c5e-64c6-43fd-8c94-4a2a0a8be61e",
+                "type": "CUSTOM",
+                "title": "Sonic",
+                "description": "Any [spirit](link_trait_1556) damage dealt by your exemplar abilities instead gain the [sonic](link_trait_1484) trait and deal [sonic](link_trait_1484) damage.",
+                "operations": []
+              },
+              {
+                "id": "75b821a3-3f9a-475e-b831-a86027e54194",
+                "type": "CUSTOM",
+                "title": "Vitality",
+                "description": "Any [spirit](link_trait_1556) damage dealt by your exemplar abilities instead gain the [vitality](link_trait_1478) trait and deal [vitality](link_trait_1478) damage.",
+                "operations": []
+              },
+              {
+                "id": "c77a1e82-cbb6-41a4-8185-e4dd51386087",
+                "type": "CUSTOM",
+                "title": "Void",
+                "description": "Any [spirit](link_trait_1556) damage dealt by your exemplar abilities instead gain the [void](link_trait_1485) trait and deal [void](link_trait_1485) damage.",
+                "operations": []
+              },
+              {
+                "id": "82a03ed9-b656-46a9-bb37-9980f4baab49",
+                "type": "CUSTOM",
+                "title": "Water",
+                "description": "Any [spirit](link_trait_1556) damage dealt by your exemplar abilities instead gain the [water](link_trait_1584) trait and deal bludgeoning damage.",
+                "operations": []
+              },
+              {
+                "id": "6a4f386e-7866-4d53-b7cc-66ab19967198",
+                "type": "CUSTOM",
+                "title": "Wood",
+                "description": "Any [spirit](link_trait_1556) damage dealt by your exemplar abilities instead gain the [wood](link_trait_1680) trait and deal piercing damage.",
+                "operations": []
+              }
+            ]
+          }
+        }
+      ],
+      "actions": null,
+      "traits": [
+        4079
+      ],
+      "description": "The energy of your spirit manifests as crackling lightning, the chill of winter, or the power of an element. Choose one of the following traits: [air](link_trait_1524) (slashing), [cold](link_trait_1519), [earth](link_trait_1523) (bludgeoning), [electricity](link_trait_1576), [fire](link_trait_1542), [metal](link_trait_2132) (slashing), [poison](link_trait_1476), [sonic](link_trait_1484), [vitality](link_trait_1478), [void](link_trait_1485), [water](link_trait_1584) (bludgeoning), or [wood](link_trait_1680) (piercing). You can choose for any [spirit](link_trait_1556) damage dealt by your exemplar abilities to instead gain the trait and deal the corresponding damage type.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Feats.aspx?ID=7154",
+          "book": "War of Immortals",
+          "page": "35"
+        },
+        "can_select_multiple_times": true
+      }
+    },
+    {
+      "id": 38708,
+      "name": "Custodian of Groves and Gardens",
+      "type": "feat",
+      "level": 1,
+      "operations": [
+        {
+          "id": "515c54b6-4dd2-4a06-9497-d7347273cd14",
+          "type": "createValue",
+          "data": {
+            "variable": "SKILL_LORE_FARMING",
+            "type": "prof",
+            "value": {
+              "value": "T",
+              "attribute": "ATTRIBUTE_INT"
+            }
+          }
+        },
+        {
+          "id": "3e5c41c7-10c2-4596-bbb6-5399a6baf956",
+          "type": "createValue",
+          "data": {
+            "variable": "SKILL_LORE_HERBALISM",
+            "type": "prof",
+            "value": {
+              "value": "T",
+              "attribute": "ATTRIBUTE_INT"
+            }
+          }
+        },
+        {
+          "id": "6dcb381f-4d88-474e-af04-fe816e5b3218",
+          "type": "conditional",
+          "data": {
+            "conditions": [
+              {
+                "id": "5001edc9-7bd0-4a95-913d-951416fb40a7",
+                "name": "LEVEL",
+                "data": {
+                  "name": "LEVEL",
+                  "type": "num",
+                  "value": 0
+                },
+                "type": "num",
+                "operator": "GREATER_THAN_OR_EQUALS",
+                "value": "8"
+              }
+            ],
+            "trueOperations": [
+              {
+                "id": "2e41f8a3-4384-40e5-9f01-cf5d86da46bb",
+                "type": "adjValue",
+                "data": {
+                  "variable": "SKILL_LORE_FARMING",
+                  "value": {
+                    "value": "E"
+                  }
+                }
+              },
+              {
+                "id": "0853e4d6-e7cb-4ba5-bdb5-4c83385983b9",
+                "type": "adjValue",
+                "data": {
+                  "variable": "SKILL_LORE_HERBALISM",
+                  "value": {
+                    "value": "E"
+                  }
+                }
+              }
+            ],
+            "falseOperations": []
+          }
+        },
+        {
+          "id": "cf9f66c4-c7e1-455a-b18e-15b51e137dfc",
+          "type": "conditional",
+          "data": {
+            "conditions": [
+              {
+                "id": "c05248c7-fc43-4160-891e-309ddba415a1",
+                "name": "LEVEL",
+                "data": {
+                  "name": "LEVEL",
+                  "type": "num",
+                  "value": 0
+                },
+                "type": "num",
+                "operator": "GREATER_THAN_OR_EQUALS",
+                "value": "16"
+              }
+            ],
+            "trueOperations": [
+              {
+                "id": "b38db824-1ed7-4af2-906b-63f621c0e95c",
+                "type": "adjValue",
+                "data": {
+                  "variable": "SKILL_LORE_FARMING",
+                  "value": {
+                    "value": "M"
+                  }
+                }
+              },
+              {
+                "id": "366a284c-a790-473a-8571-89b269530f09",
+                "type": "adjValue",
+                "data": {
+                  "variable": "SKILL_LORE_HERBALISM",
+                  "value": {
+                    "value": "M"
+                  }
+                }
+              }
+            ],
+            "falseOperations": []
+          }
+        },
+        {
+          "id": "75a1e74f-5b83-42cc-aa36-9381b89dbe86",
+          "type": "conditional",
+          "data": {
+            "conditions": [
+              {
+                "id": "da378b34-bb5e-4ec9-ab91-01be6a1c1d7d",
+                "name": "CLASS_NAMES",
+                "data": {
+                  "name": "CLASS_NAMES",
+                  "type": "list-str",
+                  "value": []
+                },
+                "type": "list-str",
+                "operator": "INCLUDES",
+                "value": "animist"
+              }
+            ],
+            "trueOperations": [
+              {
+                "id": "767148b2-9514-4287-9a26-47d4114c2934",
+                "type": "giveSpell",
+                "data": {
+                  "type": "NORMAL",
+                  "castingSource": "ANIMIST_APPARITION",
+                  "rank": 0,
+                  "spellId": 4888
+                }
+              },
+              {
+                "id": "aba1f38c-6de6-4373-b040-c07121d069a2",
+                "type": "giveSpell",
+                "data": {
+                  "type": "NORMAL",
+                  "castingSource": "ANIMIST_APPARITION",
+                  "rank": 1,
+                  "spellId": 6759
+                }
+              }
+            ],
+            "falseOperations": []
+          }
+        },
+        {
+          "id": "48868d9a-c0c1-4939-957b-a133c56b3fa0",
+          "type": "conditional",
+          "data": {
+            "conditions": [
+              {
+                "id": "36f74eef-8e0d-4ccc-a2d9-71c69c13fa35",
+                "name": "CLASS_NAMES",
+                "data": {
+                  "name": "CLASS_NAMES",
+                  "type": "list-str",
+                  "value": []
+                },
+                "type": "list-str",
+                "operator": "INCLUDES",
+                "value": "animist"
+              },
+              {
+                "id": "ee50136c-4df6-4df6-ba03-aeb808186094",
+                "name": "LEVEL",
+                "data": {
+                  "name": "LEVEL",
+                  "type": "num",
+                  "value": 0
+                },
+                "type": "num",
+                "operator": "GREATER_THAN_OR_EQUALS",
+                "value": "3"
+              }
+            ],
+            "trueOperations": [
+              {
+                "id": "46ef3593-7e08-4e6e-bcc2-17b7fa569efd",
+                "type": "giveSpell",
+                "data": {
+                  "type": "NORMAL",
+                  "castingSource": "ANIMIST_APPARITION",
+                  "rank": 2,
+                  "spellId": 5037
+                }
+              }
+            ],
+            "falseOperations": []
+          }
+        },
+        {
+          "id": "b378ad91-9b5b-4dd1-9744-b19fddd167d3",
+          "type": "conditional",
+          "data": {
+            "conditions": [
+              {
+                "id": "95d49060-618a-4465-ab52-0f65b5763122",
+                "name": "CLASS_NAMES",
+                "data": {
+                  "name": "CLASS_NAMES",
+                  "type": "list-str",
+                  "value": []
+                },
+                "type": "list-str",
+                "operator": "INCLUDES",
+                "value": "animist"
+              },
+              {
+                "id": "38614cbb-d817-457e-8651-a1bbecbc3b95",
+                "name": "LEVEL",
+                "data": {
+                  "name": "LEVEL",
+                  "type": "num",
+                  "value": 0
+                },
+                "type": "num",
+                "operator": "GREATER_THAN_OR_EQUALS",
+                "value": "5"
+              }
+            ],
+            "trueOperations": [
+              {
+                "id": "af995fbb-277d-45d3-b116-fe5f9aaf8e70",
+                "type": "giveSpell",
+                "data": {
+                  "type": "NORMAL",
+                  "castingSource": "ANIMIST_APPARITION",
+                  "rank": 3,
+                  "spellId": 4814
+                }
+              }
+            ],
+            "falseOperations": []
+          }
+        },
+        {
+          "id": "84358964-74b0-48bd-a76d-d7c8a18eab8b",
+          "type": "conditional",
+          "data": {
+            "conditions": [
+              {
+                "id": "2b1e63c6-b52a-453b-b169-4b2a4b1e08bf",
+                "name": "CLASS_NAMES",
+                "data": {
+                  "name": "CLASS_NAMES",
+                  "type": "list-str",
+                  "value": []
+                },
+                "type": "list-str",
+                "operator": "INCLUDES",
+                "value": "animist"
+              },
+              {
+                "id": "d62781e5-b9d4-4a08-a56e-22ecb69e4658",
+                "name": "LEVEL",
+                "data": {
+                  "name": "LEVEL",
+                  "type": "num",
+                  "value": 0
+                },
+                "type": "num",
+                "operator": "GREATER_THAN_OR_EQUALS",
+                "value": "7"
+              }
+            ],
+            "trueOperations": [
+              {
+                "id": "6384e56b-974c-44cb-a49b-510ad9e9a767",
+                "type": "giveSpell",
+                "data": {
+                  "type": "NORMAL",
+                  "castingSource": "ANIMIST_APPARITION",
+                  "rank": 4,
+                  "spellId": 4754
+                }
+              }
+            ],
+            "falseOperations": []
+          }
+        },
+        {
+          "id": "b30cf1f5-ce4a-42cb-82ef-a205c6325b91",
+          "type": "conditional",
+          "data": {
+            "conditions": [
+              {
+                "id": "26824d19-5dde-4925-9ab8-fb67f87c8d78",
+                "name": "CLASS_NAMES",
+                "data": {
+                  "name": "CLASS_NAMES",
+                  "type": "list-str",
+                  "value": []
+                },
+                "type": "list-str",
+                "operator": "INCLUDES",
+                "value": "animist"
+              },
+              {
+                "id": "f8145167-4b40-46de-852a-0776f5bb854a",
+                "name": "LEVEL",
+                "data": {
+                  "name": "LEVEL",
+                  "type": "num",
+                  "value": 0
+                },
+                "type": "num",
+                "operator": "GREATER_THAN_OR_EQUALS",
+                "value": "9"
+              }
+            ],
+            "trueOperations": [
+              {
+                "id": "034fa0c8-3205-4a8a-9985-c736652d3a46",
+                "type": "giveSpell",
+                "data": {
+                  "type": "NORMAL",
+                  "castingSource": "ANIMIST_APPARITION",
+                  "rank": 5,
+                  "spellId": 4913
+                }
+              }
+            ],
+            "falseOperations": []
+          }
+        },
+        {
+          "id": "0c994167-3703-4d63-a097-8cc2d5621b36",
+          "type": "conditional",
+          "data": {
+            "conditions": [
+              {
+                "id": "652cc66b-63ce-4f17-b8af-dbfeebd0b824",
+                "name": "CLASS_NAMES",
+                "data": {
+                  "name": "CLASS_NAMES",
+                  "type": "list-str",
+                  "value": []
+                },
+                "type": "list-str",
+                "operator": "INCLUDES",
+                "value": "animist"
+              },
+              {
+                "id": "4095f306-f910-476f-a197-329274a07608",
+                "name": "LEVEL",
+                "data": {
+                  "name": "LEVEL",
+                  "type": "num",
+                  "value": 0
+                },
+                "type": "num",
+                "operator": "GREATER_THAN_OR_EQUALS",
+                "value": "11"
+              }
+            ],
+            "trueOperations": [
+              {
+                "id": "b75f05e9-b274-42f6-ae68-e30148c09efe",
+                "type": "giveSpell",
+                "data": {
+                  "type": "NORMAL",
+                  "castingSource": "ANIMIST_APPARITION",
+                  "rank": 6,
+                  "spellId": 4618
+                }
+              }
+            ],
+            "falseOperations": []
+          }
+        },
+        {
+          "id": "4cde89da-9cd6-454e-b338-06b81d09a475",
+          "type": "conditional",
+          "data": {
+            "conditions": [
+              {
+                "id": "e34013f2-42db-4313-95bd-89642a499b0c",
+                "name": "CLASS_NAMES",
+                "data": {
+                  "name": "CLASS_NAMES",
+                  "type": "list-str",
+                  "value": []
+                },
+                "type": "list-str",
+                "operator": "INCLUDES",
+                "value": "animist"
+              },
+              {
+                "id": "5b080cab-e8e1-453f-b542-d8b015bf14d5",
+                "name": "LEVEL",
+                "data": {
+                  "name": "LEVEL",
+                  "type": "num",
+                  "value": 0
+                },
+                "type": "num",
+                "operator": "GREATER_THAN_OR_EQUALS",
+                "value": "13"
+              }
+            ],
+            "trueOperations": [
+              {
+                "id": "db8b471d-90c0-4e31-8675-beee712fbe46",
+                "type": "giveSpell",
+                "data": {
+                  "type": "NORMAL",
+                  "castingSource": "ANIMIST_APPARITION",
+                  "rank": 7,
+                  "spellId": 6353
+                }
+              }
+            ],
+            "falseOperations": []
+          }
+        },
+        {
+          "id": "8e66fd8b-67f5-4f57-a635-5b54f7638c39",
+          "type": "conditional",
+          "data": {
+            "conditions": [
+              {
+                "id": "b3032f67-c2d6-4dbe-976f-2982ee50536b",
+                "name": "CLASS_NAMES",
+                "data": {
+                  "name": "CLASS_NAMES",
+                  "type": "list-str",
+                  "value": []
+                },
+                "type": "list-str",
+                "operator": "INCLUDES",
+                "value": "animist"
+              },
+              {
+                "id": "0e0a6f7e-4e5c-4d35-ae57-3805c400b33f",
+                "name": "LEVEL",
+                "data": {
+                  "name": "LEVEL",
+                  "type": "num",
+                  "value": 0
+                },
+                "type": "num",
+                "operator": "GREATER_THAN_OR_EQUALS",
+                "value": "15"
+              }
+            ],
+            "trueOperations": [
+              {
+                "id": "0aca4b5b-313a-4050-8c3d-69165a243651",
+                "type": "giveSpell",
+                "data": {
+                  "type": "NORMAL",
+                  "castingSource": "ANIMIST_APPARITION",
+                  "rank": 8,
+                  "spellId": 4729
+                }
+              }
+            ],
+            "falseOperations": []
+          }
+        },
+        {
+          "id": "ac6e2687-9161-4e2c-86b3-e71d0b6430c0",
+          "type": "conditional",
+          "data": {
+            "conditions": [
+              {
+                "id": "ec17883e-00c9-489f-a239-dfda6679f570",
+                "name": "CLASS_NAMES",
+                "data": {
+                  "name": "CLASS_NAMES",
+                  "type": "list-str",
+                  "value": []
+                },
+                "type": "list-str",
+                "operator": "INCLUDES",
+                "value": "animist"
+              },
+              {
+                "id": "8beeb5d4-944f-4507-87e8-ef25fdfda48c",
+                "name": "LEVEL",
+                "data": {
+                  "name": "LEVEL",
+                  "type": "num",
+                  "value": 0
+                },
+                "type": "num",
+                "operator": "GREATER_THAN_OR_EQUALS",
+                "value": "17"
+              }
+            ],
+            "trueOperations": [
+              {
+                "id": "4ee53cee-0fa6-4098-ab3c-f64f8c9e2bcb",
+                "type": "giveSpell",
+                "data": {
+                  "type": "NORMAL",
+                  "castingSource": "ANIMIST_APPARITION",
+                  "rank": 9,
+                  "spellId": 6754
+                }
+              }
+            ],
+            "falseOperations": []
+          }
+        },
+        {
+          "id": "aa73f19f-8c49-4ae9-904a-2b4f83e4a52a",
+          "type": "giveAbilityBlock",
+          "data": {
+            "type": "mode",
+            "abilityBlockId": 39037
+          }
+        }
+      ],
+      "actions": null,
+      "traits": [
+        4092
+      ],
+      "description": "Custodians of groves and gardens frequent tended greenery and farmlands cared for by loving stewards, and other places of reflection and restoration where green things grow. Some of these apparitions linger in the mortal realms not because they have lost their way, but because they believe they have already found Elysium. Others are the cultivated spiritual essence of the location itself. Custodians of groves and gardens are peaceful, quiet, and averse to conflict.\n\n**Apparition Skills** Farming Lore, Herbalism Lore\n\n**Apparition Spells Cantrip** [tangle vine](link_spell_4888); **1st** [protector tree](link_spell_6759); **2nd** [gentle breeze](link_spell_5037); **3rd** [safe passage](link_spell_4814); **4th** [peaceful bubble](link_spell_4754); **5th** [truespeech](link_spell_4913); **6th** [field of life](link_spell_4618); **7th** [lifewood cage](link_spell_6353); **8th** [moment of renewal](link_spell_4729); **9th** [nature’s enmity](link_spell_6754)\n\n**Vessel Spell** [garden of healing](link_spell_7269)\n\n**Avatar** _Peaceful Reaches_ Speed 60 feet, ignore difficult terrain and greater difficult terrain; **Melee** <abbr cost=\"ONE-ACTION\" class=\"action-symbol\">1</abbr> garden’s cradle (agile, nonlethal, reach 10 feet, trip), **Damage** 6d6+6 bludgeoning plus Grab; **Ranged** <abbr cost=\"ONE-ACTION\" class=\"action-symbol\">1</abbr> impose peace (nonlethal, range 120 feet), **Damage** 6d6+6 mental",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Apparitions.aspx?ID=4",
+          "book": "War of Immortals",
+          "page": "18"
+        }
+      }
+    },
+    {
+      "id": 38742,
+      "name": "Apparition Sense",
+      "type": "feat",
+      "level": 1,
+      "operations": [
+        {
+          "id": "3b0d3ea9-eddf-4c84-8b10-80a25e6f3745",
+          "data": {
+            "type": "sense",
+            "abilityBlockId": 38723
+          },
+          "type": "giveAbilityBlock"
+        }
+      ],
+      "actions": null,
+      "traits": [
+        4078,
+        1475
+      ],
+      "description": "You can see and interact with things others can’t. You have apparition sight, an imprecise sense that allows you to detect the presence of invisible or hidden [spirits](link_trait_1556), [haunts](link_trait_2967), and [undead](link_trait_2425) within 30 feet of you.\n\nYou can allow a [spirit](link_trait_1556) or [undead](link_trait_2425) otherwise incapable of speech to speak through you as long as you are in direct contact with it. As an activity that takes 10 minutes, you can act as a link between disembodied souls and their mortal bodies. As long as you are in contact with both a spirit and a living body that belonged to it in life during that entire time, the spirit can use you to return to that body; this does not allow you to bring the dead back to life, but can assist in restoring a disembodied soul to a still-living body. If the body is occupied by another spirit or soul, that entity must succeed at a Will save against your spell DC or be cast from the body when its original owner is returned.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Feats.aspx?ID=7120",
+          "book": "War of Immortals",
+          "page": "22"
+        }
+      }
+    },
+    {
+      "id": 38743,
+      "name": "Circle of Spirits",
+      "type": "feat",
+      "level": 1,
+      "operations": [
+        {
+          "id": "383a9607-4ae2-438b-9486-853e498ae774",
+          "type": "adjValue",
+          "data": {
+            "variable": "FOCUS_POINT_BONUS",
+            "value": 1
+          }
+        }
+      ],
+      "actions": "ONE-ACTION",
+      "traits": [
+        4078,
+        4075,
+        1432
+      ],
+      "description": "With a thought, word, or gesture, you reach your mind out to another spirit. Choose another apparition from among those you’ve attuned to; it becomes your primary apparition, replacing your current one.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Feats.aspx?ID=7121",
+          "book": "War of Immortals",
+          "page": "22"
+        }
+      }
+    },
+    {
+      "id": 38744,
+      "name": "Relinquish Control",
+      "type": "feat",
+      "level": 1,
+      "operations": [],
+      "actions": "FREE-ACTION",
+      "traits": [
+        4078,
+        4075
+      ],
+      "description": "Your apparition takes over and shields you from outside influence. Until the start of your next turn, you gain a +4 status bonus on saves against spells and effects that give you the controlled condition or attempt to influence your actions (such as [charm](link_spell_4516), [command](link_spell_4528), or a nosoi’s haunting melody). However, the only actions you can take are to [Recall Knowledge](link_action_19753), [Step](link_action_19853), [Strike](link_action_19856), [Cast an apparition Spell](link_action_19611), [Cast a vessel Spell](link_action_19611), [Sustain](link_action_19858) a vessel spell, or use an action that has the [apparition](link_trait_4075) trait. You gain a +2 circumstance bonus on all [Recall Knowledge](link_action_19753) checks made using Lore skills granted by your attuned apparitions.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Feats.aspx?ID=7122",
+          "book": "War of Immortals",
+          "page": "22"
+        }
+      }
+    },
+    {
+      "id": 38745,
+      "name": "Spirit Familiar",
+      "type": "feat",
+      "level": 1,
+      "operations": [
+        {
+          "id": "27cba62a-1d21-44bf-bd1a-81bb607941c3",
+          "type": "adjValue",
+          "data": {
+            "variable": "PRIMARY_SHEET_TABS",
+            "value": "companions"
+          }
+        }
+      ],
+      "actions": null,
+      "traits": [
+        4078
+      ],
+      "description": "When you attune to your apparitions during your daily preparations, you can choose to dedicate a small amount of your life force to allow one of them to physically manifest as a familiar, which gains the spirit trait. If your familiar is slain or destroyed, you lose all other benefits from the apparition until you remanifest the familiar during your next daily preparations. If you disperse the apparition you have manifested as a familiar, the familiar is destroyed.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Feats.aspx?ID=7123",
+          "book": "War of Immortals",
+          "page": "23"
+        }
+      }
+    },
+    {
+      "id": 38748,
+      "name": "Enhanced Familiar",
+      "type": "feat",
+      "level": 2,
+      "operations": [],
+      "actions": null,
+      "traits": [
+        4078
+      ],
+      "description": "You are able to materialize more of your attuned apparition’s essence, creating a more powerful vessel for it to inhabit and aid you with. You can select four familiar or master abilities, instead of two.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Feats.aspx?ID=4717",
+          "book": "War of Immortals",
+          "page": "23"
+        }
+      }
+    },
+    {
+      "id": 38765,
+      "name": "Incredible Familiar",
+      "type": "feat",
+      "level": 10,
+      "operations": [],
+      "actions": null,
+      "traits": [
+        4078
+      ],
+      "description": "Your connection to your apparition and your mastery of spiritual magic reach a new threshold that allows you to channel even more power into the physical form you allow it to take on as your familiar. You can select a base of six familiar or master abilities each day, instead of four.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Feats.aspx?ID=9420",
+          "book": "War of Immortals",
+          "page": "26"
+        }
+      }
+    },
+    {
+      "id": 39037,
+      "name": "Custodian of Groves and Gardens - Primary",
+      "type": "mode",
+      "level": 1,
+      "operations": [
+        {
+          "id": "5e7f840b-f440-41f8-8ae2-90c30097b75f",
+          "type": "giveSpell",
+          "data": {
+            "spellId": 7269,
+            "type": "FOCUS",
+            "castingSource": "ANIMIST",
+            "rank": 1
+          }
+        },
+        {
+          "id": "b2ae8ed2-06c9-4199-ac71-47d5e3108b36",
+          "type": "injectText",
+          "data": {
+            "type": "spell",
+            "id": 4407,
+            "text": "**Custodian of Groves and Gardens** _Peaceful Reaches_ Speed 60 feet, ignore difficult terrain and greater difficult terrain; **Melee** <abbr cost=\"ONE-ACTION\" class=\"action-symbol\">1</abbr> garden’s cradle ([agile](link_trait_1569), [nonlethal](link_trait_1571), [reach 10 feet](link_trait_1573), [trip](link_trait_1537)), **Damage** 6d6+6 bludgeoning plus Grab; **Ranged** <abbr cost=\"ONE-ACTION\" class=\"action-symbol\">1</abbr> impose peace ([nonlethal](link_trait_1571), range 120 feet), **Damage** 6d6+6 [mental](link_trait_1448)"
+          }
+        },
+        {
+          "id": "d1d737b3-8b54-4b71-af20-44bf1efa753f",
+          "type": "adjValue",
+          "data": {
+            "variable": "FOCUS_POINT_BONUS",
+            "value": -1
+          }
+        }
+      ],
+      "actions": null,
+      "traits": [
+        4092
+      ],
+      "description": "Custodians of groves and gardens frequent tended greenery and farmlands cared for by loving stewards, and other places of reflection and restoration where green things grow. Some of these apparitions linger in the mortal realms not because they have lost their way, but because they believe they have already found Elysium. Others are the cultivated spiritual essence of the location itself. Custodians of groves and gardens are peaceful, quiet, and averse to conflict.\n\n**Vessel Spell** [garden of healing](link_spell_7269)\n\n**Avatar** _Peaceful Reaches_ Speed 60 feet, ignore difficult terrain and greater difficult terrain; **Melee** <abbr cost=\"ONE-ACTION\" class=\"action-symbol\">1</abbr> garden’s cradle ([agile](link_trait_1569), [nonlethal](link_trait_1571), [reach 10 feet](link_trait_1573), [trip](link_trait_1537)), **Damage** 6d6+6 bludgeoning plus Grab; **Ranged** <abbr cost=\"ONE-ACTION\" class=\"action-symbol\">1</abbr> impose peace ([nonlethal](link_trait_1571), range 120 feet), **Damage** 6d6+6 [mental](link_trait_1448)",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Apparitions.aspx?ID=4",
+          "book": "War of Immortals",
+          "page": "18"
+        }
+      }
+    },
+    {
+      "id": 39314,
+      "name": "Atryl, Rune of Fire",
+      "type": "feat",
+      "level": 1,
+      "operations": [],
+      "actions": null,
+      "traits": [
+        1542,
+        1454,
+        4152,
+        5137
+      ],
+      "description": "**Usage** drawn on a creature or object\n\n* * *\n\nThis rune is often placed on a stone in a hearth to ensure a fire does not go out in the night, its power enabling even stone to burn. The bearer’s [fire](link_trait_1542) resistance, if any, is reduced by 6. Its immunities are unaffected.\n\n**Invocation** The bearer takes 2d6 fire damage, with a basic Fortitude save; on a critical failure, they are dazzled for 1 round.\n\n* * *\n\n**Level (+2)** The reduction in fire resistance increases by 1, and the damage of the invocation increases by 2d6.",
+      "meta_data": {
+        "unselectable": false
+      }
+    },
+    {
+      "id": 57839,
+      "name": "Trace Rune",
+      "type": "feat",
+      "level": 1,
+      "operations": [],
+      "actions": "ONE-TO-TWO-ACTIONS",
+      "traits": [
+        1432,
+        1504,
+        1433,
+        5134
+      ],
+      "description": "Your fingers dance, glowing light leaving behind the image of a rune. You apply one [rune](link_trait_5137) to an adjacent target matching the [rune's](link_trait_5137) Usage entry. You can have any number of runes traced at a time, but each rune remains only until the end of your next turn.\n\nIf you spend 2 actions to Trace a Rune, you draw the rune in the air, causing it to appear on a target within 30 feet.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Actions.aspx?ID=4264",
+          "book": "Impossible Magic",
+          "page": "44"
+        },
+        "unselectable": true
+      }
+    },
+    {
+      "id": 57840,
+      "name": "Invoke Rune",
+      "type": "feat",
+      "level": 1,
+      "operations": [],
+      "actions": "ONE-ACTION",
+      "traits": [
+        5138,
+        1504,
+        5134
+      ],
+      "description": "You utter the names of up to two of your [runes](link_trait_5137) within 30 feet, and each of which blazes with power, applying the effect in its Invocation entry. An invoked rune then fades away, its task completed. Though you can invoke up to two runes with a single Invoke Rune action, creatures that would be affected by multiple copies of the same rune are affected only once, as normal for duplicate effects.",
+      "meta_data": {
+        "source": {
+          "url": "https://2e.aonprd.com/Actions.aspx?ID=4265",
+          "book": "Impossible Magic",
+          "page": "44"
+        },
+        "unselectable": true
+      }
+    }
+  ],
+  "spells": [
+    {
+      "id": 4888,
+      "name": "Tangle Vine",
+      "rank": 0
+    },
+    {
+      "id": 5037,
+      "name": "Gentle Breeze",
+      "rank": 2
+    },
+    {
+      "id": 6759,
+      "name": "Protector Tree",
+      "rank": 1
+    },
+    {
+      "id": 7269,
+      "name": "Garden of Healing",
+      "rank": 1
+    }
+  ]
+}

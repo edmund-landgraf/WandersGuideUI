@@ -52,7 +52,62 @@ function optionKey(value: unknown) {
   return typeof value === "string" || typeof value === "number" ? String(value) : "";
 }
 
-function chosenFrom(entity: Json, classFeatures: Json[] = []) {
+function label(value: unknown) {
+  return String(value ?? "").trim().toUpperCase().replace(/-/g, "_").replace(/[^A-Z_\s]/g, "").replace(/\s+/g, "_");
+}
+
+type SpellGrant = { spellId: number; type: string; rank?: number; source?: string; tradition?: string; casts?: number };
+
+function scanVariables(entity: Json, blocks: Json[]) {
+  const details = (entity.details as Json | undefined) ?? {};
+  const classes = [details.class, details.class_2].filter(Boolean) as Json[];
+  const values = new Map<string, unknown>([
+    ["LEVEL", num(entity.level) ?? 0],
+    ["CLASS_NAMES", classes.map((row) => String(row.name ?? ""))],
+    ["CLASS_IDS", classes.map((row) => String(row.id ?? ""))],
+    ["ACTIVE_MODES", (entity.meta_data as Json | undefined)?.active_modes ?? []],
+  ]);
+  for (const [type, prefix] of [["feat", "FEAT"], ["class-feature", "CLASS_FEATURE"], ["mode", "MODE"]]) {
+    const rows = blocks.filter((block) => block.type === type);
+    values.set(`${prefix}_IDS`, rows.map((row) => String(row.id)));
+    values.set(`${prefix}_NAMES`, rows.map((row) => String(row.name ?? "")));
+  }
+  return values;
+}
+
+// Mirrors the sheet's runConditional comparisons for values available without
+// preparing the entire character store. Unknown variables are reported, not guessed.
+function checkCondition(check: Json, values: Map<string, unknown>): boolean | undefined {
+  if (!values.has(String(check.name))) return undefined;
+  const value = values.get(String(check.name));
+  const expected = check.value;
+  if (typeof value === "number") {
+    const right = num(expected);
+    if (right === undefined) return undefined;
+    switch (check.operator) {
+      case "EQUALS": return value === right;
+      case "NOT_EQUALS": return value !== right;
+      case "GREATER_THAN": return value > right;
+      case "LESS_THAN": return value < right;
+      case "GREATER_THAN_OR_EQUALS": return value >= right;
+      case "LESS_THAN_OR_EQUALS": return value <= right;
+    }
+  } else if (Array.isArray(value)) {
+    if (check.operator === "INCLUDES") return value.some((item) => label(item) === label(expected));
+    if (check.operator === "NOT_INCLUDES") return !value.some((item) => label(item) === label(expected));
+  } else if (typeof value === "string") {
+    if (check.operator === "EQUALS") return label(value) === label(expected);
+    if (check.operator === "NOT_EQUALS") return label(value) !== label(expected);
+    if (check.operator === "INCLUDES") return label(value).includes(label(expected));
+    if (check.operator === "NOT_INCLUDES") return !label(value).includes(label(expected));
+  } else if (typeof value === "boolean") {
+    if (check.operator === "EQUALS") return value === (expected === "TRUE");
+    if (check.operator === "NOT_EQUALS") return value !== (expected === "TRUE");
+  }
+  return undefined;
+}
+
+function chosenFrom(entity: Json, classFeatures: Json[] = [], values = scanVariables(entity, classFeatures)) {
   const selections = ((entity.operation_data as Json | undefined)?.selections ?? {}) as Record<string, string>;
   const blockIds = new Set<number>();
   for (const feature of classFeatures) {
@@ -69,11 +124,16 @@ function chosenFrom(entity: Json, classFeatures: Json[] = []) {
     if (blockId && blockId > 0) blockIds.add(blockId);
   }
   const custom: { name: string; description?: string }[] = [];
-  const focus: { spellId: number; rank?: number; source?: string }[] = [];
+  const grants: SpellGrant[] = [];
+  const unresolvedConditions = new Set<string>();
   const seen = new Set<string>();
-  function addFocus(spellId: number | undefined, rank: unknown) {
-    if (!spellId || spellId <= 0 || focus.some((grant) => grant.spellId === spellId)) return;
-    focus.push({ spellId, rank: num(rank), source: "focus" });
+  function addSpell(data: Json) {
+    const spellId = num(data.spellId);
+    if (!spellId || spellId <= 0 || !["NORMAL", "FOCUS", "INNATE"].includes(String(data.type))) return;
+    const grant = { spellId, type: String(data.type), rank: num(data.rank),
+      source: typeof data.castingSource === "string" ? data.castingSource : undefined,
+      tradition: typeof data.tradition === "string" ? data.tradition : undefined, casts: num(data.casts) };
+    if (!grants.some((item) => item.spellId === grant.spellId && item.type === grant.type && item.source === grant.source && item.rank === grant.rank)) grants.push(grant);
   }
   function walk(value: unknown, active: boolean, depth: number) {
     if (!active || depth > 12 || !value || typeof value !== "object") return;
@@ -82,6 +142,30 @@ function chosenFrom(entity: Json, classFeatures: Json[] = []) {
       return;
     }
     const row = value as Json;
+    if (row.type === "conditional") {
+      const data = row.data as Json | undefined;
+      const checks = Array.isArray(data?.conditions) ? data.conditions as Json[] : [];
+      const results = checks.map((check) => checkCondition(check, values));
+      if (results.includes(false)) walk(data?.falseOperations, true, depth + 1);
+      else if (results.includes(undefined)) {
+        for (const [index, check] of checks.entries()) if (results[index] === undefined) unresolvedConditions.add(String(check.name));
+      } else walk(data?.trueOperations, true, depth + 1);
+      return;
+    }
+    if (["createValue", "setValue", "adjValue"].includes(String(row.type))) {
+      const data = row.data as Json | undefined;
+      if (typeof data?.variable === "string") {
+        const value = data.value;
+        if (["string", "number", "boolean"].includes(typeof value) || Array.isArray(value)) {
+          // Arithmetic expressions need the full variable engine; don't pretend
+          // that the expression string is its computed value.
+          if (!(typeof value === "string" && /[()+*/]/.test(value))) {
+            const old = values.get(data.variable);
+            values.set(data.variable, row.type === "adjValue" && typeof old === "number" && typeof value === "number" ? old + value : value);
+          }
+        }
+      }
+    }
     if (row.type === "select") {
       const data = row.data as Json | undefined;
       const options = Array.isArray(data?.optionsPredefined) ? data.optionsPredefined : [];
@@ -91,24 +175,20 @@ function chosenFrom(entity: Json, classFeatures: Json[] = []) {
       for (const option of options) {
         if (!option || typeof option !== "object") continue;
         const picked = option as Json;
-        walk(picked, selectedValues.has(optionKey(picked.id)), depth + 1);
+        if (data?.optionType !== "SPELL") walk(picked, selectedValues.has(optionKey(picked.id)), depth + 1);
       }
       const filters = data?.optionsFilters as Json | undefined;
       const spellData = filters?.spellData as Json | undefined;
       for (const value of selectedValues) {
         const selected = num(value);
         if (data?.optionType === "ABILITY_BLOCK" && data.modeType !== "PREDEFINED" && selected) blockIds.add(selected);
-        const sourceName = typeof spellData?.castingSource === "string" ? spellData.castingSource : "";
-        const title = typeof data?.title === "string" ? data.title : "";
-        const focusSelect = String(spellData?.type ?? "").toUpperCase() === "FOCUS" || sourceName.toLowerCase().includes("focus") || title.toLowerCase().includes("focus");
-        if (data?.optionType === "SPELL" && focusSelect) {
-          if (data.modeType === "PREDEFINED") {
-            const option = options.find((item) => item && typeof item === "object" && optionKey((item as Json).id) === value) as Json | undefined;
-            const grant = (option?.operation as Json | undefined)?.data as Json | undefined;
-            addFocus(num(grant?.spellId), spellData?.rank ?? grant?.rank);
-          } else {
-            addFocus(selected, spellData?.rank);
-          }
+        if (data?.optionType === "SPELL") {
+          const option = options.find((item) => item && typeof item === "object" && optionKey((item as Json).id) === value) as Json | undefined;
+          const grant = (option?.operation as Json | undefined)?.data as Json | undefined;
+          // OG getSpellPredefinedList applies the first option's metadata to
+          // every spell; the selected option supplies only the spell ID.
+          const first = ((options[0] as Json | undefined)?.operation as Json | undefined)?.data as Json | undefined;
+          addSpell({ ...(data.modeType === "PREDEFINED" ? first : spellData), spellId: data.modeType === "PREDEFINED" ? grant?.spellId : selected });
         }
       }
       return;
@@ -123,11 +203,11 @@ function chosenFrom(entity: Json, classFeatures: Json[] = []) {
     }
     if (row.type === "SPELL") {
       const meta = row._meta_data as Json | undefined;
-      if (meta?.type === "FOCUS") addFocus(num(row.id), meta.rank);
+      if (meta) addSpell({ ...meta, spellId: row.id });
     }
     if (row.type === "giveSpell") {
       const data = row.data as Json | undefined;
-      if (data?.type === "FOCUS") addFocus(num(data.spellId), data.rank);
+      if (data) addSpell(data);
     }
     for (const child of Object.values(row)) walk(child, true, depth + 1);
   }
@@ -136,7 +216,41 @@ function chosenFrom(entity: Json, classFeatures: Json[] = []) {
   for (const key of ["class", "class_2", "ancestry", "background", "class_archetype", "class_archetype_2"]) {
     walk((details?.[key] as Json | undefined)?.operations, true, 0);
   }
-  return { blockIds, custom, focus };
+  return { blockIds, custom, grants, focus: grants.filter((grant) => grant.type === "FOCUS"), unresolvedConditions };
+}
+
+function scanEntity(entity: Json, classFeatures: Json[], blocks: Json[]) {
+  const byId = new Map(blocks.map((block) => [num(block.id), block]));
+  let known = classFeatures;
+  let previous = "";
+  for (let pass = 0; ; pass += 1) {
+    const values = scanVariables(entity, known);
+    const result = chosenFrom(entity, classFeatures, values);
+    const queue = [...result.blockIds];
+    const seen = new Set<number>();
+    while (queue.length) {
+      const id = queue.pop()!;
+      if (seen.has(id)) continue;
+      const block = byId.get(id);
+      if (block?.type === "class-feature" && (num(block.level) ?? 0) > (num(entity.level) ?? 0)) continue;
+      seen.add(id);
+      if (!block) continue;
+      // Granting a mode makes it available; only toggled modes execute.
+      if (block.type === "mode" && !(values.get("ACTIVE_MODES") as unknown[]).some((mode) => label(mode) === label(block.name))) continue;
+      const nested = chosenFrom({ operation_data: entity.operation_data, custom_operations: block.operations }, [], values);
+      result.grants.push(...nested.grants);
+      result.custom.push(...nested.custom);
+      for (const name of nested.unresolvedConditions) result.unresolvedConditions.add(name);
+      queue.push(...nested.blockIds);
+    }
+    result.blockIds = seen;
+    result.focus = result.grants.filter((grant) => grant.type === "FOCUS");
+    const signature = JSON.stringify([[...seen].sort(), result.grants]);
+    const stable = signature === previous;
+    if (stable || pass >= blocks.length + 1) return { ...result, passes: pass + 1, stable };
+    previous = signature;
+    known = [...seen].flatMap((id) => byId.get(id) ? [byId.get(id)!] : []);
+  }
 }
 
 async function hydrateSources(entity: Json) {
@@ -308,6 +422,7 @@ function mapCombatant(combatant: Json, characters: Json[]): CombatantRow | null 
 
 function actionCount(value: unknown) {
   if (typeof value === "number") return value;
+  if (value === "FREE-ACTION") return 0;
   if (value === "ONE-ACTION") return 1;
   if (value === "TWO-ACTIONS") return 2;
   if (value === "THREE-ACTIONS") return 3;
@@ -451,7 +566,7 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
   for (const [id, entity] of Object.entries(entities)) {
     const sheet = record.sheets[id];
     if (!sheet) continue;
-    const chosen = chosenFrom(entity, classFeatures[id]);
+    const chosen = scanEntity(entity, classFeatures[id] ?? [], blocks);
     const wanted = chosen.blockIds;
     const resolved = [...wanted].flatMap((blockId) => {
       const row = blockById.get(blockId);
@@ -460,6 +575,7 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
         type: typeof row.type === "string" ? row.type : "",
         name: row.name,
         actions: actionCount(row.actions),
+        actionCost: typeof row.actions === "string" ? row.actions : undefined,
         description: typeof row.description === "string" ? row.description : undefined,
         level: num(row.level),
       }];
@@ -467,21 +583,29 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
     const attacks = resolved.filter((ability) => ability.type === "action");
     const feats = resolved.filter((ability) => ability.type === "feat");
     const features = resolved.filter((ability) => ability.type === "class-feature" || ability.type === "physical-feature");
-    if (attacks.length && !sheet.groups.some((group) => group.id === "weapon-attacks")) {
-      sheet.groups.push({
+    if (attacks.length) {
+      const existing = sheet.groups.find((group) => group.id === "weapon-attacks");
+      const actions = attacks.map(({ name, actions, actionCost, description }) => ({ name, actions, actionCost, description }));
+      if (existing) existing.actions.push(...actions.filter((action) => !existing.actions.some((item) => item.name === action.name)));
+      else sheet.groups.push({
         id: "weapon-attacks",
         label: "Weapon Attacks",
-        actions: attacks.map(({ name, actions, description }) => ({ name, actions, description })),
+        actions,
       });
     }
-    const featActions = feats.filter((ability) => ability.actions !== null).map(({ name, actions, description }) => ({ name, actions, description }));
+    const featActions = feats.filter((ability) => ability.actionCost !== undefined || ability.actions !== null).map(({ name, actions, actionCost, description }) => ({ name, actions, actionCost, description }));
     if (featActions.length) {
       const existing = sheet.groups.find((group) => group.id === "feats");
       if (existing) existing.actions.push(...featActions.filter((ability) => !existing.actions.some((item) => item.name === ability.name)));
       else sheet.groups.push({ id: "feats", label: "Feats (with Actions)", actions: featActions });
     }
-    sheet.feats = feats.map((ability) => ({ section: "other" as const, name: ability.name, level: ability.level, hasAction: ability.actions !== null }));
+    sheet.feats = feats.map((ability) => ({ section: "other" as const, name: ability.name, level: ability.level, hasAction: ability.actionCost !== undefined || ability.actions !== null }));
     sheet.classFeatures = features.map((ability) => ({ name: ability.name, level: ability.level }));
+    const classAbilities = [
+      ...feats.filter((ability) => ability.actionCost === undefined && ability.actions === null),
+      ...chosen.custom.map((choice) => ({ ...choice, actions: null })),
+    ];
+    if (classAbilities.length) sheet.groups.push({ id: "class-abilities", label: "Class Abilities", actions: classAbilities });
     const spellBook = entity.spells as Json | undefined;
     const entries = Array.isArray(spellBook?.list) ? (spellBook.list as Json[]) : [];
     const slots = Array.isArray(spellBook?.slots) ? (spellBook.slots as Json[]) : [];
@@ -506,26 +630,16 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
         dc,
       }];
     });
-    const grants = [...chosen.focus];
-    const seenBlocks = new Set<number>();
-    const queue = [...chosen.blockIds];
-    while (queue.length) {
-      const blockId = queue.pop();
-      if (blockId === undefined || seenBlocks.has(blockId)) continue;
-      seenBlocks.add(blockId);
-      const block = blockById.get(blockId);
-      if (!block) continue;
-      const nested = chosenFrom({ operation_data: entity.operation_data, custom_operations: block.operations });
-      grants.push(...nested.focus);
-      queue.push(...nested.blockIds);
-    }
+    const grants = chosen.grants;
     for (const grant of grants) {
       const spell = spellById.get(grant.spellId);
-      const meta = spell?.meta_data as Json | undefined;
       const name = typeof spell?.name === "string" ? spell.name : `Spell ${grant.spellId}`;
-      if (sheet.spells.some((entry) => entry.name === name)) continue;
-      const focusSpell = grant.source === "focus" || meta?.focus === true;
-      sheet.spells.push({ name, rank: grant.rank ?? num(spell?.rank), tradition: focusSpell ? "focus" : grant.source, attack, dc });
+      const tradition = grant.type === "FOCUS" ? "focus" : grant.type === "INNATE" ? grant.tradition : grant.source;
+      const existing = sheet.spells.find((entry) => entry.name === name && (grant.type === "NORMAL" ? entry.tradition === undefined || entry.tradition === tradition : entry.tradition === tradition));
+      if (existing) { if (tradition) existing.tradition = tradition; continue; }
+      const innate = Array.isArray(spellBook?.innate_casts) ? (spellBook.innate_casts as Json[]).find((row) => num(row.spell_id) === grant.spellId) : undefined;
+      sheet.spells.push({ name, rank: grant.rank ?? num(spell?.rank), tradition, attack, dc,
+        ...(grant.type === "INNATE" ? { max: grant.casts, spent: num(innate?.casts_current) ?? 0 } : {}) });
     }
     const classRow = (entity.details as Json | undefined)?.class as Json | undefined;
     const selections = ((entity.operation_data as Json | undefined)?.selections ?? {}) as Record<string, string>;
@@ -556,16 +670,19 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
     findSelects(operations, 0);
     sheet.details = {
       reader: "focus-scan",
-      revision: "class-feature-grants-v2",
+      revision: "class-operation-grants-v3",
       classId: num(classRow?.id) ?? null,
       className: typeof classRow?.name === "string" ? classRow.name : null,
       classOperations: operations.length,
       operationTypes: operations.map((op) => op.type ?? null),
       selects,
       selectionCount: Object.keys(selections).length,
-      blocksWalked: seenBlocks.size,
+      blocksWalked: chosen.blockIds.size,
+      scanPasses: chosen.passes,
+      scanStable: chosen.stable,
+      unresolvedConditions: [...chosen.unresolvedConditions],
       classFeatureIds: (classFeatures[id] ?? []).map((row) => row.id),
-      focusSpellIds: [...new Set(grants.map((grant) => grant.spellId))],
+      focusSpellIds: [...new Set(chosen.focus.map((grant) => grant.spellId))],
       spellIds: spellIdsOf(entity).length,
     };
   }
@@ -634,41 +751,28 @@ export function createSupabaseReader(): EncounterReader {
       const spellIds = new Set<number>();
       let customAbilities = 0;
       let focusSpells = 0;
-      for (const [combatantId, entity] of Object.entries(entities)) {
-        const chosen = chosenFrom(entity, classFeatures[combatantId]);
-        customAbilities += chosen.custom.length;
-        focusSpells += chosen.focus.length;
-        for (const id of chosen.blockIds) blockIds.add(id);
-        const selections = ((entity.operation_data as Json | undefined)?.selections ?? {}) as Record<string, string>;
-        for (const value of Object.values(selections)) {
-          const id = num(value);
-          if (id && id > 0) blockIds.add(id);
-        }
-        for (const id of spellIdsOf(entity)) spellIds.add(id);
-        for (const grant of chosen.focus) spellIds.add(grant.spellId);
-      }
       const blocks: Json[] = Object.values(classFeatures).flat();
-      const loadedIds = new Set(blocks.map((block) => num(block.id)));
-      let pending = [...blockIds].filter((id) => !loadedIds.has(id));
-      let initialFeatures = blocks.slice();
-      // Scan prefetched class features even when there are no selected feats.
-      while (pending.length || initialFeatures.length) {
-        const loaded = await contentRows("find-ability-block", pending);
-        blocks.push(...loaded);
-        const toScan = [...initialFeatures, ...loaded];
-        initialFeatures = [];
+      const requestedIds = new Set(blocks.map((block) => num(block.id)));
+      while (true) {
         const more = new Set<number>();
-        for (const entity of Object.values(entities)) {
-          for (const block of toScan) {
-            const nested = chosenFrom({ operation_data: entity.operation_data, custom_operations: block.operations });
-            focusSpells += nested.focus.length;
-            for (const grant of nested.focus) spellIds.add(grant.spellId);
-            for (const id of nested.blockIds) if (!blockIds.has(id)) more.add(id);
+        spellIds.clear();
+        blockIds.clear();
+        customAbilities = 0;
+        focusSpells = 0;
+        for (const [id, entity] of Object.entries(entities)) {
+          const scan = scanEntity(entity, classFeatures[id], blocks);
+          customAbilities += scan.custom.length;
+          focusSpells += scan.focus.length;
+          for (const blockId of scan.blockIds) {
+            blockIds.add(blockId);
+            if (!requestedIds.has(blockId)) more.add(blockId);
           }
+          for (const spellId of spellIdsOf(entity)) spellIds.add(spellId);
+          for (const grant of scan.grants) spellIds.add(grant.spellId);
         }
         if (!more.size) break;
-        for (const id of more) blockIds.add(id);
-        pending = [...more];
+        for (const id of more) requestedIds.add(id);
+        blocks.push(...await contentRows("find-ability-block", [...more]));
       }
       const spellRows = await contentRows("find-spell", [...spellIds]);
       applyCatalog(record, entities, blocks, spellRows, classFeatures);

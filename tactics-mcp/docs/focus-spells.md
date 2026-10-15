@@ -11,8 +11,10 @@ features even when no selection paths refer to them, then follow selected abilit
 blocks and look up the resulting spell IDs.
 
 For a predefined spell choice, the saved value is an option UUID. Resolve the
-option's `operation.data.spellId`. The select's `optionsFilters.spellData` can mark
-the result as focus even if the nested grant says `NORMAL`.
+option's `operation.data.spellId`. The OG UI's `getSpellPredefinedList` uses the
+first option's casting metadata for every option in the list. The reader preserves
+that behavior, including when a selected option's nested grant says `NORMAL`.
+Filtered spell picks use `optionsFilters.spellData`.
 
 ## Kota regression
 
@@ -32,6 +34,9 @@ spellbook entries plus five rows with `tradition: "focus"`.
 Run `npm test` and `npm run smoke` from `tactics-mcp`.
 
 After deploying this source and restarting `wgui-mcp`, a fresh `get_spells` response
-must contain `liveCasting.revision: "class-feature-grants-v2"` and all five IDs in
+must contain `liveCasting.revision: "class-operation-grants-v3"` and all five IDs in
 `liveCasting.focusSpellIds`. A response without that revision comes from older
 reader code.
+
+The subsequent [class audit](class-operation-audit.md) covers normal apparition
+spells, active modes, conditional grants, and nested non-spell class abilities.

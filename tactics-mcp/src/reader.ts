@@ -42,7 +42,7 @@ export type CombatantSheet = {
   weaknesses?: string[];
   immunities?: string[];
   abilityModifiers?: Record<string, number>;
-  groups: { id: string; label: string; actions: { name: string; actions?: number | null; traits?: string[]; description?: string }[] }[];
+  groups: { id: string; label: string; actions: { name: string; actions?: number | null; actionCost?: string; traits?: string[]; description?: string }[] }[];
   feats: { section: "class" | "ancestry" | "general" | "other"; name: string; level?: number; hasAction: boolean }[];
   classFeatures: { name: string; level?: number }[];
   skills: { name: string; modifier?: number; proficiency?: string }[];

@@ -189,5 +189,5 @@ test("Kota's actual Grave Spells and Widespread Fascination operations return al
   assert.ok([8754, 8763, 8765, 8770, 8775].every((id) => queried.includes(id)));
   assert.ok(!queried.includes(8778), "unselected Blood fascination must not be granted");
   assert.deepEqual(toolResult?.spells, sheet.spells);
-  assert.equal((toolResult?.liveCasting as Json).revision, "class-feature-grants-v2");
+  assert.equal((toolResult?.liveCasting as Json).revision, "class-operation-grants-v3");
 });
