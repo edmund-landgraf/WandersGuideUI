@@ -6,7 +6,21 @@ type Json = Record<string, unknown>;
 const resolverReady = Promise.resolve(register(new URL("./resolve-app-deps.mjs", import.meta.url), import.meta.url));
 
 function sheetEnv() {
-  const env = globalThis as typeof globalThis & { __WGUI_ENV?: Record<string, string | boolean> };
+  const env = globalThis as typeof globalThis & {
+    __WGUI_ENV?: Record<string, string | boolean>;
+    localStorage?: Storage;
+  };
+  if (!env.localStorage) {
+    const mem = new Map<string, string>();
+    env.localStorage = {
+      getItem: (key) => mem.get(key) ?? null,
+      setItem: (key, value) => { mem.set(key, String(value)); },
+      removeItem: (key) => { mem.delete(key); },
+      clear: () => { mem.clear(); },
+      key: () => null,
+      length: 0,
+    };
+  }
   env.__WGUI_ENV = {
     VITE_ENV: "production",
     DEV: false,

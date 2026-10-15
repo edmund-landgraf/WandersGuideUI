@@ -56,7 +56,7 @@ export type CombatantSheet = {
 export type EncounterReader = {
   profile(userId: string): Promise<{ id: string; email?: string | null; name?: string | null }>;
   listEncounters(userId: string, campaignId: number): Promise<{ id: number; name: string; combatantCount: number }[]>;
-  loadEncounter(userId: string, campaignId: number, encounterId: number): Promise<EncounterRecord | null>;
+  loadEncounter(userId: string, campaignId: number, encounterId: number, combatantId?: string): Promise<EncounterRecord | null>;
 };
 
 const empty: EncounterReader = {

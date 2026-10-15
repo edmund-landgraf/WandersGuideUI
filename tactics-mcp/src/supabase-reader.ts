@@ -551,7 +551,7 @@ export function createSupabaseReader(): EncounterReader {
         };
       });
     },
-    async loadEncounter(userId, campaignId, encounterId) {
+    async loadEncounter(userId, campaignId, encounterId, combatantId) {
       const rows = await encountersFor(userId, campaignId, encounterId);
       if (!rows.length) return null;
       const characters = await rest(`character?campaign_id=eq.${campaignId}&select=*`);
@@ -590,22 +590,27 @@ export function createSupabaseReader(): EncounterReader {
       const spellRows = await contentRows("find-spell", [...spellIds]);
       applyCatalog(record, entities, blocks, spellRows);
       let liveFocus = 0;
-      for (const [combatantId, entity] of Object.entries(entities)) {
-        const sheet = record.sheets[combatantId];
+      const targets = combatantId ? [[combatantId, entities[combatantId]] as const].filter((entry) => entry[1]) : [];
+      for (const [id, entity] of targets) {
+        const sheet = record.sheets[id];
         if (!sheet) continue;
         if (!entity.user_id || !entity.created_at) {
           sheet.details = { ...(sheet.details as Json | undefined), liveCasting: "skipped: character row has no user_id or created_at" };
           continue;
         }
+        console.error(`[wgui-mcp] live casting start ${id}`);
         try {
           const { applyLiveCasting } = await import("./live-sheet.js");
-          const found = await applyLiveCasting(sheet, entity, combatantId);
+          const found = await Promise.race([
+            applyLiveCasting(sheet, entity, id),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timed out after 25s")), 25_000)),
+          ]);
           liveFocus += found;
           sheet.details = { ...(sheet.details as Json | undefined), liveCasting: `ok focus=${found}` };
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           sheet.details = { ...(sheet.details as Json | undefined), liveCasting: message };
-          console.error(`[wgui-mcp] live casting ${combatantId} failed`, message);
+          console.error(`[wgui-mcp] live casting ${id} failed`, message);
         }
       }
       console.error(`[wgui-mcp] encounter ${record.encounterId} combatants=${record.combatants.length} abilityIds=${blockIds.size} resolved=${blocks.length} custom=${customAbilities} focus=${focusSpells} liveFocus=${liveFocus} spellIds=${spellIds.size} spells=${spellRows.length}`);

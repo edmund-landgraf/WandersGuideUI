@@ -49,8 +49,8 @@ export function registerEncounterTool(
   );
 }
 
-async function encounter(userId: string, campaignId: number, encounterId: number) {
-  return getEncounterReader().loadEncounter(userId, campaignId, encounterId);
+async function encounter(userId: string, campaignId: number, encounterId: number, combatantId?: string) {
+  return getEncounterReader().loadEncounter(userId, campaignId, encounterId, combatantId);
 }
 
 function sheetOf(record: EncounterRecord, combatantId: string) {
@@ -164,7 +164,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     description: "Current HP, defenses, senses, speeds, and ability modifiers.",
     inputSchema: { ...ids, combatantId: z.string() },
   }, async (args, uid) => {
-    const found = await one(uid, args);
+    const found = await one(uid, args, true);
     if (!found) return notFound("Encounter not found.");
     if ("missing" in found) return notFound("Combatant not found.");
     const { row, sheet } = found;
@@ -254,7 +254,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     description: "Tradition, rank, and spent slots from the encounter.",
     inputSchema: { ...ids, combatantId: z.string() },
   }, async (args, uid) => {
-    const found = await one(uid, args);
+    const found = await one(uid, args, true);
     if (!found) return notFound("Encounter not found.");
     if ("missing" in found) return notFound("Combatant not found.");
     return textResult("Spells.", { spells: found.sheet.spells, liveCasting: (found.sheet.details as { liveCasting?: string } | undefined)?.liveCasting ?? null });
@@ -305,8 +305,8 @@ function summary(row: EncounterRecord["combatants"][number]) {
   };
 }
 
-async function one(userId: string, args: Record<string, unknown>) {
-  const record = await encounter(userId, Number(args.campaignId), Number(args.encounterId));
+async function one(userId: string, args: Record<string, unknown>, live = false) {
+  const record = await encounter(userId, Number(args.campaignId), Number(args.encounterId), live ? String(args.combatantId) : undefined);
   if (!record) return null;
   const found = sheetOf(record, String(args.combatantId));
   if (!found) return { missing: true as const };
