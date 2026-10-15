@@ -5950,7 +5950,7 @@ function normalizeArtLink(raw: string): string {
 
 function probeArtImage(url: string, referrerPolicy: ReferrerPolicy): Promise<boolean> {
   return new Promise((resolve) => {
-    const image = new Image();
+    const image = document.createElement('img');
     image.referrerPolicy = referrerPolicy;
     image.onload = () => resolve(image.naturalWidth > 0);
     image.onerror = () => resolve(false);
