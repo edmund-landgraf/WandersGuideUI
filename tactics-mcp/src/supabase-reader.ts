@@ -144,6 +144,8 @@ function collectFocusIds(value: unknown, depth: number, out: Set<number>) {
   }
   for (const child of Object.values(value as object)) collectFocusIds(child, depth + 1, out);
 }
+
+function spellIdsOf(entity: Json) {
   const spells = entity.spells as Json | undefined;
   const list = Array.isArray(spells?.list) ? (spells.list as Json[]) : [];
   const innate = Array.isArray(spells?.innate_casts) ? (spells.innate_casts as Json[]) : [];
