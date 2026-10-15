@@ -86,7 +86,10 @@ export async function loadTacticsBundle(campaignId: number, encounterId: number,
       reflex: status.reflex,
       will: status.will,
       speedFeet: status.speed,
-      description: data.details && 'description' in data.details ? data.details.description : undefined,
+      description:
+        data.details && 'description' in data.details && typeof data.details.description === 'string'
+          ? data.details.description
+          : undefined,
       abilities: abilities.map((ability) =>
         parseAbility({
           id: ability.id,
