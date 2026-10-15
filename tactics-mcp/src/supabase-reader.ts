@@ -83,7 +83,10 @@ function chosenFrom(entity: Json) {
       const key = typeof row.id === "string" ? Object.keys(selections).find((item) => item === row.id || item.endsWith(row.id as string)) : undefined;
       const selected = key ? num(selections[key]) : undefined;
       if (data?.optionType === "ABILITY_BLOCK" && selected) blockIds.add(selected);
-      if (data?.optionType === "SPELL" && spellData?.type === "FOCUS") addFocus(selected, spellData.rank, "focus");
+      const sourceName = typeof spellData?.castingSource === "string" ? spellData.castingSource : "";
+      const title = typeof data?.title === "string" ? data.title : "";
+      const focusSelect = String(spellData?.type ?? "").toUpperCase() === "FOCUS" || sourceName.toLowerCase().includes("focus") || title.toLowerCase().includes("focus");
+      if (data?.optionType === "SPELL" && focusSelect) addFocus(selected, spellData?.rank, "focus");
       if (data?.optionType === "SPELL") {
         for (const option of options) {
           if (!option || typeof option !== "object") continue;
@@ -500,11 +503,25 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
     }
     const classRow = (entity.details as Json | undefined)?.class as Json | undefined;
     const selections = ((entity.operation_data as Json | undefined)?.selections ?? {}) as Record<string, string>;
+    const operations = Array.isArray(classRow?.operations) ? (classRow.operations as Json[]) : [];
     sheet.details = {
       reader: "focus-scan",
       classId: num(classRow?.id) ?? null,
       className: typeof classRow?.name === "string" ? classRow.name : null,
-      classOperations: Array.isArray(classRow?.operations) ? classRow.operations.length : 0,
+      classOperations: operations.length,
+      selects: operations.filter((op) => op.type === "select").map((op) => {
+        const data = op.data as Json | undefined;
+        const filters = data?.optionsFilters as Json | undefined;
+        const spellData = filters?.spellData as Json | undefined;
+        return {
+          id: typeof op.id === "string" ? op.id : null,
+          optionType: data?.optionType ?? null,
+          mode: data?.modeType ?? null,
+          title: data?.title ?? null,
+          spellType: spellData?.type ?? null,
+          castingSource: spellData?.castingSource ?? null,
+        };
+      }),
       selectionCount: Object.keys(selections).length,
       blocksWalked: seenBlocks.size,
       focusSpellIds: [...scanned].slice(0, 30),
