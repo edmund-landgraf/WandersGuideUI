@@ -14,6 +14,8 @@ const manifestForPlugin: Partial<VitePWAOptions> = {
     maximumFileSizeToCacheInBytes: 15 * 1024 * 1024, // 15 MiB
     navigateFallbackDenylist: [
       /^\/auth\//,
+      /^\/oauth\//,
+      /^\/\.well-known\//,
       /^\/rest\//,
       /^\/functions\//,
       /^\/storage\//,
