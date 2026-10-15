@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
-import { allowedChatGptRedirect, consumeCode, issueCode, rememberLogin, takeLogin } from "./oauth.js";
+import { allowedChatGptRedirect, consumeCode, gotrueChallenge, issueCode, rememberLogin, takeLogin } from "./oauth.js";
 import { createTacticsMcpServer } from "./server.js";
 import { listTokens, mintToken, resolveBearer, revokeToken } from "./tokens.js";
 
@@ -92,11 +92,45 @@ function supabaseConfigured() {
   return Boolean(process.env.SUPABASE_URL?.trim() && process.env.SUPABASE_ANON_KEY?.trim());
 }
 
-function providerStartUrl(origin: string, provider: string) {
+function providerStartUrl(origin: string, provider: string, verifier: string) {
   const supabaseUrl = process.env.SUPABASE_URL?.trim().replace(/\/$/, "");
   if (!supabaseUrl) return null;
   const redirectTo = `${origin}/oauth/mcp/callback`;
-  return `${supabaseUrl}/auth/v1/authorize?provider=${encodeURIComponent(provider)}&redirect_to=${encodeURIComponent(redirectTo)}`;
+  const challenge = gotrueChallenge(verifier);
+  return `${supabaseUrl}/auth/v1/authorize?provider=${encodeURIComponent(provider)}&redirect_to=${encodeURIComponent(redirectTo)}&code_challenge=${encodeURIComponent(challenge)}&code_challenge_method=S256`;
+}
+
+async function readBody(req: IncomingMessage) {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > MCP_BODY_BYTES) throw new Error("PAYLOAD_TOO_LARGE");
+    chunks.push(buffer);
+  }
+  if (!chunks.length) return undefined;
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  if (!raw) return undefined;
+  const type = req.headers["content-type"] ?? "";
+  if (type.includes("application/x-www-form-urlencoded")) {
+    return Object.fromEntries(new URLSearchParams(raw)) as Record<string, unknown>;
+  }
+  return JSON.parse(raw) as Record<string, unknown>;
+}
+
+async function exchangeGotrueCode(authCode: string, verifier: string) {
+  const supabaseUrl = process.env.SUPABASE_URL?.trim().replace(/\/$/, "");
+  const anon = process.env.SUPABASE_ANON_KEY?.trim();
+  if (!supabaseUrl || !anon) return null;
+  const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=pkce`, {
+    method: "POST",
+    headers: { apikey: anon, "content-type": "application/json" },
+    body: JSON.stringify({ auth_code: authCode, code_verifier: verifier }),
+  });
+  if (!response.ok) return null;
+  const body = (await response.json()) as { access_token?: string };
+  return body.access_token ?? null;
 }
 
 async function supabaseUser(accessToken: string) {
@@ -203,11 +237,11 @@ export function startTacticsHttp() {
             sendJson(res, 500, { error: "Sign-in is not configured" });
             return;
           }
-          const loginId = rememberLogin({ state, challenge, redirectUri });
-          const cookie = `wgui_mcp_login=${encodeURIComponent(loginId)}; HttpOnly; Path=/oauth/mcp; Max-Age=600; SameSite=Lax`;
+          const login = rememberLogin({ state, challenge, redirectUri });
+          const cookie = `wgui_mcp_login=${encodeURIComponent(login.id)}; HttpOnly; Path=/oauth/mcp; Max-Age=600; Secure; SameSite=Lax`;
           const provider = query.get("provider") ?? "";
           if ((LOGIN_PROVIDERS as readonly string[]).includes(provider)) {
-            const start = providerStartUrl(issuer(req), provider);
+            const start = providerStartUrl(issuer(req), provider, login.gotrueVerifier);
             res.writeHead(302, { Location: start ?? "/", "Set-Cookie": cookie });
             res.end();
             return;
@@ -225,10 +259,11 @@ export function startTacticsHttp() {
         if (path === "/oauth/mcp/callback" && req.method === "GET") {
           res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
           res.end(`<!doctype html><meta charset="utf-8"><title>Signing in</title><p>Finishing sign-in…</p><script>
+const query = new URLSearchParams(location.search);
 const hash = new URLSearchParams(location.hash.slice(1));
-const accessToken = hash.get("access_token");
-if (!accessToken) { document.body.textContent = "Sign-in did not return a session."; }
-else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ access_token: accessToken }) }).then(async (response) => {
+const payload = query.get("code") ? { code: query.get("code") } : hash.get("access_token") ? { access_token: hash.get("access_token") } : null;
+if (!payload) { document.body.textContent = "Sign-in did not return a session."; }
+else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) }).then(async (response) => {
   const data = await response.json().catch(() => ({}));
   if (response.ok && data.redirect) location.href = data.redirect;
   else document.body.textContent = "Could not finish sign-in.";
@@ -238,8 +273,9 @@ else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "
         }
         if (path === "/oauth/mcp/callback" && req.method === "POST") {
           const body = await readJson(req);
-          const accessToken = typeof body?.access_token === "string" ? body.access_token : "";
           const pending = takeLogin(readCookie(req, "wgui_mcp_login"));
+          const fromCode = pending && typeof body?.code === "string" ? await exchangeGotrueCode(body.code, pending.gotrueVerifier) : null;
+          const accessToken = fromCode || (typeof body?.access_token === "string" ? body.access_token : "");
           const userId = accessToken ? await supabaseUser(accessToken) : null;
           if (!pending || !userId) {
             sendJson(res, 400, { error: "invalid_grant" });
@@ -271,13 +307,13 @@ else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "
         }
         if (req.method === "POST" && path === "/oauth/mcp/token") {
           // The token endpoint accepts a code and PKCE verifier. It does not read a session.
-          const body = await readJson(req);
+          const body = await readBody(req);
           const code = typeof body?.code === "string" ? body.code : "";
           const verifier = typeof body?.code_verifier === "string" ? body.code_verifier : "";
           const redirectUri = typeof body?.redirect_uri === "string" ? body.redirect_uri : "";
           const userId = consumeCode({ code, verifier, redirectUri });
           if (!userId) {
-            sendJson(res, 400, { error: "INVALID_GRANT" });
+            sendJson(res, 400, { error: "invalid_grant" });
             return;
           }
           const minted = mintToken({ userId, label: "OAuth" });

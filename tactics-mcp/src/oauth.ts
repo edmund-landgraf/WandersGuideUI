@@ -17,15 +17,21 @@ type PendingLogin = {
   state: string;
   challenge: string;
   redirectUri: string;
+  gotrueVerifier: string;
   expiresAt: number;
 };
 
 const pending = new Map<string, PendingLogin>();
 
-export function rememberLogin(row: Omit<PendingLogin, "expiresAt">) {
+export function rememberLogin(row: Omit<PendingLogin, "expiresAt" | "gotrueVerifier">) {
   const id = randomBytes(16).toString("base64url");
-  pending.set(id, { ...row, expiresAt: Date.now() + 10 * 60_000 });
-  return id;
+  const gotrueVerifier = randomBytes(32).toString("base64url");
+  pending.set(id, { ...row, gotrueVerifier, expiresAt: Date.now() + 10 * 60_000 });
+  return { id, gotrueVerifier };
+}
+
+export function gotrueChallenge(verifier: string) {
+  return createHash("sha256").update(verifier).digest("base64url");
 }
 
 export function takeLogin(id: string) {
