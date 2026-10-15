@@ -591,14 +591,21 @@ export function createSupabaseReader(): EncounterReader {
       applyCatalog(record, entities, blocks, spellRows);
       let liveFocus = 0;
       for (const [combatantId, entity] of Object.entries(entities)) {
-        if (!entity.user_id || !entity.created_at) continue;
         const sheet = record.sheets[combatantId];
         if (!sheet) continue;
+        if (!entity.user_id || !entity.created_at) {
+          sheet.details = { ...(sheet.details as Json | undefined), liveCasting: "skipped: character row has no user_id or created_at" };
+          continue;
+        }
         try {
           const { applyLiveCasting } = await import("./live-sheet.js");
-          liveFocus += await applyLiveCasting(sheet, entity, combatantId);
+          const found = await applyLiveCasting(sheet, entity, combatantId);
+          liveFocus += found;
+          sheet.details = { ...(sheet.details as Json | undefined), liveCasting: `ok focus=${found}` };
         } catch (error) {
-          console.error(`[wgui-mcp] live casting ${combatantId} failed`, error instanceof Error ? error.message : error);
+          const message = error instanceof Error ? error.message : String(error);
+          sheet.details = { ...(sheet.details as Json | undefined), liveCasting: message };
+          console.error(`[wgui-mcp] live casting ${combatantId} failed`, message);
         }
       }
       console.error(`[wgui-mcp] encounter ${record.encounterId} combatants=${record.combatants.length} abilityIds=${blockIds.size} resolved=${blocks.length} custom=${customAbilities} focus=${focusSpells} liveFocus=${liveFocus} spellIds=${spellIds.size} spells=${spellRows.length}`);

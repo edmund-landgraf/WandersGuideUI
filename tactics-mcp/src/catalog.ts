@@ -257,7 +257,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     const found = await one(uid, args);
     if (!found) return notFound("Encounter not found.");
     if ("missing" in found) return notFound("Combatant not found.");
-    return textResult("Spells.", { spells: found.sheet.spells });
+    return textResult("Spells.", { spells: found.sheet.spells, liveCasting: (found.sheet.details as { liveCasting?: string } | undefined)?.liveCasting ?? null });
   }, userId);
 
   registerEncounterTool(server, "get_character", {
