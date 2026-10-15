@@ -2,8 +2,6 @@ import { setEncounterReader, type CombatantRow, type EncounterReader, type Encou
 
 type Json = Record<string, unknown>;
 
-const sessions = new Map<string, { token: string; until: number }>();
-
 function env(name: string) {
   return process.env[name]?.trim() ?? "";
 }
@@ -29,48 +27,41 @@ async function adminUser(userId: string) {
   return (await response.json()) as { id?: string; email?: string | null };
 }
 
-async function userAccessToken(userId: string) {
-  const cached = sessions.get(userId);
-  if (cached && cached.until > Date.now()) return cached.token;
-  const user = await adminUser(userId);
-  if (!user.email) throw new Error("EXTENSION");
+async function rest(path: string): Promise<Json[]> {
   const service = env("SUPABASE_SERVICE_ROLE_KEY");
-  const link = await fetch(`${baseUrl()}/auth/v1/admin/generate_link`, {
-    method: "POST",
-    headers: { apikey: service, Authorization: `Bearer ${service}`, "content-type": "application/json" },
-    body: JSON.stringify({ type: "magiclink", email: user.email }),
+  const response = await fetch(`${baseUrl()}/rest/v1/${path}`, {
+    headers: { apikey: service, Authorization: `Bearer ${service}`, Accept: "application/json" },
   });
-  if (!link.ok) throw new Error("EXTENSION");
-  const generated = (await link.json()) as { hashed_token?: string };
-  if (!generated.hashed_token) throw new Error("EXTENSION");
-  const verified = await fetch(`${baseUrl()}/auth/v1/verify`, {
-    method: "POST",
-    headers: { apikey: env("SUPABASE_ANON_KEY"), "content-type": "application/json" },
-    body: JSON.stringify({ type: "magiclink", token_hash: generated.hashed_token }),
-  });
-  if (!verified.ok) throw new Error("EXTENSION");
-  const session = (await verified.json()) as { access_token?: string };
-  if (!session.access_token) throw new Error("EXTENSION");
-  sessions.set(userId, { token: session.access_token, until: Date.now() + 45 * 60_000 });
-  return session.access_token;
+  if (!response.ok) throw new Error("EXTENSION");
+  const body = (await response.json()) as unknown;
+  return Array.isArray(body) ? (body as Json[]) : [];
 }
 
-async function extension(userId: string, name: string, body: Json): Promise<unknown[] | null> {
-  const token = await userAccessToken(userId);
-  const response = await fetch(`${baseUrl()}/functions/v1/${name}`, {
-    method: "POST",
-    headers: {
-      apikey: env("SUPABASE_ANON_KEY"),
-      Authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
+async function campaignAccess(userId: string, campaignId: number) {
+  const campaigns = await rest(`campaign?id=eq.${campaignId}&select=id,user_id`);
+  const campaign = campaigns[0];
+  if (!campaign) return null;
+  const mine = await rest(`character?campaign_id=eq.${campaignId}&user_id=eq.${userId}&select=id`);
+  const isGm = String(campaign.user_id ?? "").trim().toLowerCase() === userId.trim().toLowerCase();
+  if (!isGm && mine.length === 0) return null;
+  return { isGm, characterIds: new Set(mine.map((row) => num(row.id)).filter((id): id is number => id !== undefined)) };
+}
+
+function includesCharacter(encounter: Json, characterIds: Set<number>) {
+  const list = ((encounter.combatants as Json | undefined)?.list as Json[] | undefined) ?? [];
+  return list.some((combatant) => {
+    if (combatant.type && combatant.type !== "CHARACTER") return false;
+    const id = num(combatant.character) ?? num((combatant.data as Json | undefined)?.id);
+    return id !== undefined && characterIds.has(id);
   });
-  if (response.status === 401 || response.status === 403 || response.status === 404) return null;
-  if (!response.ok) throw new Error("EXTENSION");
-  const payload = (await response.json()) as { status?: string; data?: unknown };
-  if (payload.status !== "success" || !Array.isArray(payload.data)) throw new Error("EXTENSION");
-  return payload.data;
+}
+
+async function encountersFor(userId: string, campaignId: number, encounterId?: number) {
+  const access = await campaignAccess(userId, campaignId);
+  if (!access) return [];
+  const filter = encounterId === undefined ? "" : `&id=eq.${encounterId}`;
+  const rows = await rest(`encounter?campaign_id=eq.${campaignId}${filter}&select=*&order=id.asc`);
+  return access.isGm ? rows : rows.filter((row) => includesCharacter(row, access.characterIds));
 }
 
 function entityOf(combatant: Json): Json {
@@ -154,10 +145,8 @@ export function createSupabaseReader(): EncounterReader {
       return { id: user.id ?? userId, email: user.email ?? null, name: null };
     },
     async listEncounters(userId, campaignId) {
-      const rows = await extension(userId, "wgui-ext-find-encounter", { campaign_id: campaignId });
-      if (!rows) return [];
-      return rows.map((row) => {
-        const encounter = row as Json;
+      const rows = await encountersFor(userId, campaignId);
+      return rows.map((encounter) => {
         const list = ((encounter.combatants as Json | undefined)?.list as unknown[] | undefined) ?? [];
         return {
           id: num(encounter.id) ?? 0,
@@ -167,13 +156,10 @@ export function createSupabaseReader(): EncounterReader {
       });
     },
     async loadEncounter(userId, campaignId, encounterId) {
-      const [rows, characters] = await Promise.all([
-        extension(userId, "wgui-ext-find-encounter", { campaign_id: campaignId, id: encounterId }),
-        extension(userId, "wgui-ext-find-campaign-characters", { campaign_id: campaignId }),
-      ]);
-      if (!rows?.length) return null;
-      const match = rows.find((row) => num((row as Json).id) === encounterId) ?? rows[0];
-      return mapEncounter(match as Json, (characters ?? []) as Json[]);
+      const rows = await encountersFor(userId, campaignId, encounterId);
+      if (!rows.length) return null;
+      const characters = await rest(`character?campaign_id=eq.${campaignId}&select=*`);
+      return mapEncounter(rows[0], characters);
     },
   };
 }
