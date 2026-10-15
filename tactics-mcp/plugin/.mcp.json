@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "wanderers-guide": {
+      "type": "streamable-http",
+      "url": "https://wgui.wandersguide.site/mcp"
+    }
+  }
+}

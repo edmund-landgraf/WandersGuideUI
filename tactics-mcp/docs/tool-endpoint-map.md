@@ -68,3 +68,23 @@ There is no edge function per sheet tab. After the fetch, dispatch picks the sou
 | Kind mismatch (`get_monster` on a PC, `get_character` on a creature) | `NOT_FOUND` from the kind check, before any second fetch |
 | Extension succeeded and the campaign has no encounters | Empty list, not an error |
 | Too many in-flight `/mcp` calls | `RATE_LIMITED` |
+
+## Next batch: sheet tabs
+
+Still the same two calls. No new endpoint. After `wgui-ext-find-encounter` and, for a character, `wgui-ext-find-campaign-characters`, run the same builders the GM page uses. A creature never calls the character function.
+
+The combatant id in every tool is the encounter row `_id`.
+
+| Tool | Builder | Source |
+| --- | --- | --- |
+| `get_stat_block` | `calculateEntityStatus` | Encounter combatant row. Current HP and conditions stay on that row. AC, saves, perception, speeds, senses, resistances, weaknesses, immunities, and ability modifiers come from the builder. |
+| `list_ability_groups` | `loadEntitySkillsActions` | Group id, label, and action count. Groups with no actions are omitted. |
+| `get_abilities` | `loadEntitySkillsActions` | One group: `weapon-attacks`, `feats`, `basic-actions`, `skill-actions`, `speciality-basics`, `exploration-activities`, `downtime-activities`. Match by id or label. |
+| `get_feats` | `loadEntityAbilities` | Feats only, sections `class`, `ancestry`, `general`, `other`. Class features are not in this list. |
+| `get_class_features` | `loadEntityAbilities` | Class features and physical features, name and level. |
+| `get_skills` | `loadEntitySkillsActions` | Skill name, modifier, and proficiency. Skip the empty lore placeholder. |
+| `get_spells` | `loadEntitySpells` | Tradition, rank, name, spent, and max from the character or creature spell slots. |
+| `get_character` | character document | Inventory, notes, details, and log. Kind must be `character`. |
+| `get_monster` | creature on the encounter row | Inventory, notes, details, and log. Kind must be `creature`. |
+
+`get_round_log` reads `meta_data.initiative_log` on the encounter. `get_dice_log` reads the encounter dice log. Neither needs a second function.

@@ -1,0 +1,23 @@
+{
+  "apps": "./.app.json",
+  "author": {
+    "name": "Edmund Landgraf",
+    "url": "https://wgui.wandersguide.site"
+  },
+  "description": "Read-only encounter and character data for the GM.",
+  "interface": {
+    "capabilities": [],
+    "category": "Other",
+    "defaultPrompt": null,
+    "developerName": "Edmund Landgraf",
+    "displayName": "Wanderer's Guide",
+    "longDescription": "Read-only encounter and character data for the GM.",
+    "shortDescription": "Read-only encounter and character data for the GM.",
+    "websiteURL": "https://wgui.wandersguide.site",
+    "brandColor": "#359fdf",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/logo.png"
+  },
+  "name": "dev-6ad10cdde29c8191991c6db6e765b918",
+  "version": "1.1.0"
+}

@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { registerCatalog } from "./catalog.js";
 
-export const TACTICS_MCP_VERSION = "0.2.0";
+export const TACTICS_MCP_VERSION = "1.0.0";
 
 const READ_TOOLS = new Set([
   "get_profile",
@@ -28,8 +28,15 @@ export function scopeForTool(name: string) {
   return READ_TOOLS.has(name) ? "read" : null;
 }
 
-export function createTacticsMcpServer(userId: () => string, scopes: () => string[]) {
-  const server = new McpServer({ name: "wgui-readonly", version: TACTICS_MCP_VERSION });
+export function createTacticsMcpServer(userId: () => string, scopes: () => string[], origin: string) {
+  const server = new McpServer({
+    name: "wgui-readonly",
+    title: "Wanderer's Guide",
+    version: TACTICS_MCP_VERSION,
+    description: "Read-only encounter and character data for the GM.",
+    websiteUrl: "https://wgui.wandersguide.site",
+    icons: [{ src: `${origin}/icon.png`, mimeType: "image/png", sizes: ["512x512"] }],
+  });
   const register = server.registerTool.bind(server);
   server.registerTool = ((name: string, config: unknown, handler: (...args: never[]) => unknown) => {
     return register(name, config as never, (async (...args: never[]) => {

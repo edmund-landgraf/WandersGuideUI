@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
@@ -14,6 +17,7 @@ const REQUEST_TIMEOUT_MS = 30_000;
 
 const PUBLIC_PATHS = new Set([
   "/health",
+  "/icon.png",
   "/.well-known/oauth-protected-resource",
   "/.well-known/oauth-authorization-server",
   "/oauth/mcp/authorize",
@@ -207,6 +211,17 @@ export function startTacticsHttp() {
         }
         if (req.method === "GET" && path === "/health") {
           sendJson(res, 200, { ok: true, transport: "streamable-http", surface: "wgui-readonly" });
+          return;
+        }
+        if (req.method === "GET" && path === "/icon.png") {
+          const icon = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../assets/icon.png"));
+          res.writeHead(200, {
+            "Content-Type": "image/png",
+            "Content-Length": icon.length,
+            "Cache-Control": "public, max-age=86400",
+            "Access-Control-Allow-Origin": "*",
+          });
+          res.end(icon);
           return;
         }
         if (req.method === "GET" && path === "/.well-known/oauth-protected-resource") {
@@ -458,7 +473,7 @@ async function handleMcp(req: IncomingMessage, res: ServerResponse, parsedBody: 
     sendJson(res, 400, { error: "Missing mcp-session-id" });
     return;
   }
-  const mcp = createTacticsMcpServer(() => userId, () => scopes);
+  const mcp = createTacticsMcpServer(() => userId, () => scopes, issuer(req));
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),
     onsessioninitialized: (id) => {

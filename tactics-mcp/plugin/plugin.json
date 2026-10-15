@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "dev-6ad10cdde29c8191991c6db6e765b918",
+  "version": "1.1.0",
+  "description": "Read-only encounter and character data for the GM.",
+  "author": {
+    "name": "Edmund Landgraf",
+    "url": "https://wgui.wandersguide.site"
+  },
+  "homepage": "https://wgui.wandersguide.site"
+}
