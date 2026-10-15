@@ -48,18 +48,45 @@ async function contentRows(name: string, ids: number[]) {
   return Array.isArray(data) ? (data as Json[]) : [];
 }
 
-function collectBlockIds(value: unknown, into: Set<number>, depth = 0) {
-  if (depth > 8 || !value || typeof value !== "object") return;
-  if (Array.isArray(value)) {
-    for (const item of value) collectBlockIds(item, into, depth + 1);
-    return;
+function chosenFrom(entity: Json) {
+  const selections = ((entity.operation_data as Json | undefined)?.selections ?? {}) as Record<string, string>;
+  const blockIds = new Set<number>();
+  const custom: { name: string; description?: string }[] = [];
+  const seen = new Set<string>();
+  function walk(value: unknown, active: boolean, depth: number) {
+    if (!active || depth > 12 || !value || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, true, depth + 1);
+      return;
+    }
+    const row = value as Json;
+    if (row.type === "select") {
+      const data = row.data as Json | undefined;
+      const options = Array.isArray(data?.optionsPredefined) ? data.optionsPredefined : [];
+      const choice = typeof row.id === "string" ? selections[row.id] : undefined;
+      for (const option of options) {
+        if (!option || typeof option !== "object") continue;
+        const picked = option as Json;
+        walk(picked, typeof picked.id === "string" && picked.id === choice, depth + 1);
+      }
+      return;
+    }
+    if (row.type === "CUSTOM" && typeof row.title === "string" && !seen.has(row.title)) {
+      seen.add(row.title);
+      custom.push({ name: row.title, description: typeof row.description === "string" ? row.description : undefined });
+    }
+    if (row.type === "giveAbilityBlock") {
+      const id = num((row.data as Json | undefined)?.abilityBlockId);
+      if (id && id > 0) blockIds.add(id);
+    }
+    for (const child of Object.values(row)) walk(child, true, depth + 1);
   }
-  const row = value as Json;
-  if (row.type === "giveAbilityBlock") {
-    const id = num((row.data as Json | undefined)?.abilityBlockId);
-    if (id && id > 0) into.add(id);
+  walk(entity.custom_operations, true, 0);
+  const details = entity.details as Json | undefined;
+  for (const key of ["class", "class_2", "ancestry", "background", "class_archetype", "class_archetype_2"]) {
+    walk((details?.[key] as Json | undefined)?.operations, true, 0);
   }
-  for (const child of Object.values(row)) collectBlockIds(child, into, depth + 1);
+  return { blockIds, custom };
 }
 
 function spellIdsOf(entity: Json) {
@@ -245,8 +272,8 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
   for (const [id, entity] of Object.entries(entities)) {
     const sheet = record.sheets[id];
     if (!sheet) continue;
-    const wanted = new Set<number>();
-    collectBlockIds(entity, wanted);
+    const chosen = chosenFrom(entity);
+    const wanted = chosen.blockIds;
     const resolved = [...wanted].flatMap((blockId) => {
       const row = blockById.get(blockId);
       if (!row || typeof row.name !== "string") return [];
@@ -268,16 +295,22 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
         actions: attacks.map(({ name, actions, description }) => ({ name, actions, description })),
       });
     }
-    if (feats.length) {
-      sheet.groups.push({
-        id: "feats",
-        label: "Feats (with Actions)",
-        actions: feats.map(({ name, actions, description }) => ({ name, actions, description })),
-      });
-      sheet.feats = feats.map((ability) => ({ section: "other" as const, name: ability.name, level: ability.level, hasAction: ability.actions !== null }));
+    const customActions = chosen.custom.map((ability) => ({ name: ability.name, actions: null, description: ability.description }));
+    const featActions = [
+      ...feats.map(({ name, actions, description }) => ({ name, actions, description })),
+      ...customActions,
+    ];
+    if (featActions.length) {
+      const existing = sheet.groups.find((group) => group.id === "feats");
+      if (existing) existing.actions.push(...featActions.filter((ability) => !existing.actions.some((item) => item.name === ability.name)));
+      else sheet.groups.push({ id: "feats", label: "Feats (with Actions)", actions: featActions });
+      sheet.feats = featActions.map((ability) => ({ section: "other" as const, name: ability.name, hasAction: ability.actions !== null }));
     }
-    if (features.length) {
-      sheet.classFeatures = features.map((ability) => ({ name: ability.name, level: ability.level }));
+    if (features.length || chosen.custom.length) {
+      sheet.classFeatures = [
+        ...features.map((ability) => ({ name: ability.name, level: ability.level })),
+        ...chosen.custom.map((ability) => ({ name: ability.name })),
+      ];
     }
     const spellBook = entity.spells as Json | undefined;
     const entries = Array.isArray(spellBook?.list) ? (spellBook.list as Json[]) : [];
@@ -287,12 +320,14 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
       const name = typeof spell?.name === "string" ? spell.name : "";
       if (!name) return [];
       const rank = num(entry.rank);
-      const spent = slots.filter((slot) => num(slot.spell_id) === num(entry.spell_id) && slot.exhausted === true).length;
-      return [{ name, rank, spent: spent || undefined }];
+      const mine = slots.filter((slot) => num(slot.spell_id) === num(entry.spell_id));
+      const spent = mine.filter((slot) => slot.exhausted === true).length;
+      return [{ name, rank, spent: spent || undefined, prepared: mine.length > 0 }];
     });
     sheet.details = {
       referencedAbilities: wanted.size,
       resolvedAbilities: resolved.length,
+      customAbilities: chosen.custom.length,
       spellIds: spellIdsOf(entity).length,
     };
   }
@@ -353,8 +388,11 @@ export function createSupabaseReader(): EncounterReader {
       const entities = entitiesFor(rows[0], characters);
       const blockIds = new Set<number>();
       const spellIds = new Set<number>();
+      let customAbilities = 0;
       for (const entity of Object.values(entities)) {
-        collectBlockIds(entity, blockIds);
+        const chosen = chosenFrom(entity);
+        customAbilities += chosen.custom.length;
+        for (const id of chosen.blockIds) blockIds.add(id);
         for (const id of spellIdsOf(entity)) spellIds.add(id);
       }
       const [blocks, spellRows] = await Promise.all([
@@ -362,7 +400,7 @@ export function createSupabaseReader(): EncounterReader {
         contentRows("find-spell", [...spellIds]),
       ]);
       applyCatalog(record, entities, blocks, spellRows);
-      console.error(`[wgui-mcp] encounter ${record.encounterId} combatants=${record.combatants.length} abilityIds=${blockIds.size} resolved=${blocks.length} spellIds=${spellIds.size} spells=${spellRows.length}`);
+      console.error(`[wgui-mcp] encounter ${record.encounterId} combatants=${record.combatants.length} abilityIds=${blockIds.size} resolved=${blocks.length} custom=${customAbilities} spellIds=${spellIds.size} spells=${spellRows.length}`);
       return record;
     },
   };
