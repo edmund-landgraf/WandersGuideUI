@@ -10,7 +10,7 @@ import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
 import { phase1Request, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
 import { isEnemyCreature, playerAllyRoundLog, playerEnemyLabel, playerVisibleCombatants } from './phase1-player-combat';
-import { TacticsLaunchButton } from './tactics/TacticsLaunch';
+import { TacticsPublisher } from './tactics/TacticsPublisher';
 import { loadEntityAbilities, type Phase1Ability } from './phase1-abilities';
 import { readStoredDefenses } from './phase1-creature-defenses';
 import { calculateEntityStatus, type Phase1CreatureStatus } from './phase1-stats';
@@ -4828,7 +4828,13 @@ function EncounterHeader({ encounter, combatants, count, isGm, campaignId, noteL
             <button className='toolbar-button' disabled={!canClearInitiative} title={!isGm ? 'GM only' : canClearInitiative ? 'Clear initiative and restore roster order' : 'No initiative to clear'} onClick={onClearInitiative}><Eraser size={15} /> Clear init</button>
             <button className='toolbar-button' disabled={!canMaxStats} title={!isGm ? 'GM only' : canMaxStats ? 'Restore HP, spells, focus, wands/staves, and other encounter consumables' : count === 0 ? 'Add combatants first' : 'Wait for the roster to finish saving'} onClick={onMaxStats}><HeartPulse size={15} /> Max stats</button>
             <button className='toolbar-button' disabled={!canReset} title={!isGm ? 'GM only' : canReset ? 'Reset HP, temp HP, conditions, spells, initiative, and logs' : 'Wait for the roster to finish saving'} onClick={onReset}><RotateCcw size={15} /> Reset</button>
-            {isGm && encounter && <TacticsLaunchButton campaignId={campaignId ?? 0} encounterId={encounter.id} />}
+            {isGm && encounter && (
+              <TacticsPublisher
+                campaignId={campaignId ?? 0}
+                encounterId={encounter.id}
+                revision={(encounter.combatants?.list ?? []).map((combatant) => `${combatant._id}:${combatant.initiative ?? ''}:${combatant.data?.hp_current ?? ''}:${(combatant.data?.details?.conditions ?? []).map((condition) => condition.name).join('.')}`).join('|')}
+              />
+            )}
             <button className='toolbar-button' disabled title='Available after read-only parity'><Shield size={15} /> Group check</button>
           </>
         )}
