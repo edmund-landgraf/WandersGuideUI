@@ -1,6 +1,9 @@
+import { register } from "node:module";
 import type { CombatantSheet } from "./reader.js";
 
 type Json = Record<string, unknown>;
+
+const resolverReady = Promise.resolve(register(new URL("./resolve-app-deps.mjs", import.meta.url), import.meta.url));
 
 function signed(value: string) {
   const parsed = Number.parseInt(value, 10);
@@ -8,6 +11,7 @@ function signed(value: string) {
 }
 
 export async function applyLiveCasting(sheet: CombatantSheet, character: Json, combatantId: string) {
+  await resolverReady;
   const { preparePhase1Entity } = await import("../../src/pages/phase1/phase1-entity.ts");
   const { collectEntitySpellcasting } = await import("../../src/process/content/collect-content.ts");
   const { getFinalProfValue, getFinalVariableValue } = await import("../../src/process/variables/variable-helpers.ts");
