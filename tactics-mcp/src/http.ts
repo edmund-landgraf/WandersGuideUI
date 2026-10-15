@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
-import { consumeCode, issueCode } from "./oauth.js";
+import { allowedChatGptRedirect, consumeCode, issueCode, rememberLogin, takeLogin } from "./oauth.js";
 import { createTacticsMcpServer } from "./server.js";
 import { listTokens, mintToken, resolveBearer, revokeToken } from "./tokens.js";
 
@@ -16,6 +16,7 @@ const PUBLIC_PATHS = new Set([
   "/.well-known/oauth-protected-resource",
   "/.well-known/oauth-authorization-server",
   "/oauth/mcp/authorize",
+  "/oauth/mcp/callback",
   "/oauth/mcp/token",
 ]);
 
@@ -71,7 +72,44 @@ function metadataUrl(req: IncomingMessage) {
 }
 
 function issuer(req: IncomingMessage) {
+  const configured = process.env.MCP_PUBLIC_ORIGIN?.trim().replace(/\/$/, "");
+  if (configured) return configured;
   return `http://${req.headers.host ?? "127.0.0.1:3104"}`;
+}
+
+function readCookie(req: IncomingMessage, name: string) {
+  const header = req.headers.cookie;
+  if (!header) return "";
+  for (const part of header.split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key === name) return decodeURIComponent(rest.join("="));
+  }
+  return "";
+}
+
+const LOGIN_PROVIDERS = ["google", "github", "discord"] as const;
+
+function supabaseConfigured() {
+  return Boolean(process.env.SUPABASE_URL?.trim() && process.env.SUPABASE_ANON_KEY?.trim());
+}
+
+function providerStartUrl(origin: string, provider: string) {
+  const supabaseUrl = process.env.SUPABASE_URL?.trim().replace(/\/$/, "");
+  if (!supabaseUrl) return null;
+  const redirectTo = `${origin}/oauth/mcp/callback`;
+  return `${supabaseUrl}/auth/v1/authorize?provider=${encodeURIComponent(provider)}&redirect_to=${encodeURIComponent(redirectTo)}`;
+}
+
+async function supabaseUser(accessToken: string) {
+  const supabaseUrl = process.env.SUPABASE_URL?.trim().replace(/\/$/, "");
+  const anon = process.env.SUPABASE_ANON_KEY?.trim();
+  if (!supabaseUrl || !anon) return null;
+  const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+    headers: { apikey: anon, Authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) return null;
+  const body = (await response.json()) as { id?: string };
+  return body.id ?? null;
 }
 
 function userFromDevOrBearer(req: IncomingMessage) {
@@ -144,6 +182,75 @@ export function startTacticsHttp() {
             token_endpoint_auth_methods_supported: ["none"],
             scopes_supported: ["read"],
           });
+          return;
+        }
+        if (req.method === "GET" && path === "/oauth/mcp/authorize") {
+          const query = new URL(req.url ?? "/", "http://127.0.0.1").searchParams;
+          const redirectUri = query.get("redirect_uri") ?? "";
+          const state = query.get("state") ?? "";
+          const challenge = query.get("code_challenge") ?? "";
+          if (
+            query.get("response_type") !== "code" ||
+            query.get("code_challenge_method") !== "S256" ||
+            !state ||
+            !challenge ||
+            !allowedChatGptRedirect(redirectUri) ||
+            !(query.get("scope") ?? "read").split(" ").includes("read")
+          ) {
+            sendJson(res, 400, { error: "invalid_request" });
+            return;
+          }
+          if (!supabaseConfigured()) {
+            sendJson(res, 500, { error: "Sign-in is not configured" });
+            return;
+          }
+          const loginId = rememberLogin({ state, challenge, redirectUri });
+          const cookie = `wgui_mcp_login=${encodeURIComponent(loginId)}; HttpOnly; Path=/oauth/mcp; Max-Age=600; SameSite=Lax`;
+          const provider = query.get("provider") ?? "";
+          if ((LOGIN_PROVIDERS as readonly string[]).includes(provider)) {
+            const start = providerStartUrl(issuer(req), provider);
+            res.writeHead(302, { Location: start ?? "/", "Set-Cookie": cookie });
+            res.end();
+            return;
+          }
+          const links = LOGIN_PROVIDERS.map((name) => {
+            const next = new URL(req.url ?? "/", "http://127.0.0.1");
+            next.searchParams.set("provider", name);
+            const label = name[0].toUpperCase() + name.slice(1);
+            return `<a href="${next.pathname}${next.search}">${label}</a>`;
+          }).join("");
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Set-Cookie": cookie });
+          res.end(`<!doctype html><meta charset="utf-8"><title>Sign in</title><p>Sign in to Wanderer's Guide to connect ChatGPT.</p><p>${links}</p>`);
+          return;
+        }
+        if (path === "/oauth/mcp/callback" && req.method === "GET") {
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          res.end(`<!doctype html><meta charset="utf-8"><title>Signing in</title><p>Finishing sign-in…</p><script>
+const hash = new URLSearchParams(location.hash.slice(1));
+const accessToken = hash.get("access_token");
+if (!accessToken) { document.body.textContent = "Sign-in did not return a session."; }
+else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ access_token: accessToken }) }).then(async (response) => {
+  const data = await response.json().catch(() => ({}));
+  if (response.ok && data.redirect) location.href = data.redirect;
+  else document.body.textContent = "Could not finish sign-in.";
+});
+</script>`);
+          return;
+        }
+        if (path === "/oauth/mcp/callback" && req.method === "POST") {
+          const body = await readJson(req);
+          const accessToken = typeof body?.access_token === "string" ? body.access_token : "";
+          const pending = takeLogin(readCookie(req, "wgui_mcp_login"));
+          const userId = accessToken ? await supabaseUser(accessToken) : null;
+          if (!pending || !userId) {
+            sendJson(res, 400, { error: "invalid_grant" });
+            return;
+          }
+          const code = issueCode({ userId, codeChallenge: pending.challenge, redirectUri: pending.redirectUri });
+          const dest = new URL(pending.redirectUri);
+          dest.searchParams.set("code", code);
+          dest.searchParams.set("state", pending.state);
+          sendJson(res, 200, { redirect: dest.toString() });
           return;
         }
         if (req.method === "POST" && path === "/oauth/mcp/authorize") {

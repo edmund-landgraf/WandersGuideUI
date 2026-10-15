@@ -7,6 +7,35 @@ type CodeRow = {
   expiresAt: number;
 };
 
+const CHATGPT_REDIRECT = /^https:\/\/chatgpt\.com\/connector\/oauth\/[A-Za-z0-9_-]+$/;
+
+export function allowedChatGptRedirect(value: string) {
+  return CHATGPT_REDIRECT.test(value);
+}
+
+type PendingLogin = {
+  state: string;
+  challenge: string;
+  redirectUri: string;
+  expiresAt: number;
+};
+
+const pending = new Map<string, PendingLogin>();
+
+export function rememberLogin(row: Omit<PendingLogin, "expiresAt">) {
+  const id = randomBytes(16).toString("base64url");
+  pending.set(id, { ...row, expiresAt: Date.now() + 10 * 60_000 });
+  return id;
+}
+
+export function takeLogin(id: string) {
+  const row = pending.get(id);
+  if (!row) return null;
+  pending.delete(id);
+  if (row.expiresAt <= Date.now()) return null;
+  return row;
+}
+
 const codes = new Map<string, CodeRow>();
 
 export function resetCodes() {
