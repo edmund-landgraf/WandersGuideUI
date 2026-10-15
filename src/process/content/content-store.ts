@@ -408,7 +408,14 @@ export function importFromContentPackage(packageData: ContentPackage) {
           return sourceId == null || pageSources.includes(sourceId);
         })
       : records;
-    setStoredFetch(type, { content_sources: pageSources }, list);
+    // A partial package (one creature's operation content, an export with no bestiary)
+    // must not replace a fuller catalog, and must not pin an empty list. fetchContentAll
+    // treats a stored bulk result as final, so an empty seed hides every creature until reload.
+    const existing = getStoredFetch(type, { content_sources: pageSources });
+    const existingCount = Array.isArray(existing) ? existing.length : 0;
+    if (list.length > existingCount) {
+      setStoredFetch(type, { content_sources: pageSources }, list);
+    }
   }
 }
 
@@ -523,7 +530,16 @@ export async function fetchContent<T = Record<string, any>>(
     const storedFetch = getStoredFetch(type, data);
     const storedNames = getStoredNames(type, data);
 
-    if (storedFetch) {
+    // An empty bulk catalog is not a successful fetch. Operation imports and a request
+    // that ran before sources were ready have both stored [] under the source key, and
+    // every later picker then showed "No matching creatures" without hitting the network.
+    const emptyBulkCatalog =
+      Array.isArray(storedFetch) &&
+      storedFetch.length === 0 &&
+      data.content_sources != null &&
+      data.id == null &&
+      data.name == null;
+    if (storedFetch && !emptyBulkCatalog) {
       if (storedFetch && Array.isArray(storedFetch)) {
         return storedFetch as T[];
       } else {
@@ -589,7 +605,9 @@ export async function fetchContent<T = Record<string, any>>(
       const result = rawResult
         ? (Array.isArray(rawResult) ? rawResult : [rawResult]).map((record) => validateAndWarn<T>(type, schema, record))
         : rawResult;
-      if (result && !dontStore) {
+      const emptyBulkCatalog =
+        Array.isArray(result) && result.length === 0 && data.content_sources != null && data.id == null && data.name == null;
+      if (result && !dontStore && !emptyBulkCatalog) {
         setStoredFetch(type, data, result);
         const added = setStoredIds(type, data, result);
         if (added !== true) console.error('Failed to add to id store', added, data, result);

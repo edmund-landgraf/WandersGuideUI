@@ -123,6 +123,8 @@ export function Phase1IndexPage() {
       return true;
     }
   });
+  const [campaignLayout, setCampaignLayout] = useState<CampaignLayout>(() => readCampaignLayout());
+  const [expandedOwnerFolders, setExpandedOwnerFolders] = useState<Set<string>>(() => new Set());
   const campaigns = useQuery({
     queryKey: ['phase1-campaigns', session?.user.id],
     enabled: Boolean(session?.access_token),
@@ -130,6 +132,65 @@ export function Phase1IndexPage() {
   });
 
   const ownedCampaigns = (campaigns.data ?? []).filter((campaign) => sameUserId(campaign.user_id, session?.user.id));
+  const otherOwnerIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const campaign of campaigns.data ?? []) {
+      if (campaign.user_id && !sameUserId(campaign.user_id, session?.user.id)) ids.add(campaign.user_id);
+    }
+    return [...ids].sort();
+  }, [campaigns.data, session?.user.id]);
+  const ownerProfiles = useQuery({
+    queryKey: ['phase1-campaign-owners', otherOwnerIds],
+    enabled: otherOwnerIds.length > 0,
+    queryFn: async () => {
+      const entries = await Promise.all(
+        otherOwnerIds.map(async (id) => {
+          const user = await getPublicUser(id);
+          return [id, user?.display_name?.trim() || ''] as const;
+        })
+      );
+      return Object.fromEntries(entries) as Record<string, string>;
+    },
+  });
+  const ownerEmails = useQuery({
+    queryKey: ['phase1-campaign-owner-emails', otherOwnerIds],
+    enabled: otherOwnerIds.length > 0 && Boolean(session?.access_token),
+    queryFn: async () => {
+      try {
+        const rows = await phase1Request<{ user_id: string; email: string; display_name: string }[]>(
+          'wgui-ext-campaign-owner-email',
+          { user_ids: otherOwnerIds },
+          session!.access_token
+        );
+        return Object.fromEntries(rows.map((row) => [row.user_id, { email: row.email?.trim() || '', name: row.display_name?.trim() || '' }]));
+      } catch {
+        return {} as Record<string, { email: string; name: string }>;
+      }
+    },
+  });
+  const ownerFolders = useMemo(() => {
+    const groups = new Map<string, Campaign[]>();
+    for (const campaign of campaigns.data ?? []) {
+      const key = campaign.user_id || 'unknown';
+      const members = groups.get(key) ?? [];
+      members.push(campaign);
+      groups.set(key, members);
+    }
+    return [...groups.entries()]
+      .map(([userId, members]) => {
+        const mine = sameUserId(userId, session?.user.id);
+        const profileName = ownerProfiles.data?.[userId]?.trim();
+        const lookedUp = ownerEmails.data?.[userId];
+        return {
+          key: userId,
+          name: mine ? 'Me' : profileName || lookedUp?.name || 'Another GM',
+          email: mine ? session?.user.email ?? '' : lookedUp?.email ?? '',
+          mine,
+          members: members.slice().sort((left, right) => left.name.localeCompare(right.name)),
+        };
+      })
+      .sort((left, right) => Number(right.mine) - Number(left.mine) || left.name.localeCompare(right.name));
+  }, [campaigns.data, ownerEmails.data, ownerProfiles.data, session?.user.email, session?.user.id]);
   const characters = useQuery({
     queryKey: ['phase1-characters', session?.user.id],
     enabled: Boolean(session),
@@ -262,6 +323,89 @@ export function Phase1IndexPage() {
             </button>
           </EmptyState>
         )}
+        {(campaigns.data?.length ?? 0) > 0 && (
+          <div className='mb-4 flex items-center justify-end'>
+            <div className='phase1-theme-switch stat-block-layout-switch' role='radiogroup' aria-label='Campaign list layout'>
+              {([
+                ['list', 'List'],
+                ['owner', 'By owner'],
+              ] as const).map(([id, label]) => {
+                const selected = campaignLayout === id;
+                return (
+                  <button
+                    key={id}
+                    type='button'
+                    role='radio'
+                    aria-checked={selected}
+                    className={selected ? 'is-active' : undefined}
+                    onClick={() => {
+                      persistCampaignLayout(id);
+                      setCampaignLayout(id);
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {campaignLayout === 'owner' && (campaigns.data?.length ?? 0) > 0 ? (
+          <div className='divide-y divide-p1-border border-y border-p1-border'>
+            {ownerFolders.map((folder) => {
+              const expanded = expandedOwnerFolders.has(folder.key);
+              return (
+                <div key={folder.key} className='group/owner relative'>
+                  <button
+                    type='button'
+                    className='flex w-full items-center gap-3 px-2 py-2 text-left hover:bg-p1-hover'
+                    aria-expanded={expanded}
+                    aria-label={`${expanded ? 'Collapse' : 'Expand'} ${folder.name}`}
+                    onClick={() => {
+                      setExpandedOwnerFolders((current) => {
+                        const next = new Set(current);
+                        if (next.has(folder.key)) next.delete(folder.key);
+                        else next.add(folder.key);
+                        return next;
+                      });
+                    }}
+                  >
+                    {expanded ? (
+                      <FolderOpen size={40} strokeWidth={1.25} className='shrink-0 text-p1-accent' aria-hidden />
+                    ) : (
+                      <Folder size={40} strokeWidth={1.25} className='shrink-0 text-p1-muted' aria-hidden />
+                    )}
+                    <span className='min-w-0 truncate text-base font-semibold'>{folder.name}</span>
+                    <span className='text-sm text-p1-muted'>{folder.members.length}</span>
+                  </button>
+                  {folder.email && (
+                    <span className='pointer-events-none absolute left-14 top-0 z-20 border border-p1-border bg-p1-surface px-2 py-1 text-xs text-p1-text opacity-0 shadow-lg transition-opacity duration-150 delay-0 group-hover/owner:opacity-100 group-hover/owner:delay-[3000ms]'>
+                      {folder.email}
+                    </span>
+                  )}
+                  {expanded && (
+                    <div className='divide-y divide-p1-border border-t border-p1-border'>
+                      {folder.members.map((campaign) => (
+                        <CampaignWorkspaceRow
+                          key={campaign.id}
+                          campaign={campaign}
+                          canDelete={sameUserId(campaign.user_id, session.user.id)}
+                          members={charactersByCampaign.get(numericId(campaign.id) ?? -1) ?? []}
+                          ownedCampaigns={ownedCampaigns}
+                          onOpen={() => navigate(`/phase1/campaign/${campaign.id}`)}
+                          onDeleted={() => queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] })}
+                          onFrame={(url) => setArtFrame({ id: campaign.id, preview: url, focus: campaignFocusY(campaign.meta_data?.image_focus_y) })}
+                          onUploaded={(url) => setArtFrame((current) => (current?.id === campaign.id ? { ...current, savedUrl: url, error: undefined } : current))}
+                          onFrameError={(message) => setArtFrame((current) => (current?.id === campaign.id ? { ...current, error: message } : current))}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
         <div className='divide-y divide-p1-border border-y border-p1-border'>
           {campaigns.data?.map((campaign) => (
             <CampaignWorkspaceRow
@@ -278,6 +422,7 @@ export function Phase1IndexPage() {
             />
           ))}
         </div>
+        )}
       </main>
       {limitModalOpen && (
         <CampaignLimitModal
@@ -332,9 +477,29 @@ export function Phase1IndexPage() {
   );
 }
 
+type CampaignLayout = 'list' | 'owner';
+
+const CAMPAIGN_LAYOUT_KEY = 'phase1-campaign-layout-v2';
+
+function readCampaignLayout(): CampaignLayout {
+  try {
+    return localStorage.getItem(CAMPAIGN_LAYOUT_KEY) === 'owner' ? 'owner' : 'list';
+  } catch {
+    return 'list';
+  }
+}
+
+function persistCampaignLayout(layout: CampaignLayout) {
+  try {
+    localStorage.setItem(CAMPAIGN_LAYOUT_KEY, layout);
+  } catch {
+    /* private mode */
+  }
+}
+
 type CharacterLayout = 'list' | 'campaign';
 
-const CHARACTER_LAYOUT_KEY = 'phase1-character-layout';
+const CHARACTER_LAYOUT_KEY = 'phase1-character-layout-v2';
 
 function readCharacterLayout(): CharacterLayout {
   try {
@@ -2529,24 +2694,8 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     persistRoster(encounter.combatants.list, { initiative_log: [] });
   }
 
-  const dice3dEnabled = campaign?.meta_data?.settings?.dice_3d !== false;
-
-  function persistDice3d(enabled: boolean) {
-    if (!campaign || !isGm) return;
-    onUpdateCampaign({
-      ...campaign,
-      meta_data: {
-        ...campaign.meta_data,
-        settings: {
-          ...campaign.meta_data?.settings,
-          dice_3d: enabled,
-        },
-      },
-    });
-  }
-
   function maybeShowDice3d(throws: Dice3dThrow[], title?: string) {
-    if (!dice3dEnabled || throws.length === 0) return;
+    if (throws.length === 0) return;
     setDice3dThrows({ throws, title });
   }
 
@@ -2566,7 +2715,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     maybeShowDice3d(
       dice3dThrowsFromInitiativeRound(latest, (entry) => (isGm || entry.ally ? entry.name : playerEnemyLabel(entry.name))),
     );
-  }, [selectedEncounter?.id, initiativeLog, isGm, dice3dEnabled]);
+  }, [selectedEncounter?.id, initiativeLog, isGm]);
 
   const diceRollLog = selectedEncounter?.meta_data.dice_roll_log;
   useEffect(() => {
@@ -2587,7 +2736,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
       dice3dThrowsFromCheckLog(latest, (entry) => (isGm || entry.ally ? entry.name : playerEnemyLabel(entry.name))),
       diceCheckOverlayTitle(latest.dc, checkStatLabel(latest.defaultStat)),
     );
-  }, [selectedEncounter?.id, diceRollLog, isGm, dice3dEnabled, campaign?.user_id]);
+  }, [selectedEncounter?.id, diceRollLog, isGm, campaign?.user_id]);
 
   function persistDiceState(patch: Partial<DiceRollState>) {
     const encounter = selectedEncounterRef.current;
@@ -3121,9 +3270,6 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
                     });
                   }}
                   onRoll={() => setCheckOpen(true)}
-                  dice3d={dice3dEnabled}
-                  canToggleDice3d={isGm && Boolean(campaign) && !campaignSaving}
-                  onDice3d={persistDice3d}
                   onClear={() => {
                     if (isGm) {
                       persistDiceState({ results: {} });
@@ -3175,7 +3321,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               {creaturePickerOpen && (
                 <SelectCreatureModal
                   busy={rosterSaving}
-                  sourceIds={campaign ? (campaign.recommended_content_sources?.enabled ?? []) : null}
+                  sourceIds={null}
                   onSelect={addCreature}
                   onClose={() => setCreaturePickerOpen(false)}
                 />
@@ -3487,7 +3633,7 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
           </nav>
         </>
       )}
-      {selectedEncounter && !standalone && (
+      {!standalone && campaign && (
         <>
           <RailLabel icon={<UsersRound size={14} />} label='Party bench' count={players.length} onContextMenu={openBenchMenu} />
           <div className={`mx-2 min-h-16 border px-1 pb-4 pt-1 transition-colors ${benchActive ? 'border-p1-accent bg-p1-accent/[0.07]' : 'border-transparent'}`} onContextMenu={openBenchMenu} onDragOver={(event) => { if (canManageRoster && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setBenchActive(true); } }} onDragLeave={() => setBenchActive(false)} onDrop={dropOnBench}>
@@ -3520,7 +3666,7 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
           </div>
         </>
       )}
-      {selectedEncounter && (
+      {(selectedEncounter || (!standalone && campaign)) && (
         <>
           <RailLabel icon={<Skull size={14} />} label='Dead / Incapacitated' count={outCombatants.length} />
           <div className={`mx-2 min-h-16 border px-1 pb-4 pt-1 transition-colors ${outActive ? 'border-p1-accent bg-p1-accent/[0.07]' : 'border-transparent'}`} onDragOver={(event) => { if (canManageRoster && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setOutActive(true); } }} onDragLeave={() => setOutActive(false)} onDrop={dropOnOut}>
@@ -4417,7 +4563,7 @@ function CampaignAssignPickerModal({
   );
 }
 
-function RailContextMenu({ x, y, onClose, onRename, onPickColor, onClearColor, onDelete, onDeleteAll, onRemove, removeLabel }: { x: number; y: number; onClose: () => void; onRename?: () => void; onPickColor?: () => void; onClearColor?: () => void; onDelete?: () => void; onDeleteAll?: () => void; onRemove?: () => void; removeLabel?: string }) {
+function RailContextMenu({ x, y, onClose, onRename, onViewArt, onPickColor, onClearColor, onDelete, onDeleteAll, onRemove, removeLabel }: { x: number; y: number; onClose: () => void; onRename?: () => void; onViewArt?: () => void; onPickColor?: () => void; onClearColor?: () => void; onDelete?: () => void; onDeleteAll?: () => void; onRemove?: () => void; removeLabel?: string }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -4425,7 +4571,7 @@ function RailContextMenu({ x, y, onClose, onRename, onPickColor, onClearColor, o
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
-  const itemCount = [onRename, onPickColor, onClearColor, onRemove, onDelete, onDeleteAll].filter(Boolean).length;
+  const itemCount = [onRename, onViewArt, onPickColor, onClearColor, onRemove, onDelete, onDeleteAll].filter(Boolean).length;
   const left = Math.min(x, window.innerWidth - 220);
   const top = Math.min(y, window.innerHeight - (itemCount * 40 + 16));
   return createPortal(
@@ -4435,6 +4581,11 @@ function RailContextMenu({ x, y, onClose, onRename, onPickColor, onClearColor, o
         {onRename && (
           <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onRename}>
             <Pencil size={14} /> Rename
+          </button>
+        )}
+        {onViewArt && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onViewArt}>
+            <Eye size={14} /> View art
           </button>
         )}
         {onPickColor && (
@@ -4686,7 +4837,7 @@ function EncounterHeader({ encounter, combatants, count, isGm, campaignId, noteL
   );
 }
 
-function DiceRollToolbar({ isGm, side, audience, title, dc, stat, challenges, challengeId, canEdit, canRoll, canClear, dice3d, canToggleDice3d, onDice3d, onSide, onAudience, onTitle, onTitleCommit, onDc, onDcCommit, onStat, onChallenge, onRoll, onClear }: {
+function DiceRollToolbar({ isGm, side, audience, title, dc, stat, challenges, challengeId, canEdit, canRoll, canClear, onSide, onAudience, onTitle, onTitleCommit, onDc, onDcCommit, onStat, onChallenge, onRoll, onClear }: {
   isGm: boolean;
   side: DiceRollSide | undefined;
   audience?: 'public' | 'private';
@@ -4698,9 +4849,6 @@ function DiceRollToolbar({ isGm, side, audience, title, dc, stat, challenges, ch
   canEdit: boolean;
   canRoll: boolean;
   canClear: boolean;
-  dice3d: boolean;
-  canToggleDice3d: boolean;
-  onDice3d: (enabled: boolean) => void;
   onSide: (side: DiceRollSide) => void;
   onAudience: (audience: 'public' | 'private') => void;
   onTitle: (title: string) => void;
@@ -4716,12 +4864,12 @@ function DiceRollToolbar({ isGm, side, audience, title, dc, stat, challenges, ch
   const challengesEmpty = challenges.length === 0;
   const lockChallenge = !isGm;
   return (
-    <div className='flex flex-wrap items-end gap-3 border-b border-p1-border bg-p1-surface px-5 py-3'>
+    <div className='flex flex-nowrap items-end gap-2 border-b border-p1-border bg-p1-surface px-5 py-3'>
       {isGm && (
-        <fieldset className='flex items-center gap-3'>
+        <fieldset className='flex shrink-0 items-center gap-2'>
           <legend className='sr-only'>Who to include</legend>
           {(['enemies', 'allies', 'both'] as const).map((value) => (
-            <label key={value} className='flex items-center gap-1.5 text-xs text-p1-muted'>
+            <label key={value} className='flex items-center gap-1 whitespace-nowrap text-xs text-p1-muted'>
               <input type='radio' name='dice-roll-side' checked={(side ?? 'allies') === value} onChange={() => onSide(value)} />
               {value === 'enemies' ? 'Enemies' : value === 'allies' ? 'Allies' : 'Both'}
             </label>
@@ -4729,17 +4877,17 @@ function DiceRollToolbar({ isGm, side, audience, title, dc, stat, challenges, ch
         </fieldset>
       )}
       {isGm && (
-        <fieldset className='flex items-center gap-3'>
+        <fieldset className='flex shrink-0 items-center gap-2'>
           <legend className='sr-only'>Who can see this roll</legend>
           {(['private', 'public'] as const).map((value) => (
-            <label key={value} className='flex items-center gap-1.5 text-xs text-p1-muted'>
+            <label key={value} className='flex items-center gap-1 whitespace-nowrap text-xs text-p1-muted'>
               <input type='radio' name='dice-roll-audience' checked={(audience ?? 'public') === value} onChange={() => onAudience(value)} />
               {value === 'private' ? 'Private' : 'Public'}
             </label>
           ))}
         </fieldset>
       )}
-      <label className='min-w-[12rem]'>
+      <label className='w-36 shrink-0'>
         <span className='text-[10px] uppercase text-p1-faint'>Challenge</span>
         <select
           className='mt-1 h-9 w-full border border-p1-border bg-p1-inset px-2 text-sm text-p1-text disabled:cursor-not-allowed disabled:opacity-50'
@@ -4761,7 +4909,7 @@ function DiceRollToolbar({ isGm, side, audience, title, dc, stat, challenges, ch
           )}
         </select>
       </label>
-      <label className='min-w-[12rem] flex-1'>
+      <label className='min-w-0 flex-1'>
         <span className='text-[10px] uppercase text-p1-faint'>Title</span>
         <input
           className='mt-1 h-9 w-full border border-p1-border bg-p1-inset px-2 text-sm text-p1-text'
@@ -4772,7 +4920,7 @@ function DiceRollToolbar({ isGm, side, audience, title, dc, stat, challenges, ch
           onBlur={() => onTitleCommit(title)}
         />
       </label>
-      <label className='w-20'>
+      <label className='w-16 shrink-0'>
         <span className='text-[10px] uppercase text-p1-faint'>DC</span>
         <input
           className='mt-1 h-9 w-full border border-p1-border bg-p1-inset px-2 text-center text-sm text-p1-text'
@@ -4786,7 +4934,7 @@ function DiceRollToolbar({ isGm, side, audience, title, dc, stat, challenges, ch
           }}
         />
       </label>
-      <label className='min-w-[14rem]'>
+      <label className='w-40 shrink-0'>
         <span className='text-[10px] uppercase text-p1-faint'>Check</span>
         <select
           className='mt-1 h-9 w-full border border-p1-border bg-p1-inset px-2 text-base text-p1-text'
@@ -4804,19 +4952,10 @@ function DiceRollToolbar({ isGm, side, audience, title, dc, stat, challenges, ch
           ))}
         </select>
       </label>
-      <label className='mb-0.5 flex items-center gap-1.5 text-xs text-p1-muted'>
-        <input
-          type='checkbox'
-          checked={dice3d}
-          disabled={!canToggleDice3d}
-          onChange={(event) => onDice3d(event.target.checked)}
-        />
-        3D dice roll
-      </label>
-      <button type='button' className='toolbar-button' disabled={!canRoll} title={!canRoll ? (isGm ? 'Pick a side, check, and DC first' : 'Pick a check and DC first') : 'Choose per-combatant bonuses, then roll'} onClick={onRoll}>
+      <button type='button' className='toolbar-button shrink-0' disabled={!canRoll} title={!canRoll ? (isGm ? 'Pick a side, check, and DC first' : 'Pick a check and DC first') : 'Choose per-combatant bonuses, then roll'} onClick={onRoll}>
         <GiDiceTwentyFacesTwenty size={15} /> Roll
       </button>
-      <button type='button' className='toolbar-button' disabled={!canClear} title={isGm ? (canClear ? 'Clear current roll results from the grid. The roll log is not changed.' : 'No results to clear') : (canClear ? 'Clear title, DC, check, and grid results. The roll log is not changed.' : 'Nothing to clear')} onClick={onClear}>
+      <button type='button' className='toolbar-button shrink-0' disabled={!canClear} title={isGm ? (canClear ? 'Clear current roll results from the grid. The roll log is not changed.' : 'No results to clear') : (canClear ? 'Clear title, DC, check, and grid results. The roll log is not changed.' : 'Nothing to clear')} onClick={onClear}>
         <Eraser size={14} /> Clear
       </button>
     </div>
@@ -5495,6 +5634,40 @@ function EntityIcon({ type, name, imageUrl }: { type: Combatant['type']; name?: 
   }
   return <span className={`grid h-9 w-9 shrink-0 place-items-center border ${type === 'HAZARD' ? 'border-amber-400/50 text-amber-300' : type === 'CREATURE' ? 'border-p1-creature/50 text-p1-creature' : 'border-p1-pc/50 text-p1-pc'}`}>{type === 'HAZARD' ? <TriangleAlert size={16} /> : type === 'CREATURE' ? <Swords size={16} /> : <UserRound size={16} />}</span>;
 }
+function CampaignArtPreviewModal({ url, name, onClose }: { url: string; name: string; onClose: () => void }) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      document.body.style.overflow = overflow;
+    };
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      className='fixed inset-0 z-[120] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]'
+      role='presentation'
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section role='dialog' aria-modal='true' aria-labelledby='campaign-art-title' className='flex max-h-[min(92vh,960px)] w-full max-w-[min(94vw,1100px)] flex-col border border-p1-border bg-p1-surface p-4 shadow-2xl'>
+        <h2 id='campaign-art-title' className='mb-3 truncate text-lg font-semibold'>{name}</h2>
+        <img src={url} alt={`${name} art`} className='min-h-0 w-full flex-1 object-contain' referrerPolicy='no-referrer' />
+        <div className='mt-4 flex justify-end'>
+          <button type='button' className='toolbar-button' onClick={onClose}>OK</button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
 function PortraitPreviewModal({
   url,
   name,
@@ -6189,6 +6362,7 @@ function CampaignWorkspaceRow({ campaign, canDelete, members, ownedCampaigns, on
   const [leaveMenu, setLeaveMenu] = useState<{ x: number; y: number } | null>(null);
   const [pendingRename, setPendingRename] = useState(false);
   const [pendingColor, setPendingColor] = useState(false);
+  const [viewArt, setViewArt] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(false);
   const [pendingLeave, setPendingLeave] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -6390,6 +6564,10 @@ function CampaignWorkspaceRow({ campaign, canDelete, members, ownedCampaigns, on
             setMenu(null);
             setPendingRename(true);
           }}
+          onViewArt={artUrl ? () => {
+            setMenu(null);
+            setViewArt(true);
+          } : undefined}
           onPickColor={() => {
             setMenu(null);
             setPendingColor(true);
@@ -6402,6 +6580,13 @@ function CampaignWorkspaceRow({ campaign, canDelete, members, ownedCampaigns, on
             setMenu(null);
             setPendingDelete(true);
           }}
+        />
+      )}
+      {viewArt && artUrl && (
+        <CampaignArtPreviewModal
+          url={campaignArtSrc(artUrl)}
+          name={campaign.name}
+          onClose={() => setViewArt(false)}
         />
       )}
       {pendingRename && (
@@ -6431,6 +6616,10 @@ function CampaignWorkspaceRow({ campaign, canDelete, members, ownedCampaigns, on
           x={leaveMenu.x}
           y={leaveMenu.y}
           onClose={() => setLeaveMenu(null)}
+          onViewArt={artUrl ? () => {
+            setLeaveMenu(null);
+            setViewArt(true);
+          } : undefined}
           removeLabel={members.length > 1 ? 'Remove all PCs from campaign' : 'Remove from campaign'}
           onRemove={() => {
             setLeaveMenu(null);

@@ -119,7 +119,7 @@ export function SelectCreatureModal({
   onClose,
 }: {
   busy?: boolean;
-  /** Campaign books. `null` means a standalone encounter: use the page's default sources. */
+  /** `null` uses every book the account can access (the full creature catalog). A list limits the picker to those books. */
   sourceIds: number[] | null;
   onSelect: (creature: Creature, ally: boolean) => void;
   onClose: () => void;
@@ -136,9 +136,9 @@ export function SelectCreatureModal({
     [sourceIds]
   );
   const catalog = useQuery({
-    queryKey: ['phase1-creature-catalog', usePageSources ? getDefaultSourcesKey('PAGE') : bookIds.join(',')],
+    queryKey: ['phase1-creature-catalog', 'v2', usePageSources ? 'ALL-USER-ACCESSIBLE' : bookIds.join(',')],
     queryFn: async () => {
-      const sources = usePageSources ? getDefaultSources('PAGE') : bookIds;
+      const sources = usePageSources ? 'ALL-USER-ACCESSIBLE' : bookIds;
       if (!usePageSources && bookIds.length === 0) return [];
       const creatures = await fetchContentAll<Creature>('creature', sources);
       return (creatures ?? [])
