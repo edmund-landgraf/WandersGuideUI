@@ -83,8 +83,14 @@ function chosenFrom(entity: Json) {
       const key = typeof row.id === "string" ? Object.keys(selections).find((item) => item === row.id || item.endsWith(row.id as string)) : undefined;
       const selected = key ? num(selections[key]) : undefined;
       if (data?.optionType === "ABILITY_BLOCK" && selected) blockIds.add(selected);
-      if (data?.optionType === "SPELL" && (spellData?.type === "FOCUS" || data.modeType === "FILTERED")) {
-        addFocus(selected, spellData?.rank, spellData?.type === "FOCUS" ? "focus" : spellData?.castingSource);
+      if (data?.optionType === "SPELL" && spellData?.type === "FOCUS") addFocus(selected, spellData.rank, "focus");
+      if (data?.optionType === "SPELL") {
+        for (const option of options) {
+          if (!option || typeof option !== "object") continue;
+          const grant = ((option as Json).operation as Json | undefined)?.data as Json | undefined;
+          const chosen = optionKey((option as Json).id) === String(selected ?? "") || num(grant?.spellId) === selected;
+          if (chosen && grant?.type === "FOCUS") addFocus(num(grant.spellId), grant.rank, "focus");
+        }
       }
       return;
     }
@@ -130,7 +136,10 @@ async function hydrateSources(entity: Json) {
     if (!id) continue;
     const rows = await contentRows(name, [id]);
     const fresh = rows.find((row) => num(row.id) === id) ?? rows[0];
-    if (fresh && Array.isArray(fresh.operations)) details[key] = { ...stored, ...fresh, operations: fresh.operations };
+    const storedOps = Array.isArray(stored?.operations) ? stored.operations : [];
+    if (!fresh) continue;
+    const freshOps = Array.isArray(fresh.operations) ? fresh.operations : [];
+    details[key] = { ...stored, ...fresh, operations: storedOps.length ? storedOps : freshOps };
   }
   return { ...entity, details };
 }
@@ -153,6 +162,24 @@ function spellIdsOf(entity: Json) {
     const id = num(entry.spell_id);
     return id ? [id] : [];
   });
+}
+
+async function spellCatalog(sourceIds: number[]) {
+  const unique = [...new Set(sourceIds)].filter((id) => id > 0);
+  if (!unique.length) return [];
+  const response = await fetch(`${baseUrl()}/functions/v1/find-spell`, {
+    method: "POST",
+    headers: {
+      apikey: env("SUPABASE_ANON_KEY"),
+      Authorization: `Bearer ${env("SUPABASE_SERVICE_ROLE_KEY")}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ content_sources: unique }),
+  });
+  if (!response.ok) return [];
+  const payload = (await response.json()) as { data?: unknown };
+  const data = Array.isArray(payload) ? payload : payload.data;
+  return Array.isArray(data) ? (data as Json[]) : [];
 }
 
 async function rest(path: string): Promise<Json[]> {
@@ -551,7 +578,7 @@ export function createSupabaseReader(): EncounterReader {
         };
       });
     },
-    async loadEncounter(userId, campaignId, encounterId, combatantId) {
+    async loadEncounter(userId, campaignId, encounterId, _combatantId) {
       const rows = await encountersFor(userId, campaignId, encounterId);
       if (!rows.length) return null;
       const characters = await rest(`character?campaign_id=eq.${campaignId}&select=*`);
@@ -587,33 +614,21 @@ export function createSupabaseReader(): EncounterReader {
       }
       for (const entity of Object.values(entities)) collectFocusIds(entity, 0, spellIds);
       for (const block of blocks) collectFocusIds(block, 0, spellIds);
-      const spellRows = await contentRows("find-spell", [...spellIds]);
-      applyCatalog(record, entities, blocks, spellRows);
-      let liveFocus = 0;
-      const targets = combatantId ? [[combatantId, entities[combatantId]] as const].filter((entry) => entry[1]) : [];
-      for (const [id, entity] of targets) {
-        const sheet = record.sheets[id];
-        if (!sheet) continue;
-        if (!entity.user_id || !entity.created_at) {
-          sheet.details = { ...(sheet.details as Json | undefined), liveCasting: "skipped: character row has no user_id or created_at" };
-          continue;
-        }
-        console.error(`[wgui-mcp] live casting start ${id}`);
-        try {
-          const { applyLiveCasting } = await import("./live-sheet.js");
-          const found = await Promise.race([
-            applyLiveCasting(sheet, entity, id),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timed out after 25s")), 25_000)),
-          ]);
-          liveFocus += found;
-          sheet.details = { ...(sheet.details as Json | undefined), liveCasting: `ok focus=${found}` };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          sheet.details = { ...(sheet.details as Json | undefined), liveCasting: message };
-          console.error(`[wgui-mcp] live casting ${id} failed`, message);
-        }
+      const sourceIds = Object.values(entities).flatMap((entity) => {
+        const enabled = (entity.content_sources as Json | undefined)?.enabled;
+        return Array.isArray(enabled) ? enabled.flatMap((id) => num(id) ? [num(id)!] : []) : [];
+      });
+      const [byId, catalog] = await Promise.all([
+        contentRows("find-spell", [...spellIds]),
+        spellCatalog(sourceIds),
+      ]);
+      const spellRows = [...byId];
+      for (const row of catalog) {
+        const id = num(row.id);
+        if (id && spellIds.has(id) && !spellRows.some((item) => num(item.id) === id)) spellRows.push(row);
       }
-      console.error(`[wgui-mcp] encounter ${record.encounterId} combatants=${record.combatants.length} abilityIds=${blockIds.size} resolved=${blocks.length} custom=${customAbilities} focus=${focusSpells} liveFocus=${liveFocus} spellIds=${spellIds.size} spells=${spellRows.length}`);
+      applyCatalog(record, entities, blocks, spellRows);
+      console.error(`[wgui-mcp] encounter ${record.encounterId} combatants=${record.combatants.length} abilityIds=${blockIds.size} resolved=${blocks.length} custom=${customAbilities} focus=${focusSpells} spellIds=${spellIds.size} spells=${spellRows.length}`);
       return record;
     },
   };
