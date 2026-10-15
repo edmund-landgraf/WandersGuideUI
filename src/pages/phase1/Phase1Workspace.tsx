@@ -3515,7 +3515,10 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
   const [benchActive, setBenchActive] = useState(false);
   const [outActive, setOutActive] = useState(false);
   const [notesOpen, setNotesOpen] = useState(selectedNoteIndex != null);
-  const [encountersOpen, setEncountersOpen] = useState(selectedEncounter != null);
+  const [encountersOpen, setEncountersOpen] = useState(false);
+  useEffect(() => {
+    setEncountersOpen(false);
+  }, [selectedEncounter?.id]);
   const [menu, setMenu] = useState<RailContextTarget | null>(null);
   const [sectionMenu, setSectionMenu] = useState<{ kind: 'note' | 'encounter'; x: number; y: number } | null>(null);
   const [createKind, setCreateKind] = useState<'note' | 'encounter' | null>(null);
