@@ -9,8 +9,8 @@ import { installSupabaseReader } from "./supabase-reader.js";
 import { listTokens, mintToken, resolveBearer, revokeToken } from "./tokens.js";
 
 const MCP_BODY_BYTES = 64 * 1024;
-const MAX_INFLIGHT = 16;
-const REQUEST_TIMEOUT_MS = 15_000;
+const MAX_INFLIGHT = 64;
+const REQUEST_TIMEOUT_MS = 30_000;
 
 const PUBLIC_PATHS = new Set([
   "/health",
