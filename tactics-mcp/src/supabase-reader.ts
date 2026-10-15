@@ -78,6 +78,13 @@ function chosenFrom(entity: Json) {
         const picked = option as Json;
         walk(picked, chosenIds.has(optionKey(picked.id)), depth + 1);
       }
+      const filters = data?.optionsFilters as Json | undefined;
+      const spellData = filters?.spellData as Json | undefined;
+      if (data?.optionType === "SPELL" && typeof row.id === "string") {
+        const key = Object.keys(selections).find((item) => item === row.id || item.endsWith(row.id as string));
+        const spellId = key ? num(selections[key]) : undefined;
+        if (spellData?.type === "FOCUS" || data.modeType === "FILTERED") addFocus(spellId, spellData?.rank, spellData?.type === "FOCUS" ? "focus" : spellData?.castingSource);
+      }
       return;
     }
     if (row.type === "CUSTOM" && typeof row.title === "string" && !seen.has(row.title)) {
@@ -422,11 +429,17 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
         dc,
       }];
     });
-    for (const grant of chosen.focus) {
+    const nested = [...chosen.blockIds].flatMap((blockId) => {
+      const block = blockById.get(blockId);
+      return block ? chosenFrom({ operation_data: entity.operation_data, custom_operations: block.operations }).focus : [];
+    });
+    for (const grant of [...chosen.focus, ...nested]) {
       const spell = spellById.get(grant.spellId);
+      const meta = spell?.meta_data as Json | undefined;
       const name = typeof spell?.name === "string" ? spell.name : `Spell ${grant.spellId}`;
       if (sheet.spells.some((entry) => entry.name === name)) continue;
-      sheet.spells.push({ name, rank: grant.rank, tradition: grant.source ?? "focus", attack, dc });
+      const focusSpell = grant.source === "focus" || meta?.focus === true;
+      sheet.spells.push({ name, rank: grant.rank ?? num(spell?.rank), tradition: focusSpell ? "focus" : grant.source, attack, dc });
     }
     sheet.details = {
       referencedAbilities: wanted.size,
@@ -506,6 +519,18 @@ export function createSupabaseReader(): EncounterReader {
         contentRows("find-ability-block", [...blockIds]),
         contentRows("find-spell", [...spellIds]),
       ]);
+      const nestedSpellIds = new Set<number>();
+      for (const entity of Object.values(entities)) {
+        const chosen = chosenFrom(entity);
+        for (const blockId of chosen.blockIds) {
+          const block = blocks.find((row) => num(row.id) === blockId);
+          if (!block) continue;
+          for (const grant of chosenFrom({ operation_data: entity.operation_data, custom_operations: block.operations }).focus) {
+            if (!spellIds.has(grant.spellId)) nestedSpellIds.add(grant.spellId);
+          }
+        }
+      }
+      if (nestedSpellIds.size) spellRows.push(...(await contentRows("find-spell", [...nestedSpellIds])));
       applyCatalog(record, entities, blocks, spellRows);
       console.error(`[wgui-mcp] encounter ${record.encounterId} combatants=${record.combatants.length} abilityIds=${blockIds.size} resolved=${blocks.length} custom=${customAbilities} focus=${focusSpells} spellIds=${spellIds.size} spells=${spellRows.length}`);
       return record;
