@@ -5,6 +5,17 @@ type Json = Record<string, unknown>;
 
 const resolverReady = Promise.resolve(register(new URL("./resolve-app-deps.mjs", import.meta.url), import.meta.url));
 
+function sheetEnv() {
+  const env = globalThis as typeof globalThis & { __WGUI_ENV?: Record<string, string | boolean> };
+  env.__WGUI_ENV = {
+    VITE_ENV: "production",
+    DEV: false,
+    PROD: true,
+    VITE_SUPABASE_URL: process.env.SUPABASE_URL ?? "",
+    VITE_SUPABASE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "",
+  };
+}
+
 function signed(value: string) {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : undefined;
@@ -12,6 +23,7 @@ function signed(value: string) {
 
 export async function applyLiveCasting(sheet: CombatantSheet, character: Json, combatantId: string) {
   await resolverReady;
+  sheetEnv();
   const { preparePhase1Entity } = await import("../../src/pages/phase1/phase1-entity.ts");
   const { collectEntitySpellcasting } = await import("../../src/process/content/collect-content.ts");
   const { getFinalProfValue, getFinalVariableValue } = await import("../../src/process/variables/variable-helpers.ts");

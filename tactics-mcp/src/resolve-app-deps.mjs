@@ -14,6 +14,14 @@ function bare(specifier) {
   return !specifier.startsWith(".") && !specifier.startsWith("/") && !specifier.startsWith("node:") && !specifier.startsWith("file:") && !specifier.startsWith("data:");
 }
 
+export async function load(url, context, nextLoad) {
+  const result = await nextLoad(url, context);
+  const inApp = url.includes("/WandersGuideUI/src/") || url.includes("\\WandersGuideUI\\src\\");
+  const source = typeof result.source === "string" ? result.source : result.source ? Buffer.from(result.source).toString("utf8") : "";
+  if (!inApp || !source.includes("import.meta.env")) return result;
+  return { ...result, source: source.replaceAll("import.meta.env", "(globalThis.__WGUI_ENV||{})"), shortCircuit: true };
+}
+
 export async function resolve(specifier, context, nextResolve) {
   if (!bare(specifier)) return nextResolve(specifier, context);
   try {
