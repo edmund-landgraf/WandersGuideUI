@@ -180,7 +180,7 @@ async function runExecuteOperations<T = OperationCharacterResultPackage | Operat
 ) {
   let results: OperationResultData | null = null;
 
-  const useDirectExecution = options?.directExecution || !('Worker' in window);
+  const useDirectExecution = options?.directExecution || typeof window === "undefined" || !("Worker" in window);
 
   if (execution.type === 'CHARACTER') {
     if (useDirectExecution) {

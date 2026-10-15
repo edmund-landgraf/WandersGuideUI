@@ -1,0 +1,50 @@
+import type { CombatantSheet } from "./reader.js";
+
+type Json = Record<string, unknown>;
+
+function signed(value: string) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+export async function applyLiveCasting(sheet: CombatantSheet, character: Json, combatantId: string) {
+  const { preparePhase1Entity } = await import("../../src/pages/phase1/phase1-entity.ts");
+  const { collectEntitySpellcasting } = await import("../../src/process/content/collect-content.ts");
+  const { getFinalProfValue, getFinalVariableValue } = await import("../../src/process/variables/variable-helpers.ts");
+  const prepared = await preparePhase1Entity({
+    _id: combatantId,
+    type: "CHARACTER",
+    data: character,
+  } as never);
+  const data = collectEntitySpellcasting(prepared.storeId, prepared.entity);
+  const attack = signed(getFinalProfValue(prepared.storeId, "SPELL_ATTACK"));
+  const dc = signed(getFinalProfValue(prepared.storeId, "SPELL_DC", true));
+  const catalog = new Map((prepared.content.spells ?? []).map((spell) => [spell.id, spell]));
+  for (const grant of data.focus) {
+    const spell = catalog.get(grant.spell_id);
+    const name = spell?.name ?? `Spell ${grant.spell_id}`;
+    if (sheet.spells.some((entry) => entry.name === name)) continue;
+    sheet.spells.push({ name, rank: grant.rank ?? spell?.rank, tradition: "focus", attack, dc });
+  }
+  const modifiers: Record<string, number> = {};
+  for (const [label, key] of [
+    ["strength", "ATTRIBUTE_STR"],
+    ["dexterity", "ATTRIBUTE_DEX"],
+    ["constitution", "ATTRIBUTE_CON"],
+    ["intelligence", "ATTRIBUTE_INT"],
+    ["wisdom", "ATTRIBUTE_WIS"],
+    ["charisma", "ATTRIBUTE_CHA"],
+  ] as const) {
+    const total = getFinalVariableValue(prepared.storeId, key).total;
+    if (total) modifiers[label] = total;
+  }
+  if (Object.keys(modifiers).length) sheet.abilityModifiers = modifiers;
+  const speeds = {
+    land: getFinalVariableValue(prepared.storeId, "SPEED").total || undefined,
+    fly: getFinalVariableValue(prepared.storeId, "SPEED_FLY").total || undefined,
+    climb: getFinalVariableValue(prepared.storeId, "SPEED_CLIMB").total || undefined,
+    burrow: getFinalVariableValue(prepared.storeId, "SPEED_BURROW").total || undefined,
+  };
+  if (Object.values(speeds).some((value) => value)) sheet.speeds = speeds;
+  return data.focus.length;
+}

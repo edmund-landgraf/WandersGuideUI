@@ -11,8 +11,9 @@ import { createClient } from '@supabase/supabase-js';
  * inactivity was noticed by one client while the rest of the app kept acting
  * logged in with dead credentials.
  */
-const configuredSupabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_KEY;
+const metaEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
+const configuredSupabaseUrl = metaEnv?.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL;
+const supabaseKey = metaEnv?.VITE_SUPABASE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_ANON_KEY;
 
 /**
  * Local GoTrue/Kong answers `Access-Control-Allow-Origin: *` together with
@@ -22,7 +23,7 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_KEY;
  */
 export function browserSupabaseUrl(configured: string | undefined, pageOrigin?: string) {
   if (!configured) return configured;
-  if (!import.meta.env.DEV || !pageOrigin) return configured;
+  if (!import.meta.env?.DEV || !pageOrigin) return configured;
   try {
     const api = new URL(configured);
     const localApi = api.hostname === 'localhost' || api.hostname === '127.0.0.1';

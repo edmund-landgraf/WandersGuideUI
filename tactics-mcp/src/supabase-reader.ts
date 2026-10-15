@@ -589,7 +589,19 @@ export function createSupabaseReader(): EncounterReader {
       for (const block of blocks) collectFocusIds(block, 0, spellIds);
       const spellRows = await contentRows("find-spell", [...spellIds]);
       applyCatalog(record, entities, blocks, spellRows);
-      console.error(`[wgui-mcp] encounter ${record.encounterId} combatants=${record.combatants.length} abilityIds=${blockIds.size} resolved=${blocks.length} custom=${customAbilities} focus=${focusSpells} spellIds=${spellIds.size} spells=${spellRows.length}`);
+      let liveFocus = 0;
+      for (const [combatantId, entity] of Object.entries(entities)) {
+        if (!entity.user_id || !entity.created_at) continue;
+        const sheet = record.sheets[combatantId];
+        if (!sheet) continue;
+        try {
+          const { applyLiveCasting } = await import("./live-sheet.js");
+          liveFocus += await applyLiveCasting(sheet, entity, combatantId);
+        } catch (error) {
+          console.error(`[wgui-mcp] live casting ${combatantId} failed`, error instanceof Error ? error.message : error);
+        }
+      }
+      console.error(`[wgui-mcp] encounter ${record.encounterId} combatants=${record.combatants.length} abilityIds=${blockIds.size} resolved=${blocks.length} custom=${customAbilities} focus=${focusSpells} liveFocus=${liveFocus} spellIds=${spellIds.size} spells=${spellRows.length}`);
       return record;
     },
   };
