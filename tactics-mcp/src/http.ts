@@ -5,10 +5,11 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 
 import { allowedChatGptRedirect, consumeCode, gotrueChallenge, issueCode, rememberLogin, takeLogin } from "./oauth.js";
 import { createTacticsMcpServer } from "./server.js";
+import { installSupabaseReader } from "./supabase-reader.js";
 import { listTokens, mintToken, resolveBearer, revokeToken } from "./tokens.js";
 
 const MCP_BODY_BYTES = 64 * 1024;
-const MAX_INFLIGHT = 8;
+const MAX_INFLIGHT = 16;
 const REQUEST_TIMEOUT_MS = 15_000;
 
 const PUBLIC_PATHS = new Set([
@@ -168,6 +169,7 @@ export function startTacticsHttp() {
     console.error(`WGUI MCP will not bind ${host}. Use 127.0.0.1.`);
     process.exit(1);
   }
+  log(installSupabaseReader() ? "encounter reader: wgui-ext" : "encounter reader: empty");
 
   const httpServer = createServer((req, res) => {
     const requestId = randomUUID();
