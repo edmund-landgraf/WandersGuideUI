@@ -48,11 +48,21 @@ async function contentRows(name: string, ids: number[]) {
   return Array.isArray(data) ? (data as Json[]) : [];
 }
 
+function optionKey(value: unknown) {
+  return typeof value === "string" || typeof value === "number" ? String(value) : "";
+}
+
 function chosenFrom(entity: Json) {
   const selections = ((entity.operation_data as Json | undefined)?.selections ?? {}) as Record<string, string>;
+  const chosenIds = new Set(Object.values(selections).map((value) => String(value)));
   const blockIds = new Set<number>();
   const custom: { name: string; description?: string }[] = [];
+  const focus: { spellId: number; rank?: number; source?: string }[] = [];
   const seen = new Set<string>();
+  function addFocus(spellId: number | undefined, rank: unknown, source: unknown) {
+    if (!spellId || spellId <= 0 || focus.some((grant) => grant.spellId === spellId)) return;
+    focus.push({ spellId, rank: num(rank), source: typeof source === "string" ? source : undefined });
+  }
   function walk(value: unknown, active: boolean, depth: number) {
     if (!active || depth > 12 || !value || typeof value !== "object") return;
     if (Array.isArray(value)) {
@@ -63,11 +73,10 @@ function chosenFrom(entity: Json) {
     if (row.type === "select") {
       const data = row.data as Json | undefined;
       const options = Array.isArray(data?.optionsPredefined) ? data.optionsPredefined : [];
-      const chosenIds = new Set(Object.values(selections));
       for (const option of options) {
         if (!option || typeof option !== "object") continue;
         const picked = option as Json;
-        walk(picked, typeof picked.id === "string" && chosenIds.has(picked.id), depth + 1);
+        walk(picked, chosenIds.has(optionKey(picked.id)), depth + 1);
       }
       return;
     }
@@ -79,6 +88,14 @@ function chosenFrom(entity: Json) {
       const id = num((row.data as Json | undefined)?.abilityBlockId);
       if (id && id > 0) blockIds.add(id);
     }
+    if (row.type === "SPELL") {
+      const meta = row._meta_data as Json | undefined;
+      if (meta?.type === "FOCUS") addFocus(num(row.id), meta.rank, meta.castingSource);
+    }
+    if (row.type === "giveSpell") {
+      const data = row.data as Json | undefined;
+      if (data?.type === "FOCUS") addFocus(num(data.spellId), data.rank, data.castingSource);
+    }
     for (const child of Object.values(row)) walk(child, true, depth + 1);
   }
   walk(entity.custom_operations, true, 0);
@@ -86,7 +103,7 @@ function chosenFrom(entity: Json) {
   for (const key of ["class", "class_2", "ancestry", "background", "class_archetype", "class_archetype_2"]) {
     walk((details?.[key] as Json | undefined)?.operations, true, 0);
   }
-  return { blockIds, custom };
+  return { blockIds, custom, focus };
 }
 
 function spellIdsOf(entity: Json) {
@@ -155,6 +172,11 @@ function profsOf(entity: Json) {
 function profTotal(entity: Json, key: string) {
   const total = profsOf(entity)[key]?.total;
   return typeof total === "number" ? total : undefined;
+}
+
+function dcTotal(entity: Json, key: string) {
+  const total = profTotal(entity, key);
+  return total === undefined ? undefined : 10 + total;
 }
 
 function conditionsOf(entity: Json) {
@@ -265,7 +287,7 @@ function sheetFor(entity: Json): CombatantSheet {
     skills,
     spells: [],
     perception: profTotal(entity, "PERCEPTION"),
-    classDc: profTotal(entity, "CLASS_DC"),
+    classDc: dcTotal(entity, "CLASS_DC"),
     abilityModifiers: Object.fromEntries(
       [
         ["strength", "ATTRIBUTE_STR"],
@@ -300,11 +322,20 @@ function equippedWeapons(entity: Json) {
       if (Array.isArray(entry.container_contents)) walk(entry.container_contents as Json[]);
       if (entry.is_equipped !== true) continue;
       const item = entry.item as Json | undefined;
-      const meta = item?.meta_data as Json | undefined;
-      const name = typeof item?.name === "string" ? item.name : "";
-      if (!name || !meta || (meta.range == null && meta.reload == null && meta.attack_bonus == null && meta.damage == null)) continue;
-      const damage = meta.damage && typeof meta.damage === "object" ? JSON.stringify(meta.damage) : undefined;
-      found.push({ name, actions: 1, description: damage });
+      if (item?.group !== "WEAPON") continue;
+      const meta = item.meta_data as Json | undefined;
+      const name = typeof item.name === "string" ? item.name : "";
+      if (!name) continue;
+      const damage = meta?.damage && typeof meta.damage === "object" ? (meta.damage as Json) : undefined;
+      const dice = damage ? `${damage.dice ?? ""}${damage.die ?? ""}` : "";
+      const parts = [
+        dice,
+        damage?.damageType ? String(damage.damageType) : "",
+        meta?.range != null ? `range ${meta.range}` : "",
+        meta?.reload ? `reload ${meta.reload}` : "",
+        typeof meta?.attack_bonus === "number" ? `item bonus +${meta.attack_bonus}` : "",
+      ].filter(Boolean);
+      found.push({ name, actions: 1, description: parts.join(", ") || undefined });
     }
   }
   walk(items);
@@ -359,31 +390,19 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
         actions: attacks.map(({ name, actions, description }) => ({ name, actions, description })),
       });
     }
-    const customActions = chosen.custom.map((ability) => ({ name: ability.name, actions: null, description: ability.description }));
-    const featActions = [
-      ...feats.filter((ability) => ability.actions !== null).map(({ name, actions, description }) => ({ name, actions, description })),
-      ...customActions,
-    ];
+    const featActions = feats.filter((ability) => ability.actions !== null).map(({ name, actions, description }) => ({ name, actions, description }));
     if (featActions.length) {
       const existing = sheet.groups.find((group) => group.id === "feats");
       if (existing) existing.actions.push(...featActions.filter((ability) => !existing.actions.some((item) => item.name === ability.name)));
       else sheet.groups.push({ id: "feats", label: "Feats (with Actions)", actions: featActions });
-      sheet.feats = [
-        ...feats.map((ability) => ({ section: "other" as const, name: ability.name, level: ability.level, hasAction: ability.actions !== null })),
-        ...chosen.custom.map((ability) => ({ section: "other" as const, name: ability.name, hasAction: false })),
-      ];
     }
-    if (features.length || chosen.custom.length) {
-      sheet.classFeatures = [
-        ...features.map((ability) => ({ name: ability.name, level: ability.level })),
-        ...chosen.custom.map((ability) => ({ name: ability.name })),
-      ];
-    }
+    sheet.feats = feats.map((ability) => ({ section: "other" as const, name: ability.name, level: ability.level, hasAction: ability.actions !== null }));
+    sheet.classFeatures = features.map((ability) => ({ name: ability.name, level: ability.level }));
     const spellBook = entity.spells as Json | undefined;
     const entries = Array.isArray(spellBook?.list) ? (spellBook.list as Json[]) : [];
     const slots = Array.isArray(spellBook?.slots) ? (spellBook.slots as Json[]) : [];
     const attack = profTotal(entity, "SPELL_ATTACK");
-    const dc = profTotal(entity, "SPELL_DC");
+    const dc = dcTotal(entity, "SPELL_DC");
     sheet.spells = entries.flatMap((entry) => {
       const spellId = num(entry.spell_id);
       const spell = spellById.get(spellId ?? -1);
@@ -403,6 +422,12 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
         dc,
       }];
     });
+    for (const grant of chosen.focus) {
+      const spell = spellById.get(grant.spellId);
+      const name = typeof spell?.name === "string" ? spell.name : `Spell ${grant.spellId}`;
+      if (sheet.spells.some((entry) => entry.name === name)) continue;
+      sheet.spells.push({ name, rank: grant.rank, tradition: grant.source ?? "focus", attack, dc });
+    }
     sheet.details = {
       referencedAbilities: wanted.size,
       resolvedAbilities: resolved.length,
@@ -468,18 +493,21 @@ export function createSupabaseReader(): EncounterReader {
       const blockIds = new Set<number>();
       const spellIds = new Set<number>();
       let customAbilities = 0;
+      let focusSpells = 0;
       for (const entity of Object.values(entities)) {
         const chosen = chosenFrom(entity);
         customAbilities += chosen.custom.length;
+        focusSpells += chosen.focus.length;
         for (const id of chosen.blockIds) blockIds.add(id);
         for (const id of spellIdsOf(entity)) spellIds.add(id);
+        for (const grant of chosen.focus) spellIds.add(grant.spellId);
       }
       const [blocks, spellRows] = await Promise.all([
         contentRows("find-ability-block", [...blockIds]),
         contentRows("find-spell", [...spellIds]),
       ]);
       applyCatalog(record, entities, blocks, spellRows);
-      console.error(`[wgui-mcp] encounter ${record.encounterId} combatants=${record.combatants.length} abilityIds=${blockIds.size} resolved=${blocks.length} custom=${customAbilities} spellIds=${spellIds.size} spells=${spellRows.length}`);
+      console.error(`[wgui-mcp] encounter ${record.encounterId} combatants=${record.combatants.length} abilityIds=${blockIds.size} resolved=${blocks.length} custom=${customAbilities} focus=${focusSpells} spellIds=${spellIds.size} spells=${spellRows.length}`);
       return record;
     },
   };
