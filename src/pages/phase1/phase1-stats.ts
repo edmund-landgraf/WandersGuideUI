@@ -102,9 +102,14 @@ function parseSigned(value: string) {
 
 type StoredCreature = {
   hp_current?: number | null;
-  operations?: Array<{ type?: string; data?: { variable?: string; value?: unknown } | null }> | null;
+  operations?: Array<{ type?: string; data?: unknown }> | null;
   meta_data?: { calculated_stats?: { hp_max?: number; ac?: number; profs?: Record<string, { total?: number }> } | null } | null;
 };
+
+function valueOperation(data: unknown): { variable?: string; value?: unknown } | undefined {
+  if (!data || typeof data !== 'object' || !('variable' in data)) return undefined;
+  return data as { variable?: string; value?: unknown };
+}
 
 const ATTRIBUTE_VARIABLES = {
   strength: 'ATTRIBUTE_STR',
@@ -126,8 +131,9 @@ function operationNumber(value: unknown): number | undefined {
 
 function setValueNumber(entity: StoredCreature, variable: string): number | undefined {
   for (const operation of entity.operations ?? []) {
-    if (operation.type !== 'setValue' || operation.data?.variable !== variable) continue;
-    const value = operationNumber(operation.data.value);
+    const data = valueOperation(operation.data);
+    if (operation.type !== 'setValue' || data?.variable !== variable) continue;
+    const value = operationNumber(data.value);
     if (value != null) return value;
   }
   return undefined;
@@ -136,8 +142,9 @@ function setValueNumber(entity: StoredCreature, variable: string): number | unde
 function adjStrings(entity: StoredCreature, variable: string): string[] {
   const values: string[] = [];
   for (const operation of entity.operations ?? []) {
-    if (operation.type !== 'adjValue' || operation.data?.variable !== variable) continue;
-    if (typeof operation.data.value === 'string' && operation.data.value.trim()) values.push(operation.data.value.trim());
+    const data = valueOperation(operation.data);
+    if (operation.type !== 'adjValue' || data?.variable !== variable) continue;
+    if (typeof data.value === 'string' && data.value.trim()) values.push(data.value.trim());
   }
   return values;
 }

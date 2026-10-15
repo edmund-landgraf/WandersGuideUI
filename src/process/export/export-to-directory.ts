@@ -59,7 +59,7 @@ export function zipStored(files: { name: string; data: Uint8Array }[]) {
   endView.setUint16(10, files.length, true);
   endView.setUint32(12, centralSize, true);
   endView.setUint32(16, offset, true);
-  parts.push(...centrals, end);
+  parts.push(...centrals.map((part) => part as BlobPart), end as BlobPart);
   return new Blob(parts, { type: 'application/zip' });
 }
 

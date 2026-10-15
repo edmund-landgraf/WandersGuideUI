@@ -25,6 +25,15 @@ function conditionParts(conditions: Condition[] | null | undefined) {
   }));
 }
 
+function resistanceParts(values: string[]) {
+  return values.map((entry) => {
+    const match = /^(.*?)(?:\s+(\d+))?$/.exec(entry.trim());
+    const name = match?.[1]?.trim() || entry;
+    const amount = match?.[2];
+    return amount == null ? { name } : { name, value: Number(amount) };
+  });
+}
+
 function resolveData(combatant: Combatant, players: Character[]): LivingEntity | undefined {
   if (combatant.type === 'CHARACTER') {
     const id = numericId(combatant.character);
@@ -81,6 +90,7 @@ export async function loadTacticsBundle(campaignId: number, encounterId: number,
       hpMax: status.maxHp || hp,
       ac: status.ac,
       conditions: conditionParts(data.details?.conditions),
+      resistances: resistanceParts(status.resistances),
       perception: status.perception,
       fortitude: status.fortitude,
       reflex: status.reflex,

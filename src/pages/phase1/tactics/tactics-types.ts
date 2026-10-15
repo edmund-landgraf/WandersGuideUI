@@ -2,6 +2,8 @@ export type TacticsSide = 'enemy' | 'ally';
 
 export type TacticsCondition = { name: string; value?: number };
 
+export type TacticsResistance = { name: string; value?: number };
+
 export type TacticsAbilityKind = 'strike' | 'area' | 'heal' | 'buff' | 'aid' | 'skill' | 'other';
 
 export type TacticsAbility = {
@@ -38,6 +40,7 @@ export type TacticsCombatant = {
   hpMax: number;
   ac?: number;
   conditions: TacticsCondition[];
+  resistances: TacticsResistance[];
   perception?: number;
   fortitude?: number;
   reflex?: number;

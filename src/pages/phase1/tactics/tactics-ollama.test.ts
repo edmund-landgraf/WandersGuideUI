@@ -11,6 +11,7 @@ function enemy(): TacticsCombatant {
     hpMax: 40,
     ac: 14,
     conditions: [],
+    resistances: [],
     abilities: [
       {
         id: 'spade',
@@ -140,7 +141,8 @@ describe('proposeTurn', () => {
     });
     expect(result.choices).toHaveLength(1);
     expect(result.choices[0].lines.join(' ')).toContain('using Ward');
-    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1].body)) as { messages: { content: string }[] };
+    const init = vi.mocked(fetch).mock.calls[0]?.[1];
+    const body = JSON.parse(String(init?.body)) as { messages: { content: string }[] };
     expect(body.messages[1].content).toContain('merge with or emerge from their ward');
   });
 

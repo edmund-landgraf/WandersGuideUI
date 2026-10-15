@@ -4,19 +4,19 @@ const isAuthCallback = ['code', 'access_token', 'error', 'error_description', 't
   (key) => search.has(key) || hash.has(key)
 );
 const application = location.pathname.startsWith('/owlbear/auth')
-  ? import('/src/pages/OwlbearAuthPage.tsx')
+  ? import('./pages/OwlbearAuthPage.tsx')
   : location.pathname.startsWith('/shops')
-    ? import('/src/pages/launcher/shops.tsx')
+    ? import('./pages/launcher/shops.tsx')
     : location.pathname.startsWith('/phase0')
-      ? import('/src/pages/phase0/main.tsx')
+      ? import('./pages/phase0/main.tsx')
       : location.pathname.startsWith('/phase1') ||
           location.pathname.startsWith('/tactics') ||
           location.pathname.startsWith('/sheet') ||
           location.pathname.startsWith('/builder') ||
           location.pathname.startsWith('/stat-block') ||
           isAuthCallback
-        ? import('/src/pages/phase1/main.tsx')
-        : import('/src/pages/launcher/main.tsx');
+        ? import('./pages/phase1/main.tsx')
+        : import('./pages/launcher/main.tsx');
 
 application.catch((error: unknown) => {
   const root = document.getElementById('root');

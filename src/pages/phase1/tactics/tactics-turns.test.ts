@@ -9,6 +9,7 @@ function fighter(partial: Partial<TacticsCombatant> & Pick<TacticsCombatant, 'id
     hpMax: 20,
     ac: 18,
     conditions: [],
+    resistances: [],
     abilities: [],
     ...partial,
   };

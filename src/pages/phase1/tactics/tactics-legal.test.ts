@@ -12,6 +12,7 @@ function actor(): TacticsCombatant {
     hpMax: 20,
     ac: 15,
     conditions: [],
+    resistances: [],
     description: 'A kami can merge with or emerge from their ward as a single action, which has the concentrate trait.',
     abilities: [
       {
