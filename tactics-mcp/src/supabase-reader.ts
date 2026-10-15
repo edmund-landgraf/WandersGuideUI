@@ -504,24 +504,37 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
     const classRow = (entity.details as Json | undefined)?.class as Json | undefined;
     const selections = ((entity.operation_data as Json | undefined)?.selections ?? {}) as Record<string, string>;
     const operations = Array.isArray(classRow?.operations) ? (classRow.operations as Json[]) : [];
-    sheet.details = {
-      reader: "focus-scan",
-      classId: num(classRow?.id) ?? null,
-      className: typeof classRow?.name === "string" ? classRow.name : null,
-      classOperations: operations.length,
-      selects: operations.filter((op) => op.type === "select").map((op) => {
-        const data = op.data as Json | undefined;
+    const selects: Json[] = [];
+    function findSelects(value: unknown, depth: number) {
+      if (!value || typeof value !== "object" || depth > 8 || selects.length > 20) return;
+      if (Array.isArray(value)) {
+        for (const item of value) findSelects(item, depth + 1);
+        return;
+      }
+      const row = value as Json;
+      if (row.type === "select") {
+        const data = row.data as Json | undefined;
         const filters = data?.optionsFilters as Json | undefined;
         const spellData = filters?.spellData as Json | undefined;
-        return {
-          id: typeof op.id === "string" ? op.id : null,
+        selects.push({
+          id: typeof row.id === "string" ? row.id : null,
           optionType: data?.optionType ?? null,
           mode: data?.modeType ?? null,
           title: data?.title ?? null,
           spellType: spellData?.type ?? null,
           castingSource: spellData?.castingSource ?? null,
-        };
-      }),
+        });
+      }
+      for (const child of Object.values(row)) findSelects(child, depth + 1);
+    }
+    findSelects(operations, 0);
+    sheet.details = {
+      reader: "focus-scan",
+      classId: num(classRow?.id) ?? null,
+      className: typeof classRow?.name === "string" ? classRow.name : null,
+      classOperations: operations.length,
+      operationTypes: operations.map((op) => op.type ?? null),
+      selects,
       selectionCount: Object.keys(selections).length,
       blocksWalked: seenBlocks.size,
       focusSpellIds: [...scanned].slice(0, 30),
