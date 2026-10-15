@@ -164,24 +164,6 @@ function spellIdsOf(entity: Json) {
   });
 }
 
-async function spellCatalog(sourceIds: number[]) {
-  const unique = [...new Set(sourceIds)].filter((id) => id > 0);
-  if (!unique.length) return [];
-  const response = await fetch(`${baseUrl()}/functions/v1/find-spell`, {
-    method: "POST",
-    headers: {
-      apikey: env("SUPABASE_ANON_KEY"),
-      Authorization: `Bearer ${env("SUPABASE_SERVICE_ROLE_KEY")}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ content_sources: unique }),
-  });
-  if (!response.ok) return [];
-  const payload = (await response.json()) as { data?: unknown };
-  const data = Array.isArray(payload) ? payload : payload.data;
-  return Array.isArray(data) ? (data as Json[]) : [];
-}
-
 async function rest(path: string): Promise<Json[]> {
   const service = env("SUPABASE_SERVICE_ROLE_KEY");
   const response = await fetch(`${baseUrl()}/rest/v1/${path}`, {
@@ -614,19 +596,7 @@ export function createSupabaseReader(): EncounterReader {
       }
       for (const entity of Object.values(entities)) collectFocusIds(entity, 0, spellIds);
       for (const block of blocks) collectFocusIds(block, 0, spellIds);
-      const sourceIds = Object.values(entities).flatMap((entity) => {
-        const enabled = (entity.content_sources as Json | undefined)?.enabled;
-        return Array.isArray(enabled) ? enabled.flatMap((id) => num(id) ? [num(id)!] : []) : [];
-      });
-      const [byId, catalog] = await Promise.all([
-        contentRows("find-spell", [...spellIds]),
-        spellCatalog(sourceIds),
-      ]);
-      const spellRows = [...byId];
-      for (const row of catalog) {
-        const id = num(row.id);
-        if (id && spellIds.has(id) && !spellRows.some((item) => num(item.id) === id)) spellRows.push(row);
-      }
+      const spellRows = await contentRows("find-spell", [...spellIds]);
       applyCatalog(record, entities, blocks, spellRows);
       console.error(`[wgui-mcp] encounter ${record.encounterId} combatants=${record.combatants.length} abilityIds=${blockIds.size} resolved=${blocks.length} custom=${customAbilities} focus=${focusSpells} spellIds=${spellIds.size} spells=${spellRows.length}`);
       return record;
