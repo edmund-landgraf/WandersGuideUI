@@ -67,8 +67,7 @@ async function readJson(req: IncomingMessage) {
 }
 
 function metadataUrl(req: IncomingMessage) {
-  const host = req.headers.host ?? "127.0.0.1:3104";
-  return `http://${host}/.well-known/oauth-protected-resource`;
+  return `${issuer(req)}/.well-known/oauth-protected-resource`;
 }
 
 function issuer(req: IncomingMessage) {
