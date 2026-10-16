@@ -53,3 +53,7 @@ scripts/.dist/
 
 # Generated character-export compile graph
 supabase/wgui-export/wgui-export-character/compile.bundle.js
+
+# Local archives and plugin builds
+*.rar
+*.zip
