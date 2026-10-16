@@ -13,7 +13,7 @@ import {
   getSpeedValue,
 } from '@variables/variable-helpers';
 import { getAllSpeedVariables, getVariable } from '@variables/variable-manager';
-import { preparePhase1Entity, type Phase1EntityCombatant } from './phase1-entity';
+import { preparePhase1Entity, type Phase1EntityCombatant, type PreparedPhase1Entity } from './phase1-entity';
 
 export type Phase1CreatureStatus = {
   maxHp: number;
@@ -42,7 +42,11 @@ const KNOWLEDGE_SKILLS: Record<string, string> = {
 };
 
 export async function calculateEntityStatus(combatant: Phase1EntityCombatant): Promise<Phase1CreatureStatus> {
-  const { entity, content, storeId, kind } = await preparePhase1Entity(combatant);
+  return calculatePreparedEntityStatus(await preparePhase1Entity(combatant));
+}
+
+/** Reuse a prepared store so MCP and the UI calculate the same defenses. */
+export function calculatePreparedEntityStatus({ entity, content, storeId, kind }: PreparedPhase1Entity): Phase1CreatureStatus {
   const speeds = getAllSpeedVariables(storeId)
     .map((variable) => ({ name: variable.name, value: getSpeedValue(storeId, variable, entity).total }))
     .filter((speed) => speed.value > 0);

@@ -1,5 +1,7 @@
 import { setEncounterReader, type CombatantRow, type CombatantSheet, type EncounterReader, type EncounterRecord } from "./reader.js";
 
+import { readLiveStatBlock } from "./stat-block.js";
+
 type Json = Record<string, unknown>;
 
 function env(name: string) {
@@ -402,6 +404,9 @@ function mapCombatant(combatant: Json, characters: Json[]): CombatantRow | null 
   const stats = statsOf(entity);
   const hpMax = num(stats.hp_max) ?? num(entity.hp_max) ?? 0;
   const hpCurrent = num(entity.hp_current) ?? hpMax;
+  // The GM can mark a combatant out without changing its last recorded HP.
+  // Match isCombatantOut in the UI instead of inferring life/death from HP alone.
+  const out = combatant.out === "dead" || combatant.out === "incapacitated" ? combatant.out : undefined;
   return {
     id,
     name: typeof entity.name === "string" ? entity.name : "Unnamed",
@@ -416,7 +421,8 @@ function mapCombatant(combatant: Json, characters: Json[]): CombatantRow | null 
     will: profTotal(entity, "SAVE_WILL"),
     hpCurrent,
     hpMax: hpMax || hpCurrent,
-    place: hpCurrent <= 0 ? "down" : "fighting",
+    place: out || hpCurrent <= 0 ? "down" : "fighting",
+    out,
   };
 }
 
@@ -599,8 +605,12 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
       if (existing) existing.actions.push(...featActions.filter((ability) => !existing.actions.some((item) => item.name === ability.name)));
       else sheet.groups.push({ id: "feats", label: "Feats (with Actions)", actions: featActions });
     }
-    sheet.feats = feats.map((ability) => ({ section: "other" as const, name: ability.name, level: ability.level, hasAction: ability.actionCost !== undefined || ability.actions !== null }));
-    sheet.classFeatures = features.map((ability) => ({ name: ability.name, level: ability.level }));
+    // Catalog lookups enrich embedded encounter data; an empty or partial lookup
+    // must not erase already-present feats and class features.
+    const resolvedFeats = feats.map((ability) => ({ section: "other" as const, name: ability.name, level: ability.level, hasAction: ability.actionCost !== undefined || ability.actions !== null }));
+    sheet.feats = [...sheet.feats.filter((feat) => !resolvedFeats.some((item) => item.name === feat.name)), ...resolvedFeats];
+    const resolvedFeatures = features.map((ability) => ({ name: ability.name, level: ability.level }));
+    sheet.classFeatures = [...sheet.classFeatures.filter((feature) => !resolvedFeatures.some((item) => item.name === feature.name)), ...resolvedFeatures];
     const classAbilities = [
       ...feats.filter((ability) => ability.actionCost === undefined && ability.actions === null),
       ...chosen.custom.map((choice) => ({ ...choice, actions: null })),
@@ -718,7 +728,7 @@ function mapEncounter(raw: Json, characters: Json[]): EncounterRecord {
   };
 }
 
-export function createSupabaseReader(): EncounterReader {
+export function createSupabaseReader(readStats = readLiveStatBlock): EncounterReader {
   return {
     async profile(userId) {
       const user = await adminUser(userId);
@@ -735,7 +745,7 @@ export function createSupabaseReader(): EncounterReader {
         };
       });
     },
-    async loadEncounter(userId, campaignId, encounterId, combatantId) {
+    async loadEncounter(userId, campaignId, encounterId, combatantId, includeStats = false) {
       const rows = await encountersFor(userId, campaignId, encounterId);
       if (!rows.length) return null;
       const characters = await rest(`character?campaign_id=eq.${campaignId}&select=*`);
@@ -777,6 +787,16 @@ export function createSupabaseReader(): EncounterReader {
       const spellRows = await contentRows("find-spell", [...spellIds]);
       applyCatalog(record, entities, blocks, spellRows, classFeatures);
       console.error(`[wgui-mcp] encounter ${record.encounterId} combatants=${record.combatants.length} abilityIds=${blockIds.size} resolved=${blocks.length} custom=${customAbilities} focus=${focusSpells} spellIds=${spellIds.size} spells=${spellRows.length}`);
+      if (includeStats) {
+        for (const [id, entity] of Object.entries(entities)) {
+          const row = record.combatants.find((item) => item.id === id);
+          if (!row) continue;
+          // Never turn calculation failures into misleading empty defense arrays.
+          const stats = await readStats(entity, row.kind, id);
+          Object.assign(record.sheets[id], stats.sheet);
+          Object.assign(row, stats.row);
+        }
+      }
       return record;
     },
   };

@@ -16,6 +16,7 @@ export type CombatantRow = {
   hpMax: number;
   tempHp?: number;
   place: "fighting" | "bench" | "down";
+  out?: "dead" | "incapacitated";
 };
 
 export type EncounterRecord = {
@@ -34,7 +35,7 @@ export type EncounterRecord = {
 
 export type CombatantSheet = {
   senses?: string[];
-  speeds?: { land?: number; fly?: number; climb?: number; burrow?: number };
+  speeds?: { land?: number; fly?: number; climb?: number; burrow?: number; swim?: number; [movement: string]: number | undefined };
   perception?: number;
   classDc?: number;
   abilities?: Record<string, unknown>;
@@ -56,7 +57,7 @@ export type CombatantSheet = {
 export type EncounterReader = {
   profile(userId: string): Promise<{ id: string; email?: string | null; name?: string | null }>;
   listEncounters(userId: string, campaignId: number): Promise<{ id: number; name: string; combatantCount: number }[]>;
-  loadEncounter(userId: string, campaignId: number, encounterId: number, combatantId?: string): Promise<EncounterRecord | null>;
+  loadEncounter(userId: string, campaignId: number, encounterId: number, combatantId?: string, includeStats?: boolean): Promise<EncounterRecord | null>;
 };
 
 const empty: EncounterReader = {

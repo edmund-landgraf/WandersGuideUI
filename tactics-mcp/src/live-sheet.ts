@@ -5,7 +5,7 @@ type Json = Record<string, unknown>;
 
 const resolverReady = Promise.resolve(register(new URL("./resolve-app-deps.mjs", import.meta.url), import.meta.url));
 
-function sheetEnv() {
+export function sheetEnv() {
   const env = globalThis as typeof globalThis & {
     __WGUI_ENV?: Record<string, string | boolean>;
     localStorage?: Storage;

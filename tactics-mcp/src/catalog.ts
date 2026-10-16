@@ -49,8 +49,8 @@ export function registerEncounterTool(
   );
 }
 
-async function encounter(userId: string, campaignId: number, encounterId: number, combatantId?: string) {
-  return getEncounterReader().loadEncounter(userId, campaignId, encounterId, combatantId);
+async function encounter(userId: string, campaignId: number, encounterId: number, combatantId?: string, includeStats = false) {
+  return getEncounterReader().loadEncounter(userId, campaignId, encounterId, combatantId, includeStats);
 }
 
 function sheetOf(record: EncounterRecord, combatantId: string) {
@@ -164,7 +164,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     description: "Current HP, defenses, senses, speeds, and ability modifiers.",
     inputSchema: { ...ids, combatantId: z.string() },
   }, async (args, uid) => {
-    const found = await one(uid, args, true);
+    const found = await one(uid, args, true, true);
     if (!found) return notFound("Encounter not found.");
     if ("missing" in found) return notFound("Combatant not found.");
     const { row, sheet } = found;
@@ -172,6 +172,8 @@ export function registerCatalog(server: McpServer, userId: () => string) {
       id: row.id,
       name: row.name,
       level: row.level ?? null,
+      place: row.place,
+      out: row.out ?? null,
       hpCurrent: row.hpCurrent,
       hpMax: row.hpMax,
       tempHp: row.tempHp ?? null,
@@ -296,6 +298,7 @@ function summary(row: EncounterRecord["combatants"][number]) {
     level: row.level ?? null,
     kind: row.kind,
     place: row.place,
+    out: row.out ?? null,
     initiative: row.initiative ?? null,
     conditions: row.conditions,
     ac: row.ac ?? null,
@@ -308,8 +311,8 @@ function summary(row: EncounterRecord["combatants"][number]) {
   };
 }
 
-async function one(userId: string, args: Record<string, unknown>, live = false) {
-  const record = await encounter(userId, Number(args.campaignId), Number(args.encounterId), live ? String(args.combatantId) : undefined);
+async function one(userId: string, args: Record<string, unknown>, live = false, includeStats = false) {
+  const record = await encounter(userId, Number(args.campaignId), Number(args.encounterId), live ? String(args.combatantId) : undefined, includeStats);
   if (!record) return null;
   const found = sheetOf(record, String(args.combatantId));
   if (!found) return { missing: true as const };
