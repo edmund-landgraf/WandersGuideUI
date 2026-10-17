@@ -10,7 +10,7 @@ import { Box, MantineProvider, createTheme, v8CssVariablesResolver } from '@mant
 import { usePrevious } from '@mantine/hooks';
 import { ModalsProvider } from '@mantine/modals';
 import { Notifications, showNotification } from '@mantine/notifications';
-import { clearUserData, getCachedPublicUser } from '@auth/user-manager';
+import { clearUserData, getCachedPublicUser, recordUserLogin } from '@auth/user-manager';
 import SearchSpotlight from '@nav/SearchSpotlight';
 import ArtworkPlate from '@common/ArtworkPlate';
 import { useEffect, useState } from 'react';
@@ -87,6 +87,7 @@ export default function App() {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      recordUserLogin(session?.user.id, session?.user.last_sign_in_at);
       // Cold load with a dead session (expired from inactivity while the tab was
       // closed): supabase-js clears its stored session without a SIGNED_OUT event,
       // so catch the "cached user but no session" mismatch here too. Clear silently,
@@ -103,6 +104,7 @@ export default function App() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+      recordUserLogin(session?.user.id, session?.user.last_sign_in_at);
 
       if (event === 'SIGNED_OUT') {
         // The session ended. If the cached user data is still present, this was NOT an

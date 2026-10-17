@@ -33,7 +33,7 @@ import {
 import { setPageTitle } from '@utils/document-change';
 import BlurBox from '@common/BlurBox';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getPublicUser } from '@auth/user-manager';
+import { getPublicUser, readUserLogins } from '@auth/user-manager';
 import { clearStoragePreservingDisplayPrefs } from '@pages/phase1/display-prefs';
 import { getDefaultBackgroundImage } from '@utils/background-images';
 import { toLabel } from '@utils/strings';
@@ -46,6 +46,7 @@ import {
   IconCode,
   IconShield,
   IconTrash,
+  IconHistory,
 } from '@tabler/icons-react';
 import { Campaign, Character, PublicUser } from '@schemas/content';
 import { useState } from 'react';
@@ -866,6 +867,39 @@ function ProfileSection() {
               </Accordion.Panel>
             </Accordion.Item>
           </Accordion>
+
+          <Button
+            mt='sm'
+            variant='light'
+            fullWidth
+            leftSection={<IconHistory size={16} />}
+            onClick={() => {
+              const logins = readUserLogins(user.user_id);
+              modals.open({
+                title: <Title order={4}>Recent logins</Title>,
+                children: (
+                  <Stack gap={6}>
+                    {logins.length === 0 ? (
+                      <Text size='sm' c='dimmed'>
+                        No logins recorded on this browser yet.
+                      </Text>
+                    ) : (
+                      logins.map((iso) => (
+                        <Text key={iso} size='sm'>
+                          {new Date(iso).toLocaleString(undefined, {
+                            dateStyle: 'medium',
+                            timeStyle: 'short',
+                          })}
+                        </Text>
+                      ))
+                    )}
+                  </Stack>
+                ),
+              });
+            }}
+          >
+            Logins
+          </Button>
         </Stack>
       </BlurBox>
     </Box>

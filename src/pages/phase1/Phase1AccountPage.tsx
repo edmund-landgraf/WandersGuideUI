@@ -1,7 +1,8 @@
 import { CampaignSignIn } from '@auth/CampaignSignIn';
 import { signOut } from '@auth/campaign-auth';
 import { useAuthSession } from '@auth/useAuthSession';
-import { getPublicUser } from '@auth/user-manager';
+import { getPublicUser, readUserLogins } from '@auth/user-manager';
+import { supabase } from '../../supabase-client';
 import { GUIDE_BLUE } from '@constants/data';
 import { PATREON_AUTH_URL } from '@constants/urls';
 import { findApprovedContentUpdates } from '@content/content-update';
@@ -75,6 +76,24 @@ function AccountCard({ userId, email }: { userId: string; email?: string }) {
     queryFn: async () => {
       resetContentStore();
       return (await fetchContentSources('ALL-HOMEBREW-PUBLIC')).filter((source) => source.user_id === userId);
+    },
+  });
+  const logins = useQuery({
+    queryKey: ['phase1-account-logins', userId],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('recent_logins');
+      if (error || !Array.isArray(data)) return readUserLogins(userId).slice(0, 10);
+      return data
+        .map((row) => {
+          if (typeof row === 'string') return row;
+          if (row && typeof row === 'object' && 'logged_in_at' in row) {
+            const at = (row as { logged_in_at?: string }).logged_in_at;
+            return typeof at === 'string' ? at : '';
+          }
+          return '';
+        })
+        .filter(Boolean)
+        .slice(0, 10);
     },
   });
   const updates = useQuery({
@@ -261,6 +280,20 @@ function AccountCard({ userId, email }: { userId: string; email?: string }) {
               }).finally(() => setBusy(false));
             }}>Delete account</button>
           </div>
+        </Fold>
+
+        <Fold title='Logins'>
+          <ul className='space-y-1 text-sm'>
+            {(logins.data ?? []).length === 0 ? (
+              <li className='text-p1-muted'>No logins recorded yet.</li>
+            ) : (
+              (logins.data ?? []).map((iso) => (
+                <li key={iso}>
+                  {new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                </li>
+              ))
+            )}
+          </ul>
         </Fold>
       </div>
     </main>

@@ -62,3 +62,27 @@ export function clearUserData() {
     localStorage.removeItem('user-data');
   }
 }
+
+const loginHistoryKey = (userId: string) => `user-logins:${userId}`;
+
+function readLoginHistory(userId: string): string[] {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(loginHistoryKey(userId)) || '[]');
+    return Array.isArray(parsed) ? parsed.filter((entry) => typeof entry === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Keep the newest 10 distinct sign-in timestamps for this account (this browser). */
+export function recordUserLogin(userId: string | undefined, at: string | null | undefined) {
+  if (!userId || !at || typeof localStorage === 'undefined') return;
+  const prev = readLoginHistory(userId);
+  if (prev.includes(at)) return;
+  localStorage.setItem(loginHistoryKey(userId), JSON.stringify([at, ...prev].slice(0, 10)));
+}
+
+export function readUserLogins(userId: string): string[] {
+  return readLoginHistory(userId).slice(0, 10);
+}

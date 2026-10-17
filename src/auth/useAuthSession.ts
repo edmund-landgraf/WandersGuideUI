@@ -1,6 +1,7 @@
 import type { Session } from '@supabase/supabase-js';
 import { useEffect, useState } from 'react';
 import { consumeOAuthReturnPath } from './campaign-auth';
+import { recordUserLogin } from './user-manager';
 import { supabase } from '../supabase-client';
 
 export function useAuthSession() {
@@ -11,12 +12,14 @@ export function useAuthSession() {
 
     supabase.auth.getSession().then(({ data }) => {
       if (mounted) setSession(data.session);
+      recordUserLogin(data.session?.user.id, data.session?.user.last_sign_in_at);
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next);
+      recordUserLogin(next?.user.id, next?.user.last_sign_in_at);
     });
 
     return () => {
