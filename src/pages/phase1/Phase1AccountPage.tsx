@@ -27,12 +27,12 @@ export function Phase1AccountPage() {
   return (
     <div className='min-h-screen bg-p1-page text-p1-text'>
       <WorkspaceHeader label='Account' />
-      <AccountCard userId={session.user.id} />
+      <AccountCard userId={session.user.id} email={session.user.email} />
     </div>
   );
 }
 
-function AccountCard({ userId }: { userId: string }) {
+function AccountCard({ userId, email }: { userId: string; email?: string }) {
   const queryClient = useQueryClient();
   const loaded = useQuery({
     queryKey: ['phase1-account-self'],
@@ -103,6 +103,7 @@ function AccountCard({ userId }: { userId: string }) {
     <main className='mx-auto w-full max-w-md px-4 py-6'>
       <section className='rounded-lg border border-p1-border bg-p1-surface px-4 py-5'>
         <NameField name={user.display_name} onChange={(display_name) => patch({ ...user, display_name })} />
+        {email && <p className='mt-0.5 text-center text-xs text-p1-muted'>{email}</p>}
         {user.summary && <p className='mt-1 text-center text-xs italic text-p1-muted'>{user.summary}</p>}
         <div className='mt-4 grid grid-cols-3 text-center'>
           <Count label='Characters' value={characters.data?.length} />
