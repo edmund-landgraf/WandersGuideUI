@@ -70,6 +70,8 @@ import { PATREON_URL } from '@constants/urls';
 import { getCachedPublicUser, getPublicUser } from '@auth/user-manager';
 import { hasPatreonAccess } from '@utils/patreon';
 import { getAllBackgroundImages } from '@utils/background-images';
+import { Phase1ArtworkOverlay, Phase1ArtworkPreview } from './phase1-background-modal';
+import { PHASE1_SHEET_ART_TONE_EVENT, persistSheetArtTone, readStoredSheetArtTone, type Phase1SheetArtTone } from './phase1-theme';
 import { uploadImage } from '@upload/image-upload';
 import { getFileContents } from '@import/json/import-from-json';
 import exportToJSON, { downloadObjectAsJson } from '@export/export-to-json';
@@ -88,8 +90,10 @@ import { InspectorContent, HazardInspector, DETAIL_TABS, defensesForRow, fallbac
 type CampaignNotePage = NonNullable<Campaign['notes']>['pages'][number];
 type IndexedNotePage = { page: CampaignNotePage; index: number };
 
-function useNarrowLayout() {
-  const query = '(max-width: 767px)';
+const PHONE_LAYOUT_QUERY = '(max-width: 767px)';
+const RAIL_DRAWER_QUERY = '(max-width: 1099px)';
+
+function useMediaQuery(query: string) {
   const [matches, setMatches] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
   useEffect(() => {
     const media = window.matchMedia(query);
@@ -97,8 +101,12 @@ function useNarrowLayout() {
     onChange();
     media.addEventListener('change', onChange);
     return () => media.removeEventListener('change', onChange);
-  }, []);
+  }, [query]);
   return matches;
+}
+
+function useNarrowLayout() {
+  return useMediaQuery(PHONE_LAYOUT_QUERY);
 }
 
 const DETAIL_WIDTH_KEY = 'phase1-detail-width';
@@ -2386,7 +2394,9 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailWidth, setDetailWidth] = useState(readDetailWidth);
   const narrow = useNarrowLayout();
-  const [railOpen, setRailOpen] = useState(false);
+  const railDrawer = useMediaQuery(RAIL_DRAWER_QUERY);
+  const [railOpen, setRailOpen] = useState(() => typeof window !== 'undefined' && !window.matchMedia(RAIL_DRAWER_QUERY).matches);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
   const { pathname } = useLocation();
   const [activeTab, setActiveTab] = useState<DetailTab>('Health');
   const [initiativeOpen, setInitiativeOpen] = useState(false);
@@ -2397,6 +2407,15 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const [pendingCampaignRemove, setPendingCampaignRemove] = useState<{ id: number; name: string } | null>(null);
   const [statBlocksOpen, setStatBlocksOpen] = useState(false);
   const [encounterTab, setEncounterTab] = useState<'combat' | 'dice'>(() => defaultEncounterTab(selectedEncounter));
+  const [artTone, setArtTone] = useState<Phase1SheetArtTone>(() => readStoredSheetArtTone());
+  const [artPreview, setArtPreview] = useState(false);
+  const [artBand, setArtBand] = useState(false);
+  const [artRequest, setArtRequest] = useState(0);
+  const artHiddenKey = campaign ? `phase1-encounter-art-off:${campaign.id}` : '';
+  const [artHidden, setArtHidden] = useState(() => (artHiddenKey ? window.localStorage.getItem(artHiddenKey) === '1' : false));
+  useEffect(() => {
+    setArtHidden(artHiddenKey ? window.localStorage.getItem(artHiddenKey) === '1' : false);
+  }, [artHiddenKey]);
   const [checkOpen, setCheckOpen] = useState(false);
   const [checkToast, setCheckToast] = useState<{ log: DiceRollLog; x: number; y: number } | null>(null);
   const [dice3dThrows, setDice3dThrows] = useState<{ throws: Dice3dThrow[]; title?: string } | null>(null);
@@ -3187,7 +3206,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     setDcDraft(selectedEncounter?.meta_data.dice_roll_state?.dc != null ? String(selectedEncounter.meta_data.dice_roll_state.dc) : '');
   }, [selectedEncounter?.id]);
   useEffect(() => window.localStorage.setItem(DETAIL_WIDTH_KEY, String(detailWidth)), [detailWidth]);
-  useEffect(() => { setRailOpen(false); }, [pathname]);
+  useEffect(() => { if (railDrawer) setRailOpen(false); }, [pathname, railDrawer]);
   useEffect(() => {
     if (!railOpen) return;
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setRailOpen(false); };
@@ -3197,31 +3216,51 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
 
   const campaignArtUrl = !viewingNotes && !viewingSettings ? campaign?.meta_data?.image_url?.trim() : '';
   const artFocus = campaignFocusY(campaign?.meta_data?.image_focus_y);
+  useEffect(() => {
+    const sync = () => setArtTone(readStoredSheetArtTone());
+    window.addEventListener(PHASE1_SHEET_ART_TONE_EVENT, sync);
+    return () => window.removeEventListener(PHASE1_SHEET_ART_TONE_EVENT, sync);
+  }, []);
   const rail = (
     <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} campaignPlayers={players} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddPlayer={addPlayer} onAddAllPlayers={addAllPlayers} onAddAllPcsToEncounters={campaign && isGm ? onAddAllPcsToEncounters : undefined} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onDeleteNote={onDeleteNote} onDeleteAllNotes={onDeleteAllNotes} onDeleteEncounter={onDeleteEncounter} onDeleteAllEncounters={onDeleteAllEncounters} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} onRenameNote={renameNote} onRenameEncounter={renameEncounter} />
   );
   const inspector = (
-    <Inspector fill={narrow} combatant={selected && (isGm || !isEnemyCreature(selected)) ? selected : null} width={detailWidth} activeTab={normalizeDetailTab(activeTab)} onTab={setActiveTab} hasMatchingCampaignNote={Boolean(encounterNote)} status={selected ? statuses.data?.[selected._id] : undefined} statusLoading={statuses.isLoading} canManageSpells={canManageSpells} spellActions={spellActions} onChangeConditions={canManageSpells && selected?.type !== 'HAZARD' ? persistConditions : undefined} onSaveGmNotes={isGm && selected?.type === 'CREATURE' ? persistGmNotes : undefined} onPersistHpCurrent={selected && canManageSpells && selected.data ? (raw, note) => persistHpCurrent(selected, raw, note, statuses.data?.[selected._id]?.maxHp ?? statsFor(selected.data).maxHp) : undefined} onPersistTempHp={selected && canManageSpells && selected.data ? (raw, note) => persistTempHp(selected, raw, note) : undefined} initiativeLog={selectedEncounter?.meta_data.initiative_log ?? []} canEditRoundNotes={isGm && !rosterSaving} onUpdateRoundNote={updateRoundNote} onLogAction={selected && canManageSpells && selected.type !== 'HAZARD' ? persistLogAction : undefined} onDeleteLogEntry={selected && canManageSpells && selected.type !== 'HAZARD' ? persistDeleteLogEntry : undefined} />
+    <Inspector fill={narrow} combatant={selected && (isGm || !isEnemyCreature(selected)) ? selected : null} width={detailWidth} activeTab={normalizeDetailTab(activeTab)} onTab={setActiveTab} onCollapse={narrow ? undefined : () => setInspectorOpen(false)} hasMatchingCampaignNote={Boolean(encounterNote)} status={selected ? statuses.data?.[selected._id] : undefined} statusLoading={statuses.isLoading} canManageSpells={canManageSpells} spellActions={spellActions} onChangeConditions={canManageSpells && selected?.type !== 'HAZARD' ? persistConditions : undefined} onSaveGmNotes={isGm && selected?.type === 'CREATURE' ? persistGmNotes : undefined} onPersistHpCurrent={selected && canManageSpells && selected.data ? (raw, note) => persistHpCurrent(selected, raw, note, statuses.data?.[selected._id]?.maxHp ?? statsFor(selected.data).maxHp) : undefined} onPersistTempHp={selected && canManageSpells && selected.data ? (raw, note) => persistTempHp(selected, raw, note) : undefined} initiativeLog={selectedEncounter?.meta_data.initiative_log ?? []} canEditRoundNotes={isGm && !rosterSaving} onUpdateRoundNote={updateRoundNote} onLogAction={selected && canManageSpells && selected.type !== 'HAZARD' ? persistLogAction : undefined} onDeleteLogEntry={selected && canManageSpells && selected.type !== 'HAZARD' ? persistDeleteLogEntry : undefined} />
   );
   const phoneInspector = narrow && selectedId && !viewingNotes && !viewingSettings;
+  const showDetail = !narrow && !viewingNotes && !viewingSettings;
+  const detailOpen = showDetail && inspectorOpen;
+  const dockedRail = !railDrawer && railOpen;
+  const encounterGrid = dockedRail && detailOpen
+    ? 'grid-cols-[248px_minmax(280px,1fr)_6px_auto]'
+    : dockedRail && showDetail
+      ? 'grid-cols-[248px_minmax(280px,1fr)_2.5rem]'
+      : dockedRail
+        ? 'grid-cols-[248px_minmax(280px,1fr)]'
+        : detailOpen
+          ? 'grid-cols-[minmax(280px,1fr)_6px_auto]'
+          : showDetail
+            ? 'grid-cols-[minmax(280px,1fr)_2.5rem]'
+            : 'grid-cols-1';
 
   return (
-    <div className={`relative flex h-dvh min-h-0 flex-col overflow-hidden bg-p1-page text-p1-text md:h-screen md:min-h-[680px]${campaignArtUrl ? ' p1-encounter-has-art' : ''}`}>
-      {campaignArtUrl && (
-        <div className='p1-sheet-art-layer' style={{ backgroundImage: `url(${campaignArtSrc(campaignArtUrl)})`, backgroundPosition: `center ${artFocus}%` }} aria-hidden>
-          <div className='p1-sheet-art-veil' />
-        </div>
-      )}
+    <div className={`relative flex h-dvh min-h-0 flex-col overflow-hidden bg-p1-page text-p1-text md:h-screen md:min-h-[680px]${campaignArtUrl && !artHidden ? ` p1-encounter-has-art p1-sheet-art-${artTone}` : ''}`}>
       <WorkspaceHeader section={standalone ? 'encounters' : undefined} label={campaign?.name ?? encounterDisplayName(selectedEncounter?.name ?? 'Encounter')} campaignId={campaign?.id ?? null} encounterId={selectedEncounter?.id ?? null} noteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} railOpen={railOpen} onToggleRail={() => setRailOpen((open) => !open)} />
-      <div className={`p1-encounter-body grid min-h-0 flex-1 ${narrow ? 'grid-cols-1' : viewingNotes || viewingSettings ? 'grid-cols-[248px_minmax(280px,1fr)]' : 'grid-cols-[248px_minmax(280px,1fr)_6px_auto]'}`}>
-        {narrow ? railOpen && createPortal(
+      <div className={`p1-encounter-body grid min-h-0 flex-1 ${encounterGrid}`}>
+        {railDrawer ? railOpen && createPortal(
           <>
             <button type='button' className='fixed inset-0 z-40 bg-black/50' aria-label='Close navigation' onClick={() => setRailOpen(false)} />
             <div id='campaign-rail' className='fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col shadow-2xl'>{rail}</div>
           </>,
           document.body,
-        ) : rail}
-        <main className='p1-encounter-main min-w-0 overflow-auto bg-p1-surface'>
+        ) : railOpen && <div id='campaign-rail' className='min-h-0'>{rail}</div>}
+        <main className='p1-encounter-main relative min-h-0 min-w-0 overflow-hidden bg-p1-surface'>
+          {campaignArtUrl && !artHidden && (
+            <div className='p1-encounter-art-layer' style={{ backgroundImage: `url(${campaignArtSrc(campaignArtUrl)})`, backgroundPosition: `center ${artFocus}%` }} aria-hidden>
+              <div className='p1-sheet-art-veil' />
+            </div>
+          )}
+          <div className='relative z-[1] h-full overflow-auto'>
           {viewingSettings && campaign ? (
             <SettingsSurface
               campaign={campaign}
@@ -3375,12 +3414,18 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               )}
             </>
           )}
+          </div>
         </main>
-        {!narrow && !viewingNotes && !viewingSettings && (
+        {detailOpen && (
           <>
             <ResizeRail onResize={(delta) => setDetailWidth((width) => clamp(width - delta, DETAIL_WIDTH_MIN, DETAIL_WIDTH_MAX))} />
             {inspector}
           </>
+        )}
+        {showDetail && !inspectorOpen && (
+          <button type='button' className='flex items-start justify-center border-l border-p1-border bg-p1-inset pt-3 text-p1-muted hover:text-p1-text' title='Show combatant details' aria-label='Show combatant details' onClick={() => setInspectorOpen(true)}>
+            <PanelRight size={16} />
+          </button>
         )}
       </div>
       {phoneInspector && (
@@ -3389,6 +3434,61 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
             <ArrowLeft size={16} /> Back to encounter
           </button>
           <div className='min-h-0 flex-1'>{inspector}</div>
+        </div>
+      )}
+      {campaignArtUrl && (
+        <Phase1ArtworkOverlay
+          url={campaignArtSrc(campaignArtUrl)}
+          label={campaign?.name ?? 'Campaign art'}
+          canEdit={isGm}
+          artTone={artTone}
+          onArtTone={(tone) => {
+            setArtTone(tone);
+            persistSheetArtTone(tone);
+          }}
+          onPreview={() => setArtPreview(true)}
+          onSelect={() => setArtRequest((current) => current + 1)}
+          onClear={() => {
+            if (!campaign) return;
+            onUpdateCampaign({ ...campaign, meta_data: { ...campaign.meta_data, image_url: undefined } });
+          }}
+          artHidden={artHidden}
+          onToggleArt={() => {
+            if (!artHiddenKey) return;
+            const next = !artHidden;
+            setArtHidden(next);
+            window.localStorage.setItem(artHiddenKey, next ? '1' : '0');
+          }}
+        />
+      )}
+      {artPreview && campaignArtUrl && (
+        <Phase1ArtworkPreview
+          option={{ name: campaign?.name ?? 'Campaign art', url: campaignArtSrc(campaignArtUrl) }}
+          onBack={() => setArtPreview(false)}
+        />
+      )}
+      {artBand && campaign && campaignArtUrl && (
+        <CampaignStripDialog
+          url={campaignArtSrc(campaignArtUrl)}
+          initial={artFocus}
+          busy={campaignSaving}
+          onCancel={() => setArtBand(false)}
+          onConfirm={(focusY) => {
+            onUpdateCampaign({ ...campaign, meta_data: { ...campaign.meta_data, image_focus_y: focusY } });
+            setArtBand(false);
+          }}
+        />
+      )}
+      {campaign && isGm && (
+        <div className='pointer-events-none fixed bottom-3 right-14 z-30 opacity-0'>
+          <CampaignArtControl
+            campaign={campaign}
+            requestOpen={artRequest}
+            onSaved={() => undefined}
+            onUploaded={(url) => onUpdateCampaign({ ...campaign, meta_data: { ...campaign.meta_data, image_url: url } })}
+            onFrame={() => setArtBand(true)}
+            onFrameError={() => undefined}
+          />
         </div>
       )}
     </div>
@@ -3493,12 +3593,14 @@ export function WorkspaceHeader({ label, section, campaignId, encounterId, noteI
   const patreonTier = user.data?.patreon?.tier ?? null;
   return (
     <header className='flex w-full min-w-0 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-p1-border bg-p1-header px-3 py-2 md:h-14 md:flex-nowrap md:gap-4 md:px-5 md:py-0'>
-      {onToggleRail && (
-        <button type='button' className='icon-button md:hidden' aria-expanded={Boolean(railOpen)} aria-controls='campaign-rail' aria-label={railOpen ? 'Close campaign navigation' : 'Open campaign navigation'} onClick={onToggleRail}>
-          <Menu size={16} />
-        </button>
-      )}
-      <a href='/' className='font-semibold'>Wanderer's Guide</a>
+      <div className='flex shrink-0 items-center gap-2'>
+        {onToggleRail && (
+          <button type='button' className='icon-button' title={railOpen ? 'Hide campaign sidebar' : 'Show campaign sidebar'} aria-expanded={Boolean(railOpen)} aria-controls='campaign-rail' aria-label={railOpen ? 'Hide campaign sidebar' : 'Show campaign sidebar'} onClick={onToggleRail}>
+            <Menu size={16} />
+          </button>
+        )}
+        <a href='/' className='whitespace-nowrap font-semibold'>Wanderer's Guide</a>
+      </div>
       <span className='hidden h-4 w-px bg-p1-border sm:block' />
       <Link to='/phase1' className={navClass(section === 'campaigns')}>Campaigns</Link>
       <Link to='/phase1/characters' className={navClass(section === 'characters')}>Characters</Link>
@@ -5557,13 +5659,18 @@ function CombatantConditionPills({ conditions, onOpen, maxVisible = CONDITION_PI
   );
 }
 
-function Inspector({ combatant, width, fill, activeTab, onTab, hasMatchingCampaignNote, status, statusLoading, canManageSpells, spellActions, onChangeConditions, onSaveGmNotes, onPersistHpCurrent, onPersistTempHp, initiativeLog, canEditRoundNotes, onUpdateRoundNote, onLogAction, onDeleteLogEntry }: {
-  combatant: PopulatedCombatant | null; width: number; fill?: boolean; activeTab: DetailTab; onTab: (tab: DetailTab) => void; hasMatchingCampaignNote?: boolean; status?: Phase1CreatureStatus | null; statusLoading: boolean; canManageSpells: boolean; spellActions?: Phase1SpellActions; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onSaveGmNotes?: (text: string) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void; initiativeLog?: InitiativeRoundLog[]; canEditRoundNotes?: boolean; onUpdateRoundNote?: (round: InitiativeRoundLog, entry: InitiativeRoundLogEntry, note: string) => void; onLogAction?: (draft: ActionLogDraft) => void; onDeleteLogEntry?: (entryId: string) => void;
+function InspectorCollapseButton({ onCollapse }: { onCollapse?: () => void }) {
+  if (!onCollapse) return null;
+  return <button type='button' className='icon-button shrink-0' title='Hide combatant details' aria-label='Hide combatant details' onClick={onCollapse}><PanelRight size={16} /></button>;
+}
+
+function Inspector({ combatant, width, fill, activeTab, onTab, onCollapse, hasMatchingCampaignNote, status, statusLoading, canManageSpells, spellActions, onChangeConditions, onSaveGmNotes, onPersistHpCurrent, onPersistTempHp, initiativeLog, canEditRoundNotes, onUpdateRoundNote, onLogAction, onDeleteLogEntry }: {
+  combatant: PopulatedCombatant | null; width: number; fill?: boolean; activeTab: DetailTab; onTab: (tab: DetailTab) => void; onCollapse?: () => void; hasMatchingCampaignNote?: boolean; status?: Phase1CreatureStatus | null; statusLoading: boolean; canManageSpells: boolean; spellActions?: Phase1SpellActions; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onSaveGmNotes?: (text: string) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void; initiativeLog?: InitiativeRoundLog[]; canEditRoundNotes?: boolean; onUpdateRoundNote?: (round: InitiativeRoundLog, entry: InitiativeRoundLogEntry, note: string) => void; onLogAction?: (draft: ActionLogDraft) => void; onDeleteLogEntry?: (entryId: string) => void;
 }) {
   return (
     <aside className={`min-h-0 overflow-hidden bg-p1-inset ${fill ? 'h-full w-full' : ''}`} style={fill ? undefined : { width }}>
       {!combatant ? (
-        <div className='flex h-full flex-col items-center justify-center px-8 text-center'><PanelRight className='mb-4 text-p1-faint' size={28} /><p className='text-sm font-semibold'>Select a combatant</p><p className='mt-2 max-w-56 text-xs leading-5 text-p1-faint'>PCs, NPCs, and creatures open in this shared read-only inspector.</p></div>
+        <div className='relative flex h-full flex-col items-center justify-center px-8 text-center'><div className='absolute right-3 top-3'><InspectorCollapseButton onCollapse={onCollapse} /></div><PanelRight className='mb-4 text-p1-faint' size={28} /><p className='text-sm font-semibold'>Select a combatant</p><p className='mt-2 max-w-56 text-xs leading-5 text-p1-faint'>PCs, NPCs, and creatures open in this shared read-only inspector.</p></div>
       ) : combatant.type === 'HAZARD' && combatant.hazard ? (
         <div className='flex h-full min-w-0 flex-col'>
           <div className='flex items-start gap-3 border-b border-p1-border px-4 py-3.5'>
@@ -5572,6 +5679,7 @@ function Inspector({ combatant, width, fill, activeTab, onTab, hasMatchingCampai
               <h2 className='mt-1 truncate text-lg font-semibold leading-tight'>{combatant.hazard.name}</h2>
               <p className='mt-1 text-xs text-p1-faint'>{combatant.hazard.details.complexity === 'SIMPLE' ? 'Simple' : 'Complex'} · Level {combatant.hazard.level}</p>
             </div>
+            <InspectorCollapseButton onCollapse={onCollapse} />
           </div>
           <div className='min-h-0 flex-1 overflow-y-auto p-4'>
             <HazardInspector hazard={combatant.hazard} disabled={combatant.hazard_state?.disabled ?? false} />
@@ -5579,7 +5687,7 @@ function Inspector({ combatant, width, fill, activeTab, onTab, hasMatchingCampai
         </div>
       ) : (
         <div className='flex h-full min-w-0 flex-col'>
-<div className='flex items-start gap-3 border-b border-p1-border px-4 py-3.5'><div className='min-w-0 flex-1'><Eyebrow>{combatant.type === 'CREATURE' ? (combatant.ally ? 'NPC / Creature' : 'Creature') : 'Player character'}</Eyebrow><h2 className='mt-1 truncate text-lg font-semibold leading-tight'>{combatant.data?.name}</h2><p className='mt-1 text-xs text-p1-faint'>Level {combatant.data?.level} | {canManageSpells ? 'Spell tracking' : 'Read only'}</p></div>{combatant.type === 'CHARACTER' && combatant.data?.id && <a className='icon-button shrink-0' href={`/sheet/${combatant.data.id}`} target='_blank' rel='noreferrer' title='Open full character sheet'><ExternalLink size={16} /></a>}</div>
+<div className='flex items-start gap-3 border-b border-p1-border px-4 py-3.5'><div className='min-w-0 flex-1'><Eyebrow>{combatant.type === 'CREATURE' ? (combatant.ally ? 'NPC / Creature' : 'Creature') : 'Player character'}</Eyebrow><h2 className='mt-1 truncate text-lg font-semibold leading-tight'>{combatant.data?.name}</h2><p className='mt-1 text-xs text-p1-faint'>Level {combatant.data?.level} | {canManageSpells ? 'Spell tracking' : 'Read only'}</p></div>{combatant.type === 'CHARACTER' && combatant.data?.id && <a className='icon-button shrink-0' href={`/sheet/${combatant.data.id}`} target='_blank' rel='noreferrer' title='Open full character sheet'><ExternalLink size={16} /></a>}<InspectorCollapseButton onCollapse={onCollapse} /></div>
           <div className='grid grid-cols-4 border-b border-p1-border bg-p1-inset'>
             {DETAIL_TABS.map((tab) => <button key={tab} className={`border-b-2 px-2 py-2.5 text-[11px] ${activeTab === tab ? 'border-p1-accent text-p1-accent-soft' : 'border-transparent text-p1-faint hover:text-p1-text'}`} onClick={() => onTab(tab)}>{tab}</button>)}
           </div>
@@ -6026,12 +6134,15 @@ function campaignArtFile(file: File | null): File | null {
   return new File([file], file.name || 'campaign-art', { type: named });
 }
 
-function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameError }: { campaign: Campaign; onSaved: () => void; onFrame: (url: string) => void; onUploaded: (url: string) => void; onFrameError: (message: string) => void }) {
+function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameError, requestOpen = 0 }: { campaign: Campaign; onSaved: () => void; onFrame: (url: string) => void; onUploaded: (url: string) => void; onFrameError: (message: string) => void; requestOpen?: number }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const blockArtClick = useRef(false);
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (requestOpen > 0) setOpen(true);
+  }, [requestOpen]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [linkText, setLinkText] = useState('');

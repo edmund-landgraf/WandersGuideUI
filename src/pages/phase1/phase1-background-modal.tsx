@@ -1,6 +1,6 @@
 import type { ImageOption } from '@schemas/index';
 import { getAllBackgroundImages } from '@utils/background-images';
-import { Brush } from 'lucide-react';
+import { Brush, Eye, EyeOff, Moon, Sun, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Phase1PickerModal } from './phase1-picker-modal';
@@ -69,6 +69,103 @@ export function Phase1BackgroundModal({
         />
       )}
     </>
+  );
+}
+
+export function Phase1ArtworkOverlay({
+  url,
+  label,
+  canEdit,
+  artTone,
+  onArtTone,
+  onPreview,
+  onSelect,
+  onClear,
+  artHidden,
+  onToggleArt,
+}: {
+  url?: string;
+  label?: string;
+  canEdit: boolean;
+  artTone: 'light' | 'dark';
+  onArtTone: (tone: 'light' | 'dark') => void;
+  onPreview: () => void;
+  onSelect: () => void;
+  onClear: () => void;
+  artHidden?: boolean;
+  onToggleArt?: () => void;
+}) {
+  const option = url ? getAllBackgroundImages().find((image) => image.url === url) ?? { name: label ?? 'Custom', url } : null;
+  if (!canEdit && !option) return null;
+
+  return (
+    <div className='pointer-events-none fixed bottom-3 right-3 z-20 flex max-w-[min(18rem,calc(100vw-1.5rem))] flex-col items-end gap-1'>
+      {option && (option.name || option.source?.trim()) && (
+        <div className='hidden max-w-full rounded border border-p1-border bg-p1-surface/90 px-2 py-1 text-right shadow-md backdrop-blur-sm sm:pointer-events-auto sm:block'>
+          {option.name && <p className='truncate text-[11px] text-p1-text'>{option.name}</p>}
+          {option.source?.trim() && (
+            <a
+              href={option.source_url}
+              target='_blank'
+              rel='noreferrer'
+              className='mt-0.5 inline-flex max-w-full items-center gap-1 truncate text-[10px] text-p1-muted hover:text-p1-text'
+            >
+              <Brush size={10} />
+              {option.source}
+            </a>
+          )}
+        </div>
+      )}
+      <div className='pointer-events-auto flex flex-wrap justify-end gap-1'>
+        {option && (
+          <>
+            <button
+              type='button'
+              className={`icon-button${artTone === 'light' ? ' is-active' : ''}`}
+              title='Lighter artwork'
+              onClick={() => onArtTone('light')}
+            >
+              <Sun size={16} />
+            </button>
+            <button
+              type='button'
+              className={`icon-button${artTone === 'dark' ? ' is-active' : ''}`}
+              title='Darker artwork'
+              onClick={() => onArtTone('dark')}
+            >
+              <Moon size={16} />
+            </button>
+          </>
+        )}
+        {canEdit && (
+          <>
+            {option && (
+              <>
+                <button type='button' className='icon-button' title='View artwork' onClick={onPreview}>
+                  <Eye size={16} />
+                </button>
+                {onToggleArt && (
+                  <button
+                    type='button'
+                    className={`icon-button${artHidden ? ' is-active' : ''}`}
+                    title={artHidden ? 'Show artwork on this screen' : 'Hide artwork on this screen'}
+                    onClick={onToggleArt}
+                  >
+                    <EyeOff size={16} />
+                  </button>
+                )}
+                <button type='button' className='icon-button' title='Clear artwork' onClick={onClear}>
+                  <X size={16} />
+                </button>
+              </>
+            )}
+            <button type='button' className='icon-button' title={option ? 'Change artwork' : 'Select artwork'} onClick={onSelect}>
+              <Brush size={16} />
+            </button>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 

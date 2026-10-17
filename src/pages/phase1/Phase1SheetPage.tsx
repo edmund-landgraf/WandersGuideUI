@@ -2,7 +2,7 @@ import { CampaignSignIn } from '@auth/CampaignSignIn';
 import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth, handleRest } from '@pages/character_sheet/entity-handler';
 import { GUIDE_BLUE } from '@constants/data';
-import { AlignLeft, ArrowLeft, Brush, ChevronDown, Download, ExternalLink, Eye, Flag, Hammer, HeartPulse, Maximize2, Menu, Minimize2, Moon, Pencil, Plus, RotateCcw, Star, Sun, Trash2, User, X } from 'lucide-react';
+import { AlignLeft, ArrowLeft, ChevronDown, Download, ExternalLink, Flag, Hammer, HeartPulse, Maximize2, Menu, Minimize2, Pencil, Plus, RotateCcw, Star, Trash2, User, X } from 'lucide-react';
 import type { Campaign, Character, Condition, Creature, Item } from '@schemas/content';
 import type { VariableListStr } from '@schemas/variables';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -14,7 +14,7 @@ import { cloneDeep } from 'lodash-es';
 import { noteContentsToMarkdown, ProseMarkdown } from './phase1-markdown';
 import { PlateNotesEditor } from './phase1-plate-notes';
 import { Phase1PortraitModal } from './phase1-portrait-modal';
-import { Phase1ArtworkPreview, Phase1BackgroundModal } from './phase1-background-modal';
+import { Phase1ArtworkOverlay, Phase1ArtworkPreview, Phase1BackgroundModal } from './phase1-background-modal';
 import { getAllBackgroundImages } from '@utils/background-images';
 import { parseTempHpInput } from './phase1-change-log';
 import { OLD_UI_ORIGIN } from '../phase-switch/PhaseViewSwitch';
@@ -1083,87 +1083,6 @@ function UnauthorizedSheet() {
       title='Private character'
       body='This character sheet is private. To view it, the sheet must be public, you must own the character, or you must own a campaign the character is in.'
     />
-  );
-}
-
-function Phase1ArtworkOverlay({
-  url,
-  canEdit,
-  artTone,
-  onArtTone,
-  onPreview,
-  onSelect,
-  onClear,
-}: {
-  url?: string;
-  canEdit: boolean;
-  artTone: 'light' | 'dark';
-  onArtTone: (tone: 'light' | 'dark') => void;
-  onPreview: () => void;
-  onSelect: () => void;
-  onClear: () => void;
-}) {
-  const option = url ? getAllBackgroundImages().find((image) => image.url === url) ?? { name: 'Custom', url } : null;
-  if (!canEdit && !option) return null;
-
-  return (
-    <div className='pointer-events-none fixed bottom-3 right-3 z-20 flex max-w-[min(18rem,calc(100vw-1.5rem))] flex-col items-end gap-1'>
-      {option && (option.name || option.source?.trim()) && (
-        <div className='hidden max-w-full rounded border border-p1-border bg-p1-surface/90 px-2 py-1 text-right shadow-md backdrop-blur-sm sm:pointer-events-auto sm:block'>
-          {option.name && <p className='truncate text-[11px] text-p1-text'>{option.name}</p>}
-          {option.source?.trim() && (
-            <a
-              href={option.source_url}
-              target='_blank'
-              rel='noreferrer'
-              className='mt-0.5 inline-flex max-w-full items-center gap-1 truncate text-[10px] text-p1-muted hover:text-p1-text'
-            >
-              <Brush size={10} />
-              {option.source}
-            </a>
-          )}
-        </div>
-      )}
-      <div className='pointer-events-auto flex flex-wrap justify-end gap-1'>
-        {option && (
-          <>
-            <button
-              type='button'
-              className={`icon-button${artTone === 'light' ? ' is-active' : ''}`}
-              title='Lighter artwork'
-              onClick={() => onArtTone('light')}
-            >
-              <Sun size={16} />
-            </button>
-            <button
-              type='button'
-              className={`icon-button${artTone === 'dark' ? ' is-active' : ''}`}
-              title='Darker artwork'
-              onClick={() => onArtTone('dark')}
-            >
-              <Moon size={16} />
-            </button>
-          </>
-        )}
-        {canEdit && (
-          <>
-            {option && (
-              <>
-                <button type='button' className='icon-button' title='View artwork' onClick={onPreview}>
-                  <Eye size={16} />
-                </button>
-                <button type='button' className='icon-button' title='Clear artwork' onClick={onClear}>
-                  <X size={16} />
-                </button>
-              </>
-            )}
-            <button type='button' className='icon-button' title={option ? 'Change artwork' : 'Select artwork'} onClick={onSelect}>
-              <Brush size={16} />
-            </button>
-          </>
-        )}
-      </div>
-    </div>
   );
 }
 

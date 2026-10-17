@@ -570,24 +570,45 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   background-color: color-mix(in srgb, var(--p1-bg-inset) 64%, transparent);
 }
 
-.p1-encounter-has-art > header,
 .p1-encounter-has-art > .p1-encounter-body {
   position: relative;
   z-index: 10;
 }
-.p1-encounter-has-art > header {
-  background-color: color-mix(in srgb, var(--p1-bg-header) 82%, transparent);
-  backdrop-filter: blur(10px);
+.p1-encounter-art-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-size: cover;
+  background-position: center top;
 }
-.p1-encounter-has-art .p1-encounter-main {
-  background-color: color-mix(in srgb, var(--p1-bg-surface) 72%, transparent);
-  backdrop-filter: blur(8px);
+.p1-encounter-has-art .p1-sheet-art-veil {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--p1-bg-page) 55%, transparent),
+    color-mix(in srgb, var(--p1-bg-page) 34%, transparent) 45%,
+    color-mix(in srgb, var(--p1-bg-page) 48%, transparent)
+  );
 }
 .p1-encounter-has-art .p1-encounter-main .bg-p1-surface {
-  background-color: color-mix(in srgb, var(--p1-bg-surface) 78%, transparent);
+  background-color: color-mix(in srgb, var(--p1-bg-surface) 64%, transparent);
 }
 .p1-encounter-has-art .p1-encounter-main .bg-p1-inset {
-  background-color: color-mix(in srgb, var(--p1-bg-inset) 74%, transparent);
+  background-color: color-mix(in srgb, var(--p1-bg-inset) 60%, transparent);
+}
+.p1-encounter-has-art.p1-sheet-art-dark .p1-sheet-art-veil {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, #140f0c 34%, transparent),
+    color-mix(in srgb, #140f0c 22%, transparent) 45%,
+    color-mix(in srgb, #140f0c 30%, transparent)
+  );
+}
+.p1-encounter-has-art.p1-sheet-art-dark .p1-encounter-main .bg-p1-surface {
+  background-color: color-mix(in srgb, var(--p1-bg-surface) 58%, transparent);
+}
+.p1-encounter-has-art.p1-sheet-art-dark .p1-encounter-main .bg-p1-inset {
+  background-color: color-mix(in srgb, var(--p1-bg-inset) 54%, transparent);
 }
 
 .p1-char-row {
