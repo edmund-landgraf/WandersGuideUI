@@ -530,9 +530,9 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   inset: 0;
   background: linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--p1-bg-page) 88%, transparent),
-    color-mix(in srgb, var(--p1-bg-page) 62%, transparent) 42%,
-    color-mix(in srgb, var(--p1-bg-page) 80%, transparent)
+    color-mix(in srgb, var(--p1-bg-page) 94%, transparent),
+    color-mix(in srgb, var(--p1-bg-page) 80%, transparent) 42%,
+    color-mix(in srgb, var(--p1-bg-page) 90%, transparent)
   );
 }
 .p1-sheet-has-art > header,
@@ -541,33 +541,33 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   z-index: 10;
 }
 .p1-sheet-has-art > header {
-  background-color: color-mix(in srgb, var(--p1-bg-header) 82%, transparent);
+  background-color: color-mix(in srgb, var(--p1-bg-header) 90%, transparent);
   backdrop-filter: blur(10px);
 }
 .p1-sheet-has-art > main .bg-p1-surface {
-  background-color: color-mix(in srgb, var(--p1-bg-surface) 82%, transparent);
+  background-color: color-mix(in srgb, var(--p1-bg-surface) 90%, transparent);
   backdrop-filter: blur(10px);
 }
 .p1-sheet-has-art > main .bg-p1-inset {
-  background-color: color-mix(in srgb, var(--p1-bg-inset) 78%, transparent);
+  background-color: color-mix(in srgb, var(--p1-bg-inset) 86%, transparent);
   backdrop-filter: blur(10px);
 }
 .p1-sheet-art-dark .p1-sheet-art-veil {
   background: linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--p1-bg-page) 38%, transparent),
-    color-mix(in srgb, var(--p1-bg-page) 12%, transparent) 45%,
-    color-mix(in srgb, var(--p1-bg-page) 32%, transparent)
+    color-mix(in srgb, var(--p1-bg-page) 88%, transparent),
+    color-mix(in srgb, var(--p1-bg-page) 62%, transparent) 42%,
+    color-mix(in srgb, var(--p1-bg-page) 80%, transparent)
   );
 }
 .p1-sheet-art-dark > header {
-  background-color: color-mix(in srgb, var(--p1-bg-header) 68%, transparent);
+  background-color: color-mix(in srgb, var(--p1-bg-header) 82%, transparent);
 }
 .p1-sheet-art-dark > main .bg-p1-surface {
-  background-color: color-mix(in srgb, var(--p1-bg-surface) 68%, transparent);
+  background-color: color-mix(in srgb, var(--p1-bg-surface) 82%, transparent);
 }
 .p1-sheet-art-dark > main .bg-p1-inset {
-  background-color: color-mix(in srgb, var(--p1-bg-inset) 64%, transparent);
+  background-color: color-mix(in srgb, var(--p1-bg-inset) 78%, transparent);
 }
 
 .p1-encounter-has-art > .p1-encounter-body {
@@ -585,30 +585,30 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .p1-encounter-has-art .p1-sheet-art-veil {
   background: linear-gradient(
     to bottom,
+    color-mix(in srgb, var(--p1-bg-page) 72%, transparent),
+    color-mix(in srgb, var(--p1-bg-page) 55%, transparent) 45%,
+    color-mix(in srgb, var(--p1-bg-page) 66%, transparent)
+  );
+}
+.p1-encounter-has-art .p1-encounter-main .bg-p1-surface {
+  background-color: color-mix(in srgb, var(--p1-bg-surface) 78%, transparent);
+}
+.p1-encounter-has-art .p1-encounter-main .bg-p1-inset {
+  background-color: color-mix(in srgb, var(--p1-bg-inset) 74%, transparent);
+}
+.p1-encounter-has-art.p1-sheet-art-dark .p1-sheet-art-veil {
+  background: linear-gradient(
+    to bottom,
     color-mix(in srgb, var(--p1-bg-page) 55%, transparent),
     color-mix(in srgb, var(--p1-bg-page) 34%, transparent) 45%,
     color-mix(in srgb, var(--p1-bg-page) 48%, transparent)
   );
 }
-.p1-encounter-has-art .p1-encounter-main .bg-p1-surface {
+.p1-encounter-has-art.p1-sheet-art-dark .p1-encounter-main .bg-p1-surface {
   background-color: color-mix(in srgb, var(--p1-bg-surface) 64%, transparent);
 }
-.p1-encounter-has-art .p1-encounter-main .bg-p1-inset {
-  background-color: color-mix(in srgb, var(--p1-bg-inset) 60%, transparent);
-}
-.p1-encounter-has-art.p1-sheet-art-dark .p1-sheet-art-veil {
-  background: linear-gradient(
-    to bottom,
-    color-mix(in srgb, #140f0c 34%, transparent),
-    color-mix(in srgb, #140f0c 22%, transparent) 45%,
-    color-mix(in srgb, #140f0c 30%, transparent)
-  );
-}
-.p1-encounter-has-art.p1-sheet-art-dark .p1-encounter-main .bg-p1-surface {
-  background-color: color-mix(in srgb, var(--p1-bg-surface) 58%, transparent);
-}
 .p1-encounter-has-art.p1-sheet-art-dark .p1-encounter-main .bg-p1-inset {
-  background-color: color-mix(in srgb, var(--p1-bg-inset) 54%, transparent);
+  background-color: color-mix(in srgb, var(--p1-bg-inset) 60%, transparent);
 }
 
 .p1-char-row {

@@ -1762,6 +1762,7 @@ function phase1EncounterPath(encounterId: number, campaignId?: number | null) {
 
 function defaultEncounterTab(encounter: Encounter | null | undefined): 'combat' | 'dice' {
   const list = encounter?.combatants.list ?? [];
+  if (list.length === 0) return 'combat';
   return list.some((item) => !item.ally) ? 'combat' : 'dice';
 }
 
@@ -2557,11 +2558,13 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
 
   function addPlayer(characterId: number) {
     if (!selectedEncounter || activeCharacterIds.has(characterId)) return;
+    setEncounterTab('combat');
     updateRoster([...selectedEncounter.combatants.list, { _id: crypto.randomUUID(), type: 'CHARACTER', ally: true, initiative: undefined, character: characterId, data: undefined }]);
   }
 
   function addAllPlayers() {
     if (!selectedEncounter || benchPlayers.length === 0) return;
+    setEncounterTab('combat');
     updateRoster([
       ...selectedEncounter.combatants.list,
       ...benchPlayers.map((player) => ({ _id: crypto.randomUUID(), type: 'CHARACTER' as const, ally: true, initiative: undefined, character: player.id, data: undefined })),
@@ -2592,6 +2595,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
 
   function addCreature(creature: Creature, ally: boolean) {
     if (!selectedEncounter) return;
+    setEncounterTab('combat');
     const id = crypto.randomUUID();
     const list = selectedEncounter.combatants.list;
     let incoming: Combatant = {
@@ -2625,6 +2629,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
 
   function addHazard(hazard: Hazard) {
     if (!selectedEncounter) return;
+    setEncounterTab('combat');
     const incoming = createHazardCombatant(hazard, crypto.randomUUID());
     updateRoster([...selectedEncounter.combatants.list, incoming]);
     setSelectedId(incoming._id);
@@ -3340,7 +3345,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
                   </>
                 ) : (
                   <>
-                    <CombatantGrid combatants={diceGridRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onSingleCheck={!rosterSaving ? rollSingleCheck : undefined} onSingleChallenge={isGm && !rosterSaving && ambaChallenges.length > 0 ? rollSingleChallenge : undefined} challenges={ambaChallenges} dice={{ challengeId: isGm ? diceState?.challenge_id : undefined, checkStat: diceStat ?? undefined, columnLabel: checkStatLabel(diceStat ?? undefined), dc: diceDc, results: !isGm && diceState?.results_audience === 'private' ? {} : diceState?.results ?? {}, emptyMessage: diceGridRows.length === 0 ? 'No matching combatants for this filter.' : 'Right-click a combatant to roll a check. Group rolls still use the toolbar.' }} playerView={!isGm} />
+                    <CombatantGrid combatants={diceGridRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onSingleCheck={!rosterSaving ? rollSingleCheck : undefined} onSingleChallenge={isGm && !rosterSaving && ambaChallenges.length > 0 ? rollSingleChallenge : undefined} challenges={ambaChallenges} dice={{ challengeId: isGm ? diceState?.challenge_id : undefined, checkStat: diceStat ?? undefined, columnLabel: checkStatLabel(diceStat ?? undefined), dc: diceDc, results: !isGm && diceState?.results_audience === 'private' ? {} : diceState?.results ?? {}, emptyMessage: livingActive.length === 0 ? 'No combatants in this encounter yet. Add a creature or a party member from the bench.' : diceGridRows.length === 0 ? 'No combatants match this side. Switch Allies, Enemies, or Both above.' : 'Right-click a combatant to roll a check. Group rolls still use the toolbar.' }} playerView={!isGm} />
                     <DiceRollLogPanel log={isGm ? (selectedEncounter?.meta_data.dice_roll_log ?? []) : playerAllyRoundLog(playerVisibleDiceRollLog(selectedEncounter?.meta_data.dice_roll_log ?? []))} canClear={isGm && !rosterSaving} canEdit={isGm && !rosterSaving} canRemoveEntry={(entry) => isGm || sameUserId(entry.initiated_by_user_id, sessionUserId)} onClear={clearDiceRollLog} onRemove={removeDiceRollLog} onUpdateNote={updateDiceRollNote} />
                   </>
                 )}
@@ -5924,6 +5929,7 @@ function populateCombatants(combatants: Combatant[], players: Character[]): Popu
     const access = (combatant as Combatant & { access?: { can_edit?: boolean; details_revealed?: boolean } }).access;
     populated.push({
       ...combatant,
+      ally: allied,
       data,
       access: {
         can_edit: access?.can_edit ?? false,
