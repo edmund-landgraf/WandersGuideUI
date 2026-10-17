@@ -3195,6 +3195,8 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     return () => window.removeEventListener('keydown', onKey);
   }, [railOpen]);
 
+  const campaignArtUrl = !viewingNotes && !viewingSettings ? campaign?.meta_data?.image_url?.trim() : '';
+  const artFocus = campaignFocusY(campaign?.meta_data?.image_focus_y);
   const rail = (
     <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} campaignPlayers={players} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddPlayer={addPlayer} onAddAllPlayers={addAllPlayers} onAddAllPcsToEncounters={campaign && isGm ? onAddAllPcsToEncounters : undefined} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onDeleteNote={onDeleteNote} onDeleteAllNotes={onDeleteAllNotes} onDeleteEncounter={onDeleteEncounter} onDeleteAllEncounters={onDeleteAllEncounters} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} onRenameNote={renameNote} onRenameEncounter={renameEncounter} />
   );
@@ -3204,9 +3206,14 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const phoneInspector = narrow && selectedId && !viewingNotes && !viewingSettings;
 
   return (
-    <div className='flex h-dvh min-h-0 flex-col overflow-hidden bg-p1-page text-p1-text md:h-screen md:min-h-[680px]'>
+    <div className={`relative flex h-dvh min-h-0 flex-col overflow-hidden bg-p1-page text-p1-text md:h-screen md:min-h-[680px]${campaignArtUrl ? ' p1-encounter-has-art' : ''}`}>
+      {campaignArtUrl && (
+        <div className='p1-sheet-art-layer' style={{ backgroundImage: `url(${campaignArtSrc(campaignArtUrl)})`, backgroundPosition: `center ${artFocus}%` }} aria-hidden>
+          <div className='p1-sheet-art-veil' />
+        </div>
+      )}
       <WorkspaceHeader section={standalone ? 'encounters' : undefined} label={campaign?.name ?? encounterDisplayName(selectedEncounter?.name ?? 'Encounter')} campaignId={campaign?.id ?? null} encounterId={selectedEncounter?.id ?? null} noteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} railOpen={railOpen} onToggleRail={() => setRailOpen((open) => !open)} />
-      <div className={`grid min-h-0 flex-1 ${narrow ? 'grid-cols-1' : viewingNotes || viewingSettings ? 'grid-cols-[248px_minmax(280px,1fr)]' : 'grid-cols-[248px_minmax(280px,1fr)_6px_auto]'}`}>
+      <div className={`p1-encounter-body grid min-h-0 flex-1 ${narrow ? 'grid-cols-1' : viewingNotes || viewingSettings ? 'grid-cols-[248px_minmax(280px,1fr)]' : 'grid-cols-[248px_minmax(280px,1fr)_6px_auto]'}`}>
         {narrow ? railOpen && createPortal(
           <>
             <button type='button' className='fixed inset-0 z-40 bg-black/50' aria-label='Close navigation' onClick={() => setRailOpen(false)} />
@@ -3214,7 +3221,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
           </>,
           document.body,
         ) : rail}
-        <main className='min-w-0 overflow-auto bg-p1-surface'>
+        <main className='p1-encounter-main min-w-0 overflow-auto bg-p1-surface'>
           {viewingSettings && campaign ? (
             <SettingsSurface
               campaign={campaign}
@@ -3567,7 +3574,7 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
   }
 
   function openBenchMenu(event: ReactMouseEvent, characterId?: number, name?: string) {
-    if (!canManageRoster) return;
+    if (!isGm || rosterSaving) return;
     event.preventDefault();
     event.stopPropagation();
     setBenchMenu({ x: event.clientX, y: event.clientY, characterId, name });
@@ -3682,8 +3689,9 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
                 key={combatant._id}
                 className={`flex w-full items-center gap-2 px-2 py-2 text-sm hover:bg-p1-hover ${combatant._id === selectedId ? 'bg-p1-hover text-p1-text' : 'text-p1-muted hover:text-p1-text'}`}
                 onContextMenu={(event) => {
-                  if (!canManageRoster) return;
+                  if (!isGm || rosterSaving) return;
                   event.preventDefault();
+                  event.stopPropagation();
                   setOutMenu({
                     id: combatant._id,
                     x: event.clientX,
@@ -3786,7 +3794,8 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
           x={benchMenu.x}
           y={benchMenu.y}
           showAdd={benchMenu.characterId != null}
-          addAllDisabled={players.length === 0}
+          addDisabled={!selectedEncounter}
+          addAllDisabled={players.length === 0 || !selectedEncounter}
           showRemoveFromCampaign={benchMenu.characterId != null && Boolean(onRequestRemoveFromCampaign)}
           onClose={() => setBenchMenu(null)}
           onAdd={() => {
@@ -4257,7 +4266,7 @@ function OutContextMenu({ x, y, showRemoveFromCampaign, onClose, onReturn, onRem
   );
 }
 
-function BenchContextMenu({ x, y, showAdd, addAllDisabled, showRemoveFromCampaign, onClose, onAdd, onAddAll, onRemoveFromCampaign }: { x: number; y: number; showAdd: boolean; addAllDisabled: boolean; showRemoveFromCampaign?: boolean; onClose: () => void; onAdd: () => void; onAddAll: () => void; onRemoveFromCampaign?: () => void }) {
+function BenchContextMenu({ x, y, showAdd, addDisabled, addAllDisabled, showRemoveFromCampaign, onClose, onAdd, onAddAll, onRemoveFromCampaign }: { x: number; y: number; showAdd: boolean; addDisabled?: boolean; addAllDisabled: boolean; showRemoveFromCampaign?: boolean; onClose: () => void; onAdd: () => void; onAddAll: () => void; onRemoveFromCampaign?: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -4272,8 +4281,8 @@ function BenchContextMenu({ x, y, showAdd, addAllDisabled, showRemoveFromCampaig
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
       <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
         {showAdd && (
-          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onAdd}>
-            <Plus size={14} /> Add
+          <button type='button' role='menuitem' disabled={addDisabled} title={addDisabled ? 'Select an encounter first' : undefined} className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint disabled:hover:bg-transparent' onClick={onAdd}>
+            <Plus size={14} /> Add to combat
           </button>
         )}
         <button type='button' role='menuitem' disabled={addAllDisabled} className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint disabled:hover:bg-transparent' onClick={onAddAll}>

@@ -570,6 +570,26 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   background-color: color-mix(in srgb, var(--p1-bg-inset) 64%, transparent);
 }
 
+.p1-encounter-has-art > header,
+.p1-encounter-has-art > .p1-encounter-body {
+  position: relative;
+  z-index: 10;
+}
+.p1-encounter-has-art > header {
+  background-color: color-mix(in srgb, var(--p1-bg-header) 82%, transparent);
+  backdrop-filter: blur(10px);
+}
+.p1-encounter-has-art .p1-encounter-main {
+  background-color: color-mix(in srgb, var(--p1-bg-surface) 72%, transparent);
+  backdrop-filter: blur(8px);
+}
+.p1-encounter-has-art .p1-encounter-main .bg-p1-surface {
+  background-color: color-mix(in srgb, var(--p1-bg-surface) 78%, transparent);
+}
+.p1-encounter-has-art .p1-encounter-main .bg-p1-inset {
+  background-color: color-mix(in srgb, var(--p1-bg-inset) 74%, transparent);
+}
+
 .p1-char-row {
   position: relative;
   overflow: hidden;
