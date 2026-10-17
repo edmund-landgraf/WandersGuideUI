@@ -184,7 +184,7 @@ export async function loadPhase1Campaigns(userId: string, accessToken?: string):
       })
     )
   ).flat();
-  return [...new Map([...owned, ...joined].map((campaign) => [campaign.id, campaign])).values()];
+  return [...new Map([...joined, ...owned].map((campaign) => [campaign.id, campaign])).values()];
 }
 
 /**

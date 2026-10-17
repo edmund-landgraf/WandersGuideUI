@@ -94,18 +94,39 @@ function Launcher() {
       <div className='bg-pattern' />
       <main className='relative z-10 min-h-screen bg-radial from-gray-800 to-gray-900'>
         <LauncherHeader />
-        <section className='px-8 pt-10 pb-16'>
-          <div className='mx-auto grid max-w-6xl content-start gap-8'>
-          <div className='grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-x-8'>
-            <h1 className='font-heading text-4xl leading-tight sm:text-5xl bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/60 lg:col-start-1'>
-              A faster table workspace
-            </h1>
-            <p className='max-w-xl text-base leading-7 text-muted-foreground lg:col-start-1'>
-              Same characters, campaigns, and encounters — rebuilt so you can run the session without fighting the
-              layout.
-            </p>
+        <section className='px-8 pt-5 pb-16'>
+          <div className='mx-auto grid max-w-6xl content-start gap-6'>
+          <div className='flex items-start justify-between gap-8'>
+            <div className='max-w-xl'>
+              <h1 className='font-heading text-4xl leading-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/60'>
+                A faster table workspace
+              </h1>
+              <p className='mt-3 text-base leading-6 text-muted-foreground'>
+                Characters, campaigns, and encounters, open together.
+              </p>
+              <ul className='mt-2 space-y-1 text-sm leading-5 text-muted-foreground'>
+                <li>
+                  <span className='text-foreground'>Right-click</span> a character, encounter, note, or the party bench.
+                </li>
+                <li>
+                  <span className='text-foreground'>One view</span> for the sheets, the campaign rail, and the encounter.
+                </li>
+                <li>
+                  <span className='text-foreground'>Combat beside the sheet</span> — initiative, the round log, and conditions.
+                  A player view of the same fight. 3D dice for the GM and the players.
+                </li>
+                <li>
+                  <span className='text-foreground'>Owlbear VTT extension</span> for the table.
+                </li>
+              </ul>
+            </div>
+            <div className='hidden w-64 shrink-0 lg:block'>
+              <FunctionStatus />
+            </div>
+          </div>
+          <div className='grid items-stretch gap-6 lg:grid-cols-2'>
             <a
-              className='group flex max-w-xl items-center justify-between gap-6 rounded-xl bg-white/5 p-7 ring-1 ring-white/20 transition hover:bg-white/10 hover:ring-white/30 lg:col-start-1'
+              className='group flex items-center justify-between gap-6 rounded-xl bg-white/5 p-7 ring-1 ring-white/20 transition hover:bg-white/10 hover:ring-white/30'
               href='/phase1'
             >
               <div>
@@ -119,20 +140,20 @@ function Launcher() {
                 <ArrowRight className='h-4 w-4 transition group-hover:translate-x-0.5' />
               </span>
             </a>
-            <div className='lg:col-start-2 lg:row-span-2 lg:row-start-2 lg:justify-self-end'>
-              <FunctionStatus />
-            </div>
+            <a
+              className='flex flex-col justify-center rounded-xl bg-white/5 p-7 ring-1 ring-white/20 transition hover:bg-white/10 hover:ring-white/30'
+              href='/help/index.html'
+            >
+              <p className='text-sm text-muted-foreground'>Help</p>
+              <h2 className='font-heading mt-2 text-2xl text-foreground'>Characters, campaigns, and combat</h2>
+              <p className='mt-3 text-sm leading-6 text-muted-foreground'>
+                How to join a campaign, what players see in a fight, and how to run a check.
+              </p>
+            </a>
           </div>
-          <a
-            className='block max-w-xl rounded-xl bg-white/5 p-6 ring-1 ring-white/20 transition hover:bg-white/10 hover:ring-white/30'
-            href='/help/index.html'
-          >
-            <p className='text-sm text-muted-foreground'>Help</p>
-            <h2 className='font-heading mt-2 text-2xl text-foreground'>Characters, campaigns, and combat</h2>
-            <p className='mt-3 text-sm leading-6 text-muted-foreground'>
-              How to join a campaign, what players see in a fight, and how to run a check.
-            </p>
-          </a>
+          <div className='lg:hidden'>
+            <FunctionStatus />
+          </div>
           <a
             className='block rounded-xl bg-white/5 p-6 ring-1 ring-white/20 transition hover:bg-white/10 hover:ring-white/30'
             href={PATREON_URL}

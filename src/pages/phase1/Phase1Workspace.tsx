@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, Image, KeyRound, ListChecks, LogOut, Menu, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Crown, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, Image, KeyRound, ListChecks, LogOut, Menu, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -562,6 +562,7 @@ function CharacterRosterRow({
   onAssign,
   className,
   compact,
+  ownedCampaign,
 }: {
   character: Character;
   showCampaign: boolean;
@@ -573,6 +574,7 @@ function CharacterRosterRow({
   onAssign: () => void;
   className?: string;
   compact?: boolean;
+  ownedCampaign?: boolean;
 }) {
   const identity = [character.details?.ancestry?.name, character.details?.background?.name, character.details?.class?.name].filter(Boolean).join(' · ');
   const portraitUrl = character.details?.image_url?.trim();
@@ -630,6 +632,7 @@ function CharacterRosterRow({
               }}
             >
               <span className='truncate'>{campaignName}</span>
+              {ownedCampaign && <Crown size={12} className='shrink-0 text-p1-accent' aria-label='You own this campaign' />}
             </button>
           ) : unresolvedCampaign ? null : (
             <button
@@ -741,9 +744,17 @@ export function Phase1CharactersPage() {
         campaign: campaignById.get(id),
       }))
       .sort((left, right) => left.name.localeCompare(right.name));
-    folders.push({ key: 'unassigned', name: 'Unassigned', members: unassigned, campaign: undefined });
+    if (unassigned.length > 0) folders.push({ key: 'unassigned', name: 'Unassigned', members: unassigned, campaign: undefined });
     return folders;
   }, [campaignById, characters.data]);
+  const ownedCampaignFolders = useMemo(
+    () => campaignFolders.filter((folder) => folder.campaign && sameUserId(folder.campaign.user_id, session?.user.id)),
+    [campaignFolders, session?.user.id]
+  );
+  const joinedCampaignFolders = useMemo(
+    () => campaignFolders.filter((folder) => !folder.campaign || !sameUserId(folder.campaign.user_id, session?.user.id)),
+    [campaignFolders, session?.user.id]
+  );
   const assignableCampaigns = useMemo(
     () => (campaigns.data ?? []).filter((campaign) => sameUserId(campaign.user_id, session?.user.id)).slice(0, 6),
     [campaigns.data, session?.user.id]
@@ -1254,7 +1265,7 @@ export function Phase1CharactersPage() {
     <div className='min-h-screen max-w-full overflow-x-hidden bg-p1-page text-p1-text'>
       <WorkspaceHeader section='characters' />
       <main className='mx-auto max-w-5xl px-6 py-10'>
-        <div className='mb-8 flex flex-wrap items-end justify-between gap-6 border-b border-p1-border pb-6'>
+        <div className='mb-3 flex flex-wrap items-end justify-between gap-6 border-b border-p1-border pb-3'>
           <div>
             <Eyebrow>Phase 1</Eyebrow>
             <h1 className='mt-2 text-3xl font-semibold'>Character workspace</h1>
@@ -1320,6 +1331,48 @@ export function Phase1CharactersPage() {
                   }}
                 />
               </div>
+              {(characters.data?.length ?? 0) > 0 && (
+                <>
+                  {campaignFolders.some((folder) => campaignHasRowArt(folder.campaign)) && (
+                    <label className={`flex items-center gap-2 text-sm text-p1-muted${characterLayout === 'list' ? ' opacity-50' : ' cursor-pointer'}`}>
+                      <input
+                        type='checkbox'
+                        className='accent-[var(--p1-accent)]'
+                        disabled={characterLayout === 'list'}
+                        checked={showCampaignArt}
+                        onChange={(event) => {
+                          persistShowCampaignArt(event.target.checked);
+                          setShowCampaignArt(event.target.checked);
+                        }}
+                      />
+                      Campaign art
+                    </label>
+                  )}
+                  <div className='phase1-theme-switch stat-block-layout-switch' role='radiogroup' aria-label='Character list layout'>
+                    {([
+                      ['list', 'List'],
+                      ['campaign', 'By campaign'],
+                    ] as const).map(([id, label]) => {
+                      const selected = characterLayout === id;
+                      return (
+                        <button
+                          key={id}
+                          type='button'
+                          role='radio'
+                          aria-checked={selected}
+                          className={selected ? 'is-active' : undefined}
+                          onClick={() => {
+                            persistCharacterLayout(id);
+                            setCharacterLayout(id);
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
             {joinStatus && <p className='max-w-md text-right text-xs text-p1-muted'>{joinStatus}</p>}
           </div>
@@ -1332,50 +1385,17 @@ export function Phase1CharactersPage() {
             <CreateMenu className='mt-4 inline-flex' />
           </EmptyState>
         )}
-        {(characters.data?.length ?? 0) > 0 && (
-          <div className='mb-4 flex items-center justify-end gap-4'>
-            {characterLayout === 'campaign' && campaignFolders.some((folder) => campaignHasRowArt(folder.campaign)) && (
-              <label className='flex cursor-pointer items-center gap-2 text-sm text-p1-muted'>
-                <input
-                  type='checkbox'
-                  className='accent-[var(--p1-accent)]'
-                  checked={showCampaignArt}
-                  onChange={(event) => {
-                    persistShowCampaignArt(event.target.checked);
-                    setShowCampaignArt(event.target.checked);
-                  }}
-                />
-                Campaign art
-              </label>
-            )}
-            <div className='phase1-theme-switch stat-block-layout-switch' role='radiogroup' aria-label='Character list layout'>
-              {([
-                ['list', 'List'],
-                ['campaign', 'By campaign'],
-              ] as const).map(([id, label]) => {
-                const selected = characterLayout === id;
-                return (
-                  <button
-                    key={id}
-                    type='button'
-                    role='radio'
-                    aria-checked={selected}
-                    className={selected ? 'is-active' : undefined}
-                    onClick={() => {
-                      persistCharacterLayout(id);
-                      setCharacterLayout(id);
-                    }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
         {characterLayout === 'campaign' && (characters.data?.length ?? 0) > 0 ? (
           <div className='divide-y divide-p1-border border-y border-p1-border'>
-            {campaignFolders.map((folder) => {
+            {([
+              ['Campaigns I own', ownedCampaignFolders],
+              ["Campaigns I'm on", joinedCampaignFolders],
+            ] as const).map(([heading, folders]) => (
+              <div key={heading}>
+                <div className='px-2 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-p1-muted'>{heading}</div>
+                {folders.length === 0 && <p className='px-2 pb-2 text-sm text-p1-muted'>None</p>}
+                <div className='divide-y divide-p1-border border-t border-p1-border'>
+                {folders.map((folder) => {
               const expanded = expandedFolders.has(folder.key);
               const artUrl = folder.campaign?.meta_data?.image_url?.trim();
               const rowColor = normalizeRowColor(folder.campaign?.meta_data?.row_color);
@@ -1413,6 +1433,9 @@ export function Phase1CharactersPage() {
                       <Folder size={40} strokeWidth={1.25} className='shrink-0 text-p1-muted' aria-hidden />
                     )}
                     <span className='min-w-0 truncate text-base font-semibold'>{folder.name}</span>
+                    {folder.campaign && sameUserId(folder.campaign.user_id, session.user.id) && (
+                      <Crown size={14} className='shrink-0 text-p1-accent' aria-label='You own this campaign' />
+                    )}
                     <span className='text-sm text-p1-muted'>{folder.members.length}</span>
                   </button>
                   {expanded && (
@@ -1447,6 +1470,9 @@ export function Phase1CharactersPage() {
                 </div>
               );
             })}
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           <div className='divide-y divide-p1-border border-y border-p1-border'>
@@ -1459,6 +1485,7 @@ export function Phase1CharactersPage() {
                   character={character}
                   showCampaign
                   campaignName={assignedCampaign?.name}
+                  ownedCampaign={Boolean(assignedCampaign && sameUserId(assignedCampaign.user_id, session.user.id))}
                   unresolvedCampaign={campaignId != null && !assignedCampaign}
                   onOpen={() => navigate(`/sheet/${character.id}`)}
                   onContextMenu={(event) => {
