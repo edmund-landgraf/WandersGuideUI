@@ -40,6 +40,18 @@ const fixture: EncounterReader = {
       },
     };
   },
+  async ensurePublicUser(userId) {
+    return { ok: true, data: { userId, displayName: "GM", created: false } };
+  },
+  async joinCampaign(_userId, characterId) {
+    return { ok: true, data: { characterId, campaignId: 44, campaignName: "s2", already: true } };
+  },
+  async campaignOwnerContacts() {
+    return { ok: true, data: [] };
+  },
+  async patchEncounterDice() {
+    return { ok: true, data: { diceRollState: {}, diceRollLog: [] } };
+  },
 };
 setEncounterReader(fixture);
 

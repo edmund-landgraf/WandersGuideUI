@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getEncounterReader, type CombatantSheet, type EncounterRecord } from "./reader.js";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+const writes = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
 const gm = { view: z.literal("gm").describe("Required. Only gm is accepted.") };
 
 type ToolConfig = {
@@ -79,6 +80,77 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     async () => {
       const profile = await getEncounterReader().profile(userId());
       return textResult(profile.email || profile.id, { ...profile });
+    },
+  );
+
+  server.registerTool(
+    "ensure_public_user",
+    {
+      title: "Ensure account profile",
+      description: "Create the caller's public_user row when sign-in succeeded but campaign or character creation says the user was not found. Idempotent: an existing profile is returned unchanged. Call this before create-campaign or create-character only after that missing-profile error. It does not create a campaign or a character.",
+      annotations: writes,
+    },
+    async () => {
+      const result = await getEncounterReader().ensurePublicUser(userId());
+      if (!result.ok) return textResult(result.message, { code: result.code, retryable: false }, true);
+      return textResult(result.data.created ? "Profile created." : "Profile already exists.", result.data);
+    },
+  );
+
+  server.registerTool(
+    "join_campaign",
+    {
+      title: "Join a campaign",
+      description: "Attach one character the caller owns to a campaign using the GM's join key. Use the character's numeric id, not an encounter combatant id. The key is checked and then discarded; never repeat the key in your reply. If the character is already in that campaign, the call reports already=true and does not write again. A wrong key or a character owned by someone else fails without revealing which campaigns exist.",
+      annotations: writes,
+      inputSchema: {
+        characterId: z.number().int().describe("Numeric id of a character this account owns."),
+        joinKey: z.string().describe("Campaign join key from the GM. Do not echo it back."),
+      },
+    },
+    async (args) => {
+      const result = await getEncounterReader().joinCampaign(userId(), Number(args.characterId), String(args.joinKey));
+      if (!result.ok) return textResult(result.message, { code: result.code, retryable: false }, true);
+      return textResult(result.data.already ? "Already in the campaign." : "Joined the campaign.", result.data);
+    },
+  );
+
+  server.registerTool(
+    "get_campaign_owner_contacts",
+    {
+      title: "Campaign owner contacts",
+      description: "Email and display name for campaign owners the caller already shares a campaign with, including the caller. Pass at most 24 user ids from campaign rows you already loaded. Ids the caller does not play with are omitted, not reported as errors, so an empty list does not mean the id is invalid. Do not use this to look up arbitrary accounts.",
+      annotations: readOnly,
+      inputSchema: {
+        userIds: z.array(z.string()).max(24).describe("Owner user ids from campaigns the caller already belongs to."),
+      },
+    },
+    async (args) => {
+      const result = await getEncounterReader().campaignOwnerContacts(userId(), args.userIds as string[]);
+      if (!result.ok) return textResult(result.message, { code: result.code, retryable: false }, true);
+      return textResult(result.data.length ? "Owner contacts." : "No shared owners.", { contacts: result.data });
+    },
+  );
+
+  server.registerTool(
+    "patch_encounter_dice",
+    {
+      title: "Update encounter dice",
+      description: "Write only the encounter dice tray (diceRollState) and dice log (diceRollLog). Read get_dice_log first. A GM replacement overwrites whichever field you send, so include every log row you intend to keep. A player may add, edit, or drop only log rows they started, and may change the tray title, DC, stat, and results; side and challenge stay as the GM set them. This does not change initiative, HP, conditions, or the roster. Send at least one of the two fields.",
+      annotations: writes,
+      inputSchema: {
+        ...ids,
+        diceRollState: z.record(z.string(), z.unknown()).nullable().optional().describe("Full tray for a GM. Players may set title, dc, stat, and results."),
+        diceRollLog: z.array(z.record(z.string(), z.unknown())).optional().describe("Full log for a GM. Players send only their own rows plus the ones they are keeping."),
+      },
+    },
+    async (args) => {
+      const result = await getEncounterReader().patchEncounterDice(userId(), Number(args.campaignId), Number(args.encounterId), {
+        diceRollState: args.diceRollState as Record<string, unknown> | null | undefined,
+        diceRollLog: args.diceRollLog as unknown[] | undefined,
+      });
+      if (!result.ok) return textResult(result.message, { code: result.code, retryable: false }, true);
+      return textResult("Dice updated.", result.data);
     },
   );
 

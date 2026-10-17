@@ -21,3 +21,7 @@ All tools are read-only. Encounter tools require `view: "gm"`. See [adr-oauth.md
 | `get_spells` | Spells, including spent slots |
 | `get_character` | Remaining PC tabs |
 | `get_monster` | Remaining creature tabs |
+| `ensure_public_user` | Create the caller's profile when it is missing |
+| `join_campaign` | Attach the caller's character with a join key |
+| `get_campaign_owner_contacts` | Email for owners the caller already shares a campaign with |
+| `patch_encounter_dice` | Dice tray and dice log only |

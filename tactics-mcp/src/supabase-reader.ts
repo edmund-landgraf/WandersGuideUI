@@ -1,4 +1,5 @@
-import { setEncounterReader, type CombatantRow, type CombatantSheet, type EncounterReader, type EncounterRecord } from "./reader.js";
+import { mergePlayerDiceRollLog, mergePlayerDiceRollState } from "./dice-merge.js";
+import { setEncounterReader, type ActionResult, type CombatantRow, type CombatantSheet, type EncounterReader, type EncounterRecord } from "./reader.js";
 
 import { readLiveStatBlock } from "./stat-block.js";
 
@@ -26,7 +27,13 @@ async function adminUser(userId: string) {
     headers: { apikey: env("SUPABASE_SERVICE_ROLE_KEY"), Authorization: `Bearer ${env("SUPABASE_SERVICE_ROLE_KEY")}` },
   });
   if (!response.ok) throw new Error("EXTENSION");
-  return (await response.json()) as { id?: string; email?: string | null };
+  return (await response.json()) as { id?: string; email?: string | null; user_metadata?: Record<string, unknown> | null };
+}
+
+function displayName(user: { email?: string | null; user_metadata?: Record<string, unknown> | null }) {
+  const meta = user.user_metadata ?? {};
+  const named = [meta.display_name, meta.name, meta.full_name].find((value) => typeof value === "string" && value.trim());
+  return typeof named === "string" ? named.trim() : "";
 }
 
 async function contentRows(name: string, ids: number[]) {
@@ -287,6 +294,33 @@ function spellIdsOf(entity: Json) {
     const id = num(entry.spell_id);
     return id ? [id] : [];
   });
+}
+
+function sameUser(left: unknown, right: string) {
+  return String(left ?? "").trim().toLowerCase() === right.trim().toLowerCase();
+}
+
+function fail<T>(code: string, message: string): ActionResult<T> {
+  return { ok: false, code, message };
+}
+
+async function restWrite(method: "POST" | "PATCH", path: string, body: unknown): Promise<Json[]> {
+  const service = env("SUPABASE_SERVICE_ROLE_KEY");
+  const response = await fetch(`${baseUrl()}/rest/v1/${path}`, {
+    method,
+    headers: {
+      apikey: service,
+      Authorization: `Bearer ${service}`,
+      Accept: "application/json",
+      "content-type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(body),
+  });
+  if (response.status === 409) return [];
+  if (!response.ok) throw new Error("EXTENSION");
+  const payload = (await response.json()) as unknown;
+  return Array.isArray(payload) ? (payload as Json[]) : [];
 }
 
 async function rest(path: string): Promise<Json[]> {
@@ -798,6 +832,79 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
         }
       }
       return record;
+    },
+    async ensurePublicUser(userId) {
+      const existing = await rest(`public_user?user_id=eq.${encodeURIComponent(userId)}&select=user_id,display_name`);
+      if (existing[0]) {
+        return { ok: true, data: { userId, displayName: String(existing[0].display_name ?? ""), created: false } };
+      }
+      const user = await adminUser(userId);
+      const local = user.email?.split("@")[0]?.trim();
+      const displayName = local || "Unknown User";
+      const inserted = await restWrite("POST", "public_user", { user_id: userId, display_name: displayName });
+      const row = inserted[0] ?? (await rest(`public_user?user_id=eq.${encodeURIComponent(userId)}&select=user_id,display_name`))[0];
+      if (!row) return fail("PUBLIC_USER_CREATE_FAILED", "Could not create a user profile.");
+      return { ok: true, data: { userId, displayName: String(row.display_name ?? displayName), created: true } };
+    },
+    async joinCampaign(userId, characterId, joinKey) {
+      const key = joinKey.trim();
+      if (!key) return fail("JOIN_KEY_REQUIRED", "Enter a join key.");
+      const characters = await rest(`character?id=eq.${characterId}&select=id,user_id,campaign_id,name`);
+      const character = characters[0];
+      if (!character || !sameUser(character.user_id, userId)) return fail("CHARACTER_FORBIDDEN", "You do not have access to this character.");
+      const campaigns = await rest(`campaign?join_key=eq.${encodeURIComponent(key)}&select=id,name,user_id`);
+      const campaign = campaigns[0];
+      if (!campaign || num(campaign.id) === undefined) return fail("JOIN_KEY_INVALID", "Invalid join key. Ask the GM for a valid key.");
+      const campaignId = num(campaign.id)!;
+      const already = num(character.campaign_id) === campaignId;
+      if (!already) {
+        await restWrite("PATCH", `character?id=eq.${characterId}&user_id=eq.${encodeURIComponent(userId)}`, { campaign_id: campaignId });
+        const saved = (await rest(`character?id=eq.${characterId}&select=campaign_id`))[0];
+        if (num(saved?.campaign_id) !== campaignId) return fail("JOIN_NOT_SAVED", "Could not add that character to the campaign.");
+      }
+      return { ok: true, data: { characterId, campaignId, campaignName: String(campaign.name ?? "Campaign"), already } };
+    },
+    async campaignOwnerContacts(userId, ownerIds) {
+      const requested = [...new Set(ownerIds.map((id) => id.trim()).filter(Boolean))].slice(0, 24);
+      if (!requested.length) return { ok: true, data: [] };
+      const [owned, mine] = await Promise.all([
+        rest(`campaign?user_id=eq.${encodeURIComponent(userId)}&select=id`),
+        rest(`character?user_id=eq.${encodeURIComponent(userId)}&select=campaign_id`),
+      ]);
+      const ownedIds = new Set(owned.map((row) => num(row.id)).filter((id): id is number => id !== undefined));
+      const joinedIds = new Set(mine.map((row) => num(row.campaign_id)).filter((id): id is number => id !== undefined));
+      const contacts: { userId: string; email: string; displayName: string }[] = [];
+      for (const ownerId of requested) {
+        const campaigns = sameUser(ownerId, userId) ? [{ id: 0 }] : await rest(`campaign?user_id=eq.${encodeURIComponent(ownerId)}&select=id`);
+        const allowed = sameUser(ownerId, userId) || campaigns.some((row) => {
+          const id = num(row.id);
+          return id !== undefined && (ownedIds.has(id) || joinedIds.has(id));
+        });
+        if (!allowed) continue;
+        const user = await adminUser(ownerId);
+        contacts.push({ userId: ownerId, email: user.email ?? "", displayName: displayName(user) });
+      }
+      return { ok: true, data: contacts };
+    },
+    async patchEncounterDice(userId, campaignId, encounterId, patch) {
+      const hasState = patch.diceRollState !== undefined;
+      const hasLog = patch.diceRollLog !== undefined;
+      if (!hasState && !hasLog) return fail("DICE_PATCH_REQUIRED", "Send diceRollState, diceRollLog, or both.");
+      const access = await campaignAccess(userId, campaignId);
+      if (!access) return fail("CAMPAIGN_FORBIDDEN", "You do not have access to this campaign.");
+      const rows = await rest(`encounter?id=eq.${encounterId}&select=id,campaign_id,meta_data,combatants`);
+      const encounter = rows[0];
+      if (!encounter || num(encounter.campaign_id) !== campaignId) return fail("ENCOUNTER_FORBIDDEN", "You do not have access to this encounter.");
+      if (!access.isGm && !includesCharacter(encounter, access.characterIds)) return fail("ENCOUNTER_FORBIDDEN", "You do not have access to this encounter.");
+      const meta = { ...((encounter.meta_data as Json | undefined) ?? {}) };
+      if (hasState) {
+        meta.dice_roll_state = access.isGm ? (patch.diceRollState ?? {}) : mergePlayerDiceRollState(meta.dice_roll_state, patch.diceRollState);
+      }
+      if (hasLog) {
+        meta.dice_roll_log = access.isGm ? (patch.diceRollLog ?? []) : mergePlayerDiceRollLog(meta.dice_roll_log, patch.diceRollLog, userId);
+      }
+      await restWrite("PATCH", `encounter?id=eq.${encounterId}`, { meta_data: meta });
+      return { ok: true, data: { diceRollState: meta.dice_roll_state ?? null, diceRollLog: Array.isArray(meta.dice_roll_log) ? meta.dice_roll_log : [] } };
     },
   };
 }

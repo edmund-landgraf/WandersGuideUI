@@ -54,11 +54,22 @@ export type CombatantSheet = {
   log?: unknown;
 };
 
+export type ActionFailure = { ok: false; code: string; message: string };
+export type ActionResult<T> = { ok: true; data: T } | ActionFailure;
+
 export type EncounterReader = {
   profile(userId: string): Promise<{ id: string; email?: string | null; name?: string | null }>;
   listEncounters(userId: string, campaignId: number): Promise<{ id: number; name: string; combatantCount: number }[]>;
   loadEncounter(userId: string, campaignId: number, encounterId: number, combatantId?: string, includeStats?: boolean): Promise<EncounterRecord | null>;
+  ensurePublicUser(userId: string): Promise<ActionResult<{ userId: string; displayName: string; created: boolean }>>;
+  joinCampaign(userId: string, characterId: number, joinKey: string): Promise<ActionResult<{ characterId: number; campaignId: number; campaignName: string; already: boolean }>>;
+  campaignOwnerContacts(userId: string, ownerIds: string[]): Promise<ActionResult<{ userId: string; email: string; displayName: string }[]>>;
+  patchEncounterDice(userId: string, campaignId: number, encounterId: number, patch: { diceRollState?: Record<string, unknown> | null; diceRollLog?: unknown[] }): Promise<ActionResult<{ diceRollState: unknown; diceRollLog: unknown[] }>>;
 };
+
+function unavailable(message = "This tool is unavailable without the campaign database."): ActionFailure {
+  return { ok: false, code: "INTERNAL_ERROR", message };
+}
 
 const empty: EncounterReader = {
   async profile(userId) {
@@ -69,6 +80,18 @@ const empty: EncounterReader = {
   },
   async loadEncounter() {
     return null;
+  },
+  async ensurePublicUser() {
+    return unavailable();
+  },
+  async joinCampaign() {
+    return unavailable();
+  },
+  async campaignOwnerContacts() {
+    return unavailable();
+  },
+  async patchEncounterDice() {
+    return unavailable();
   },
 };
 

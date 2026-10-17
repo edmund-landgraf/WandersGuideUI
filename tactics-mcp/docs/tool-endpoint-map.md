@@ -56,6 +56,10 @@ There is no edge function per sheet tab. After the fetch, dispatch picks the sou
 | Tool | What it reads |
 | --- | --- |
 | `get_profile` | Supabase user looked up by the token row’s `userId`. No encounter function. No `view`. |
+| `ensure_public_user` | Inserts `public_user` for that user when the row is missing. Same job as `wgui-ext-ensure-public-user`. |
+| `join_campaign` | Checks `campaign.join_key`, then sets `character.campaign_id` for a character that user owns. The key is not returned. Same job as `wgui-ext-join-campaign`. |
+| `get_campaign_owner_contacts` | Auth email for owners of campaigns the caller already shares. Unknown ids are omitted. Same job as `wgui-ext-campaign-owner-email`. |
+| `patch_encounter_dice` | Writes `meta_data.dice_roll_state` and `meta_data.dice_roll_log` only. A GM replaces the fields they send. A player is limited to their own log rows and the tray fields title, DC, stat, and results. Same job as `wgui-ext-patch-encounter-dice`. |
 
 ## Errors
 

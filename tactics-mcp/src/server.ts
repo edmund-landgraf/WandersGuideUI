@@ -22,6 +22,10 @@ const READ_TOOLS = new Set([
   "get_spells",
   "get_character",
   "get_monster",
+  "ensure_public_user",
+  "join_campaign",
+  "get_campaign_owner_contacts",
+  "patch_encounter_dice",
 ]);
 
 export function scopeForTool(name: string) {
