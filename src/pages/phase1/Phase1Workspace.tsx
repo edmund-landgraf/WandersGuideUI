@@ -1762,8 +1762,9 @@ function phase1EncounterPath(encounterId: number, campaignId?: number | null) {
 
 function defaultEncounterTab(encounter: Encounter | null | undefined): 'combat' | 'dice' {
   const list = encounter?.combatants.list ?? [];
-  if (list.length === 0) return 'combat';
-  return list.some((item) => !item.ally) ? 'combat' : 'dice';
+  const hasPcs = list.some((item) => item.type === 'CHARACTER');
+  const hasEnemies = list.some((item) => item.type !== 'CHARACTER' && item.type !== 'HAZARD' && !item.ally);
+  return hasPcs && !hasEnemies ? 'dice' : 'combat';
 }
 
 function encounterSideCounts(encounter: Encounter) {
@@ -3282,8 +3283,8 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
           ) : (
             <>
               <EncounterHeader encounter={selectedEncounter} combatants={activeCombatants} count={activeCombatants.length} isGm={isGm} campaignId={campaign?.id ?? null} noteLink={!standalone && encounterNote && campaign ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} tab={encounterTab} onTab={setEncounterTab} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} showAddHazard={campaign?.meta_data?.settings?.show_hazards_button === true} canAddHazard={isGm && !rosterSaving} onAddHazard={() => setHazardPickerOpen(true)} canRollInitiative={isGm && activeCombatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && activeCombatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} onOpenStatBlocks={() => setStatBlocksOpen(true)} />
-              {rosterError && <div className='border-b border-p1-danger/40 bg-p1-danger/10 px-5 py-2 text-xs text-p1-danger-soft'>Roster update failed: {rosterError.message}</div>}
-              {encounterTab === 'dice' && (
+              {selectedEncounter && rosterError && <div className='border-b border-p1-danger/40 bg-p1-danger/10 px-5 py-2 text-xs text-p1-danger-soft'>Roster update failed: {rosterError.message}</div>}
+              {selectedEncounter && encounterTab === 'dice' && (
                 <DiceRollToolbar
                   isGm={isGm}
                   side={diceSide}
@@ -3336,8 +3337,8 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
                   }}
                 />
               )}
-              {encounterTab === 'dice' && <DiceRollColorKey />}
-              <div className='p-5'>
+              {selectedEncounter && encounterTab === 'dice' && <DiceRollColorKey />}
+              {selectedEncounter && <div className='p-5'>
                 {encounterTab === 'combat' ? (
                   <>
                     <CombatantGrid combatants={orderedCombatants} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={initiativeRollNonce} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onToggleHazardDisabled={persistHazardDisabled} playerView={!isGm} />
@@ -3349,7 +3350,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
                     <DiceRollLogPanel log={isGm ? (selectedEncounter?.meta_data.dice_roll_log ?? []) : playerAllyRoundLog(playerVisibleDiceRollLog(selectedEncounter?.meta_data.dice_roll_log ?? []))} canClear={isGm && !rosterSaving} canEdit={isGm && !rosterSaving} canRemoveEntry={(entry) => isGm || sameUserId(entry.initiated_by_user_id, sessionUserId)} onClear={clearDiceRollLog} onRemove={removeDiceRollLog} onUpdateNote={updateDiceRollNote} />
                   </>
                 )}
-              </div>
+              </div>}
               {initiativeOpen && selectedEncounter && (
                 <InitiativeRollModal
                   combatants={activeCombatants.filter((combatant) => !isHazardCombatant(combatant) || getHazardInitiativeModifier(combatant.hazard) !== undefined)}
@@ -4921,8 +4922,8 @@ function EncounterHeader({ encounter, combatants, count, isGm, campaignId, noteL
     <div className='sticky top-0 z-10 border-b border-p1-border bg-p1-surface/95 px-5 py-4 backdrop-blur'>
       <Eyebrow>{isGm ? 'GM encounter' : 'Assigned encounter'}</Eyebrow>
       <h2 className='mt-1 text-xl font-semibold'>{encounter ? encounterDisplayName(encounter.name) : 'No encounter selected'}</h2>
-      {noteLink ? <Link to={noteLink.href} className='mt-1 block text-xs text-p1-accent hover:underline'>See campaign Notes page: {encounterDisplayName(noteLink.name)}</Link> : <p className='mt-1 text-xs text-p1-faint'>{encounter?.meta_data.description || `${count} combatants`}</p>}
-      <div className='mt-3 flex flex-wrap items-center gap-2'>
+      {noteLink ? <Link to={noteLink.href} className='mt-1 block text-xs text-p1-accent hover:underline'>See campaign Notes page: {encounterDisplayName(noteLink.name)}</Link> : <p className='mt-1 text-xs text-p1-faint'>{encounter ? (encounter.meta_data.description || `${count} combatants`) : 'Add or select an encounter to start combat.'}</p>}
+      {!encounter ? null : <div className='mt-3 flex flex-wrap items-center gap-2'>
         <div className='mr-auto flex gap-1'>
           {(['combat', 'dice'] as const).map((item) => (
             <button
@@ -4961,7 +4962,7 @@ function EncounterHeader({ encounter, combatants, count, isGm, campaignId, noteL
             <button className='toolbar-button' disabled title='Available after read-only parity'><Shield size={15} /> Group check</button>
           </>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
