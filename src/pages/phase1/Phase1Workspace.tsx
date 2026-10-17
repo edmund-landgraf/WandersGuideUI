@@ -2339,6 +2339,10 @@ export function Phase1CampaignPage() {
     }
   }
   if (!viewingNotes && !viewingSettings && !encounterId && visible[0]) return <Navigate replace to={`/phase1/campaign/${campaignId}/encounters/${visible[0].id}`} />;
+  if (viewingNotes && !isGm) {
+    if (visible[0]) return <Navigate replace to={`/phase1/campaign/${campaignId}/encounters/${visible[0].id}`} />;
+    return <Navigate replace to={`/phase1/campaign/${campaignId}`} />;
+  }
   if (viewingSettings && !isGm) return <PageError error={new Error('Campaign settings are only available to the game master.')} />;
   return (
     <EncounterWorkspace
@@ -3584,7 +3588,7 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
           </>
         ) : null}
       </div>
-      {!standalone && campaign && (
+      {!standalone && isGm && campaign && (
         <>
       <RailLabel icon={<BookOpen size={14} />} label='Notes' count={notePages.length} open={notesOpen} onToggle={() => setNotesOpen((value) => !value)} onContextMenu={(event) => openSectionMenu(event, 'note')} />
       {notesOpen && (
@@ -3616,7 +3620,7 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
               className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedEncounter?.id === encounter.id ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
             >
               <span className='block truncate'>{encounterDisplayName(encounter.name)}</span>
-              <span className='mt-0.5 block text-[11px] text-p1-faint'>{encounter.combatants.list.length} combatants</span>
+              {isGm && <span className='mt-0.5 block text-[11px] text-p1-faint'>{encounter.combatants.list.length} combatants</span>}
             </Link>
           ))}
           {encounters.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>{standalone ? 'No standalone encounters yet.' : isGm ? 'No encounters in this campaign yet.' : 'None of your characters are in an encounter yet.'}</p>}
@@ -5949,12 +5953,20 @@ async function shrinkCampaignArt(file: File): Promise<File> {
   return file;
 }
 
-const DIRECT_ART_PATH = /\.(png|jpe?g|gif|webp|avif)(?:$|[?#])/i;
+const DIRECT_ART_PATH = /\.(png|jpe?g|gif|webp|avif)$/i;
 
 function normalizeArtLink(raw: string): string {
   const cleaned = raw.trim().replace(/&amp;/g, '&').replace(/[\u200B-\u200D\uFEFF]/g, '');
   const match = cleaned.match(/https?:\/\/\S+/i);
-  return (match ? match[0] : cleaned).replace(/[),.;]+$/, '');
+  return (match ? match[0] : cleaned).replace(/[)>"'`\],.;]+$/, '');
+}
+
+function isDirectArtUrl(url: string): boolean {
+  try {
+    return DIRECT_ART_PATH.test(decodeURIComponent(new URL(url).pathname));
+  } catch {
+    return /\.(png|jpe?g|gif|webp|avif)(?:$|[?#])/i.test(url);
+  }
 }
 
 function probeArtImage(url: string, referrerPolicy: ReferrerPolicy): Promise<boolean> {
@@ -6094,16 +6106,17 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
     setBusy(true);
     setError(null);
     try {
+      const direct = isDirectArtUrl(url);
       let loads = await probeArtImage(url, 'no-referrer');
       if (!loads) loads = await probeArtImage(url, '');
-      if (!loads) {
+      if (!loads || direct) {
         const downloaded = await downloadArtFile(url);
         if (downloaded) {
           await saveArt(downloaded);
           return;
         }
       }
-      if (!loads && !DIRECT_ART_PATH.test(url)) throw new Error('That link is not a direct image.');
+      if (!loads && !direct) throw new Error('That link is not a direct image.');
       await phase1Request('create-campaign', {
         ...campaign,
         meta_data: { ...campaign.meta_data, image_url: url },
@@ -6912,7 +6925,8 @@ function isCampaignLimitError(error: unknown) {
 }
 
 function visibleNotePages(campaign: Campaign, isGm: boolean): IndexedNotePage[] {
-  return (campaign.notes?.pages ?? []).map((page, index) => ({ page, index })).filter((item) => isGm || item.page.shared);
+  if (!isGm) return [];
+  return (campaign.notes?.pages ?? []).map((page, index) => ({ page, index }));
 }
 function clamp(value: number, min: number, max: number) { return Math.min(max, Math.max(min, value)); }
 function readDetailWidth() {

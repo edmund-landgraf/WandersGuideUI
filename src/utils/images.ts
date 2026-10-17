@@ -9,23 +9,37 @@ export async function getRingIcon(content: string) {
   return res.ok ? await res.text() : '';
 }
 
+function imageFileUrl(url: string): boolean {
+  try {
+    return /\.(png|jpe?g|gif|webp|avif)$/i.test(decodeURIComponent(new URL(url).pathname));
+  } catch {
+    return /\.(png|jpe?g|gif|webp|avif)(?:$|[?#])/i.test(url);
+  }
+}
+
+function loadImage(url: string, referrerPolicy: ReferrerPolicy): Promise<boolean> {
+  return new Promise((resolve) => {
+    const img = document.createElement('img');
+    img.referrerPolicy = referrerPolicy;
+    img.onload = () => resolve(img.naturalWidth > 0);
+    img.onerror = () => resolve(false);
+    img.src = url;
+  });
+}
+
 export async function isValidImage(url?: string): Promise<boolean> {
-  if (!url) return false;
-  const urlPattern = /^https?:\/\/[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}(\S*)$/;
-  if (url.trim().match(urlPattern)) {
-    return new Promise((resolve, reject) => {
-      let img = new Image();
-      img.onload = function () {
-        resolve(true);
-      };
-      img.onerror = function () {
-        resolve(false);
-      };
-      img.src = url;
-    });
-  } else {
+  const trimmed = url?.trim();
+  if (!trimmed) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
     return false;
   }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  if (await loadImage(trimmed, 'no-referrer')) return true;
+  if (await loadImage(trimmed, '')) return true;
+  return imageFileUrl(trimmed);
 }
 
 export async function preloadImage(url?: string | null): Promise<void> {
