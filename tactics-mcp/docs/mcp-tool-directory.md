@@ -25,3 +25,5 @@ All tools are read-only. Encounter tools require `view: "gm"`. See [adr-oauth.md
 | `join_campaign` | Attach the caller's character with a join key |
 | `get_campaign_owner_contacts` | Email for owners the caller already shares a campaign with |
 | `patch_encounter_dice` | Dice tray and dice log only |
+| `list_campaign_characters` | Campaign PC roster |
+| `export_character` | Compiled character JSON file |

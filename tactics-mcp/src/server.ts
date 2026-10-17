@@ -26,6 +26,8 @@ const READ_TOOLS = new Set([
   "join_campaign",
   "get_campaign_owner_contacts",
   "patch_encounter_dice",
+  "list_campaign_characters",
+  "export_character",
 ]);
 
 export function scopeForTool(name: string) {

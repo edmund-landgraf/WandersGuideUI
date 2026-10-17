@@ -52,6 +52,12 @@ const fixture: EncounterReader = {
   async patchEncounterDice() {
     return { ok: true, data: { diceRollState: {}, diceRollLog: [] } };
   },
+  async listCampaignCharacters() {
+    return { ok: true, data: [{ id: 7, name: "Joey Turtle", level: 3, ancestry: "Kobold", className: "Kineticist" }] };
+  },
+  async exportCharacter() {
+    return { ok: true, data: { name: "Joey Turtle" } };
+  },
 };
 setEncounterReader(fixture);
 
@@ -99,7 +105,7 @@ const transport = new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
 const client = new Client({ name: "wgui-smoke", version: "0.1.0" });
 await client.connect(transport);
 const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
-if (!names.includes("get_stat_block") || !names.includes("get_profile")) throw new Error(names.join(","));
+if (!names.includes("get_stat_block") || !names.includes("get_profile") || !names.includes("export_character")) throw new Error(names.join(","));
 const profile = JSON.stringify(await client.callTool({ name: "get_profile", arguments: {} }));
 if (!profile.includes("gm@example.com")) throw new Error(profile);
 const hurt = JSON.stringify(await client.callTool({ name: "list_pcs", arguments: { view: "gm", campaignId: 44, encounterId: 44 } }));

@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+
 import { mergePlayerDiceRollLog, mergePlayerDiceRollState } from "./dice-merge.js";
 import { setEncounterReader, type ActionResult, type CombatantRow, type CombatantSheet, type EncounterReader, type EncounterRecord } from "./reader.js";
 
@@ -736,6 +738,8 @@ function mapEncounter(raw: Json, characters: Json[]): EncounterRecord {
   const list = ((raw.combatants as Json | undefined)?.list as Json[] | undefined) ?? [];
   const meta = (raw.meta_data as Json | undefined) ?? {};
   const roundLog = Array.isArray(meta.initiative_log) ? meta.initiative_log : [];
+  const diceRows = Array.isArray(meta.dice_roll_log) ? (meta.dice_roll_log as Json[]) : [];
+  const diceState = meta.dice_roll_state && typeof meta.dice_roll_state === "object" ? (meta.dice_roll_state as Json) : null;
   const combatants = list.flatMap((row) => {
     const mapped = mapCombatant(row, characters);
     return mapped ? [mapped] : [];
@@ -757,7 +761,13 @@ function mapEncounter(raw: Json, characters: Json[]): EncounterRecord {
     xp: num(raw.xp),
     combatants,
     roundLog: [],
-    diceLog: [],
+    diceState,
+    diceLog: diceRows.map((row) => ({
+      title: typeof row.title === "string" ? row.title : undefined,
+      dc: num(row.dc),
+      stat: typeof row.defaultStat === "string" ? row.defaultStat : undefined,
+      result: Array.isArray(row.entries) ? `${row.entries.length} rolls` : undefined,
+    })),
     sheets,
   };
 }
@@ -906,7 +916,67 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
       await restWrite("PATCH", `encounter?id=eq.${encounterId}`, { meta_data: meta });
       return { ok: true, data: { diceRollState: meta.dice_roll_state ?? null, diceRollLog: Array.isArray(meta.dice_roll_log) ? meta.dice_roll_log : [] } };
     },
+    async listCampaignCharacters(userId, campaignId) {
+      const access = await campaignAccess(userId, campaignId);
+      if (!access) return fail("CAMPAIGN_FORBIDDEN", "You do not have access to this campaign.");
+      const rows = await rest(`character?campaign_id=eq.${campaignId}&select=id,name,level,details&order=id.asc`);
+      return {
+        ok: true,
+        data: rows.map((row) => {
+          const details = (row.details as Json | undefined) ?? {};
+          const ancestry = details.ancestry as Json | undefined;
+          const classRow = details.class as Json | undefined;
+          return {
+            id: num(row.id) ?? 0,
+            name: typeof row.name === "string" ? row.name : "Character",
+            level: num(row.level) ?? null,
+            ancestry: typeof ancestry?.name === "string" ? ancestry.name : null,
+            className: typeof classRow?.name === "string" ? classRow.name : null,
+          };
+        }),
+      };
+    },
+    async exportCharacter(userId, characterId) {
+      const secret = env("JWT_SECRET") || env("SB_JWT_SECRET");
+      if (!secret) return fail("INTERNAL_ERROR", "Character export is unavailable until JWT_SECRET is set on the MCP server.");
+      const rows = await rest(`character?id=eq.${characterId}&select=id,user_id,campaign_id`);
+      const character = rows[0];
+      if (!character) return fail("NOT_FOUND", "Character not found.");
+      const owner = sameUser(character.user_id, userId);
+      const campaignId = num(character.campaign_id);
+      const access = campaignId === undefined ? null : await campaignAccess(userId, campaignId);
+      if (!owner && !access?.isGm) return fail("CHARACTER_FORBIDDEN", "You do not have access to this character.");
+      const token = userJwt(userId, secret);
+      const response = await fetch(`${baseUrl()}/functions/v1/wgui-export-character`, {
+        method: "POST",
+        headers: {
+          apikey: env("SUPABASE_ANON_KEY"),
+          Authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ id: characterId, format: "json" }),
+      });
+      if (!response.ok) return fail("INTERNAL_ERROR", "Character export failed.");
+      const file = (await response.json()) as unknown;
+      if (!file || typeof file !== "object" || Array.isArray(file)) return fail("INTERNAL_ERROR", "Character export did not return a file.");
+      return { ok: true, data: file as Record<string, unknown> };
+    },
   };
+}
+
+function userJwt(userId: string, secret: string) {
+  const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
+  const now = Math.floor(Date.now() / 1000);
+  const payload = Buffer.from(JSON.stringify({
+    sub: userId,
+    role: "authenticated",
+    aud: "authenticated",
+    iss: `${baseUrl()}/auth/v1`,
+    iat: now,
+    exp: now + 3600,
+  })).toString("base64url");
+  const signature = createHmac("sha256", secret).update(`${header}.${payload}`).digest("base64url");
+  return `${header}.${payload}.${signature}`;
 }
 
 export function installSupabaseReader() {

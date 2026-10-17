@@ -30,6 +30,7 @@ export type EncounterRecord = {
   combatants: CombatantRow[];
   roundLog: { round: number; name: string; side: string; initiative?: number; calculation?: string; note?: string }[];
   diceLog: { title?: string; dc?: number; stat?: string; result?: string }[];
+  diceState?: Record<string, unknown> | null;
   sheets: Record<string, CombatantSheet>;
 };
 
@@ -65,6 +66,8 @@ export type EncounterReader = {
   joinCampaign(userId: string, characterId: number, joinKey: string): Promise<ActionResult<{ characterId: number; campaignId: number; campaignName: string; already: boolean }>>;
   campaignOwnerContacts(userId: string, ownerIds: string[]): Promise<ActionResult<{ userId: string; email: string; displayName: string }[]>>;
   patchEncounterDice(userId: string, campaignId: number, encounterId: number, patch: { diceRollState?: Record<string, unknown> | null; diceRollLog?: unknown[] }): Promise<ActionResult<{ diceRollState: unknown; diceRollLog: unknown[] }>>;
+  listCampaignCharacters(userId: string, campaignId: number): Promise<ActionResult<{ id: number; name: string; level: number | null; ancestry: string | null; className: string | null }[]>>;
+  exportCharacter(userId: string, characterId: number): Promise<ActionResult<Record<string, unknown>>>;
 };
 
 function unavailable(message = "This tool is unavailable without the campaign database."): ActionFailure {
@@ -91,6 +94,12 @@ const empty: EncounterReader = {
     return unavailable();
   },
   async patchEncounterDice() {
+    return unavailable();
+  },
+  async listCampaignCharacters() {
+    return unavailable();
+  },
+  async exportCharacter() {
     return unavailable();
   },
 };

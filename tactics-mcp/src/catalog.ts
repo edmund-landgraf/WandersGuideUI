@@ -154,9 +154,39 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     },
   );
 
+  server.registerTool(
+    "list_campaign_characters",
+    {
+      title: "Campaign roster",
+      description: "Every PC in a campaign the caller belongs to, the same roster as wgui-ext-find-campaign-characters. Use this for the party list, not list_pcs, which is only the characters placed in one encounter. Returns id, name, level, ancestry, and class. For the compiled character file, call export_character.",
+      annotations: readOnly,
+      inputSchema: { campaignId: z.number().int() },
+    },
+    async (args) => {
+      const result = await getEncounterReader().listCampaignCharacters(userId(), Number(args.campaignId));
+      if (!result.ok) return textResult(result.message, { code: result.code, retryable: false }, true);
+      return textResult(result.data.length ? "Campaign roster." : "No characters in this campaign.", { characters: result.data });
+    },
+  );
+
+  server.registerTool(
+    "export_character",
+    {
+      title: "Export character file",
+      description: "Compile the Wanderer's Guide JSON v4 character file through wgui-export-character. Use the character's numeric id from list_campaign_characters. The caller must own the character, or be the campaign GM. This returns JSON, not a PDF. Do not use it for encounter creatures.",
+      annotations: readOnly,
+      inputSchema: { characterId: z.number().int().describe("Numeric character id, not an encounter combatant id.") },
+    },
+    async (args) => {
+      const result = await getEncounterReader().exportCharacter(userId(), Number(args.characterId));
+      if (!result.ok) return textResult(result.message, { code: result.code, retryable: false }, true);
+      return textResult("Character file.", { file: result.data });
+    },
+  );
+
   registerEncounterTool(server, "list_encounters", {
     title: "Encounter list",
-    description: "Lists encounters in a campaign.",
+    description: "Campaign fights from the same membership check as wgui-ext-find-encounter. Returns encounter id, name, and combatant count. Pass one of those ids to get_encounter.",
     inputSchema: { campaignId: z.number().int() },
   }, async (args, uid) => {
     const encounters = await getEncounterReader().listEncounters(uid, Number(args.campaignId));
@@ -223,12 +253,12 @@ export function registerCatalog(server: McpServer, userId: () => string) {
 
   registerEncounterTool(server, "get_dice_log", {
     title: "Dice log",
-    description: "Dice Rolls tab for the encounter.",
+    description: "Shared dice tray and dice log for one encounter, the read side of wgui-ext-patch-encounter-dice. diceState is the current check. diceLog is the saved rolls. To change them, call patch_encounter_dice with the full fields you intend to keep.",
     inputSchema: ids,
   }, async (args, uid) => {
     const record = await encounter(uid, Number(args.campaignId), Number(args.encounterId));
     if (!record) return notFound("Encounter not found.");
-    return textResult("Dice log.", { diceLog: record.diceLog });
+    return textResult("Dice log.", { diceState: record.diceState ?? null, diceLog: record.diceLog });
   }, userId);
 
   registerEncounterTool(server, "get_stat_block", {
