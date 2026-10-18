@@ -1913,11 +1913,20 @@ function ProficiencyRow({ item, onOpen }: { item: Phase1ProfRow; onOpen: () => v
 }
 
 function CreaturePortrait({ combatant }: { combatant: PopulatedCombatant }) {
-  const art = useMonsterArt(combatant);
+  const art = useMonsterArt(combatant, 'thumb');
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
-  const src = art.data?.fullSrc;
+  const src = art.data?.thumbSrc;
+  const name = combatant.data.name;
+  const fallback = combatant.data.details?.image_url;
+  const fullArt = useQuery<Phase1MonsterArt | null>({
+    queryKey: ['phase1-monster-art', 'lightbox', combatant.type, combatant._id, name, fallback],
+    queryFn: () => lookupMonsterArt(name, fallback, 'full'),
+    enabled: open && combatant.type === 'CREATURE',
+    staleTime: Number.POSITIVE_INFINITY,
+  });
   useEffect(() => setFailed(false), [src]);
+  const fullSrc = fullArt.data?.fullSrc;
   return (
     <>
       <button
@@ -1927,14 +1936,14 @@ function CreaturePortrait({ combatant }: { combatant: PopulatedCombatant }) {
         onClick={() => { if (src && !failed) setOpen(true); }}
         title={src && !failed ? 'View image' : undefined}
       >
-        {src && !failed ? <img src={src} alt={combatant.data.name} className='h-full max-h-28 w-full object-contain p-1.5' onError={() => setFailed(true)} /> : <Swords size={24} className='text-p1-faint' />}
+        {src && !failed ? <img src={src} alt={name} className='h-full max-h-28 w-full object-contain p-1.5' onError={() => setFailed(true)} /> : <Swords size={24} className='text-p1-faint' />}
       </button>
-      {open && src && <ImageModal src={src} alt={combatant.data.name} onClose={() => setOpen(false)} />}
+      {open && <ImageModal src={fullSrc} alt={name} pending={fullArt.isFetching && !fullSrc} onClose={() => setOpen(false)} />}
     </>
   );
 }
 
-function ImageModal({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+function ImageModal({ src, alt, pending, onClose }: { src?: string; alt: string; pending?: boolean; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     closeRef.current?.focus();
@@ -1948,19 +1957,19 @@ function ImageModal({ src, alt, onClose }: { src: string; alt: string; onClose: 
     <div className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]' role='presentation' onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section role='dialog' aria-modal='true' aria-label={alt} className='relative max-h-[min(90vh,900px)] max-w-[min(90vw,900px)] border border-p1-border bg-p1-surface p-3 shadow-2xl'>
         <button ref={closeRef} className='icon-button absolute right-2 top-2 z-10' onClick={onClose} title='Close image'><X size={18} /></button>
-        <img src={src} alt={alt} className='max-h-[min(84vh,840px)] max-w-[min(86vw,860px)] object-contain' />
+        {src ? <img src={src} alt={alt} className='max-h-[min(84vh,840px)] max-w-[min(86vw,860px)] object-contain' /> : pending ? <p className='px-8 py-6 text-sm text-p1-muted'>Loading full image…</p> : null}
       </section>
     </div>,
     document.body
   );
 }
 
-function useMonsterArt(combatant: PopulatedCombatant) {
+function useMonsterArt(combatant: PopulatedCombatant, size: 'thumb' | 'full' = 'thumb') {
   const name = combatant.data.name;
   const fallback = combatant.data.details?.image_url;
   return useQuery<Phase1MonsterArt | null>({
-    queryKey: ['phase1-monster-art', combatant.type, combatant._id, name, fallback],
-    queryFn: () => combatant.type === 'CREATURE' ? lookupMonsterArt(name, fallback, 'full') : Promise.resolve(fallback ? { monsterId: null, fullSrc: fallback, thumbSrc: fallback } : null),
+    queryKey: ['phase1-monster-art', size, combatant.type, combatant._id, name, fallback],
+    queryFn: () => combatant.type === 'CREATURE' ? lookupMonsterArt(name, fallback, size) : Promise.resolve(fallback ? { monsterId: null, fullSrc: fallback, thumbSrc: fallback } : null),
     staleTime: Number.POSITIVE_INFINITY,
   });
 }

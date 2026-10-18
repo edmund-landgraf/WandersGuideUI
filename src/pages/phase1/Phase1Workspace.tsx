@@ -6109,52 +6109,48 @@ async function shrinkCampaignArt(file: File): Promise<File> {
   return file;
 }
 
-const DIRECT_ART_PATH = /\.(png|jpe?g|gif|webp|avif)$/i;
-
 function normalizeArtLink(raw: string): string {
   const cleaned = raw.trim().replace(/&amp;/g, '&').replace(/[\u200B-\u200D\uFEFF]/g, '');
   const match = cleaned.match(/https?:\/\/\S+/i);
   return (match ? match[0] : cleaned).replace(/[)>"'`\],.;]+$/, '');
 }
 
-function isDirectArtUrl(url: string): boolean {
-  try {
-    return DIRECT_ART_PATH.test(decodeURIComponent(new URL(url).pathname));
-  } catch {
-    return /\.(png|jpe?g|gif|webp|avif)(?:$|[?#])/i.test(url);
-  }
-}
-
-function probeArtImage(url: string, referrerPolicy: ReferrerPolicy): Promise<boolean> {
-  return new Promise((resolve) => {
-    const image = document.createElement('img');
-    image.referrerPolicy = referrerPolicy;
-    image.onload = () => resolve(image.naturalWidth > 0);
-    image.onerror = () => resolve(false);
-    image.src = url;
-  });
+function sniffImageType(bytes: Uint8Array): string {
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png';
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes.length >= 6 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'image/gif';
+  if (
+    bytes.length >= 12
+    && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+    && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50
+  ) return 'image/webp';
+  return '';
 }
 
 async function downloadArtFile(url: string): Promise<File | null> {
-  try {
-    const response = await fetch(url, { mode: 'cors', referrerPolicy: 'no-referrer' });
-    if (!response.ok) return null;
-    const blob = await response.blob();
-    const named = /\.png(?:$|[?#])/i.test(url)
-      ? 'image/png'
-      : /\.webp(?:$|[?#])/i.test(url)
-        ? 'image/webp'
-        : /\.gif(?:$|[?#])/i.test(url)
-          ? 'image/gif'
-          : /\.jpe?g(?:$|[?#])/i.test(url)
-            ? 'image/jpeg'
-            : '';
-    const type = blob.type.startsWith('image/') ? blob.type : named;
-    if (!type.startsWith('image/') || blob.size === 0) return null;
-    return new File([blob], 'campaign-art', { type });
-  } catch {
-    return null;
+  const attempts: RequestInit[] = [
+    { mode: 'cors', referrerPolicy: 'no-referrer' },
+    { mode: 'cors', referrerPolicy: 'origin' },
+    { mode: 'cors' },
+  ];
+  for (const init of attempts) {
+    try {
+      const response = await fetch(url, init);
+      if (!response.ok) continue;
+      const blob = await response.blob();
+      if (blob.size === 0) continue;
+      let type = blob.type.startsWith('image/') ? blob.type : '';
+      if (!type) {
+        const head = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
+        type = sniffImageType(head);
+      }
+      if (!type.startsWith('image/')) continue;
+      return new File([blob], 'campaign-art', { type });
+    } catch {
+      continue;
+    }
   }
+  return null;
 }
 
 function campaignArtFile(file: File | null): File | null {
@@ -6260,32 +6256,62 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
     }
   }
 
+  async function copyArtLink(url: string) {
+    await phase1Request('create-campaign', {
+      ...campaign,
+      meta_data: { ...campaign.meta_data, image_url: url },
+    });
+    setOpen(false);
+    onFrame(url);
+    onUploaded(url);
+    onSaved();
+  }
+
   async function saveImageUrl(raw: string) {
     const url = normalizeArtLink(raw);
+    if (!/^https?:\/\//i.test(url)) {
+      setError('Paste an http or https image link.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const direct = isDirectArtUrl(url);
-      let loads = await probeArtImage(url, 'no-referrer');
-      if (!loads) loads = await probeArtImage(url, '');
-      if (!loads || direct) {
-        const downloaded = await downloadArtFile(url);
-        if (downloaded) {
-          await saveArt(downloaded);
-          return;
+      const downloaded = await downloadArtFile(url);
+      const accepted = campaignArtFile(downloaded);
+      if (accepted) {
+        let uploadFile = accepted;
+        if (accepted.size > 3 * 1024 * 1024) {
+          try {
+            uploadFile = await shrinkCampaignArt(accepted);
+          } catch {
+            uploadFile = accepted;
+          }
+        }
+        if (uploadFile.size <= 3 * 1024 * 1024) {
+          const blobUrl = URL.createObjectURL(accepted);
+          setOpen(false);
+          onFrame(blobUrl);
+          try {
+            const hostedFile = uploadFile.size < accepted.size ? uploadFile : await shrinkCampaignArt(accepted);
+            const hosted = await uploadImage(hostedFile, 'backgrounds');
+            if (!hosted) throw new Error('Upload failed.');
+            await phase1Request('create-campaign', {
+              ...campaign,
+              meta_data: { ...campaign.meta_data, image_url: hosted },
+            });
+            onUploaded(hosted);
+            onSaved();
+            return;
+          } catch {
+            URL.revokeObjectURL(blobUrl);
+          }
         }
       }
-      if (!loads && !direct) throw new Error('That link is not a direct image.');
-      await phase1Request('create-campaign', {
-        ...campaign,
-        meta_data: { ...campaign.meta_data, image_url: url },
-      });
-      setOpen(false);
-      onFrame(url);
-      onUploaded(url);
-      onSaved();
+      await copyArtLink(url);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not use that image link.');
+      const message = cause instanceof Error ? cause.message : 'Could not use that image link.';
+      setError(message);
+      onFrameError(message);
     } finally {
       setBusy(false);
     }
