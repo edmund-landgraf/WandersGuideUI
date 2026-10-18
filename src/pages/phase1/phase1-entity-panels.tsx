@@ -27,7 +27,7 @@ import CopperCoin from '@assets/images/currency/copper.png';
 import GoldCoin from '@assets/images/currency/gold.png';
 import PlatinumCoin from '@assets/images/currency/platinum.png';
 import SilverCoin from '@assets/images/currency/silver.png';
-import { lookupMonsterArt, type Phase1MonsterArt } from './phase1-monster-image';
+import { lookupMonsterArt, monsterArtUrl, type Phase1MonsterArt } from './phase1-monster-image';
 import { addConditionWithSpawns, compiledConditions, removeConditionWithSpawns } from '@conditions/condition-handler';
 import { ConditionDetailModal, SelectConditionModal } from './phase1-conditions';
 import { ActionSymbol } from '@common/Actions';
@@ -1918,32 +1918,25 @@ function CreaturePortrait({ combatant }: { combatant: PopulatedCombatant }) {
   const [open, setOpen] = useState(false);
   const src = art.data?.thumbSrc;
   const name = combatant.data.name;
-  const fallback = combatant.data.details?.image_url;
-  const fullArt = useQuery<Phase1MonsterArt | null>({
-    queryKey: ['phase1-monster-art', 'lightbox', combatant.type, combatant._id, name, fallback],
-    queryFn: () => lookupMonsterArt(name, fallback, 'full'),
-    enabled: open && combatant.type === 'CREATURE',
-    staleTime: Number.POSITIVE_INFINITY,
-  });
+  const fullSrc = art.data?.monsterId ? monsterArtUrl(art.data.monsterId, 'full') : art.data?.fullSrc;
   useEffect(() => setFailed(false), [src]);
-  const fullSrc = fullArt.data?.fullSrc;
   return (
     <>
       <button
         type='button'
         className='grid min-h-[96px] place-items-center overflow-hidden border border-p1-border bg-p1-surface hover:border-p1-border'
         disabled={!src || failed}
-        onClick={() => { if (src && !failed) setOpen(true); }}
+        onClick={() => { if (fullSrc && !failed) setOpen(true); }}
         title={src && !failed ? 'View image' : undefined}
       >
         {src && !failed ? <img src={src} alt={name} className='h-full max-h-28 w-full object-contain p-1.5' onError={() => setFailed(true)} /> : <Swords size={24} className='text-p1-faint' />}
       </button>
-      {open && <ImageModal src={fullSrc} alt={name} pending={fullArt.isFetching && !fullSrc} onClose={() => setOpen(false)} />}
+      {open && fullSrc && <ImageModal src={fullSrc} alt={name} onClose={() => setOpen(false)} />}
     </>
   );
 }
 
-function ImageModal({ src, alt, pending, onClose }: { src?: string; alt: string; pending?: boolean; onClose: () => void }) {
+function ImageModal({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     closeRef.current?.focus();
@@ -1957,7 +1950,7 @@ function ImageModal({ src, alt, pending, onClose }: { src?: string; alt: string;
     <div className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]' role='presentation' onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section role='dialog' aria-modal='true' aria-label={alt} className='relative max-h-[min(90vh,900px)] max-w-[min(90vw,900px)] border border-p1-border bg-p1-surface p-3 shadow-2xl'>
         <button ref={closeRef} className='icon-button absolute right-2 top-2 z-10' onClick={onClose} title='Close image'><X size={18} /></button>
-        {src ? <img src={src} alt={alt} className='max-h-[min(84vh,840px)] max-w-[min(86vw,860px)] object-contain' /> : pending ? <p className='px-8 py-6 text-sm text-p1-muted'>Loading full image…</p> : null}
+        <img src={src} alt={alt} className='max-h-[min(84vh,840px)] max-w-[min(86vw,860px)] object-contain' />
       </section>
     </div>,
     document.body

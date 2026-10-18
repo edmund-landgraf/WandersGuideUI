@@ -49,6 +49,10 @@ function hostedMonsterImage(monsterId: number, size: 'thumb' | 'full') {
   return `${PATHFINDER_API_ORIGIN}/api/monsters/${monsterId}${suffix}`;
 }
 
+export function monsterArtUrl(monsterId: number, size: 'thumb' | 'full' = 'full') {
+  return hostedMonsterImage(monsterId, size);
+}
+
 const ART_CACHE_PREFIX = 'wgui-monster-art:';
 const LEGACY_ART_CACHE_PREFIX = 'wgui-monster-thumb:';
 
@@ -120,20 +124,34 @@ function artCacheKey(name: string, size: 'thumb' | 'full') {
   return `${ART_CACHE_PREFIX}${size}:${name}`;
 }
 
-function readCachedArt(name: string, size: 'thumb' | 'full'): string | null {
+type CachedArt = { monsterId: number | null; src: string };
+
+function parseCachedArt(raw: string | null): CachedArt | null {
+  if (!raw) return null;
+  if (raw.startsWith('data:') || raw.startsWith('http') || raw.startsWith('/')) return { monsterId: null, src: raw };
   try {
-    const current = localStorage.getItem(artCacheKey(name, size));
+    const parsed = JSON.parse(raw) as CachedArt;
+    if (parsed?.src) return { monsterId: parsed.monsterId ?? null, src: parsed.src };
+  } catch {
+    // Older entries are the image itself.
+  }
+  return { monsterId: null, src: raw };
+}
+
+function readCachedArt(name: string, size: 'thumb' | 'full'): CachedArt | null {
+  try {
+    const current = parseCachedArt(localStorage.getItem(artCacheKey(name, size)));
     if (current) return current;
-    if (size === 'thumb') return localStorage.getItem(`${LEGACY_ART_CACHE_PREFIX}${name}`);
+    if (size === 'thumb') return parseCachedArt(localStorage.getItem(`${LEGACY_ART_CACHE_PREFIX}${name}`));
     return null;
   } catch {
     return null;
   }
 }
 
-function writeCachedArt(name: string, size: 'thumb' | 'full', dataUrl: string) {
+function writeCachedArt(name: string, size: 'thumb' | 'full', art: CachedArt) {
   try {
-    localStorage.setItem(artCacheKey(name, size), dataUrl);
+    localStorage.setItem(artCacheKey(name, size), JSON.stringify(art));
   } catch {
     // A full cache should not hide the image that was just fetched.
   }
@@ -181,9 +199,11 @@ export async function lookupMonsterArt(name: string, fallbackUrl?: string, size:
       if (pick?.MonsterId) {
         const src = await fetchArtObjectUrl(hostedMonsterImage(pick.MonsterId, size));
         if (src) {
-          writeCachedArt(lookupName, size, src);
-          const fullSrc = size === 'full' ? src : readCachedArt(lookupName, 'full') ?? src;
-          const thumbSrc = size === 'thumb' ? src : readCachedArt(lookupName, 'thumb') ?? src;
+          writeCachedArt(lookupName, size, { monsterId: pick.MonsterId, src });
+          const fullCached = readCachedArt(lookupName, 'full');
+          const thumbCached = readCachedArt(lookupName, 'thumb');
+          const fullSrc = size === 'full' ? src : fullCached?.src ?? src;
+          const thumbSrc = size === 'thumb' ? src : thumbCached?.src ?? src;
           return { monsterId: pick.MonsterId, fullSrc, thumbSrc };
         }
       }
@@ -194,9 +214,11 @@ export async function lookupMonsterArt(name: string, fallbackUrl?: string, size:
 
   const cached = lookupName ? readCachedArt(lookupName, size) : null;
   if (cached) {
-    const fullSrc = size === 'full' ? cached : readCachedArt(lookupName, 'full') ?? cached;
-    const thumbSrc = size === 'thumb' ? cached : readCachedArt(lookupName, 'thumb') ?? cached;
-    return { monsterId: null, fullSrc, thumbSrc };
+    const fullCached = readCachedArt(lookupName, 'full');
+    const thumbCached = readCachedArt(lookupName, 'thumb');
+    const fullSrc = size === 'full' ? cached.src : fullCached?.src ?? cached.src;
+    const thumbSrc = size === 'thumb' ? cached.src : thumbCached?.src ?? cached.src;
+    return { monsterId: cached.monsterId ?? fullCached?.monsterId ?? thumbCached?.monsterId ?? null, fullSrc, thumbSrc };
   }
 
   if (!trimmedFallback || /aonprd\.com/i.test(trimmedFallback)) return null;

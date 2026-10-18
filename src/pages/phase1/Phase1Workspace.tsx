@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Crown, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, Image, KeyRound, ListChecks, LogOut, Menu, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Crown, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, Image as ImageIcon, KeyRound, ListChecks, LogOut, Menu, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -1420,7 +1420,7 @@ export function Phase1CharactersPage() {
                     {showStrip && (
                       <div className='p1-char-row-art' aria-hidden>
                         {artUrl ? (
-                          <img src={campaignArtSrc(artUrl)} alt='' referrerPolicy='no-referrer' loading='lazy' decoding='async' style={{ ['--campaign-art-focus' as string]: `${focusY}%` }} />
+                          <CampaignStripArt url={artUrl} focusY={focusY} />
                         ) : (
                           <div className='h-full w-full' style={{ backgroundColor: rowColor }} />
                         )}
@@ -3248,6 +3248,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   }, [railOpen]);
 
   const campaignArtUrl = !viewingNotes && !viewingSettings ? campaign?.meta_data?.image_url?.trim() : '';
+  const shownCampaignArt = useCampaignArtSrc(campaignArtUrl);
   const artFocus = campaignFocusY(campaign?.meta_data?.image_focus_y);
   useEffect(() => {
     const sync = () => setArtTone(readStoredSheetArtTone());
@@ -3289,7 +3290,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
         ) : railOpen && <div id='campaign-rail' className='min-h-0'>{rail}</div>}
         <main className='p1-encounter-main relative min-h-0 min-w-0 overflow-hidden bg-p1-surface'>
           {campaignArtUrl && !artHidden && (
-            <div className='p1-encounter-art-layer' style={{ backgroundImage: `url(${campaignArtSrc(campaignArtUrl)})`, backgroundPosition: `center ${artFocus}%` }} aria-hidden>
+            <div className='p1-encounter-art-layer' style={{ backgroundImage: `url(${shownCampaignArt})`, backgroundPosition: `center ${artFocus}%` }} aria-hidden>
               <div className='p1-sheet-art-veil' />
             </div>
           )}
@@ -3471,7 +3472,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
       )}
       {campaignArtUrl && (
         <Phase1ArtworkOverlay
-          url={campaignArtSrc(campaignArtUrl)}
+          url={shownCampaignArt}
           label={campaign?.name ?? 'Campaign art'}
           canEdit={isGm}
           artTone={artTone}
@@ -3496,13 +3497,13 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
       )}
       {artPreview && campaignArtUrl && (
         <Phase1ArtworkPreview
-          option={{ name: campaign?.name ?? 'Campaign art', url: campaignArtSrc(campaignArtUrl) }}
+          option={{ name: campaign?.name ?? 'Campaign art', url: shownCampaignArt }}
           onBack={() => setArtPreview(false)}
         />
       )}
       {artBand && campaign && campaignArtUrl && (
         <CampaignStripDialog
-          url={campaignArtSrc(campaignArtUrl)}
+          url={shownCampaignArt}
           initial={artFocus}
           busy={campaignSaving}
           onCancel={() => setArtBand(false)}
@@ -4741,7 +4742,7 @@ function RailContextMenu({ x, y, onClose, onRename, onViewArt, onPickColor, onCl
         )}
         {onPickColor && (
           <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onPickColor}>
-            <Image size={14} /> Pick for color
+            <ImageIcon size={14} /> Pick for color
           </button>
         )}
         {onClearColor && (
@@ -6124,14 +6125,109 @@ function sniffImageType(bytes: Uint8Array): string {
     && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
     && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50
   ) return 'image/webp';
+  if (bytes.length >= 12 && bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) return 'image/avif';
   return '';
 }
 
-async function downloadArtFile(url: string): Promise<File | null> {
+function pushArtCandidate(list: string[], value: string | null | undefined) {
+  const next = value?.trim();
+  if (!next || !/^https?:\/\//i.test(next) || list.includes(next)) return;
+  list.push(next);
+}
+
+/** Public link shapes that point at a page, a resized CDN copy, or a hotlink wrapper instead of the file. */
+function artCandidateUrls(raw: string): string[] {
+  const list: string[] = [];
+  pushArtCandidate(list, raw);
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return list;
+  }
+  const host = parsed.hostname.replace(/^www\./, '');
+  const path = parsed.pathname;
+
+  if (host === 'imgur.com' || host === 'm.imgur.com') {
+    const id = path.match(/^\/(?:a\/|gallery\/)?([A-Za-z0-9]+)/)?.[1];
+    if (id && id !== 'a') {
+      for (const ext of ['jpg', 'png', 'jpeg', 'webp', 'gif']) pushArtCandidate(list, `https://i.imgur.com/${id}.${ext}`);
+    }
+  }
+  if (host === 'i.imgur.com') {
+    const bare = path.replace(/\.(png|jpe?g|gif|webp)$/i, '');
+    for (const ext of ['jpg', 'png', 'jpeg', 'webp']) pushArtCandidate(list, `https://i.imgur.com${bare}.${ext}`);
+  }
+
+  if (host.endsWith('dropbox.com')) {
+    const direct = new URL(parsed);
+    direct.hostname = 'dl.dropboxusercontent.com';
+    direct.searchParams.set('dl', '1');
+    pushArtCandidate(list, direct.toString());
+    parsed.searchParams.set('dl', '1');
+    parsed.searchParams.delete('raw');
+    pushArtCandidate(list, parsed.toString());
+  }
+
+  if (host === 'drive.google.com') {
+    const id = path.match(/\/file\/d\/([^/]+)/)?.[1] ?? parsed.searchParams.get('id');
+    if (id) pushArtCandidate(list, `https://drive.google.com/uc?export=view&id=${id}`);
+  }
+  if (host === 'photos.google.com' || host.endsWith('googleusercontent.com') || host.endsWith('ggpht.com')) {
+    pushArtCandidate(list, raw.replace(/=(?:w|h|s)\d+[^/?#]*$/, '=s0'));
+  }
+
+  if (host === 'preview.redd.it') pushArtCandidate(list, `https://i.redd.it${path}`);
+  if (host.endsWith('reddit.com') && path.includes('/preview.redd.it/')) {
+    pushArtCandidate(list, raw.replace(/https?:\/\/[^/]*reddit\.com\/media\?url=/, ''));
+  }
+
+  if (host === 'media.discordapp.net') pushArtCandidate(list, raw.replace('media.discordapp.net', 'cdn.discordapp.com'));
+  if (host === 'cdn.discordapp.com') pushArtCandidate(list, raw.replace('cdn.discordapp.com', 'media.discordapp.net'));
+
+  const wikiFile = path.match(/\/(?:wiki|w)\/(?:File|Image):(.+)$/i)?.[1];
+  if (wikiFile && (host.endsWith('wikipedia.org') || host.endsWith('wikimedia.org'))) {
+    pushArtCandidate(list, `https://commons.wikimedia.org/wiki/Special:FilePath/${wikiFile}`);
+  }
+  if (host.endsWith('pinimg.com')) {
+    pushArtCandidate(list, `${parsed.origin}${path.replace(/\/\d+x(?:\d+)?\//, '/originals/')}`);
+  }
+  if (/-\d+x\d+(?=\.(?:png|jpe?g|webp|gif|avif)$)/i.test(path)) {
+    pushArtCandidate(list, `${parsed.origin}${path.replace(/-\d+x\d+(?=\.(?:png|jpe?g|webp|gif|avif)$)/i, '')}${parsed.search}`);
+  }
+
+  const withoutTracking = new URL(parsed);
+  ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'fbclid'].forEach((key) => withoutTracking.searchParams.delete(key));
+  pushArtCandidate(list, withoutTracking.toString());
+  return list.slice(0, 12);
+}
+
+function imageUrlsFromHtml(html: string, base: string): string[] {
+  const found: string[] = [];
+  const patterns = [
+    /<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image|og:image:url)["'][^>]+content=["']([^"']+)["']/gi,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:og:image|twitter:image|og:image:url)["']/gi,
+    /<link[^>]+rel=["']image_src["'][^>]+href=["']([^"']+)["']/gi,
+    /<img[^>]+(?:data-src|data-lazy-src|data-original)=["']([^"']+)["']/gi,
+  ];
+  for (const pattern of patterns) {
+    for (const match of html.matchAll(pattern)) {
+      try {
+        pushArtCandidate(found, new URL(match[1], base).toString());
+      } catch {
+        // Skip a relative URL the page did not resolve.
+      }
+    }
+  }
+  return found.slice(0, 6);
+}
+
+async function fetchArtBlob(url: string, depth = 0): Promise<File | null> {
   const attempts: RequestInit[] = [
     { mode: 'cors', referrerPolicy: 'no-referrer' },
     { mode: 'cors', referrerPolicy: 'origin' },
-    { mode: 'cors' },
+    { mode: 'cors', referrerPolicy: 'no-referrer-when-downgrade' },
+    { mode: 'cors', credentials: 'omit' },
   ];
   for (const init of attempts) {
     try {
@@ -6139,16 +6235,38 @@ async function downloadArtFile(url: string): Promise<File | null> {
       if (!response.ok) continue;
       const blob = await response.blob();
       if (blob.size === 0) continue;
-      let type = blob.type.startsWith('image/') ? blob.type : '';
-      if (!type) {
-        const head = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
-        type = sniffImageType(head);
+      const header = blob.type.split(';')[0].trim().toLowerCase();
+      if (header.startsWith('text/html') && depth === 0) {
+        const html = await blob.text();
+        for (const nested of imageUrlsFromHtml(html, response.url || url)) {
+          if (nested === url) continue;
+          const inner = await fetchArtBlob(nested, depth + 1);
+          if (inner) return inner;
+        }
+        continue;
       }
-      if (!type.startsWith('image/')) continue;
+      let type = header.startsWith('image/') ? header : '';
+      if (!type || type === 'image/svg+xml' || type === 'application/octet-stream') {
+        const head = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
+        const sniffed = sniffImageType(head);
+        if (sniffed) type = sniffed;
+      }
+      if (!type.startsWith('image/') || type === 'image/svg+xml') continue;
       return new File([blob], 'campaign-art', { type });
     } catch {
       continue;
     }
+  }
+  return null;
+}
+
+async function downloadArtFile(url: string): Promise<File | null> {
+  const seen = new Set<string>();
+  for (const candidate of artCandidateUrls(url)) {
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
+    const file = await fetchArtBlob(candidate);
+    if (file) return file;
   }
   return null;
 }
@@ -6182,6 +6300,7 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
   const [error, setError] = useState<string | null>(null);
   const [linkText, setLinkText] = useState('');
   const hasArt = Boolean(campaign.meta_data?.image_url?.trim());
+  const savedArt = useCampaignArtSrc(campaign.meta_data?.image_url?.trim());
 
   useEffect(() => {
     if (!open) return;
@@ -6279,32 +6398,46 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
       const downloaded = await downloadArtFile(url);
       const accepted = campaignArtFile(downloaded);
       if (accepted) {
-        let uploadFile = accepted;
+        let stored: File = accepted;
         if (accepted.size > 3 * 1024 * 1024) {
           try {
-            uploadFile = await shrinkCampaignArt(accepted);
+            stored = await shrinkCampaignArt(accepted);
           } catch {
-            uploadFile = accepted;
+            stored = accepted;
           }
         }
-        if (uploadFile.size <= 3 * 1024 * 1024) {
-          const blobUrl = URL.createObjectURL(accepted);
+        if (stored.size <= 3 * 1024 * 1024) {
+          try {
+            await writeTempArt(url, stored);
+            rememberTempArt(url, stored);
+          } catch {
+            // The band can still use the in-memory copy for this session.
+          }
+          const blobUrl = tempArtUrls.get(url) ?? URL.createObjectURL(stored);
           setOpen(false);
           onFrame(blobUrl);
           try {
-            const hostedFile = uploadFile.size < accepted.size ? uploadFile : await shrinkCampaignArt(accepted);
-            const hosted = await uploadImage(hostedFile, 'backgrounds');
+            const hosted = await uploadImage(stored, 'backgrounds');
             if (!hosted) throw new Error('Upload failed.');
             await phase1Request('create-campaign', {
               ...campaign,
               meta_data: { ...campaign.meta_data, image_url: hosted },
             });
+            onFrame(hosted);
             onUploaded(hosted);
             onSaved();
+            await forgetTempArt(url).catch(() => undefined);
             return;
           } catch {
-            URL.revokeObjectURL(blobUrl);
+            // Keep the temp file and the original link. The picture stays on the local copy.
           }
+          await phase1Request('create-campaign', {
+            ...campaign,
+            meta_data: { ...campaign.meta_data, image_url: url },
+          });
+          onUploaded(url);
+          onSaved();
+          return;
         }
       }
       await copyArtLink(url);
@@ -6332,7 +6465,7 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
           setOpen((current) => !current);
         }}
       >
-        <Image size={14} />
+        <ImageIcon size={14} />
         Art
       </button>
       {open && buttonRef.current && createPortal(
@@ -6406,7 +6539,7 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
                   const url = campaign.meta_data?.image_url?.trim();
                   if (!url) return;
                   setOpen(false);
-                  onFrame(campaignArtSrc(url));
+                  onFrame(savedArt || url);
                   onUploaded(url);
                 }}
               >
@@ -6437,8 +6570,95 @@ function imageFileFromClipboard(data: DataTransfer | null): File | null {
   return Array.from(data.files).find((entry) => entry.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(entry.name)) ?? null;
 }
 
+const TEMP_ART_DB = 'wg-campaign-art';
+const TEMP_ART_STORE = 'temp';
+const tempArtUrls = new Map<string, string>();
+const tempArtListeners = new Set<() => void>();
+const tempArtFailed = new Set<string>();
+
+function notifyTempArt() {
+  tempArtListeners.forEach((listener) => listener());
+}
+
+function openTempArtDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(TEMP_ART_DB, 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(TEMP_ART_STORE)) request.result.createObjectStore(TEMP_ART_STORE);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function writeTempArt(sourceUrl: string, blob: Blob) {
+  const db = await openTempArtDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(TEMP_ART_STORE, 'readwrite');
+    tx.objectStore(TEMP_ART_STORE).put(blob, sourceUrl);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+}
+
+async function readTempArt(sourceUrl: string): Promise<Blob | null> {
+  const db = await openTempArtDb();
+  const blob = await new Promise<Blob | null>((resolve, reject) => {
+    const tx = db.transaction(TEMP_ART_STORE, 'readonly');
+    const request = tx.objectStore(TEMP_ART_STORE).get(sourceUrl);
+    request.onsuccess = () => resolve(request.result instanceof Blob ? request.result : null);
+    request.onerror = () => reject(request.error);
+  });
+  db.close();
+  return blob;
+}
+
+async function forgetTempArt(sourceUrl: string) {
+  const current = tempArtUrls.get(sourceUrl);
+  if (current) URL.revokeObjectURL(current);
+  tempArtUrls.delete(sourceUrl);
+  const db = await openTempArtDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(TEMP_ART_STORE, 'readwrite');
+    tx.objectStore(TEMP_ART_STORE).delete(sourceUrl);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+}
+
+function rememberTempArt(sourceUrl: string, blob: Blob) {
+  const current = tempArtUrls.get(sourceUrl);
+  if (current) URL.revokeObjectURL(current);
+  tempArtUrls.set(sourceUrl, URL.createObjectURL(blob));
+  tempArtFailed.delete(sourceUrl);
+  notifyTempArt();
+}
+
+async function rescueTempArt(sourceUrl: string) {
+  if (tempArtUrls.has(sourceUrl) || tempArtFailed.has(sourceUrl)) return;
+  tempArtFailed.add(sourceUrl);
+  const downloaded = await downloadArtFile(sourceUrl);
+  const accepted = campaignArtFile(downloaded);
+  if (!accepted) return;
+  let stored: Blob = accepted;
+  if (accepted.size > 3 * 1024 * 1024) {
+    try {
+      stored = await shrinkCampaignArt(accepted);
+    } catch {
+      return;
+    }
+  }
+  if (stored.size > 3 * 1024 * 1024) return;
+  await writeTempArt(sourceUrl, stored);
+  rememberTempArt(sourceUrl, stored);
+}
+
 /** Dev pages talk to Kong through the Vite origin. Upload returns :8000, which the image tag cannot reach. */
 function campaignArtSrc(url: string): string {
+  const temp = tempArtUrls.get(url);
+  if (temp) return temp;
   if (!import.meta.env.DEV || typeof window === 'undefined') return url;
   try {
     const parsed = new URL(url, window.location.origin);
@@ -6448,6 +6668,43 @@ function campaignArtSrc(url: string): string {
   } catch {
     return url;
   }
+}
+
+function useCampaignArtSrc(url: string | undefined): string {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setTick((value) => value + 1);
+    tempArtListeners.add(bump);
+    return () => {
+      tempArtListeners.delete(bump);
+    };
+  }, []);
+  useEffect(() => {
+    if (!url || tempArtUrls.has(url)) return;
+    let cancel = false;
+    void readTempArt(url)
+      .then((blob) => {
+        if (cancel || !blob) return;
+        rememberTempArt(url, blob);
+      })
+      .catch(() => undefined);
+    const image = new Image();
+    image.referrerPolicy = 'no-referrer';
+    image.onload = () => undefined;
+    image.onerror = () => {
+      if (!cancel) void rescueTempArt(url).catch(() => undefined);
+    };
+    image.src = campaignArtSrc(url);
+    return () => {
+      cancel = true;
+    };
+  }, [url]);
+  return url ? campaignArtSrc(url) : '';
+}
+
+function CampaignStripArt({ url, focusY }: { url: string; focusY: number }) {
+  const src = useCampaignArtSrc(url);
+  return <img src={src} alt='' referrerPolicy='no-referrer' loading='lazy' decoding='async' style={{ ['--campaign-art-focus' as string]: `${focusY}%` }} />;
 }
 
 function campaignFocusY(value?: number | string | null): number {
@@ -6737,6 +6994,7 @@ function CampaignWorkspaceRow({ campaign, canDelete, members, ownedCampaigns, on
   }
 
   const artUrl = campaign.meta_data?.image_url?.trim();
+  const shownArt = useCampaignArtSrc(artUrl);
   const focusY = campaignFocusY(campaign.meta_data?.image_focus_y);
   const rowColor = normalizeRowColor(campaign.meta_data?.row_color);
   const showStrip = Boolean(rowColor || artUrl);
@@ -6764,7 +7022,7 @@ function CampaignWorkspaceRow({ campaign, canDelete, members, ownedCampaigns, on
       {showStrip && (
         <div className='p1-char-row-art' aria-hidden>
           {artUrl ? (
-            <img src={campaignArtSrc(artUrl)} alt='' referrerPolicy='no-referrer' loading='lazy' decoding='async' style={{ ['--campaign-art-focus' as string]: `${focusY}%` }} />
+            <CampaignStripArt url={artUrl} focusY={focusY} />
           ) : (
             <div className='h-full w-full' style={{ backgroundColor: rowColor }} />
           )}
@@ -6833,7 +7091,7 @@ function CampaignWorkspaceRow({ campaign, canDelete, members, ownedCampaigns, on
       )}
       {viewArt && artUrl && (
         <CampaignArtPreviewModal
-          url={campaignArtSrc(artUrl)}
+          url={shownArt}
           name={campaign.name}
           onClose={() => setViewArt(false)}
         />

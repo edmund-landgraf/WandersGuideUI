@@ -135,6 +135,16 @@ export function Phase1ArtworkOverlay({
             >
               <Moon size={16} />
             </button>
+            {onToggleArt && (
+              <button
+                type='button'
+                className={`icon-button${artHidden ? ' is-active' : ''}`}
+                title={artHidden ? 'Show artwork on this screen' : 'Hide artwork on this screen'}
+                onClick={onToggleArt}
+              >
+                <EyeOff size={16} />
+              </button>
+            )}
           </>
         )}
         {canEdit && (
@@ -144,16 +154,6 @@ export function Phase1ArtworkOverlay({
                 <button type='button' className='icon-button' title='View artwork' onClick={onPreview}>
                   <Eye size={16} />
                 </button>
-                {onToggleArt && (
-                  <button
-                    type='button'
-                    className={`icon-button${artHidden ? ' is-active' : ''}`}
-                    title={artHidden ? 'Show artwork on this screen' : 'Hide artwork on this screen'}
-                    onClick={onToggleArt}
-                  >
-                    <EyeOff size={16} />
-                  </button>
-                )}
                 <button type='button' className='icon-button' title='Clear artwork' onClick={onClear}>
                   <X size={16} />
                 </button>
