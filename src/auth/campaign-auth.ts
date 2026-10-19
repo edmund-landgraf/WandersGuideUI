@@ -42,6 +42,10 @@ export async function signInWithEmail(email: string, password: string) {
   return supabase.auth.signInWithPassword({ email, password });
 }
 
+export async function signUpWithEmail(email: string, password: string) {
+  return supabase.auth.signUp({ email, password });
+}
+
 function isLogoutRequest(input: RequestInfo | URL) {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   return url.includes('/logout');

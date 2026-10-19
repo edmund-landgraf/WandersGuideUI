@@ -120,6 +120,7 @@ export function Phase1IndexPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [limitModalOpen, setLimitModalOpen] = useState(false);
   const [artFrame, setArtFrame] = useState<{ id: number; preview: string; savedUrl?: string; focus: number; error?: string } | null>(null);
@@ -216,13 +217,22 @@ export function Phase1IndexPage() {
     return names;
   }, [characters.data]);
 
-  async function createCampaign() {
+  function nextCampaignName() {
+    const used = new Set((campaigns.data ?? []).map((campaign) => campaign.name.trim().toLowerCase()));
+    const base = 'My Campaign';
+    if (!used.has(base.toLowerCase())) return base;
+    let index = 1;
+    while (used.has(`${base} (${index})`.toLowerCase())) index += 1;
+    return `${base} (${index})`;
+  }
+
+  async function createCampaign(name?: string) {
     const accessToken = session?.access_token;
     await ensurePhase1PublicUser(accessToken);
     return phase1Request<Campaign>(
       'create-campaign',
       {
-        name: 'My Campaign',
+        name: name?.trim() || nextCampaignName(),
         description: 'A new adventure begins...',
         meta_data: {
           settings: {
@@ -234,12 +244,13 @@ export function Phase1IndexPage() {
     );
   }
 
-  async function handleCreateCampaign() {
+  async function handleCreateCampaign(name?: string) {
     if (creating) return;
     setCreating(true);
+    setCreateOpen(false);
     setCreateError(null);
     try {
-      const campaign = await createCampaign();
+      const campaign = await createCampaign(name);
       await queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] });
       navigate(`/phase1/campaign/${campaign.id}`);
     } catch (error) {
@@ -312,7 +323,7 @@ export function Phase1IndexPage() {
               </button>
             </div>
             <div className='flex items-center gap-2'>
-              <button type='button' className='toolbar-button' disabled={creating} title='Create campaign' onClick={() => void handleCreateCampaign()}>
+              <button type='button' className='toolbar-button' disabled={creating} title='Create campaign' onClick={() => setCreateOpen(true)}>
                 <Plus size={15} />
                 {creating ? 'Creating…' : 'Create campaign'}
               </button>
@@ -325,7 +336,7 @@ export function Phase1IndexPage() {
         {campaigns.data?.length === 0 && (
           <EmptyState>
             <div>No campaigns are available.</div>
-            <button type='button' className='toolbar-button mt-4 inline-flex' disabled={creating} onClick={() => void handleCreateCampaign()}>
+            <button type='button' className='toolbar-button mt-4 inline-flex' disabled={creating} onClick={() => setCreateOpen(true)}>
               <Plus size={15} />
               {creating ? 'Creating…' : 'Create campaign'}
             </button>
@@ -432,6 +443,17 @@ export function Phase1IndexPage() {
         </div>
         )}
       </main>
+      {createOpen && (
+        <CreateNameModal
+          title='New campaign'
+          label='Campaign name'
+          confirmLabel='Create'
+          skipLabel='Skip'
+          onCancel={() => setCreateOpen(false)}
+          onSkip={() => { void handleCreateCampaign(); }}
+          onConfirm={(name) => { void handleCreateCampaign(name); }}
+        />
+      )}
       {limitModalOpen && (
         <CampaignLimitModal
           busy={creating}
@@ -2439,6 +2461,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const [artTone, setArtTone] = useState<Phase1SheetArtTone>(() => readStoredSheetArtTone());
   const [artPreview, setArtPreview] = useState(false);
   const [artBand, setArtBand] = useState(false);
+  const [confirmClearArt, setConfirmClearArt] = useState(false);
   const [artRequest, setArtRequest] = useState(0);
   const artHiddenKey = campaign ? `phase1-encounter-art-off:${campaign.id}` : '';
   const [artHidden, setArtHidden] = useState(() => (artHiddenKey ? window.localStorage.getItem(artHiddenKey) === '1' : false));
@@ -3484,7 +3507,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
           onSelect={() => setArtRequest((current) => current + 1)}
           onClear={() => {
             if (!campaign) return;
-            onUpdateCampaign({ ...campaign, meta_data: { ...campaign.meta_data, image_url: undefined } });
+            setConfirmClearArt(true);
           }}
           artHidden={artHidden}
           onToggleArt={() => {
@@ -3492,6 +3515,18 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
             const next = !artHidden;
             setArtHidden(next);
             window.localStorage.setItem(artHiddenKey, next ? '1' : '0');
+          }}
+        />
+      )}
+      {confirmClearArt && campaign && campaignArtUrl && (
+        <ConfirmDialog
+          title='Remove campaign art'
+          message={`Remove the artwork from "${campaign.name}"?`}
+          confirmLabel='Remove art'
+          onCancel={() => setConfirmClearArt(false)}
+          onConfirm={() => {
+            setConfirmClearArt(false);
+            onUpdateCampaign({ ...campaign, meta_data: { ...campaign.meta_data, image_url: undefined } });
           }}
         />
       )}
@@ -6299,6 +6334,7 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [linkText, setLinkText] = useState('');
+  const [confirmClear, setConfirmClear] = useState(false);
   const hasArt = Boolean(campaign.meta_data?.image_url?.trim());
   const savedArt = useCampaignArtSrc(campaign.meta_data?.image_url?.trim());
 
@@ -6547,7 +6583,7 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
               </button>
             )}
             {hasArt && (
-              <button type='button' className='toolbar-button' disabled={busy} onClick={() => void clearArt()}>
+              <button type='button' className='toolbar-button' disabled={busy} onClick={() => setConfirmClear(true)}>
                 Clear
               </button>
             )}
@@ -6556,6 +6592,20 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
           </div>
         </>,
         document.body
+      )}
+      {confirmClear && (
+        <ConfirmDialog
+          title='Remove campaign art'
+          message={`Remove the artwork from "${campaign.name}"?`}
+          confirmLabel={busy ? 'Removing…' : 'Remove art'}
+          onCancel={() => {
+            if (!busy) setConfirmClear(false);
+          }}
+          onConfirm={() => {
+            setConfirmClear(false);
+            void clearArt();
+          }}
+        />
       )}
     </div>
   );

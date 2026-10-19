@@ -5,6 +5,7 @@ import {
   parseOAuthReturnError,
   signInWithEmail,
   signInWithOAuthProvider,
+  signUpWithEmail,
   type OAuthProvider,
 } from './campaign-auth';
 
@@ -20,9 +21,14 @@ type CampaignSignInProps = {
 
 export function CampaignSignIn({ variant }: CampaignSignInProps) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [mode, setMode] = useState<'signin' | 'register'>('signin');
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [oauthBusy, setOauthBusy] = useState<OAuthProvider | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
 
   useEffect(() => {
     const oauthError = parseOAuthReturnError(searchParams.toString()) || parseOAuthReturnError(window.location.hash.replace(/^#/, ''));
@@ -46,6 +52,47 @@ export function CampaignSignIn({ variant }: CampaignSignInProps) {
       } else {
         setError(result.error.message);
       }
+    }
+    setBusy(false);
+  }
+
+  async function register(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!email || !password) {
+      setError('Email and password are required.');
+      return;
+    }
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters long.');
+      return;
+    }
+    if (!email.includes('@')) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (password !== passwordConfirm) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    setBusy(true);
+    setError('');
+    setMessage('');
+    const { data, error: signUpError } = await signUpWithEmail(email, password);
+    if (signUpError) {
+      if (signUpError.code === 'email_exists') {
+        setError('An account with this email already exists. Please sign in.');
+      } else {
+        setError(signUpError.message);
+      }
+    } else {
+      setError('');
+    }
+    if (data.user && !data.user.user_metadata.email_verified) {
+      setMessage('A verification email has been sent to your email address. Please check your inbox.');
+      setEmail('');
+      setPassword('');
+      setPasswordConfirm('');
     }
     setBusy(false);
   }
@@ -82,6 +129,71 @@ export function CampaignSignIn({ variant }: CampaignSignInProps) {
   const backLinkClass = isPhase0
     ? 'mt-5 block text-center text-sm text-slate-400 hover:text-slate-200'
     : 'mt-5 block text-center text-xs text-p1-muted hover:text-p1-text';
+  const fieldLabelClass = isPhase0 ? 'mt-4 block text-sm text-slate-300' : 'mt-4 block text-xs text-p1-muted';
+  const messageClass = isPhase0 ? 'mt-4 text-sm text-sky-300' : 'mt-4 text-xs text-p1-accent';
+
+  if (!isPhase0 && mode === 'register') {
+    return (
+      <div className={shellClass}>
+        <form className={formClass} method='post' autoComplete='on' onSubmit={register}>
+          <div className='text-[10px] font-semibold uppercase text-p1-accent'>Phase 1</div>
+          <h1 className='mt-2 text-2xl font-semibold'>Register</h1>
+          <label className={labelClass}>
+            Email address
+            <input
+              className={inputClass}
+              name='email'
+              type='email'
+              autoComplete='username'
+              placeholder='Your email address'
+              value={email}
+              onChange={(event) => setEmail(event.currentTarget.value)}
+            />
+          </label>
+          <label className={fieldLabelClass}>
+            Password
+            <input
+              className={inputClass}
+              name='password'
+              type='password'
+              autoComplete='new-password'
+              placeholder='Your password'
+              value={password}
+              onChange={(event) => setPassword(event.currentTarget.value)}
+            />
+          </label>
+          <label className={fieldLabelClass}>
+            Confirm Password
+            <input
+              className={inputClass}
+              name='passwordConfirm'
+              type='password'
+              autoComplete='new-password'
+              placeholder='Confirm your password'
+              value={passwordConfirm}
+              onChange={(event) => setPasswordConfirm(event.currentTarget.value)}
+            />
+          </label>
+          {error && <p className={errorClass}>{error}</p>}
+          {message && <p className={messageClass}>{message}</p>}
+          <button className={submitClass} disabled={busy} type='submit'>
+            {busy ? 'Registering...' : 'Register'}
+          </button>
+          <button
+            type='button'
+            className={`${backLinkClass} underline`}
+            onClick={() => {
+              setMode('signin');
+              setError('');
+              setMessage('');
+            }}
+          >
+            Already have an account? Sign in
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className={shellClass}>
@@ -149,6 +261,19 @@ export function CampaignSignIn({ variant }: CampaignSignInProps) {
         <button className={submitClass} disabled={busy || Boolean(oauthBusy)} type='submit'>
           {busy ? 'Signing in...' : 'Sign in with Email'}
         </button>
+        {!isPhase0 && (
+          <button
+            type='button'
+            className={`${backLinkClass} underline`}
+            onClick={() => {
+              setMode('register');
+              setError('');
+              setMessage('');
+            }}
+          >
+            Don't have an account? Sign up
+          </button>
+        )}
         <a href='/' className={backLinkClass}>
           Back to interface chooser
         </a>

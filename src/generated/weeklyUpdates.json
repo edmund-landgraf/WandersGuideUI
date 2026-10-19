@@ -260,6 +260,15 @@
         "Host campaign art from pasted links and load full monster images only in the lightbox.",
         "Resolve more pasted art links and open monster lightbox images from the cached id."
       ]
+    },
+    {
+      "weekStart": "2026-10-19",
+      "label": "Oct 19 – Oct 25, 2026",
+      "count": 1,
+      "summary": "Stamp the running version and list weekly updates in the app.",
+      "subjects": [
+        "Stamp the running version and list weekly updates in the app."
+      ]
     }
   ]
 }
