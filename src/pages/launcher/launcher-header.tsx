@@ -11,6 +11,9 @@ export function LauncherHeader() {
           <a className='text-sm text-muted-foreground transition hover:text-foreground' href='/help/index.html'>
             Help
           </a>
+          <a className='text-sm text-muted-foreground transition hover:text-foreground' href='/updates'>
+            Updates
+          </a>
           <a
             className='text-sm text-muted-foreground transition hover:text-foreground'
             href={PATREON_URL}

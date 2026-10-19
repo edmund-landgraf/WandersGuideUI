@@ -3,7 +3,9 @@ const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
 const isAuthCallback = ['code', 'access_token', 'error', 'error_description', 'token_hash'].some(
   (key) => search.has(key) || hash.has(key)
 );
-const application = location.pathname.startsWith('/owlbear/auth')
+const application = location.pathname.startsWith('/updates')
+  ? import('./pages/launcher/updates.tsx')
+  : location.pathname.startsWith('/owlbear/auth')
   ? import('./pages/OwlbearAuthPage.tsx')
   : location.pathname.startsWith('/shops')
     ? import('./pages/launcher/shops.tsx')

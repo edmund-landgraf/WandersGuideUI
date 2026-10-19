@@ -21,6 +21,7 @@ import { DISCORD_URL } from '@constants/urls';
 import { useMediaQuery } from '@mantine/hooks';
 import { phoneQuery } from '@utils/mobile-responsive';
 import { getAnchorStyles } from '@utils/anchor';
+import { AppVersionStamp } from '@common/AppVersionStamp';
 
 export function Component() {
   setPageTitle();
@@ -39,6 +40,7 @@ export function Component() {
           <Text c='gray.0' ta='center'>
             A character manager for Pathfinder and Starfinder Second Edition.
           </Text>
+          <AppVersionStamp />
           <Center>
             <Button
               component='a'

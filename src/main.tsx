@@ -273,6 +273,10 @@ const router = createBrowserRouter([
         lazy: () => import('@pages/HomePage.tsx'),
       },
       {
+        path: 'updates',
+        lazy: () => import('@pages/UpdatesPage.tsx'),
+      },
+      {
         path: 'content-update/:id',
         lazy: () => import('@pages/ContentUpdatePage.tsx'),
         loader: async ({ params }: { params: any }) => {

@@ -129,6 +129,17 @@ export default function Layout(props: { children: React.ReactNode }) {
                   >
                     Legacy Site
                   </UnstyledButton>
+                  <UnstyledButton
+                    component='a'
+                    href='/updates'
+                    className={classes.control}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      navigate('/updates');
+                    }}
+                  >
+                    Updates
+                  </UnstyledButton>
                 </Group>
               ) : (
                 <Box></Box>
@@ -279,6 +290,18 @@ export default function Layout(props: { children: React.ReactNode }) {
                         </Menu.Item>
                       )}
 
+                      <Menu.Item
+                        leftSection={<IconBook style={{ width: rem(16), height: rem(16) }} stroke={1.5} />}
+                        component='a'
+                        href='/updates'
+                        onClick={(e) => {
+                          e.preventDefault();
+                          navigate('/updates');
+                        }}
+                      >
+                        Updates
+                      </Menu.Item>
+
                       <Menu.Label>Reference</Menu.Label>
                       <Menu.Item
                         leftSection={<IconCode style={{ width: rem(16), height: rem(16) }} stroke={1.5} />}
@@ -399,6 +422,18 @@ export default function Layout(props: { children: React.ReactNode }) {
             <UnstyledButton
               className={classes.control}
               component='a'
+              href='/updates'
+              onClick={(e) => {
+                e.preventDefault();
+                navigate('/updates');
+                close();
+              }}
+            >
+              Updates
+            </UnstyledButton>
+            <UnstyledButton
+              className={classes.control}
+              component='a'
               href={DOCS_URL}
               target='_blank'
               rel='noopener noreferrer'
@@ -473,6 +508,18 @@ export default function Layout(props: { children: React.ReactNode }) {
               }}
             >
               Sign in / Register
+            </UnstyledButton>
+            <UnstyledButton
+              className={classes.control}
+              component='a'
+              href='/updates'
+              onClick={(e) => {
+                e.preventDefault();
+                navigate('/updates');
+                close();
+              }}
+            >
+              Updates
             </UnstyledButton>
             <Divider />
             <UnstyledButton

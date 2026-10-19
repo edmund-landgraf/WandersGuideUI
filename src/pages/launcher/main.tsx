@@ -3,6 +3,7 @@ import { PATREON_URL } from '@constants/urls';
 import { ArrowDownCircle, ArrowRight, ArrowUpCircle, CircleAlert } from 'lucide-react';
 import { classifyFunctionProbe, type Probe } from './function-probe';
 import { LauncherHeader } from './launcher-header';
+import { AppVersionStamp } from '@common/AppVersionStamp';
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './launcher.css';
@@ -179,20 +180,23 @@ function Launcher() {
               ))}
             </div>
           </a>
-          <a
-            href='https://groupfinder.gg/library/wanderers-guide-extended'
-            target='_blank'
-            rel='noopener'
-            style={{ display: 'inline-block' }}
-          >
-            <img
-              src='https://groupfinder.gg/images/badges/gf-badge-red.svg'
-              alt="Groupfinder library listing for Wanderer's Guide Extended"
-              width={200}
-              height={55}
-              style={{ width: 200, height: 55, border: 0, display: 'block' }}
-            />
-          </a>
+          <div className='flex items-end justify-between gap-4'>
+            <a
+              href='https://groupfinder.gg/library/wanderers-guide-extended'
+              target='_blank'
+              rel='noopener'
+              style={{ display: 'inline-block' }}
+            >
+              <img
+                src='https://groupfinder.gg/images/badges/gf-badge-red.svg'
+                alt="Groupfinder library listing for Wanderer's Guide Extended"
+                width={200}
+                height={55}
+                style={{ width: 200, height: 55, border: 0, display: 'block' }}
+              />
+            </a>
+            <AppVersionStamp />
+          </div>
           </div>
         </section>
       </main>

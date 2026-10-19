@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Owlbear extension · Help</title>
+  <link rel="stylesheet" href="help.css" />
+</head>
+<body>
+  <div class="bg-pattern"></div>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a class="brand" href="/">Wanderer's Guide</a>
+      <a class="header-link" href="/phase1">Open the workspace</a>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" aria-label="Help">
+      <h2>Start</h2>
+      <a href="index.html">Overview</a>
+      <h2>Play</h2>
+      <a href="characters.html">Characters</a>
+      <a href="campaigns.html">Campaigns</a>
+      <a href="join-own.html">Join your campaign</a>
+      <a href="join-other.html">Join another campaign</a>
+      <a href="encounters.html">Encounters</a>
+      <a href="combat-player.html">Player combat</a>
+      <a href="combat-gm.html">GM combat</a>
+      <a href="challenges.html">Challenges</a>
+      <a href="rock-fall.html">Rock fall walkthrough</a>
+      <a href="owlbear.html" aria-current="page">Owlbear extension</a>
+      <h2>Reference</h2>
+      <a href="functions.html">What the functions do</a>
+    </nav>
+    <main class="main">
+      <h1>Set up the Owlbear extension</h1>
+      <p class="lead">Add the extension in Owlbear with this manifest, then sign it in with the Wanderer's Guide account already open in this browser.</p>
+      <h3>Add the extension</h3>
+      <p>In Owlbear Rodeo, add an extension by its manifest address. Paste this URL:</p>
+      <p><a href="https://wanderers-owlbear.unwhelm.online/manifest.json"><code>https://wanderers-owlbear.unwhelm.online/manifest.json</code></a></p>
+      <p>That manifest is <strong>Wanderer's Guide Combat (local)</strong>, version 0.1.1, by UNWHELM.NET. Owlbear reads the name, icon, and popover from it. The popover is a read-only combat view, about 560 by 760. After Owlbear accepts the manifest, the extension appears as Wanderer's Guide and you can open it from the table.</p>
+      <h3>Before you open Owlbear</h3>
+      <p>Say, for example, you are about to run tonight’s fight on the virtual table and you want the extension to see the same campaign you have open in the workspace. Start in the browser you will use for Owlbear. Open Wanderer's Guide, sign in, and leave that login in place. The handoff reads the session that browser already has. A private window, a different browser, or a browser where you have signed out has no session to give, and the extension cannot invent one.</p>
+      <p>Confirm you can open the workspace from that same browser. If the Characters page loads your characters, the account is ready. If you are signed out, sign in first and only then go back to Owlbear.</p>
+      <h3>Hand the session across</h3>
+      <ol class="steps">
+        <li>In Owlbear, open the Wanderer's Guide extension and start its sign-in.</li>
+        <li>It opens this site at the Owlbear auth page and names the extension’s own address as the place the session may return to.</li>
+        <li>The page checks for an access token and a refresh token. When both are present, it sends them to that extension address and closes itself.</li>
+        <li>Go back to Owlbear. The extension now has the same login this browser already had.</li>
+      </ol>
+      <p>You should not have to copy a token. If the auth window closes on its own, the handoff finished. If it stays open and says the session was found, return to Owlbear yourself. If it says the extension origin is invalid, the address it tried to send the session to was not a normal web address, and nothing was sent.</p>
+      <h3>When it does not sign in</h3>
+      <p>The usual message is that you need to log in to Wanderer's Guide in this browser, then return to Owlbear and try again. That means the auth page ran and found no session. Sign in on this site in that same browser, leave the tab, and start the extension sign-in a second time. Signing in after the auth page has already given up does not push a session backward. You have to open the extension’s sign-in again so it asks once more.</p>
+      <p>Use one browser for both sides of the handoff. If Owlbear is in Chrome and you signed in with Firefox, the Chrome auth page still has no session. If you are trying this from a fresh private window, sign in inside that window before you ask the extension to connect.</p>
+      <p class="next">Back to <a href="index.html">Overview</a></p>
+    </main>
+  </div>
+</body>
+</html>
