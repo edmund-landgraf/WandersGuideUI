@@ -42,7 +42,11 @@ test("encounter tools include their structured data in model-readable text", asy
   };
   const reader = {
     async loadEncounter() { return record; },
-    async exportCharacter() { return { ok: true as const, data: { name: "Lyra", level: 5 } }; },
+    async exportCharacter(_userId: string, _characterId: number, format = "json") {
+      return format === "pdf"
+        ? { ok: true as const, data: { format: "pdf" as const, filename: "character-7.pdf", mimeType: "application/pdf" as const, base64: "JVBERi0x" } }
+        : { ok: true as const, data: { format: "json" as const, file: { name: "Lyra", level: 5 } } };
+    },
   } as unknown as EncounterReader;
   setEncounterReader(reader);
   const server = new McpServer({ name: "text-output-test", version: "1" });
