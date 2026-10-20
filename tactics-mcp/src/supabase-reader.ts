@@ -625,6 +625,19 @@ function entitiesFor(raw: Json, characters: Json[]) {
   return entities;
 }
 
+function spellTradition(entity: Json, spell: Json | undefined, grant?: SpellGrant) {
+  if (grant?.type === "FOCUS") return "focus";
+  const catalogTradition = typeof spell?.tradition === "string" && spell.tradition.trim() ? spell.tradition : undefined;
+  if (catalogTradition) return catalogTradition;
+  if (grant?.tradition) return grant.tradition;
+  const classNames = [entity.details, (entity.details as Json | undefined)?.class_2]
+    .map((value) => typeof value === "object" && value ? (value as Json).name : undefined)
+    .filter((name): name is string => typeof name === "string")
+    .map((name) => name.trim().toUpperCase());
+  if (grant?.source && !classNames.includes(grant.source.trim().toUpperCase())) return grant.source;
+  return undefined;
+}
+
 function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, blocks: Json[], spellRows: Json[], classFeatures: Record<string, Json[]>) {
   const blockById = new Map(blocks.flatMap((row) => {
     const id = num(row.id);
@@ -699,7 +712,7 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
       return [{
         name,
         rank,
-        tradition: typeof spell?.tradition === "string" && spell.tradition.trim() ? spell.tradition : undefined,
+        tradition: spellTradition(entity, spell),
         max: rankSlots.length || undefined,
         spent: spent || undefined,
         prepared: mine.length > 0,
@@ -711,11 +724,7 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
     for (const grant of grants) {
       const spell = spellById.get(grant.spellId);
       const name = typeof spell?.name === "string" ? spell.name : `Spell ${grant.spellId}`;
-      const tradition = grant.type === "FOCUS"
-        ? "focus"
-        : typeof spell?.tradition === "string" && spell.tradition.trim()
-          ? spell.tradition
-          : grant.tradition;
+      const tradition = spellTradition(entity, spell, grant);
       const existing = sheet.spells.find((entry) => entry.name === name && (grant.type === "NORMAL" ? entry.tradition === undefined || entry.tradition === tradition : entry.tradition === tradition));
       if (existing) { if (tradition) existing.tradition = tradition; continue; }
       const innate = Array.isArray(spellBook?.innate_casts) ? (spellBook.innate_casts as Json[]).find((row) => num(row.spell_id) === grant.spellId) : undefined;
