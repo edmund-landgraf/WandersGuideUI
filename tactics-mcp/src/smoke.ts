@@ -55,8 +55,10 @@ const fixture: EncounterReader = {
   async listCampaignCharacters() {
     return { ok: true, data: [{ id: 7, name: "Joey Turtle", level: 3, ancestry: "Kobold", className: "Kineticist" }] };
   },
-  async exportCharacter() {
-    return { ok: true, data: { name: "Joey Turtle" } };
+  async exportCharacter(_userId, _characterId, format = "json") {
+    return format === "pdf"
+      ? { ok: true, data: { format: "pdf", filename: "character-7.pdf", mimeType: "application/pdf", base64: "JVBERi0x" } }
+      : { ok: true, data: { format: "json", file: { name: "Joey Turtle" } } };
   },
 };
 setEncounterReader(fixture);
