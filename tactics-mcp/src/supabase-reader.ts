@@ -414,6 +414,29 @@ async function encounterCharacters(raw: Json) {
   return rest(`character?id=in.(${ids.join(",")})&select=*`);
 }
 
+function plainNote(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (!value || typeof value !== "object") return "";
+  const row = value as Json;
+  const text = typeof row.text === "string" ? row.text : "";
+  const content = Array.isArray(row.content) ? row.content.map(plainNote).join("") : "";
+  if (row.type === "paragraph") return `${text || content}\\n\\n`;
+  if (row.type === "heading") return `### ${text || content}\\n\\n`;
+  if (row.type === "hardBreak") return "\\n";
+  return text || content;
+}
+
+function notesOf(entity: Json) {
+  if (typeof entity.notes === "string" && entity.notes.trim()) return entity.notes.trim();
+  const notes = entity.notes as Json | undefined;
+  const pages = Array.isArray(notes?.pages) ? notes.pages as Json[] : [];
+  return pages.map((page) => {
+    const name = typeof page.name === "string" ? page.name.trim() : "";
+    const contents = plainNote(page.contents).trim();
+    return [name, contents].filter(Boolean).join("\\n");
+  }).filter(Boolean).join("\\n\\n");
+}
+
 function statsOf(entity: Json) {
   const meta = entity.meta_data as Json | undefined;
   return (meta?.calculated_stats as Json) ?? {};
@@ -587,11 +610,9 @@ function sheetFor(entity: Json): CombatantSheet {
       burrow: profTotal(entity, "SPEED_BURROW"),
     },
     inventory: entity.inventory ?? null,
-    notes: typeof entity.notes === "string"
-      ? entity.notes
-      : typeof details?.description === "string"
-        ? details.description
-        : undefined,
+    notes: [typeof details?.description === "string" ? details.description.trim() : "", notesOf(entity)]
+      .filter(Boolean)
+      .join("\\n\\n") || undefined,
     details: entity.details ?? null,
   };
 }
