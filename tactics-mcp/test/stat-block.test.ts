@@ -72,7 +72,7 @@ test("MCP stat block returns calculated arrays for PCs and creatures and retains
   const previousReader = getEncounterReader();
   const entity = { id: 7, name: "Fixture", level: 2, details: { conditions: [{ name: "frightened", value: 1 }] },
     meta_data: { calculated_stats: { profs: { SKILL_STEALTH: { total: 8, type: "T" } } } },
-    abilities_base: [{ type: "action", name: "Strike", actions: "ONE-ACTION" }, { type: "feat", name: "Feat", actions: "ONE-ACTION" }, { type: "class-feature", name: "Feature" }] };
+    abilities_base: [{ type: "action", name: "Strike", actions: "ONE-ACTION" }, { type: "feat", name: "Feat", actions: "ONE-ACTION", traits: [1437] }, { type: "class-feature", name: "Feature" }] };
   const rawStats = await readPreparedStatBlock(await prepared("CREATURE"));
   const calls: string[] = [];
   const characterQueries: string[] = [];
@@ -112,6 +112,7 @@ test("MCP stat block returns calculated arrays for PCs and creatures and retains
       assert.equal(sheet.classFeatures[0].name, "Feature");
       // Catalog hydration must not erase embedded creature/PC feats when no ids are available.
       assert.equal(sheet.feats[0]?.name, "Feat");
+      assert.equal(sheet.feats[0]?.section, "general");
     }
     assert.deepEqual(calls, ["character:pc", "creature:monster"]);
     assert.ok(characterQueries.some((query) => query.includes("id=in.(7)")));
