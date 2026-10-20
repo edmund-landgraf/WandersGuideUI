@@ -75,10 +75,14 @@ test("MCP stat block returns calculated arrays for PCs and creatures and retains
     abilities_base: [{ type: "action", name: "Strike", actions: "ONE-ACTION" }, { type: "feat", name: "Feat", actions: "ONE-ACTION" }, { type: "class-feature", name: "Feature" }] };
   const rawStats = await readPreparedStatBlock(await prepared("CREATURE"));
   const calls: string[] = [];
+  const characterQueries: string[] = [];
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
     if (url.pathname.endsWith("/campaign")) return Response.json([{ id: 1, user_id: "gm" }]);
-    if (url.pathname.endsWith("/character")) return Response.json([entity]);
+    if (url.pathname.endsWith("/character")) {
+      characterQueries.push(url.search);
+      return Response.json([entity]);
+    }
     if (url.pathname.endsWith("/encounter")) return Response.json([{ id: 2, campaign_id: 1, combatants: { list: [
       { _id: "pc", type: "CHARACTER", data: { id: 7 } }, { _id: "monster", type: "CREATURE", creature: entity },
     ] } }]);
@@ -110,6 +114,7 @@ test("MCP stat block returns calculated arrays for PCs and creatures and retains
       assert.equal(sheet.feats[0]?.name, "Feat");
     }
     assert.deepEqual(calls, ["character:pc", "creature:monster"]);
+    assert.ok(characterQueries.some((query) => query.includes("id=in.(7)")));
   } finally {
     await client.close(); await server.close(); globalThis.fetch = savedFetch; setEncounterReader(previousReader);
   }
