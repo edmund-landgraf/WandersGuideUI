@@ -233,7 +233,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     if (!record) return notFound("Encounter not found.");
     const combatants = record.combatants.map(summary);
     return textResult(
-      combatants.length ? `Combatants.\n${combatants.map(formatCombatant).join("\\n")}` : "No combatants.",
+      combatants.length ? `Combatants.\n${combatants.map(formatCombatant).join("\n")}` : "No combatants.",
       { combatants },
     );
   }, userId);
