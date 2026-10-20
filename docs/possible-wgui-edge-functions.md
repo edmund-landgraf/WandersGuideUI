@@ -70,6 +70,7 @@ Only if those features leave the GM-only stock calls.
 | --- | --- |
 | Redacted `find-encounter` (or a redacted copy written back) | Rejected in [player-combat-view.md](./player-combat-view.md). One payload, one component tree; player restriction is how Phase 1 draws. |
 | Replacements for `update-character`, `create-encounter`, `create-campaign`, `reset-campaign-key`, `remove-from-campaign`, or content catalog reads | Those already work for the role that is allowed to call them. |
+
 ## Implementation order and gates
 
 The next functions are not all equally ready. Implement them in this order:
