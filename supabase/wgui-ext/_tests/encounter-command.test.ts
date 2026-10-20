@@ -120,6 +120,14 @@ Deno.test({
       assertEquals(patched.body.data.combatant.creature.hp_current, 7);
       assertEquals(patched.body.data.combatant.creature.details.conditions.length, 1);
 
+      const playerAttempt = await call('wgui-ext-remove-encounter-character', {
+        campaign_id: camp.id,
+        encounter_id: encounter.id,
+        combatant_id: creatureId,
+      }, player.jwt);
+      assertEquals(playerAttempt.status, 403);
+      assertEquals(playerAttempt.body.code, 'GM_REQUIRED');
+
       const removed = await call('wgui-ext-remove-encounter-character', {
         campaign_id: camp.id,
         encounter_id: encounter.id,
@@ -135,14 +143,6 @@ Deno.test({
       }, gm.jwt);
       assertEquals(notJoined.status, 403);
       assertEquals(notJoined.body.code, 'CHARACTER_NOT_IN_CAMPAIGN');
-
-      const playerAttempt = await call('wgui-ext-remove-encounter-character', {
-        campaign_id: camp.id,
-        encounter_id: encounter.id,
-        combatant_id: creatureId,
-      }, player.jwt);
-      assertEquals(playerAttempt.status, 403);
-      assertEquals(playerAttempt.body.code, 'GM_REQUIRED');
 
       const saved = await admin.from('encounter').select('meta_data, combatants').eq('id', encounter.id).single();
       assertEquals(saved.data?.meta_data?.untouched, true);
