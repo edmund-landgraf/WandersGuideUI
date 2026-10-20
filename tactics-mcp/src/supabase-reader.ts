@@ -766,6 +766,50 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
       sheet.spells.push({ name, rank: grant.rank ?? num(spell?.rank), tradition, attack, dc,
         ...(grant.type === "INNATE" ? { max: grant.casts, spent: num(innate?.casts_current) ?? 0 } : {}) });
     }
+    const classRow = (entity.details as Json | undefined)?.class as Json | undefined;
+    const selections = ((entity.operation_data as Json | undefined)?.selections ?? {}) as Record<string, string>;
+    const operations = Array.isArray(classRow?.operations) ? (classRow.operations as Json[]) : [];
+    const selects: Json[] = [];
+    function findSelects(value: unknown, depth: number) {
+      if (!value || typeof value !== "object" || depth > 8 || selects.length > 20) return;
+      if (Array.isArray(value)) {
+        for (const item of value) findSelects(item, depth + 1);
+        return;
+      }
+      const row = value as Json;
+      if (row.type === "select") {
+        const data = row.data as Json | undefined;
+        const filters = data?.optionsFilters as Json | undefined;
+        const spellData = filters?.spellData as Json | undefined;
+        selects.push({
+          id: typeof row.id === "string" ? row.id : null,
+          optionType: data?.optionType ?? null,
+          mode: data?.modeType ?? null,
+          title: data?.title ?? null,
+          spellType: spellData?.type ?? null,
+          castingSource: spellData?.castingSource ?? null,
+        });
+      }
+      for (const child of Object.values(row)) findSelects(child, depth + 1);
+    }
+    findSelects(operations, 0);
+    sheet.details = {
+      reader: "focus-scan",
+      revision: "class-operation-grants-v3",
+      classId: num(classRow?.id) ?? null,
+      className: typeof classRow?.name === "string" ? classRow.name : null,
+      classOperations: operations.length,
+      operationTypes: operations.map((op) => op.type ?? null),
+      selects,
+      selectionCount: Object.keys(selections).length,
+      blocksWalked: chosen.blockIds.size,
+      scanPasses: chosen.passes,
+      scanStable: chosen.stable,
+      unresolvedConditions: [...chosen.unresolvedConditions],
+      classFeatureIds: (classFeatures[id] ?? []).map((row) => row.id),
+      focusSpellIds: [...new Set(chosen.focus.map((grant) => grant.spellId))],
+      spellIds: spellIdsOf(entity).length,
+    };
   }
 }
 
