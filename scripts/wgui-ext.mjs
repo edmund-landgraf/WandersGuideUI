@@ -117,6 +117,7 @@ function test() {
     '--allow-read',
     '/wgui-ext/_tests/wgui-ext.test.ts',
     '/wgui-ext/_tests/encounter-command.test.ts',
+    '/wgui-ext/_tests/campaign-notes.test.ts',
   ]);
 }
 
