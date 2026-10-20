@@ -482,6 +482,23 @@ function actionCount(value: unknown) {
   return null;
 }
 
+type FeatSection = "class" | "ancestry" | "general" | "other";
+
+function featSection(entity: Json, ability: Json): FeatSection {
+  const traits = Array.isArray(ability.traits)
+    ? (ability.traits as unknown[]).map(num).filter((id): id is number => id !== undefined)
+    : [];
+  const details = (entity.details as Json | undefined) ?? {};
+  const classTraits = [details.class, details.class_2]
+    .map((value) => num((value as Json | undefined)?.trait_id))
+    .filter((id): id is number => id !== undefined);
+  const ancestryTrait = num(((details.ancestry as Json | undefined)?.trait_id));
+  if (traits.some((id) => classTraits.includes(id))) return "class";
+  if (ancestryTrait !== undefined && traits.includes(ancestryTrait)) return "ancestry";
+  if (traits.includes(1437) || traits.includes(1438)) return "general";
+  return "other";
+}
+
 function abilityRows(entity: Json) {
   const base = Array.isArray(entity.abilities_base) ? (entity.abilities_base as Json[]) : [];
   return base.flatMap((ability) => {
@@ -534,7 +551,7 @@ function sheetFor(entity: Json): CombatantSheet {
   const added = Array.isArray(entity.abilities_added) ? entity.abilities_added.length : 0;
   return {
     groups,
-    feats: feats.map((ability) => ({ section: "other" as const, name: ability.name, level: ability.level, hasAction: ability.actions !== null })),
+    feats: feats.map((ability) => ({ section: featSection(entity, ability), name: ability.name, level: ability.level, hasAction: ability.actions !== null })),
     classFeatures: features.map((ability) => ({ name: ability.name, level: ability.level })),
     skills,
     spells: [],
@@ -654,7 +671,7 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
     }
     // Catalog lookups enrich embedded encounter data; an empty or partial lookup
     // must not erase already-present feats and class features.
-    const resolvedFeats = feats.map((ability) => ({ section: "other" as const, name: ability.name, level: ability.level, hasAction: ability.actionCost !== undefined || ability.actions !== null }));
+    const resolvedFeats = feats.map((ability) => ({ section: featSection(entity, ability), name: ability.name, level: ability.level, hasAction: ability.actionCost !== undefined || ability.actions !== null }));
     sheet.feats = [...sheet.feats.filter((feat) => !resolvedFeats.some((item) => item.name === feat.name)), ...resolvedFeats];
     const resolvedFeatures = features.map((ability) => ({ name: ability.name, level: ability.level }));
     sheet.classFeatures = [...sheet.classFeatures.filter((feature) => !resolvedFeatures.some((item) => item.name === feature.name)), ...resolvedFeatures];
