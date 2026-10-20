@@ -46,3 +46,6 @@ Deno.test('campaign note patch leaves an out-of-range page unchanged', () => {
   const notes = notesFromCampaign(campaign);
   assertEquals(patchNotePage(notes.pages, 4, { name: 'wrong' }, true), notes.pages);
 });
+Deno.test('malformed campaign notes do not shift page indexes', () => {
+  assertEquals(notesFromCampaign({ notes: { pages: [{ name: 'Broken' }] } }), { pages: [] });
+});
