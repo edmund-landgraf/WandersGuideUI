@@ -20,8 +20,10 @@ export function notesFromCampaign(campaign: Record<string, unknown>): CampaignNo
   const pages = (notes as Record<string, unknown>).pages;
   if (!Array.isArray(pages)) return { pages: [] };
 
+  if (!pages.every(isNotePage)) return { pages: [] };
+
   return {
-    pages: pages.filter(isNotePage).map((page) => ({ ...page })),
+    pages: pages.map((page) => ({ ...page })),
   };
 }
 
