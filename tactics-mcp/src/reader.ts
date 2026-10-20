@@ -58,6 +58,10 @@ export type CombatantSheet = {
 export type ActionFailure = { ok: false; code: string; message: string };
 export type ActionResult<T> = { ok: true; data: T } | ActionFailure;
 
+export type CharacterExport =
+  | { format: "json"; file: Record<string, unknown> }
+  | { format: "pdf"; filename: string; mimeType: "application/pdf"; base64: string };
+
 export type EncounterReader = {
   profile(userId: string): Promise<{ id: string; email?: string | null; name?: string | null }>;
   listEncounters(userId: string, campaignId: number): Promise<{ id: number; name: string; combatantCount: number }[]>;
@@ -67,7 +71,7 @@ export type EncounterReader = {
   campaignOwnerContacts(userId: string, ownerIds: string[]): Promise<ActionResult<{ userId: string; email: string; displayName: string }[]>>;
   patchEncounterDice(userId: string, campaignId: number, encounterId: number, patch: { diceRollState?: Record<string, unknown> | null; diceRollLog?: unknown[] }): Promise<ActionResult<{ diceRollState: unknown; diceRollLog: unknown[] }>>;
   listCampaignCharacters(userId: string, campaignId: number): Promise<ActionResult<{ id: number; name: string; level: number | null; ancestry: string | null; className: string | null }[]>>;
-  exportCharacter(userId: string, characterId: number): Promise<ActionResult<Record<string, unknown>>>;
+  exportCharacter(userId: string, characterId: number, format?: "json" | "pdf"): Promise<ActionResult<CharacterExport>>;
 };
 
 function unavailable(message = "This tool is unavailable without the campaign database."): ActionFailure {
