@@ -937,8 +937,6 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
       };
     },
     async exportCharacter(userId, characterId) {
-      const secret = env("JWT_SECRET") || env("SB_JWT_SECRET");
-      if (!secret) return fail("INTERNAL_ERROR", "Character export is unavailable until JWT_SECRET is set on the MCP server.");
       const rows = await rest(`character?id=eq.${characterId}&select=id,user_id,campaign_id`);
       const character = rows[0];
       if (!character) return fail("NOT_FOUND", "Character not found.");
@@ -946,7 +944,11 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
       const campaignId = num(character.campaign_id);
       const access = campaignId === undefined ? null : await campaignAccess(userId, campaignId);
       if (!owner && !access?.isGm) return fail("CHARACTER_FORBIDDEN", "You do not have access to this character.");
-      const token = userJwt(userId, secret);
+      const secret = env("JWT_SECRET") || env("SB_JWT_SECRET");
+      const serviceRole = env("SUPABASE_SERVICE_ROLE_KEY");
+      if (!secret && !serviceRole) return fail("INTERNAL_ERROR", "Character export is unavailable until JWT_SECRET or SUPABASE_SERVICE_ROLE_KEY is set on the MCP server.");
+      // A user JWT is preferred. The service role is already on this server and the ownership check above has passed.
+      const token = secret ? userJwt(userId, secret) : serviceRole;
       const response = await fetch(`${baseUrl()}/functions/v1/wgui-export-character`, {
         method: "POST",
         headers: {

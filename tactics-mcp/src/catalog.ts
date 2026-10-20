@@ -165,7 +165,9 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     async (args) => {
       const result = await getEncounterReader().listCampaignCharacters(userId(), Number(args.campaignId));
       if (!result.ok) return textResult(result.message, { code: result.code, retryable: false }, true);
-      return textResult(result.data.length ? "Campaign roster." : "No characters in this campaign.", { characters: result.data });
+      const characters = result.data;
+      const lines = characters.map((row) => `${row.id}\t${row.name}\tlevel ${row.level ?? "?"}\t${row.ancestry ?? ""}\t${row.className ?? ""}`.trimEnd());
+      return textResult(lines.length ? `Campaign roster.\n${lines.join("\n")}` : "No characters in this campaign.", { characters });
     },
   );
 
@@ -190,7 +192,8 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     inputSchema: { campaignId: z.number().int() },
   }, async (args, uid) => {
     const encounters = await getEncounterReader().listEncounters(uid, Number(args.campaignId));
-    return textResult(encounters.length ? "Encounters." : "No encounters.", { encounters });
+    const lines = encounters.map((row) => `${row.id}\t${row.name}\t${row.combatantCount} combatants`);
+    return textResult(lines.length ? `Encounters.\n${lines.join("\n")}` : "No encounters.", { encounters });
   }, userId);
 
   registerEncounterTool(server, "get_encounter", {
