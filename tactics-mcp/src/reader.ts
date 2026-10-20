@@ -29,7 +29,7 @@ export type EncounterRecord = {
   noteName?: string;
   combatants: CombatantRow[];
   roundLog: { round: number; name: string; side: string; initiative?: number; calculation?: string; note?: string }[];
-  diceLog: { title?: string; dc?: number; stat?: string; result?: string }[];
+  diceLog: ({ title?: string; dc?: number; stat?: string; result?: string; [key: string]: unknown })[];
   diceState?: Record<string, unknown> | null;
   sheets: Record<string, CombatantSheet>;
 };
