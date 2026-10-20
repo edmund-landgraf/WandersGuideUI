@@ -142,7 +142,19 @@ export function registerCatalog(server: McpServer, userId: () => string) {
       inputSchema: {
         ...ids,
         diceRollState: z.record(z.string(), z.unknown()).nullable().optional().describe("Full tray for a GM. Players may set title, dc, stat, and results."),
-        diceRollLog: z.array(z.record(z.string(), z.unknown())).optional().describe("Full log for a GM. Players send only their own rows plus the ones they are keeping."),
+        diceRollLog: z.array(z.object({
+          id: z.string().optional(),
+          title: z.string(),
+          dc: z.number().optional(),
+          defaultStat: z.string().optional(),
+          initiated_by_user_id: z.string().optional(),
+          entries: z.array(z.object({
+            name: z.string(),
+            ally: z.boolean(),
+            calculation: z.string(),
+            total: z.number(),
+          })).min(1),
+        }).strict()).optional().describe("Full log for a GM. Each row needs title and entries; entries use name, ally, calculation, and total. Players send only their own rows plus the ones they are keeping."),
       },
     },
     async (args) => {
