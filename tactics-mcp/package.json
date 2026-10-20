@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx src/http.ts",
     "test": "tsx --test test/*.test.ts",
-    "smoke": "tsx src/smoke.ts"
+    "smoke": "tsx src/smoke.ts",
+    "grokbot:bridge": "tsx src/grokbotBridge.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

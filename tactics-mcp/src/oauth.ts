@@ -1,20 +1,46 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { isIP } from "node:net";
 
 type CodeRow = {
   userId: string;
+  clientId: string | null;
   challenge: string;
   redirectUri: string;
   expiresAt: number;
 };
 
 const CHATGPT_REDIRECT = /^https:\/\/chatgpt\.com\/connector\/oauth\/[A-Za-z0-9_-]+$/;
+const DEFAULT_GROKBOT_CLIENT = "grokbot-wgui";
+const DEFAULT_GROKBOT_REDIRECT = "https://www.cursor.com/agents/mcp/oauth/callback";
 
-export function allowedChatGptRedirect(value: string) {
-  return CHATGPT_REDIRECT.test(value);
+export function grokbotClientId() {
+  return process.env.GROKBOT_MCP_CLIENT_ID?.trim() || DEFAULT_GROKBOT_CLIENT;
+}
+
+function exactHttpsCallback(value: string) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.replace(/^\[|\]$/g, "");
+    return url.protocol === "https:" && !url.username && !url.password && !url.hash &&
+      url.hostname !== "localhost" && !url.hostname.endsWith(".localhost") && isIP(host) === 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Client and callback must both match the pre-registered Grokbot pair. */
+export function allowedMcpRedirect(redirectUri: string, clientId: string) {
+  if (clientId && clientId === grokbotClientId()) {
+    const callback = process.env.GROKBOT_MCP_REDIRECT_URI?.trim() || DEFAULT_GROKBOT_REDIRECT;
+    return redirectUri === callback && exactHttpsCallback(callback);
+  }
+  const chatgptId = process.env.CHATGPT_MCP_CLIENT_ID?.trim();
+  return (!chatgptId || clientId === chatgptId) && CHATGPT_REDIRECT.test(redirectUri);
 }
 
 type PendingLogin = {
   state: string;
+  clientId: string;
   challenge: string;
   redirectUri: string;
   gotrueVerifier: string;
@@ -48,10 +74,11 @@ export function resetCodes() {
   codes.clear();
 }
 
-export function issueCode(input: { userId: string; codeChallenge: string; redirectUri: string }) {
+export function issueCode(input: { userId: string; clientId?: string | null; codeChallenge: string; redirectUri: string }) {
   const code = randomBytes(24).toString("base64url");
   codes.set(code, {
     userId: input.userId,
+    clientId: input.clientId ?? null,
     challenge: input.codeChallenge,
     redirectUri: input.redirectUri,
     expiresAt: Date.now() + 60_000,
@@ -60,10 +87,11 @@ export function issueCode(input: { userId: string; codeChallenge: string; redire
 }
 
 /** Code and PKCE verifier in. Does not read a browser session. */
-export function consumeCode(input: { code: string; verifier: string; redirectUri: string }) {
+export function consumeCode(input: { code: string; verifier: string; redirectUri: string; clientId?: string | null }) {
   const row = codes.get(input.code);
   codes.delete(input.code);
   if (!row || row.expiresAt <= Date.now()) return null;
+  if (row.clientId && input.clientId !== row.clientId) return null;
   if (row.redirectUri !== input.redirectUri) return null;
   const digest = createHash("sha256").update(input.verifier).digest("base64url");
   const left = Buffer.from(digest);

@@ -264,10 +264,11 @@
     {
       "weekStart": "2026-10-19",
       "label": "Oct 19 – Oct 25, 2026",
-      "count": 1,
-      "summary": "Stamp the running version and list weekly updates in the app.",
+      "count": 2,
+      "summary": "Stamp the running version and list weekly updates in the app. Add email registration and confirm before clearing campaign art.",
       "subjects": [
-        "Stamp the running version and list weekly updates in the app."
+        "Stamp the running version and list weekly updates in the app.",
+        "Add email registration and confirm before clearing campaign art."
       ]
     }
   ]

@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
-import { allowedChatGptRedirect, consumeCode, gotrueChallenge, issueCode, rememberLogin, takeLogin } from "./oauth.js";
+import { allowedMcpRedirect, consumeCode, gotrueChallenge, issueCode, rememberLogin, takeLogin } from "./oauth.js";
 import { createTacticsMcpServer } from "./server.js";
 import { installSupabaseReader } from "./supabase-reader.js";
 import { listTokens, mintToken, resolveBearer, revokeToken } from "./tokens.js";
@@ -251,6 +251,7 @@ export function startTacticsHttp() {
         if (req.method === "GET" && path === "/oauth/mcp/authorize") {
           const query = new URL(req.url ?? "/", "http://127.0.0.1").searchParams;
           const redirectUri = query.get("redirect_uri") ?? "";
+          const clientId = query.get("client_id") ?? "";
           const state = query.get("state") ?? "";
           const challenge = query.get("code_challenge") ?? "";
           if (
@@ -258,7 +259,7 @@ export function startTacticsHttp() {
             query.get("code_challenge_method") !== "S256" ||
             !state ||
             !challenge ||
-            !allowedChatGptRedirect(redirectUri) ||
+            !allowedMcpRedirect(redirectUri, clientId) ||
             !(query.get("scope") ?? "read").split(" ").includes("read")
           ) {
             sendJson(res, 400, { error: "invalid_request" });
@@ -268,7 +269,7 @@ export function startTacticsHttp() {
             sendJson(res, 500, { error: "Sign-in is not configured" });
             return;
           }
-          const login = rememberLogin({ state, challenge, redirectUri });
+          const login = rememberLogin({ state, clientId, challenge, redirectUri });
           const cookie = `wgui_mcp_login=${encodeURIComponent(login.id)}; HttpOnly; Path=/oauth/mcp; Max-Age=600; Secure; SameSite=Lax`;
           const provider = query.get("provider") ?? "";
           if ((LOGIN_PROVIDERS as readonly string[]).includes(provider)) {
@@ -284,7 +285,7 @@ export function startTacticsHttp() {
             return `<a href="${next.pathname}${next.search}">${label}</a>`;
           }).join("");
           res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Set-Cookie": cookie });
-          res.end(`<!doctype html><meta charset="utf-8"><title>Sign in</title><p>Sign in to Wanderer's Guide to connect ChatGPT.</p><p>${links}</p><form method="post" action="/oauth/mcp/authorize"><p><label>Email <input name="email" type="email" autocomplete="username" required></label></p><p><label>Password <input name="password" type="password" autocomplete="current-password" required></label></p><button type="submit">Sign in with email</button></form>`);
+          res.end(`<!doctype html><meta charset="utf-8"><title>Sign in</title><p>Sign in to Wanderer's Guide to connect this assistant.</p><p>${links}</p><form method="post" action="/oauth/mcp/authorize"><p><label>Email <input name="email" type="email" autocomplete="username" required></label></p><p><label>Password <input name="password" type="password" autocomplete="current-password" required></label></p><button type="submit">Sign in with email</button></form>`);
           return;
         }
         if (path === "/oauth/mcp/callback" && req.method === "GET") {
@@ -312,7 +313,7 @@ else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "
             sendJson(res, 400, { error: "invalid_grant" });
             return;
           }
-          const code = issueCode({ userId, codeChallenge: pending.challenge, redirectUri: pending.redirectUri });
+          const code = issueCode({ userId, clientId: pending.clientId, codeChallenge: pending.challenge, redirectUri: pending.redirectUri });
           const dest = new URL(pending.redirectUri);
           dest.searchParams.set("code", code);
           dest.searchParams.set("state", pending.state);
@@ -331,7 +332,7 @@ else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "
             res.end("<!doctype html><meta charset=\"utf-8\"><title>Sign in</title><p>Email or password was not accepted. Go back and try again.</p>");
             return;
           }
-          const code = issueCode({ userId, codeChallenge: pending.challenge, redirectUri: pending.redirectUri });
+          const code = issueCode({ userId, clientId: pending.clientId, codeChallenge: pending.challenge, redirectUri: pending.redirectUri });
           const dest = new URL(pending.redirectUri);
           dest.searchParams.set("code", code);
           dest.searchParams.set("state", pending.state);
@@ -362,7 +363,8 @@ else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "
           const code = typeof body?.code === "string" ? body.code : "";
           const verifier = typeof body?.code_verifier === "string" ? body.code_verifier : "";
           const redirectUri = typeof body?.redirect_uri === "string" ? body.redirect_uri : "";
-          const userId = consumeCode({ code, verifier, redirectUri });
+          const clientId = typeof body?.client_id === "string" ? body.client_id : "";
+          const userId = consumeCode({ code, verifier, redirectUri, clientId });
           if (!userId) {
             sendJson(res, 400, { error: "invalid_grant" });
             return;
