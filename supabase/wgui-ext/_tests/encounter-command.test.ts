@@ -94,6 +94,7 @@ Deno.test({
         campaign_id: camp.id,
         encounter_id: encounter.id,
         character_id: joined.id,
+        encounter_revision: 0,
       }, gm.jwt);
       assertEquals(added.status, 200);
       assertEquals(added.body.status, 'success');
@@ -103,6 +104,7 @@ Deno.test({
         campaign_id: camp.id,
         encounter_id: encounter.id,
         character_id: joined.id,
+        encounter_revision: 1,
       }, gm.jwt);
       assertEquals(duplicate.status, 409);
       assertEquals(duplicate.body.code, 'CHARACTER_ALREADY_IN_ENCOUNTER');
@@ -114,6 +116,7 @@ Deno.test({
         initiative: 12,
         hp_current: 7,
         conditions: [{ name: 'Frightened', value: 1 }],
+        encounter_revision: 1,
       }, gm.jwt);
       assertEquals(patched.status, 200);
       assertEquals(patched.body.data.combatant.initiative, 12);
@@ -124,6 +127,7 @@ Deno.test({
         campaign_id: camp.id,
         encounter_id: encounter.id,
         combatant_id: creatureId,
+        encounter_revision: 1,
       }, player.jwt);
       assertEquals(playerAttempt.status, 403);
       assertEquals(playerAttempt.body.code, 'GM_REQUIRED');
@@ -132,6 +136,7 @@ Deno.test({
         campaign_id: camp.id,
         encounter_id: encounter.id,
         combatant_id: addedId,
+        encounter_revision: 2,
       }, gm.jwt);
       assertEquals(removed.status, 200);
       assertEquals(removed.body.data.removed_combatant_id, addedId);
@@ -140,6 +145,7 @@ Deno.test({
         campaign_id: camp.id,
         encounter_id: encounter.id,
         character_id: outsider.id,
+        encounter_revision: 3,
       }, gm.jwt);
       assertEquals(notJoined.status, 403);
       assertEquals(notJoined.body.code, 'CHARACTER_NOT_IN_CAMPAIGN');
