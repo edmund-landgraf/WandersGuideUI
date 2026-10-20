@@ -613,7 +613,8 @@ function sheetFor(entity: Json): CombatantSheet {
     notes: [typeof details?.description === "string" ? details.description.trim() : "", notesOf(entity)]
       .filter(Boolean)
       .join("\\n\\n") || undefined,
-    details: entity.details ?? null,
+    details: { storedAbilities: abilities.length, addedAbilityIds: added },
+    sourceDetails: entity.details ?? null,
   };
 }
 
