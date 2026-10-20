@@ -72,6 +72,12 @@ test("encounter tools include their structured data in model-readable text", asy
     response = await client.callTool({ name: "list_combatants", arguments: args });
     assert.match(textOf(response), /lyra-row \| Lyra/);
 
+    response = await client.callTool({ name: "list_pcs", arguments: args });
+    assert.match(textOf(response), /lyra-row \| Lyra/);
+
+    response = await client.callTool({ name: "list_roster_edges", arguments: args });
+    assert.match(textOf(response), /No one on the bench or down\./);
+
     response = await client.callTool({ name: "get_dice_log", arguments: args });
     assert.match(textOf(response), /Reflex save/);
     assert.match(textOf(response), /DC 22/);
