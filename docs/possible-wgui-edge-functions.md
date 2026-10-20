@@ -70,3 +70,37 @@ Only if those features leave the GM-only stock calls.
 | --- | --- |
 | Redacted `find-encounter` (or a redacted copy written back) | Rejected in [player-combat-view.md](./player-combat-view.md). One payload, one component tree; player restriction is how Phase 1 draws. |
 | Replacements for `update-character`, `create-encounter`, `create-campaign`, `reset-campaign-key`, `remove-from-campaign`, or content catalog reads | Those already work for the role that is allowed to call them. |
+## Implementation order and gates
+
+The next functions are not all equally ready. Implement them in this order:
+
+1. patch-encounter-combatant, add-encounter-character, and remove-encounter-character. These directly support the redesign's Phase 2 and Phase 3 workflows.
+2. roll-initiative. Define the initiative source, empty-versus-all reroll behavior, tie ordering, hidden-result behavior, immutable log shape, and optimistic revision before implementation.
+3. patch-creature-spells. Define the per-instance resource shape and reset behavior first. Duplicate creature combatants must never share mutable catalog state.
+4. group-check. Reuse authoritative PF2e modifier and degree-of-success calculations, then add target selection, result visibility, immutable history, and revision handling.
+5. set-encounter-reveal only after the response contract is decided. The current Phase 1 product rule is one full encounter payload with player restrictions applied in the React tree. A reveal write has no security effect while hidden creature fields are still sent to players.
+
+Every command function must:
+
+- Authenticate the caller inside the handler; gateway JWT verification is not sufficient.
+- Resolve campaign membership explicitly with the service client.
+- Verify that the encounter belongs to the authorized campaign.
+- Enforce the role and target ownership for that specific command.
+- Update only the narrow field or command payload, never replace the full encounter row.
+- Use idempotency where a retry could duplicate a combatant or log entry.
+- Use optimistic concurrency for shared encounter state and return a conflict with the current revision instead of silently applying a stale write.
+- Return a deliberately shaped response rather than a raw service-role row.
+
+## Contract decisions
+
+The current docs contain two incompatible visibility directions. player-combat-view.md and this document define Phase 1 as a full payload with enemy HP and names hidden in React. campaign-encounter-ui-redesign.md and wgui-integration-priorities.md describe server-side redaction and role-specific DTOs. The current path follows the former: do not add a redacted find-encounter or change RLS. If server-side reveal enforcement becomes a requirement, revise the read contract first and treat it as a separate security change.
+
+Own-PC HP, stamina, and spells remain on stock update-character. GM full-row encounter saves remain on stock create-encounter. The new combatant command must not become a second path for those global character fields.
+
+The client request registry should gain each new slug only when its handler and client caller land together. The current RequestTypeSchema contains the shipped overlay routes, not these candidates.
+
+## Ownership and deployment
+
+WGUI owns the overlay, client integration, and contract tests under supabase/wgui-ext. The production functions belong in wanderers-guide/supabase/functions, with matching config.toml entries. The overlay should remain usable as a compatibility path until the corresponding production function is deployed and verified.
+
+No new function should modify stock find-encounter, find-character, create-encounter, update-character, campaign membership RLS, or content catalog reads.
