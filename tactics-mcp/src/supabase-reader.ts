@@ -420,9 +420,9 @@ function plainNote(value: unknown): string {
   const row = value as Json;
   const text = typeof row.text === "string" ? row.text : "";
   const content = Array.isArray(row.content) ? row.content.map(plainNote).join("") : "";
-  if (row.type === "paragraph") return `${text || content}\\n\\n`;
-  if (row.type === "heading") return `### ${text || content}\\n\\n`;
-  if (row.type === "hardBreak") return "\\n";
+  if (row.type === "paragraph") return `${text || content}\n\n`;
+  if (row.type === "heading") return `### ${text || content}\n\n`;
+  if (row.type === "hardBreak") return "\n";
   return text || content;
 }
 
@@ -433,8 +433,8 @@ function notesOf(entity: Json) {
   return pages.map((page) => {
     const name = typeof page.name === "string" ? page.name.trim() : "";
     const contents = plainNote(page.contents).trim();
-    return [name, contents].filter(Boolean).join("\\n");
-  }).filter(Boolean).join("\\n\\n");
+    return [name, contents].filter(Boolean).join("\n");
+  }).filter(Boolean).join("\n\n");
 }
 
 function statsOf(entity: Json) {
