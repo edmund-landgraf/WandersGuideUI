@@ -105,3 +105,15 @@ The client request registry should gain each new slug only when its handler and 
 WGUI owns the overlay, client integration, and contract tests under supabase/wgui-ext. The production functions belong in wanderers-guide/supabase/functions, with matching config.toml entries. The overlay should remain usable as a compatibility path until the corresponding production function is deployed and verified.
 
 No new function should modify stock find-encounter, find-character, create-encounter, update-character, campaign membership RLS, or content catalog reads.
+
+## Implemented in the WGUI overlay
+
+The first Phase 2/3 command set now exists under supabase/wgui-ext/:
+
+- wgui-ext-patch-encounter-combatant patches one stored combatant by _id. It supports initiative and encounter-row HP, temp HP, and conditions for a GM. It does not write global character state.
+- wgui-ext-add-encounter-character adds a joined campaign character with a fresh combatant _id. It rejects characters outside the campaign and duplicate assignment.
+- wgui-ext-remove-encounter-character removes a CHARACTER combatant by _id. It rejects creature targets so the command cannot silently become a generic encounter delete.
+
+All three authenticate in the handler, authorize campaign membership, verify encounter scope, require the campaign GM, and update only the combatants field. The integration coverage is in supabase/wgui-ext/_tests/encounter-command.test.ts, and the route names are registered in src/schemas/requests.ts.
+
+These are overlay implementations for WGUI. They still need to be copied into wanderers-guide/supabase/functions, added to that repository's config.toml, and run through the production edge-function test and release checks before the overlay can be removed.
