@@ -114,6 +114,6 @@ The first Phase 2/3 command set now exists under supabase/wgui-ext/:
 - wgui-ext-add-encounter-character adds a joined campaign character with a fresh combatant _id. It rejects characters outside the campaign and duplicate assignment.
 - wgui-ext-remove-encounter-character removes a CHARACTER combatant by _id. It rejects creature targets so the command cannot silently become a generic encounter delete.
 
-All three authenticate in the handler, authorize campaign membership, verify encounter scope, require the campaign GM, and update only the combatants field. The integration coverage is in supabase/wgui-ext/_tests/encounter-command.test.ts, and the route names are registered in src/schemas/requests.ts.
+All three authenticate in the handler, authorize campaign membership, verify encounter scope, require the campaign GM, and update only the combatants field plus its optimistic revision metadata. The integration coverage is in supabase/wgui-ext/_tests/encounter-command.test.ts, and the route names are registered in src/schemas/requests.ts.
 
 These are overlay implementations for WGUI. They still need to be copied into wanderers-guide/supabase/functions, added to that repository's config.toml, and run through the production edge-function test and release checks before the overlay can be removed.
