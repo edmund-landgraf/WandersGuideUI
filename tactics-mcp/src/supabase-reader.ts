@@ -389,6 +389,10 @@ async function encountersFor(userId: string, campaignId: number, encounterId?: n
   return access.isGm ? rows : rows.filter((row) => includesCharacter(row, access.characterIds));
 }
 
+function characterIdOf(combatant: Json) {
+  return num(combatant.character) ?? num((combatant.data as Json | undefined)?.id);
+}
+
 function entityOf(combatant: Json): Json {
   if (combatant.type === "CHARACTER") return (combatant.data as Json) ?? {};
   return (combatant.creature as Json) ?? (combatant.data as Json) ?? {};
@@ -434,7 +438,7 @@ function mapCombatant(combatant: Json, characters: Json[]): CombatantRow | null 
   const id = typeof combatant._id === "string" ? combatant._id : "";
   if (!id) return null;
   const kind = combatant.type === "CHARACTER" ? "character" : "creature";
-  const characterId = num(combatant.character);
+  const characterId = characterIdOf(combatant);
   const live = kind === "character" ? characters.find((row) => num(row.id) === characterId) : undefined;
   const entity = live ?? entityOf(combatant);
   const stats = statsOf(entity);
@@ -589,7 +593,7 @@ function entitiesFor(raw: Json, characters: Json[]) {
   for (const row of list) {
     const mapped = mapCombatant(row, characters);
     if (!mapped) continue;
-    const characterId = num(row.character);
+    const characterId = characterIdOf(row);
     const live = mapped.kind === "character" ? characters.find((item) => num(item.id) === characterId) : undefined;
     entities[mapped.id] = live ?? entityOf(row);
   }
@@ -748,7 +752,7 @@ function mapEncounter(raw: Json, characters: Json[]): EncounterRecord {
   for (const row of list) {
     const mapped = mapCombatant(row, characters);
     if (!mapped) continue;
-    const characterId = num(row.character);
+    const characterId = characterIdOf(row);
     const live = mapped.kind === "character" ? characters.find((item) => num(item.id) === characterId) : undefined;
     sheets[mapped.id] = sheetFor(live ?? entityOf(row));
   }
