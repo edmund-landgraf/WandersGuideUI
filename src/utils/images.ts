@@ -43,7 +43,7 @@ export async function isValidImage(url?: string): Promise<boolean> {
 }
 
 export async function preloadImage(url?: string | null): Promise<void> {
-  if (!url || !url.trim()) return;
+  if (!url || !url.trim() || typeof Image === 'undefined') return;
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve();
