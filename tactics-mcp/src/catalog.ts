@@ -14,9 +14,10 @@ type ToolConfig = {
 };
 
 function textResult(text: string, structuredContent: Record<string, unknown>, isError = false) {
+  const visibleText = structuredContent ? `${text}\n${JSON.stringify(structuredContent)}` : text;
   return {
     isError: isError || undefined,
-    content: [{ type: "text" as const, text }],
+    content: [{ type: "text" as const, text: visibleText }],
     structuredContent,
   };
 }
