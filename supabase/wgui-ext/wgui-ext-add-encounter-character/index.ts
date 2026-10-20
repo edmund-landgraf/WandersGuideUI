@@ -10,6 +10,7 @@ import {
   requireCampaignId,
   requireEncounterId,
   requireGm,
+  requireRevision,
   requireId,
   saveCombatants,
 } from '../_wgui-ext/encounter-command.ts';
@@ -18,6 +19,7 @@ type AddBody = {
   campaign_id?: unknown;
   encounter_id?: unknown;
   character_id?: unknown;
+  encounter_revision?: unknown;
 };
 
 serve(async (req: Request) => {
@@ -25,6 +27,7 @@ serve(async (req: Request) => {
     const campaignId = requireCampaignId(body ?? {});
     const encounterId = requireEncounterId(body ?? {});
     const characterId = requireId(body?.character_id, 'CHARACTER_ID_REQUIRED', 'character_id');
+    const revision = requireRevision(body ?? {});
 
     const admin = createServiceClient();
     const { access, encounter } = await loadAuthorizedEncounter(
@@ -65,7 +68,7 @@ serve(async (req: Request) => {
         data: undefined,
       },
     ];
-    const saved = await saveCombatants(admin, encounterId, encounter, next);
-    return { status: 'success', data: { combatant: saved[saved.length - 1] } };
+    const saved = await saveCombatants(admin, encounterId, encounter, next, revision);
+    return { status: 'success', data: { combatant: saved.list[saved.list.length - 1], encounter_revision: saved.revision } };
   });
 });
