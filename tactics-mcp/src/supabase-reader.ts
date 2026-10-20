@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 
 import { mergePlayerDiceRollLog, mergePlayerDiceRollState } from "./dice-merge.js";
-import { setEncounterReader, type ActionResult, type CombatantRow, type CombatantSheet, type EncounterReader, type EncounterRecord } from "./reader.js";
+import { setEncounterReader, type ActionResult, type CharacterExport, type CombatantRow, type CombatantSheet, type EncounterReader, type EncounterRecord } from "./reader.js";
 
 import { readLiveStatBlock } from "./stat-block.js";
 
@@ -947,7 +947,7 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
         }),
       };
     },
-    async exportCharacter(userId, characterId) {
+    async exportCharacter(userId, characterId, format = "json"): Promise<ActionResult<CharacterExport>> {
       const rows = await rest(`character?id=eq.${characterId}&select=id,user_id,campaign_id`);
       const character = rows[0];
       if (!character) return fail("NOT_FOUND", "Character not found.");
@@ -967,12 +967,25 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
           Authorization: `Bearer ${token}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify({ id: characterId, format: "json" }),
+        body: JSON.stringify({ id: characterId, format }),
       });
       if (!response.ok) return fail("INTERNAL_ERROR", "Character export failed.");
+      if (format === "pdf") {
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (!bytes.length) return fail("INTERNAL_ERROR", "Character export returned an empty PDF.");
+        return {
+          ok: true,
+          data: {
+            format: "pdf",
+            filename: `character-${characterId}.pdf`,
+            mimeType: "application/pdf",
+            base64: Buffer.from(bytes).toString("base64"),
+          },
+        };
+      }
       const file = (await response.json()) as unknown;
       if (!file || typeof file !== "object" || Array.isArray(file)) return fail("INTERNAL_ERROR", "Character export did not return a file.");
-      return { ok: true, data: file as Record<string, unknown> };
+      return { ok: true, data: { format: "json", file: file as Record<string, unknown> } };
     },
   };
 }
