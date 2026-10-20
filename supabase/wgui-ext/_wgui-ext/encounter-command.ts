@@ -106,7 +106,8 @@ export async function saveCombatants(
   encounterId: number,
   encounter: Encounter,
   list: CombatantCommand[],
-  revision: number
+  revision: number,
+  extraMeta?: Record<string, unknown>
 ): Promise<{ list: CombatantCommand[]; revision: number }> {
   const currentRevision = encounterRevision(encounter);
   if (revision !== currentRevision) {
@@ -123,6 +124,7 @@ export async function saveCombatants(
   };
   const metaData = {
     ...((encounter.meta_data ?? {}) as Record<string, unknown>),
+    ...(extraMeta ?? {}),
     encounter_revision: revision + 1,
   };
   let update = admin

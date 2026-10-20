@@ -114,6 +114,8 @@ The first Phase 2/3 command set now exists under supabase/wgui-ext/:
 - wgui-ext-add-encounter-character adds a joined campaign character with a fresh combatant _id. It rejects characters outside the campaign and duplicate assignment.
 - wgui-ext-remove-encounter-character removes a CHARACTER combatant by _id. It rejects creature targets so the command cannot silently become a generic encounter delete.
 
-All three authenticate in the handler, authorize campaign membership, verify encounter scope, require the campaign GM, and update only the combatants field plus its optimistic revision metadata. The integration coverage is in supabase/wgui-ext/_tests/encounter-command.test.ts, and the route names are registered in src/schemas/requests.ts.
+- wgui-ext-roll-initiative rolls d20 on the server for the GM. scope empty fills missing initiative only; scope all rerolls the listed combatants. It appends one initiative_log row and bumps encounter_revision. A repeated client_request_id returns the existing log row. Tie order stays a client sort. Player hiding of enemy results stays in React.
+
+All four authenticate in the handler, authorize campaign membership, verify encounter scope, require the campaign GM, and update only the combatants field plus its optimistic revision metadata. The roll also appends initiative_log. The integration coverage is in supabase/wgui-ext/_tests/encounter-command.test.ts, and the route names are registered in src/schemas/requests.ts.
 
 These are overlay implementations for WGUI. They still need to be copied into wanderers-guide/supabase/functions, added to that repository's config.toml, and run through the production edge-function test and release checks before the overlay can be removed.

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Crown, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, Image as ImageIcon, KeyRound, ListChecks, LogOut, Menu, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Crown, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, Image as ImageIcon, KeyRound, ListChecks, LogOut, Maximize2, Menu, Minimize2, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -33,6 +33,7 @@ import {
 import { addStaffChargesFromSlot, setStaffCharges, setStaffSpellCast, setWandSpellCast } from './phase1-item-spells';
 import { flattenInvItems, inventoryItemToPhase1, loadEntityInventory, matchesInvItem, type Phase1InvItem } from './phase1-inventory';
 import { EntityNotesPanel, ProseMarkdown, SourceImportNotesPanel, noteContentsToMarkdown } from './phase1-markdown';
+import { PlateNotesEditor } from './phase1-plate-notes';
 import { isContentStackOpen, useContentLinks } from './phase1-content-links';
 import { getBestShield, getItemHealth } from '@items/inv-utils';
 import { toGmNotes } from '@pages/character_sheet/panels/gm-notes';
@@ -3317,7 +3318,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               <div className='p1-sheet-art-veil' />
             </div>
           )}
-          <div className='relative z-[1] h-full overflow-auto'>
+          <div className={`relative z-[1] h-full ${viewingNotes ? 'overflow-hidden' : 'overflow-auto'}`}>
           {viewingSettings && campaign ? (
             <SettingsSurface
               campaign={campaign}
@@ -3330,7 +3331,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               error={campaignError}
             />
           ) : viewingNotes ? (
-            <NoteSurface note={selectedNote} isGm={isGm} encounterLink={noteEncounter ? { href: phase1EncounterPath(noteEncounter.id, campaign?.id), name: noteEncounter.name } : undefined} />
+            <NoteSurface campaign={campaign} note={selectedNote} isGm={isGm} encounterLink={noteEncounter ? { href: phase1EncounterPath(noteEncounter.id, campaign?.id), name: noteEncounter.name } : undefined} onUpdateCampaign={onUpdateCampaign} />
           ) : (
             <>
               <EncounterHeader encounter={selectedEncounter} combatants={activeCombatants} count={activeCombatants.length} isGm={isGm} campaignId={campaign?.id ?? null} noteLink={!standalone && encounterNote && campaign ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} tab={encounterTab} onTab={setEncounterTab} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} showAddHazard={campaign?.meta_data?.settings?.show_hazards_button === true} canAddHazard={isGm && !rosterSaving} onAddHazard={() => setHazardPickerOpen(true)} canRollInitiative={isGm && activeCombatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && activeCombatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} onOpenStatBlocks={() => setStatBlocksOpen(true)} onCreateEncounter={isGm ? onCreateEncounter : undefined} />
@@ -5773,23 +5774,90 @@ function Inspector({ combatant, width, fill, activeTab, onTab, onCollapse, hasMa
   );
 }
 
-function NoteSurface({ note, isGm, encounterLink }: { note: IndexedNotePage | null; isGm: boolean; encounterLink?: { href: string; name: string } }) {
+function NoteSurface({
+  campaign,
+  note,
+  isGm,
+  encounterLink,
+  onUpdateCampaign,
+}: {
+  campaign: Campaign | null;
+  note: IndexedNotePage | null;
+  isGm: boolean;
+  encounterLink?: { href: string; name: string };
+  onUpdateCampaign: (campaign: Campaign) => void;
+}) {
+  const [fullscreen, setFullscreen] = useState(false);
   const markdown = note ? noteContentsToMarkdown(note.page.contents) : '';
-  return (
-    <>
-      <div className='sticky top-0 z-10 border-b border-p1-border bg-p1-surface/95 px-5 py-4 backdrop-blur'>
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
+
+  function saveDraft(text: string) {
+    if (!campaign || !note) return;
+    const pages = [...(campaign.notes?.pages ?? [])];
+    const current = pages[note.index];
+    if (!current) return;
+    pages[note.index] = { ...current, contents: text };
+    onUpdateCampaign({ ...campaign, notes: { ...campaign.notes, pages } });
+  }
+
+  const header = (
+    <div className='sticky top-0 z-10 flex items-start gap-2 border-b border-p1-border bg-p1-surface/95 px-5 py-4 backdrop-blur'>
+      <div className='min-w-0 flex-1'>
         <Eyebrow>{isGm ? 'Campaign notes' : 'Shared campaign notes'}</Eyebrow>
         <h2 className='mt-1 truncate text-xl font-semibold'>{note ? encounterDisplayName(note.page.name) : 'Note not found'}</h2>
         <p className='mt-1 truncate text-xs text-p1-faint'>{note ? (note.page.shared ? 'Shared with party' : 'Visible to the GM only') : 'This campaign note is unavailable.'}</p>
         {encounterLink && <Link to={encounterLink.href} className='mt-1 block truncate text-xs text-p1-accent hover:underline'>See encounter: {encounterDisplayName(encounterLink.name)}</Link>}
       </div>
-      <div className='p-5'>
-        {!note && <EmptyState>This campaign note could not be found, or it is not shared with you.</EmptyState>}
-        {note && !markdown && <EmptyState>This note is empty.</EmptyState>}
-        {note && markdown && <ProseMarkdown className='max-w-3xl'>{markdown}</ProseMarkdown>}
-      </div>
-    </>
+      {isGm && note && (
+        <button
+          type='button'
+          aria-label={fullscreen ? 'Exit full screen' : 'Full screen'}
+          className='grid h-8 w-8 shrink-0 place-items-center text-p1-muted hover:bg-p1-hover hover:text-p1-text'
+          onClick={() => setFullscreen((open) => !open)}
+        >
+          {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+        </button>
+      )}
+    </div>
   );
+
+  const body = !note ? (
+    <div className='p-5'><EmptyState>This campaign note could not be found, or it is not shared with you.</EmptyState></div>
+  ) : isGm ? (
+    <div className='flex min-h-0 flex-1 flex-col p-5 pt-3'>
+      <PlateNotesEditor key={note.index} markdown={markdown} onMarkdownChange={saveDraft} />
+    </div>
+  ) : markdown ? (
+    <div className='p-5'><ProseMarkdown className='max-w-3xl'>{markdown}</ProseMarkdown></div>
+  ) : (
+    <div className='p-5'><EmptyState>This note is empty.</EmptyState></div>
+  );
+
+  const chrome = (
+    <div className='flex h-full min-h-0 flex-col'>
+      {header}
+      {body}
+    </div>
+  );
+
+  if (fullscreen) {
+    return createPortal(
+      <div className='fixed inset-0 z-[100] flex flex-col bg-p1-page p-4'>
+        {chrome}
+      </div>,
+      document.body
+    );
+  }
+
+  return chrome;
 }
 
 

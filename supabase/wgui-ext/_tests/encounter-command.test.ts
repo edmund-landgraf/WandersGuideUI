@@ -162,3 +162,83 @@ Deno.test({
     }
   },
 });
+
+Deno.test({
+  name: 'wgui-ext-roll-initiative fills empty initiative, rejects players, and keeps a retry idempotent',
+  ignore: skip,
+  async fn() {
+    const gm = await user();
+    const player = await user();
+    const camp = await campaign(gm.id);
+    const joined = await character(player.id, camp.id);
+    const emptyId = crypto.randomUUID();
+    const setId = crypto.randomUUID();
+    const encounterResult = await admin.from('encounter').insert({
+      user_id: gm.id,
+      campaign_id: camp.id,
+      name: 'wgui-initiative-encounter',
+      meta_data: { party_level: 1, party_size: 0 },
+      combatants: {
+        list: [
+          { _id: emptyId, type: 'CREATURE', ally: false, creature: { name: 'Empty' } },
+          { _id: setId, type: 'CREATURE', ally: true, initiative: 8, creature: { name: 'Set' } },
+          { _id: crypto.randomUUID(), type: 'CHARACTER', ally: true, character: joined.id },
+        ],
+      },
+    }).select().single();
+    if (encounterResult.error || !encounterResult.data) throw encounterResult.error ?? new Error('encounter seed failed');
+    const encounter = encounterResult.data;
+
+    try {
+      const denied = await call('wgui-ext-roll-initiative', {
+        campaign_id: camp.id,
+        encounter_id: encounter.id,
+        encounter_revision: 0,
+        scope: 'empty',
+        rolls: [{ combatant_id: emptyId, bonus: 4, source: 'Perception' }],
+      }, player.jwt);
+      assertEquals(denied.status, 403);
+      assertEquals(denied.body.code, 'GM_REQUIRED');
+
+      const rolled = await call('wgui-ext-roll-initiative', {
+        campaign_id: camp.id,
+        encounter_id: encounter.id,
+        encounter_revision: 0,
+        scope: 'empty',
+        client_request_id: 'init-1',
+        rolls: [
+          { combatant_id: emptyId, bonus: 4, source: 'Perception' },
+          { combatant_id: setId, bonus: 2, source: 'Perception' },
+        ],
+      }, gm.jwt);
+      assertEquals(rolled.status, 200);
+      assertEquals(rolled.body.data.rolled.length, 1);
+      assertEquals(rolled.body.data.rolled[0]._id, emptyId);
+      assertEquals(rolled.body.data.rolled[0].initiative, rolled.body.data.rolled[0].initiative_roll.die + 4);
+      assertEquals(rolled.body.data.encounter_revision, 1);
+      assertEquals(rolled.body.data.initiative_log_entry.entries.length, 3);
+
+      const retry = await call('wgui-ext-roll-initiative', {
+        campaign_id: camp.id,
+        encounter_id: encounter.id,
+        encounter_revision: 1,
+        scope: 'all',
+        client_request_id: 'init-1',
+        rolls: [{ combatant_id: emptyId, bonus: 4, source: 'Perception' }],
+      }, gm.jwt);
+      assertEquals(retry.status, 200);
+      assertEquals(retry.body.data.idempotent, true);
+      assertEquals(retry.body.data.encounter_revision, 1);
+
+      const saved = await admin.from('encounter').select('meta_data, combatants').eq('id', encounter.id).single();
+      assertEquals(saved.data?.combatants?.list?.find((item: { _id: string }) => item._id === setId)?.initiative, 8);
+      assertEquals(saved.data?.meta_data?.initiative_log?.length, 1);
+    } finally {
+      await admin.from('encounter').delete().eq('id', encounter.id);
+      await admin.from('character').delete().eq('id', joined.id);
+      await admin.from('campaign').delete().eq('id', camp.id);
+      await admin.auth.admin.deleteUser(gm.id);
+      await admin.auth.admin.deleteUser(player.id);
+    }
+  },
+});
