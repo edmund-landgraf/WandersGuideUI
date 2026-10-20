@@ -424,7 +424,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     if (!found) return notFound("Encounter not found.");
     if ("missing" in found) return notFound("Combatant not found.");
     if (found.row.kind !== "creature") return notFound("Combatant not found.");
-    return textResult(found.row.name, { inventory: found.sheet.inventory ?? null, notes: found.sheet.notes ?? null, details: found.sheet.details ?? null, log: found.sheet.log ?? null });
+    return textResult(found.row.name, { inventory: found.sheet.inventory ?? null, notes: found.sheet.notes ?? null, details: found.sheet.sourceDetails ?? null, log: found.sheet.log ?? null });
   }, userId);
 }
 
