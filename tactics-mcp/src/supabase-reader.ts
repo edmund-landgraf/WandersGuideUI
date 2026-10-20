@@ -414,6 +414,28 @@ async function encounterCharacters(raw: Json) {
   return rest(`character?id=in.(${ids.join(",")})&select=*`);
 }
 
+function logUnresolvedCharacterRefs(raw: Json, characters: Json[], encounterId: number) {
+  const list = ((raw.combatants as Json | undefined)?.list as Json[] | undefined) ?? [];
+  const known = new Set(characters.map((row) => num(row.id)).filter((id): id is number => id !== undefined));
+  for (const combatant of list) {
+    if (combatant.type !== "CHARACTER") continue;
+    const id = characterIdOf(combatant);
+    if (id !== undefined && known.has(id)) continue;
+    console.warn("[wgui-mcp] unresolved encounter character", {
+      encounterId,
+      combatantId: typeof combatant._id === "string" ? combatant._id : null,
+      character: combatant.character ?? null,
+      character_id: combatant.character_id ?? null,
+      characterId: combatant.characterId ?? null,
+      dataId: (combatant.data as Json | undefined)?.id ?? null,
+      dataCharacter: (combatant.data as Json | undefined)?.character ?? null,
+      resolvedCharacterId: id ?? null,
+      hasSnapshot: Boolean(combatant.data && typeof combatant.data === "object"),
+      characterRowFound: false,
+    });
+  }
+}
+
 function plainNote(value: unknown): string {
   if (typeof value === "string") return value.trim();
   if (!value || typeof value !== "object") return "";
@@ -873,6 +895,7 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
       const rows = await encountersFor(userId, campaignId, encounterId);
       if (!rows.length) return null;
       const characters = await encounterCharacters(rows[0]);
+      logUnresolvedCharacterRefs(rows[0], characters, encounterId);
       const record = mapEncounter(rows[0], characters);
       const allEntities = entitiesFor(rows[0], characters);
       const entities = combatantId
