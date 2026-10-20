@@ -630,7 +630,8 @@ function spellTradition(entity: Json, spell: Json | undefined, grant?: SpellGran
   const catalogTradition = typeof spell?.tradition === "string" && spell.tradition.trim() ? spell.tradition : undefined;
   if (catalogTradition) return catalogTradition;
   if (grant?.tradition) return grant.tradition;
-  const classNames = [entity.details, (entity.details as Json | undefined)?.class_2]
+  const details = (entity.details as Json | undefined) ?? {};
+  const classNames = [details.class, details.class_2]
     .map((value) => typeof value === "object" && value ? (value as Json).name : undefined)
     .filter((name): name is string => typeof name === "string")
     .map((name) => name.trim().toUpperCase());
