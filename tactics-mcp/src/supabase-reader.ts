@@ -407,6 +407,12 @@ function entityOf(combatant: Json): Json {
   return (combatant.creature as Json) ?? (combatant.data as Json) ?? {};
 }
 
+function hasCharacterSnapshot(entity: Json) {
+  return typeof entity.name === "string"
+    || num(entity.hp_current) !== undefined
+    || typeof entity.meta_data === "object";
+}
+
 async function encounterCharacters(raw: Json) {
   const list = ((raw.combatants as Json | undefined)?.list as Json[] | undefined) ?? [];
   const ids = [...new Set(list.map(characterIdOf).filter((id): id is number => id !== undefined))];
@@ -502,6 +508,7 @@ function mapCombatant(combatant: Json, characters: Json[]): CombatantRow | null 
   const characterId = characterIdOf(combatant);
   const live = kind === "character" ? characters.find((row) => num(row.id) === characterId) : undefined;
   const entity = live ?? entityOf(combatant);
+  if (kind === "character" && !live && !hasCharacterSnapshot(entity)) return null;
   const stats = statsOf(entity);
   const hpMax = num(stats.hp_max) ?? num(entity.hp_max) ?? 0;
   const hpCurrent = num(entity.hp_current) ?? hpMax;
