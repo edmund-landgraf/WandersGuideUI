@@ -22,6 +22,23 @@ export type EncounterCommandBody = {
   encounter_id?: unknown;
 };
 
+export function requireRevision(body: EncounterCommandBody & { encounter_revision?: unknown }): number {
+  const value = body.encounter_revision;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new HttpError(
+      400,
+      'An encounter_revision is required and must be a non-negative integer.',
+      'ENCOUNTER_REVISION_REQUIRED'
+    );
+  }
+  return value;
+}
+
+export function encounterRevision(encounter: Encounter): number {
+  const value = (encounter.meta_data as Record<string, unknown> | null | undefined)?.encounter_revision;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
 export function numericId(value: unknown): number | null {
   if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
   if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
@@ -88,18 +105,47 @@ export async function saveCombatants(
   admin: SupabaseClient<any, 'public', any>,
   encounterId: number,
   encounter: Encounter,
-  list: CombatantCommand[]
-): Promise<CombatantCommand[]> {
+  list: CombatantCommand[],
+  revision: number
+): Promise<{ list: CombatantCommand[]; revision: number }> {
+  const currentRevision = encounterRevision(encounter);
+  if (revision !== currentRevision) {
+    throw new HttpError(
+      409,
+      'The encounter changed in another browser. Reload it and retry.',
+      'ENCOUNTER_REVISION_CONFLICT'
+    );
+  }
+
   const combatants = {
     ...(encounter.combatants ?? {}),
     list,
   };
-  const { error } = await admin
+  const metaData = {
+    ...((encounter.meta_data ?? {}) as Record<string, unknown>),
+    encounter_revision: revision + 1,
+  };
+  let update = admin
     .from('encounter')
-    .update({ combatants })
+    .update({ combatants, meta_data: metaData })
     .eq('id', encounterId);
+
+  if (Object.prototype.hasOwnProperty.call(encounter.meta_data ?? {}, 'encounter_revision')) {
+    update = update.eq('meta_data->>encounter_revision', String(revision));
+  } else {
+    update = update.is('meta_data->>encounter_revision', null);
+  }
+
+  const { data, error } = await update.select('id');
   if (error) throw error;
-  return list;
+  if (!data || data.length !== 1) {
+    throw new HttpError(
+      409,
+      'The encounter changed in another browser. Reload it and retry.',
+      'ENCOUNTER_REVISION_CONFLICT'
+    );
+  }
+  return { list, revision: revision + 1 };
 }
 
 export function characterIdOf(combatant: CombatantCommand): number | null {
