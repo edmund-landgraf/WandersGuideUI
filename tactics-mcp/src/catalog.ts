@@ -182,7 +182,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     async (args) => {
       const result = await getEncounterReader().exportCharacter(userId(), Number(args.characterId));
       if (!result.ok) return textResult(result.message, { code: result.code, retryable: false }, true);
-      return textResult("Character file.", { file: result.data });
+      return textResult(`Character file.\n${JSON.stringify(result.data.file, null, 2)}`, { file: result.data.file });
     },
   );
 
@@ -203,7 +203,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
   }, async (args, uid) => {
     const record = await encounter(uid, Number(args.campaignId), Number(args.encounterId));
     if (!record) return notFound("Encounter not found.");
-    return textResult(record.name, {
+    return textResult(formatEncounter(record), {
       name: record.name,
       round: record.round,
       difficulty: record.difficulty ?? null,
@@ -230,7 +230,11 @@ export function registerCatalog(server: McpServer, userId: () => string) {
   }, async (args, uid) => {
     const record = await encounter(uid, Number(args.campaignId), Number(args.encounterId));
     if (!record) return notFound("Encounter not found.");
-    return textResult("Combatants.", { combatants: record.combatants.map(summary) });
+    const combatants = record.combatants.map(summary);
+    return textResult(
+      combatants.length ? `Combatants.\n${combatants.map(formatCombatant).join("\\n")}` : "No combatants.",
+      { combatants },
+    );
   }, userId);
 
   registerEncounterTool(server, "list_roster_edges", {
@@ -251,7 +255,11 @@ export function registerCatalog(server: McpServer, userId: () => string) {
   }, async (args, uid) => {
     const record = await encounter(uid, Number(args.campaignId), Number(args.encounterId));
     if (!record) return notFound("Encounter not found.");
-    return textResult("Round log.", { roundLog: record.roundLog });
+    const roundLog = record.roundLog;
+    return textResult(
+      roundLog.length ? `Round log.\n${roundLog.map(formatRoundLogEntry).join("\\n")}` : "No round log entries.",
+      { roundLog },
+    );
   }, userId);
 
   registerEncounterTool(server, "get_dice_log", {
@@ -261,7 +269,13 @@ export function registerCatalog(server: McpServer, userId: () => string) {
   }, async (args, uid) => {
     const record = await encounter(uid, Number(args.campaignId), Number(args.encounterId));
     if (!record) return notFound("Encounter not found.");
-    return textResult("Dice log.", { diceState: record.diceState ?? null, diceLog: record.diceLog });
+    const diceState = record.diceState ?? null;
+    const diceLog = record.diceLog;
+    const stateText = diceState ? `Current check: ${JSON.stringify(diceState)}` : "Current check: none";
+    const logText = diceLog.length
+      ? diceLog.map((entry, index) => `${index + 1}. ${formatDiceLogEntry(entry)}`).join("\\n")
+      : "No dice rolls.";
+    return textResult(`Dice log.\n${stateText}\n${logText}`, { diceState, diceLog });
   }, userId);
 
   registerEncounterTool(server, "get_stat_block", {
@@ -393,6 +407,38 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     if (found.row.kind !== "creature") return notFound("Combatant not found.");
     return textResult(found.row.name, { inventory: found.sheet.inventory ?? null, notes: found.sheet.notes ?? null, details: found.sheet.details ?? null, log: found.sheet.log ?? null });
   }, userId);
+}
+
+function formatEncounter(record: EncounterRecord) {
+  return [
+    `Encounter: ${record.name}`,
+    `Round: ${record.round}`,
+    `Difficulty: ${record.difficulty ?? "unknown"}`,
+    `XP: ${record.xp ?? "unknown"}`,
+    `Note: ${record.noteName ?? "none"}`,
+  ].join("\n");
+}
+
+function formatCombatant(row: ReturnType<typeof summary>) {
+  const conditions = row.conditions.length
+    ? row.conditions.map((condition) => condition.value == null ? condition.name : `${condition.name} ${condition.value}`).join(", ")
+    : "none";
+  const saves = `AC ${row.ac ?? "?"}, Fort ${row.fortitude ?? "?"}, Ref ${row.reflex ?? "?"}, Will ${row.will ?? "?"}`;
+  const hp = `HP ${row.hpCurrent}/${row.hpMax}${row.tempHp == null ? "" : ` (+${row.tempHp} temp)`}`;
+  return `${row.id} | ${row.name} | ${row.kind} | ${row.side} | init ${row.initiative ?? "?"} | ${hp} | ${saves} | conditions: ${conditions} | ${row.place}${row.out ? ` (${row.out})` : ""}`;
+}
+
+function formatRoundLogEntry(entry: EncounterRecord["roundLog"][number]) {
+  return `round ${entry.round} | ${entry.name} | ${entry.side} | initiative ${entry.initiative ?? "?"} | ${entry.calculation ?? ""}${entry.note ? ` | note: ${entry.note}` : ""}`.replace(/ \\| $/, "");
+}
+
+function formatDiceLogEntry(entry: EncounterRecord["diceLog"][number]) {
+  return [
+    entry.title ?? "Untitled roll",
+    entry.dc == null ? null : `DC ${entry.dc}`,
+    entry.stat ?? null,
+    entry.result == null ? null : `result ${entry.result}`,
+  ].filter(Boolean).join(" | ");
 }
 
 function summary(row: EncounterRecord["combatants"][number]) {
