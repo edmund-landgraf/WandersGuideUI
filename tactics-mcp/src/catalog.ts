@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { getEncounterReader, type CombatantSheet, type EncounterRecord } from "./reader.js";
+import { getEncounterReader, type CharacterExport, type CombatantSheet, type EncounterRecord } from "./reader.js";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const writes = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
@@ -176,14 +176,27 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     "export_character",
     {
       title: "Export character file",
-      description: "Compile the Wanderer's Guide JSON v4 character file through wgui-export-character. Use the character's numeric id from list_campaign_characters. The caller must own the character, or be the campaign GM. This returns JSON, not a PDF. Do not use it for encounter creatures.",
+      description: "Export a character as JSON or PDF through wgui-export-character. Use the character's numeric id from list_campaign_characters. The caller must own the character, or be the campaign GM. Do not use it for encounter creatures.",
       annotations: readOnly,
-      inputSchema: { characterId: z.number().int().describe("Numeric character id, not an encounter combatant id.") },
+      inputSchema: {
+        characterId: z.number().int().describe("Numeric character id, not an encounter combatant id."),
+        format: z.enum(["json", "pdf"]).default("json").describe("Export format. Defaults to JSON."),
+      },
     },
     async (args) => {
-      const result = await getEncounterReader().exportCharacter(userId(), Number(args.characterId));
+      const format = args.format === "pdf" ? "pdf" : "json";
+      const result = await getEncounterReader().exportCharacter(userId(), Number(args.characterId), format);
       if (!result.ok) return textResult(result.message, { code: result.code, retryable: false }, true);
-      return textResult(`Character file.\n${JSON.stringify(result.data, null, 2)}`, { file: result.data });
+      const data = result.data as CharacterExport;
+      if (data.format === "pdf") {
+        return textResult(`Character PDF.\\nFilename: ${data.filename}\\nMIME type: ${data.mimeType}\\nBase64 payload follows.\\n${data.base64}`, {
+          format: data.format,
+          filename: data.filename,
+          mimeType: data.mimeType,
+          base64: data.base64,
+        });
+      }
+      return textResult(`Character file.\\n${JSON.stringify(data.file, null, 2)}`, { format: data.format, file: data.file });
     },
   );
 
