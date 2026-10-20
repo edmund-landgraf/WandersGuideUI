@@ -80,7 +80,7 @@ test("MCP stat block returns calculated arrays for PCs and creatures and retains
     if (url.pathname.endsWith("/campaign")) return Response.json([{ id: 1, user_id: "gm" }]);
     if (url.pathname.endsWith("/character")) return Response.json([entity]);
     if (url.pathname.endsWith("/encounter")) return Response.json([{ id: 2, campaign_id: 1, combatants: { list: [
-      { _id: "pc", type: "CHARACTER", character: 7 }, { _id: "monster", type: "CREATURE", creature: entity },
+      { _id: "pc", type: "CHARACTER", data: { id: 7 } }, { _id: "monster", type: "CREATURE", creature: entity },
     ] } }]);
     throw new Error(`Unexpected request ${url}`);
   };
@@ -95,6 +95,9 @@ test("MCP stat block returns calculated arrays for PCs and creatures and retains
       const args = { campaignId: 1, encounterId: 2, combatantId: id, view: "gm" };
       const response = await client.callTool({ name: "get_stat_block", arguments: args });
       assert.ok(!response.isError);
+      const text = response.content?.find((item) => item.type === "text")?.text ?? "";
+      assert.match(text, /"hpCurrent"/);
+      assert.match(text, /"conditions"/);
       const data = response.structuredContent!;
       for (const key of ["resistances", "weaknesses", "immunities", "senses"] as const) assert.deepEqual(data[key], rawStats.sheet[key]);
       assert.deepEqual(data.conditions, [{ name: "frightened", value: 1 }]);
