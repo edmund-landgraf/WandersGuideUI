@@ -79,7 +79,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     },
     async () => {
       const profile = await getEncounterReader().profile(userId());
-      return textResult(profile.email || profile.id, { ...profile });
+      return textResult(profile.id, { ...profile });
     },
   );
 
