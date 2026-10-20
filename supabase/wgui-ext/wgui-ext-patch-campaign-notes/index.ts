@@ -3,7 +3,7 @@ import { serve } from 'std/server';
 import { connect, createServiceClient, fetchData } from '../_shared/helpers.ts';
 import { HttpError } from '../_shared/http-errors.ts';
 import { authorizeCampaign } from '../_wgui-ext/shared.ts';
-import { notesFromCampaign, patchNotePage, type CampaignNotePage } from '../_wgui-ext/campaign-notes.ts';
+import { notesFromCampaign, patchNotePage } from '../_wgui-ext/campaign-notes.ts';
 
 interface PatchCampaignNotesBody {
   campaign_id?: number;
