@@ -61,6 +61,10 @@ test("encounter tools include their structured data in model-readable text", asy
     let response = await client.callTool({ name: "export_character", arguments: { characterId: 7 } });
     assert.match(textOf(response), /"name": "Lyra"/);
 
+    response = await client.callTool({ name: "export_character", arguments: { characterId: 7, format: "pdf" } });
+    assert.match(textOf(response), /Character PDF/);
+    assert.match(textOf(response), /JVBERi0x/);
+
     response = await client.callTool({ name: "get_encounter", arguments: args });
     assert.match(textOf(response), /Round: 3/);
     assert.match(textOf(response), /XP: 120/);
