@@ -52,6 +52,7 @@ export type CombatantSheet = {
   inventory?: unknown;
   notes?: string;
   details?: unknown;
+  sourceDetails?: unknown;
   log?: unknown;
 };
 
