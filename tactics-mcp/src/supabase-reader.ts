@@ -378,7 +378,7 @@ function includesCharacter(encounter: Json, characterIds: Set<number>) {
   const list = ((encounter.combatants as Json | undefined)?.list as Json[] | undefined) ?? [];
   return list.some((combatant) => {
     if (combatant.type && combatant.type !== "CHARACTER") return false;
-    const id = num(combatant.character) ?? num((combatant.data as Json | undefined)?.id);
+    const id = characterIdOf(combatant);
     return id !== undefined && characterIds.has(id);
   });
 }
@@ -392,7 +392,14 @@ async function encountersFor(userId: string, campaignId: number, encounterId?: n
 }
 
 function characterIdOf(combatant: Json) {
-  return num(combatant.character) ?? num((combatant.data as Json | undefined)?.id);
+  const data = combatant.data as Json | undefined;
+  return num(combatant.character)
+    ?? num(combatant.character_id)
+    ?? num(combatant.characterId)
+    ?? num(data?.id)
+    ?? num(data?.character)
+    ?? num(data?.character_id)
+    ?? num(data?.characterId);
 }
 
 function entityOf(combatant: Json): Json {
