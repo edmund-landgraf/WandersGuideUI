@@ -394,7 +394,6 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     if ("missing" in found) return notFound("Combatant not found.");
     return textResult("Spells.", {
       spells: found.sheet.spells,
-      liveCasting: found.sheet.details ?? null,
     });
   }, userId);
 
