@@ -872,6 +872,7 @@ function mapEncounter(raw: Json, characters: Json[]): EncounterRecord {
     roundLog: [],
     diceState,
     diceLog: diceRows.map((row) => ({
+      ...row,
       title: typeof row.title === "string" ? row.title : undefined,
       dc: num(row.dc),
       stat: typeof row.defaultStat === "string" ? row.defaultStat : undefined,
