@@ -183,7 +183,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     async (args) => {
       const result = await getEncounterReader().exportCharacter(userId(), Number(args.characterId));
       if (!result.ok) return textResult(result.message, { code: result.code, retryable: false }, true);
-      return textResult(`Character file.\n${JSON.stringify(result.data.file, null, 2)}`, { file: result.data.file });
+      return textResult(`Character file.\n${JSON.stringify(result.data, null, 2)}`, { file: result.data });
     },
   );
 
