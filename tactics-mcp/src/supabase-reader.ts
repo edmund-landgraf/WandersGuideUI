@@ -398,6 +398,13 @@ function entityOf(combatant: Json): Json {
   return (combatant.creature as Json) ?? (combatant.data as Json) ?? {};
 }
 
+async function encounterCharacters(raw: Json) {
+  const list = ((raw.combatants as Json | undefined)?.list as Json[] | undefined) ?? [];
+  const ids = [...new Set(list.map(characterIdOf).filter((id): id is number => id !== undefined))];
+  if (!ids.length) return [];
+  return rest(`character?id=in.(${ids.join(",")})&select=*`);
+}
+
 function statsOf(entity: Json) {
   const meta = entity.meta_data as Json | undefined;
   return (meta?.calculated_stats as Json) ?? {};
@@ -796,7 +803,7 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
     async loadEncounter(userId, campaignId, encounterId, combatantId, includeStats = false) {
       const rows = await encountersFor(userId, campaignId, encounterId);
       if (!rows.length) return null;
-      const characters = await rest(`character?campaign_id=eq.${campaignId}&select=*`);
+      const characters = await encounterCharacters(rows[0]);
       const record = mapEncounter(rows[0], characters);
       const allEntities = entitiesFor(rows[0], characters);
       const entities = combatantId
