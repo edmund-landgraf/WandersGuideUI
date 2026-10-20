@@ -10,6 +10,7 @@ import {
   requireCombatantId,
   requireEncounterId,
   requireGm,
+  requireRevision,
   saveCombatants,
 } from '../_wgui-ext/encounter-command.ts';
 
@@ -21,6 +22,7 @@ type PatchBody = {
   hp_current?: unknown;
   hp_temp?: unknown;
   conditions?: unknown;
+  encounter_revision?: unknown;
 };
 
 function optionalNumber(value: unknown, field: string): number | null {
@@ -61,6 +63,7 @@ serve(async (req: Request) => {
     const campaignId = requireCampaignId(body ?? {});
     const encounterId = requireEncounterId(body ?? {});
     const combatantId = requireCombatantId(body?.combatant_id);
+    const revision = requireRevision(body ?? {});
 
     const hasPatch =
       body?.initiative !== undefined ||
@@ -115,7 +118,7 @@ serve(async (req: Request) => {
       ...list.slice(0, index),
       next,
       ...list.slice(index + 1),
-    ]);
-    return { status: 'success', data: { combatant: saved[index] } };
+    ], revision);
+    return { status: 'success', data: { combatant: saved.list[index], encounter_revision: saved.revision } };
   });
 });
