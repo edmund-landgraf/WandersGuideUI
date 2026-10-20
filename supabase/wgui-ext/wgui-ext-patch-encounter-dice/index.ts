@@ -18,6 +18,43 @@ interface PatchEncounterDiceBody {
   dice_roll_log?: unknown[];
 }
 
+function validateDiceRollLog(value: unknown): asserts value is Record<string, unknown>[] {
+  if (!Array.isArray(value)) {
+    throw new HttpError(400, 'dice_roll_log must be an array.', 'INVALID_DICE_LOG');
+  }
+  const allowed = new Set(['id', 'title', 'dc', 'defaultStat', 'initiated_by_user_id', 'entries']);
+  for (const row of value) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) {
+      throw new HttpError(400, 'Each dice log row must be an object.', 'INVALID_DICE_LOG_ROW');
+    }
+    const item = row as Record<string, unknown>;
+    if (Object.keys(item).some((key) => !allowed.has(key))) {
+      throw new HttpError(400, 'Dice log rows contain unsupported fields.', 'INVALID_DICE_LOG_ROW');
+    }
+    if (typeof item.title !== 'string' || item.title.trim() === '') {
+      throw new HttpError(400, 'Each dice log row needs a title.', 'INVALID_DICE_LOG_ROW');
+    }
+    if (!Array.isArray(item.entries) || item.entries.length === 0) {
+      throw new HttpError(400, 'Each dice log row needs at least one entry.', 'INVALID_DICE_LOG_ROW');
+    }
+    for (const entry of item.entries) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        throw new HttpError(400, 'Each dice log entry must be an object.', 'INVALID_DICE_LOG_ENTRY');
+      }
+      const roll = entry as Record<string, unknown>;
+      if (
+        typeof roll.name !== 'string' ||
+        typeof roll.ally !== 'boolean' ||
+        typeof roll.calculation !== 'string' ||
+        typeof roll.total !== 'number' ||
+        !Number.isFinite(roll.total)
+      ) {
+        throw new HttpError(400, 'Each dice log entry needs name, ally, calculation, and total.', 'INVALID_DICE_LOG_ENTRY');
+      }
+    }
+  }
+}
+
 /**
  * Campaign members write only dice_roll_state / dice_roll_log. Roster, initiative, and
  * other meta stay off this path. Players can only add or drop log rows they initiated.
@@ -36,6 +73,7 @@ serve(async (req: Request) => {
     if (!hasState && !hasLog) {
       throw new HttpError(400, 'dice_roll_state or dice_roll_log is required.', 'DICE_PATCH_REQUIRED');
     }
+    if (hasLog) validateDiceRollLog(body!.dice_roll_log);
 
     const admin = createServiceClient();
     const access = await authorizeCampaign(client, admin, token, campaign_id);
