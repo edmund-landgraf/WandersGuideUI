@@ -189,14 +189,14 @@ export function registerCatalog(server: McpServer, userId: () => string) {
       if (!result.ok) return textResult(result.message, { code: result.code, retryable: false }, true);
       const data = result.data as CharacterExport;
       if (data.format === "pdf") {
-        return textResult(`Character PDF.\\nFilename: ${data.filename}\\nMIME type: ${data.mimeType}\\nBase64 payload follows.\\n${data.base64}`, {
+        return textResult(`Character PDF.\nFilename: ${data.filename}\nMIME type: ${data.mimeType}\nBase64 payload follows.\n${data.base64}`, {
           format: data.format,
           filename: data.filename,
           mimeType: data.mimeType,
           base64: data.base64,
         });
       }
-      return textResult(`Character file.\\n${JSON.stringify(data.file, null, 2)}`, { format: data.format, file: data.file });
+      return textResult(`Character file.\n${JSON.stringify(data.file, null, 2)}`, { format: data.format, file: data.file });
     },
   );
 
@@ -271,7 +271,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     if (!record) return notFound("Encounter not found.");
     const roundLog = record.roundLog;
     return textResult(
-      roundLog.length ? `Round log.\n${roundLog.map(formatRoundLogEntry).join("\\n")}` : "No round log entries.",
+      roundLog.length ? `Round log.\n${roundLog.map(formatRoundLogEntry).join("\n")}` : "No round log entries.",
       { roundLog },
     );
   }, userId);
@@ -287,7 +287,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     const diceLog = record.diceLog;
     const stateText = diceState ? `Current check: ${JSON.stringify(diceState)}` : "Current check: none";
     const logText = diceLog.length
-      ? diceLog.map((entry, index) => `${index + 1}. ${formatDiceLogEntry(entry)}`).join("\\n")
+      ? diceLog.map((entry, index) => `${index + 1}. ${formatDiceLogEntry(entry)}`).join("\n")
       : "No dice rolls.";
     return textResult(`Dice log.\n${stateText}\n${logText}`, { diceState, diceLog });
   }, userId);
