@@ -56,12 +56,12 @@ Command writes from the redesign’s “Encounter command endpoint” that still
 
 ## Adjacent
 
-Only if those features leave the GM-only stock calls.
+These two campaign-note routes are implemented in the WGUI overlay. They keep notes separate from the full campaign JSON so an LLM or player-facing client can summarize shared material without receiving join keys or private campaign fields.
 
 | Function | Reason |
 | --- | --- |
-| `wgui-ext-patch-campaign-notes` | Notes sit on the campaign row. Stock campaign update is owner-only. Needed if a player may edit a shared note. |
-| `wgui-ext-find-campaign-notes` | Return only notes the sharing flag allows, if players must not receive the full campaign JSON. |
+| `wgui-ext-patch-campaign-notes` | Page-scoped notes write. GMs may patch page metadata or contents; players may patch contents only on an already-shared page. The request includes the expected page name so a stale index cannot silently update a different page. |
+| `wgui-ext-find-campaign-notes` | Page-scoped notes read. GMs receive all pages; campaign members receive only pages with `shared: true`. |
 | `wgui-export-encounter` | Same compile pattern as `wgui-export-character`, if encounter PDF/JSON export is next. Nothing in the UI calls this yet. |
 
 ## Not on the path
