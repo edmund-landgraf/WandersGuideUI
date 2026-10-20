@@ -15,6 +15,9 @@ const WGUI_FUNCTIONS = [
   { name: 'wgui-ext-find-encounter', label: 'encounter', desc: 'campaign fights' },
   { name: 'wgui-ext-find-campaign-characters', label: 'roster', desc: 'campaign pcs' },
   { name: 'wgui-ext-patch-encounter-dice', label: 'dice', desc: 'shared rolls' },
+  { name: 'wgui-ext-patch-encounter-combatant', label: 'combatant', desc: 'patch combat state' },
+  { name: 'wgui-ext-add-encounter-character', label: 'add-pc', desc: 'add PC to fight' },
+  { name: 'wgui-ext-remove-encounter-character', label: 'remove-pc', desc: 'remove PC from fight' },
   { name: 'wgui-export-character', label: 'export', desc: 'character file' },
 ] as const;
 
