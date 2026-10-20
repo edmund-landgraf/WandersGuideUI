@@ -699,6 +699,7 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
       return [{
         name,
         rank,
+        tradition: typeof spell?.tradition === "string" && spell.tradition.trim() ? spell.tradition : undefined,
         max: rankSlots.length || undefined,
         spent: spent || undefined,
         prepared: mine.length > 0,
@@ -710,7 +711,11 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
     for (const grant of grants) {
       const spell = spellById.get(grant.spellId);
       const name = typeof spell?.name === "string" ? spell.name : `Spell ${grant.spellId}`;
-      const tradition = grant.type === "FOCUS" ? "focus" : grant.type === "INNATE" ? grant.tradition : grant.source;
+      const tradition = grant.type === "FOCUS"
+        ? "focus"
+        : typeof spell?.tradition === "string" && spell.tradition.trim()
+          ? spell.tradition
+          : grant.tradition;
       const existing = sheet.spells.find((entry) => entry.name === name && (grant.type === "NORMAL" ? entry.tradition === undefined || entry.tradition === tradition : entry.tradition === tradition));
       if (existing) { if (tradition) existing.tradition = tradition; continue; }
       const innate = Array.isArray(spellBook?.innate_casts) ? (spellBook.innate_casts as Json[]).find((row) => num(row.spell_id) === grant.spellId) : undefined;
