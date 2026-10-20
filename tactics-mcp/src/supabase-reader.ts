@@ -35,7 +35,9 @@ async function adminUser(userId: string) {
 function displayName(user: { email?: string | null; user_metadata?: Record<string, unknown> | null }) {
   const meta = user.user_metadata ?? {};
   const named = [meta.display_name, meta.name, meta.full_name].find((value) => typeof value === "string" && value.trim());
-  return typeof named === "string" ? named.trim() : "";
+  if (typeof named === "string") return named.trim();
+  const email = user.email?.split("@")[0]?.trim();
+  return email || "Unknown User";
 }
 
 async function contentRows(name: string, ids: number[]) {
