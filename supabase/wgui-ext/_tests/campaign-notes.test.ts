@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from 'https://deno.land/std@0.203.0/assert/mod.ts';
+import { assertEquals } from 'https://deno.land/std@0.203.0/assert/mod.ts';
 import { notesFromCampaign, patchNotePage, toPageDto } from '../_wgui-ext/campaign-notes.ts';
 
 const campaign = {
