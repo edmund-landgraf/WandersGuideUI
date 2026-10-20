@@ -18,6 +18,8 @@ const WGUI_FUNCTIONS = [
   { name: 'wgui-ext-patch-encounter-combatant', label: 'combatant', desc: 'patch combat state' },
   { name: 'wgui-ext-add-encounter-character', label: 'add-pc', desc: 'add PC to fight' },
   { name: 'wgui-ext-remove-encounter-character', label: 'remove-pc', desc: 'remove PC from fight' },
+  { name: 'wgui-ext-patch-campaign-notes', label: 'notes-write', desc: 'patch shared notes' },
+  { name: 'wgui-ext-find-campaign-notes', label: 'notes-read', desc: 'read shared notes' },
   { name: 'wgui-export-character', label: 'export', desc: 'character file' },
 ] as const;
 
