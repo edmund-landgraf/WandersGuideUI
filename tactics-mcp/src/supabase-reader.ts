@@ -510,6 +510,7 @@ function abilityRows(entity: Json) {
       actions: actionCount(ability.actions),
       description: typeof ability.description === "string" ? ability.description : undefined,
       level: num(ability.level),
+      traits: Array.isArray(ability.traits) ? ability.traits : [],
     }];
   });
 }
@@ -648,6 +649,7 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
         actionCost: typeof row.actions === "string" ? row.actions : undefined,
         description: typeof row.description === "string" ? row.description : undefined,
         level: num(row.level),
+        traits: Array.isArray(row.traits) ? row.traits : [],
       }];
     });
     const attacks = resolved.filter((ability) => ability.type === "action");
