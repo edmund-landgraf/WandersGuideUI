@@ -234,7 +234,10 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     const record = await encounter(uid, Number(args.campaignId), Number(args.encounterId));
     if (!record) return notFound("Encounter not found.");
     const pcs = record.combatants.filter((row) => row.kind === "character").map(summary);
-    return textResult(pcs.length ? "PCs." : "No PCs.", { pcs });
+    return textResult(
+      pcs.length ? `PCs.\n${pcs.map(formatCombatant).join("\n")}` : "No PCs.",
+      { pcs },
+    );
   }, userId);
 
   registerEncounterTool(server, "list_combatants", {
@@ -259,7 +262,10 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     const record = await encounter(uid, Number(args.campaignId), Number(args.encounterId));
     if (!record) return notFound("Encounter not found.");
     const edges = record.combatants.filter((row) => row.place !== "fighting" && row.kind === "character").map(summary);
-    return textResult(edges.length ? "Roster edges." : "No one on the bench or down.", { edges });
+    return textResult(
+      edges.length ? `Roster edges.\n${edges.map(formatCombatant).join("\n")}` : "No one on the bench or down.",
+      { edges },
+    );
   }, userId);
 
   registerEncounterTool(server, "get_round_log", {
