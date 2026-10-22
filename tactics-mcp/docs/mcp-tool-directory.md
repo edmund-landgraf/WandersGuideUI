@@ -1,29 +1,29 @@
 # WGUI MCP tool directory
 
-All tools are read-only. Encounter tools require `view: "gm"`. See [adr-oauth.md](./adr-oauth.md).
+Twenty tools require `read`. `ensure_public_user`, `join_campaign`, and `patch_encounter_dice` require `write`. Encounter tools require `view: "gm"`. See [adr-oauth.md](./adr-oauth.md).
 
-| Tool | Returns |
-| --- | --- |
-| `get_profile` | The token's user id |
-| `list_encounters` | Encounters in a campaign |
-| `get_encounter` | Name, round, difficulty, XP |
-| `list_pcs` | PCs with current HP |
-| `list_combatants` | Combat table |
-| `list_roster_edges` | Bench and down |
-| `get_round_log` | Round log |
-| `get_dice_log` | Dice log |
-| `get_stat_block` | Health tab |
-| `list_ability_groups` | Action group counts |
-| `get_abilities` | One action group |
-| `get_feats` | Feats |
-| `get_class_features` | Class features |
-| `get_skills` | Skills |
-| `get_spells` | Spells, including spent slots |
-| `get_character` | Remaining PC tabs |
-| `get_monster` | Remaining creature tabs |
-| `ensure_public_user` | Create the caller's profile when it is missing |
-| `join_campaign` | Attach the caller's character with a join key |
-| `get_campaign_owner_contacts` | Email for owners the caller already shares a campaign with |
-| `patch_encounter_dice` | Dice tray and dice log only |
-| `list_campaign_characters` | Campaign PC roster |
-| `export_character` | Compiled character JSON file |
+| Tool | Scope | Returns |
+| --- | --- | --- |
+| `get_profile` | `read` | The token's user id |
+| `list_encounters` | `read` | Encounters in a campaign |
+| `get_encounter` | `read` | Name, round, difficulty, XP |
+| `list_pcs` | `read` | PCs with current HP |
+| `list_combatants` | `read` | Combat table |
+| `list_roster_edges` | `read` | Bench and down |
+| `get_round_log` | `read` | Round log |
+| `get_dice_log` | `read` | Dice log |
+| `get_stat_block` | `read` | Health tab |
+| `list_ability_groups` | `read` | Action group counts |
+| `get_abilities` | `read` | One action group |
+| `get_feats` | `read` | Feats |
+| `get_class_features` | `read` | Class features |
+| `get_skills` | `read` | Skills |
+| `get_spells` | `read` | Spells, including spent slots |
+| `get_character` | `read` | Remaining PC tabs |
+| `get_monster` | `read` | Remaining creature tabs |
+| `ensure_public_user` | `write` | Create the caller's profile when it is missing |
+| `join_campaign` | `write` | Attach the caller's character with a join key |
+| `get_campaign_owner_contacts` | `read` | Email for owners the caller already shares a campaign with |
+| `patch_encounter_dice` | `write` | Dice tray and dice log only |
+| `list_campaign_characters` | `read` | Campaign PC roster |
+| `export_character` | `read` | Compiled character JSON file |

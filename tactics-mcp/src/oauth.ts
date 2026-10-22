@@ -1,11 +1,14 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
 
+import { normalizeScopes } from "./tokens.js";
+
 type CodeRow = {
   userId: string;
   clientId: string | null;
   challenge: string;
   redirectUri: string;
+  scopes: string[];
   expiresAt: number;
 };
 
@@ -43,6 +46,7 @@ type PendingLogin = {
   clientId: string;
   challenge: string;
   redirectUri: string;
+  scopes: string[];
   gotrueVerifier: string;
   expiresAt: number;
 };
@@ -74,13 +78,14 @@ export function resetCodes() {
   codes.clear();
 }
 
-export function issueCode(input: { userId: string; clientId?: string | null; codeChallenge: string; redirectUri: string }) {
+export function issueCode(input: { userId: string; clientId?: string | null; codeChallenge: string; redirectUri: string; scopes?: unknown }) {
   const code = randomBytes(24).toString("base64url");
   codes.set(code, {
     userId: input.userId,
     clientId: input.clientId ?? null,
     challenge: input.codeChallenge,
     redirectUri: input.redirectUri,
+    scopes: normalizeScopes(input.scopes),
     expiresAt: Date.now() + 60_000,
   });
   return code;
@@ -97,5 +102,5 @@ export function consumeCode(input: { code: string; verifier: string; redirectUri
   const left = Buffer.from(digest);
   const right = Buffer.from(row.challenge);
   if (left.length !== right.length || !timingSafeEqual(left, right)) return null;
-  return row.userId;
+  return { userId: row.userId, scopes: row.scopes };
 }

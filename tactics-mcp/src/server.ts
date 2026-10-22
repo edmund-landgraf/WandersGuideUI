@@ -3,6 +3,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerCatalog } from "./catalog.js";
 
 export const TACTICS_MCP_VERSION = "1.0.0";
+export const TACTICS_MCP_NAME = "wgui-tactics";
+export const TACTICS_MCP_DESCRIPTION = "Encounter and character data for the GM. Mostly read-only, with three scoped writes.";
 
 const READ_TOOLS = new Set([
   "get_profile",
@@ -22,24 +24,28 @@ const READ_TOOLS = new Set([
   "get_spells",
   "get_character",
   "get_monster",
-  "ensure_public_user",
-  "join_campaign",
   "get_campaign_owner_contacts",
-  "patch_encounter_dice",
   "list_campaign_characters",
   "export_character",
 ]);
 
+const WRITE_TOOLS = new Set([
+  "ensure_public_user",
+  "join_campaign",
+  "patch_encounter_dice",
+]);
+
 export function scopeForTool(name: string) {
+  if (WRITE_TOOLS.has(name)) return "write";
   return READ_TOOLS.has(name) ? "read" : null;
 }
 
 export function createTacticsMcpServer(userId: () => string, scopes: () => string[], origin: string) {
   const server = new McpServer({
-    name: "wgui-readonly",
+    name: TACTICS_MCP_NAME,
     title: "Wanderer's Guide",
     version: TACTICS_MCP_VERSION,
-    description: "Read-only encounter and character data for the GM.",
+    description: TACTICS_MCP_DESCRIPTION,
     websiteUrl: "https://wgui.wandersguide.site",
     icons: [{ src: `${origin}/icon.png`, mimeType: "image/png", sizes: ["512x512"] }],
   });

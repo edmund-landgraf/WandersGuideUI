@@ -7,9 +7,9 @@ import { fileURLToPath } from "node:url";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
 import { allowedMcpRedirect, consumeCode, gotrueChallenge, issueCode, rememberLogin, takeLogin } from "./oauth.js";
-import { createTacticsMcpServer } from "./server.js";
+import { createTacticsMcpServer, TACTICS_MCP_NAME } from "./server.js";
 import { installSupabaseReader } from "./supabase-reader.js";
-import { listTokens, mintToken, resolveBearer, revokeToken } from "./tokens.js";
+import { KNOWN_SCOPES, listTokens, mintToken, normalizeScopes, resolveBearer, revokeToken } from "./tokens.js";
 
 const MCP_BODY_BYTES = 64 * 1024;
 const MAX_INFLIGHT = 64;
@@ -210,7 +210,7 @@ export function startTacticsHttp() {
           return;
         }
         if (req.method === "GET" && path === "/health") {
-          sendJson(res, 200, { ok: true, transport: "streamable-http", surface: "wgui-readonly" });
+          sendJson(res, 200, { ok: true, transport: "streamable-http", surface: TACTICS_MCP_NAME });
           return;
         }
         if (req.method === "GET" && path === "/icon.png") {
@@ -229,7 +229,7 @@ export function startTacticsHttp() {
           sendJson(res, 200, {
             resource: `${base}/mcp`,
             authorization_servers: [base],
-            scopes_supported: ["read"],
+            scopes_supported: [...KNOWN_SCOPES],
             bearer_methods_supported: ["header"],
           });
           return;
@@ -244,7 +244,7 @@ export function startTacticsHttp() {
             grant_types_supported: ["authorization_code"],
             code_challenge_methods_supported: ["S256"],
             token_endpoint_auth_methods_supported: ["none"],
-            scopes_supported: ["read"],
+            scopes_supported: [...KNOWN_SCOPES],
           });
           return;
         }
@@ -259,17 +259,24 @@ export function startTacticsHttp() {
             query.get("code_challenge_method") !== "S256" ||
             !state ||
             !challenge ||
-            !allowedMcpRedirect(redirectUri, clientId) ||
-            !(query.get("scope") ?? "read").split(" ").includes("read")
+            !allowedMcpRedirect(redirectUri, clientId)
           ) {
             sendJson(res, 400, { error: "invalid_request" });
+            return;
+          }
+          let requestedScopes: string[];
+          try {
+            // A missing scope parameter stays read-only. An unknown scope is rejected, not dropped.
+            requestedScopes = normalizeScopes(query.has("scope") ? query.get("scope") : undefined);
+          } catch {
+            sendJson(res, 400, { error: "invalid_scope" });
             return;
           }
           if (!supabaseConfigured()) {
             sendJson(res, 500, { error: "Sign-in is not configured" });
             return;
           }
-          const login = rememberLogin({ state, clientId, challenge, redirectUri });
+          const login = rememberLogin({ state, clientId, challenge, redirectUri, scopes: requestedScopes });
           const cookie = `wgui_mcp_login=${encodeURIComponent(login.id)}; HttpOnly; Path=/oauth/mcp; Max-Age=600; Secure; SameSite=Lax`;
           const provider = query.get("provider") ?? "";
           if ((LOGIN_PROVIDERS as readonly string[]).includes(provider)) {
@@ -313,7 +320,7 @@ else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "
             sendJson(res, 400, { error: "invalid_grant" });
             return;
           }
-          const code = issueCode({ userId, clientId: pending.clientId, codeChallenge: pending.challenge, redirectUri: pending.redirectUri });
+          const code = issueCode({ userId, clientId: pending.clientId, codeChallenge: pending.challenge, redirectUri: pending.redirectUri, scopes: pending.scopes });
           const dest = new URL(pending.redirectUri);
           dest.searchParams.set("code", code);
           dest.searchParams.set("state", pending.state);
@@ -332,7 +339,7 @@ else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "
             res.end("<!doctype html><meta charset=\"utf-8\"><title>Sign in</title><p>Email or password was not accepted. Go back and try again.</p>");
             return;
           }
-          const code = issueCode({ userId, clientId: pending.clientId, codeChallenge: pending.challenge, redirectUri: pending.redirectUri });
+          const code = issueCode({ userId, clientId: pending.clientId, codeChallenge: pending.challenge, redirectUri: pending.redirectUri, scopes: pending.scopes });
           const dest = new URL(pending.redirectUri);
           dest.searchParams.set("code", code);
           dest.searchParams.set("state", pending.state);
@@ -353,7 +360,16 @@ else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "
             sendJson(res, 400, { error: "VALIDATION_ERROR" });
             return;
           }
-          const code = issueCode({ userId, codeChallenge: challenge, redirectUri });
+          let scopes: string[] | undefined;
+          if (body && Object.prototype.hasOwnProperty.call(body, "scope")) {
+            try {
+              scopes = normalizeScopes(body.scope);
+            } catch {
+              sendJson(res, 400, { error: "invalid_scope" });
+              return;
+            }
+          }
+          const code = issueCode({ userId, codeChallenge: challenge, redirectUri, scopes });
           sendJson(res, 200, { code, state: body?.state ?? null });
           return;
         }
@@ -364,13 +380,13 @@ else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "
           const verifier = typeof body?.code_verifier === "string" ? body.code_verifier : "";
           const redirectUri = typeof body?.redirect_uri === "string" ? body.redirect_uri : "";
           const clientId = typeof body?.client_id === "string" ? body.client_id : "";
-          const userId = consumeCode({ code, verifier, redirectUri, clientId });
-          if (!userId) {
+          const granted = consumeCode({ code, verifier, redirectUri, clientId });
+          if (!granted) {
             sendJson(res, 400, { error: "invalid_grant" });
             return;
           }
-          const minted = mintToken({ userId, label: "OAuth" });
-          sendJson(res, 200, { access_token: minted.token, token_type: "Bearer", scope: "read" });
+          const minted = mintToken({ userId: granted.userId, label: "OAuth", scopes: granted.scopes });
+          sendJson(res, 200, { access_token: minted.token, token_type: "Bearer", scope: minted.row.scopes.join(" ") });
           return;
         }
 
@@ -393,6 +409,7 @@ else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "
           if (!row) {
             // The wrapper rejects unauthenticated /mcp. The SDK never sees this request, and its auth handling is unused.
             sendJson(res, 401, { error: "Unauthorized", code: "AUTH_REQUIRED" }, {
+              // `read` is enough to open /mcp. `write` is optional and listed in discovery.
               "WWW-Authenticate": `Bearer resource_metadata="${metadataUrl(req)}", scope="read"`,
             });
             return;
@@ -437,10 +454,10 @@ else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "
         sendJson(res, 404, { error: "Not found" });
       } catch (error) {
         const tooLarge = error instanceof Error && error.message === "PAYLOAD_TOO_LARGE";
-        const emptyScopes = error instanceof Error && error.message === "EMPTY_SCOPES";
+        const badScopes = error instanceof Error && (error.message === "EMPTY_SCOPES" || error.message === "UNKNOWN_SCOPE");
         if (!res.headersSent) {
           if (tooLarge) sendJson(res, 413, { error: "Payload too large" });
-          else if (emptyScopes || error instanceof SyntaxError) sendJson(res, 400, { error: "VALIDATION_ERROR" });
+          else if (badScopes || error instanceof SyntaxError) sendJson(res, 400, { error: "VALIDATION_ERROR" });
           else sendJson(res, 500, { error: "INTERNAL_ERROR" });
         }
         log(`error requestId=${requestId}`);
