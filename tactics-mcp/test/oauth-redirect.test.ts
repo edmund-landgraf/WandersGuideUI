@@ -22,5 +22,8 @@ test("token exchange rejects a different client id", () => {
   const code = issueCode({ userId: "user", clientId: "grokbot-wgui", codeChallenge: challenge, redirectUri: callback });
   assert.equal(consumeCode({ code, verifier, redirectUri: callback, clientId: "grokbot-amba" }), null);
   const again = issueCode({ userId: "user", clientId: "grokbot-wgui", codeChallenge: challenge, redirectUri: callback });
-  assert.equal(consumeCode({ code: again, verifier, redirectUri: callback, clientId: "grokbot-wgui" }), "user");
+  assert.deepEqual(consumeCode({ code: again, verifier, redirectUri: callback, clientId: "grokbot-wgui" }), {
+    userId: "user",
+    scopes: ["read"],
+  });
 });

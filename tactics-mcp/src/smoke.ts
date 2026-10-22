@@ -68,10 +68,12 @@ await new Promise((resolve) => server.once("listening", resolve));
 const base = "http://127.0.0.1:3194";
 
 const health = await fetch(`${base}/health`);
-if (!health.ok) throw new Error("health");
+const healthBody = await health.json() as { surface?: string };
+if (!health.ok || healthBody.surface !== "wgui-tactics") throw new Error("health");
 
 const discovery = await fetch(`${base}/.well-known/oauth-protected-resource`);
-if (!discovery.ok) throw new Error("discovery should be public");
+const discoveryBody = await discovery.json() as { scopes_supported?: string[] };
+if (!discovery.ok || discoveryBody.scopes_supported?.join(" ") !== "read write") throw new Error("discovery should be public");
 
 const missing = await fetch(`${base}/mcp`);
 if (missing.status !== 401) throw new Error(`mcp 401, got ${missing.status}`);
@@ -98,8 +100,9 @@ const traded = await fetch(`${base}/oauth/mcp/token`, {
   headers: { "content-type": "application/json" },
   body: JSON.stringify({ code, code_verifier: verifier, redirect_uri: "http://localhost/cb" }),
 });
-if (traded.status !== 200) throw new Error(`token ${traded.status} ${await traded.text()}`);
-const access = (await traded.json() as { access_token: string }).access_token;
+const tradedBody = await traded.json() as { access_token?: string; scope?: string };
+if (traded.status !== 200 || tradedBody.scope !== "read" || !tradedBody.access_token) throw new Error(`token ${traded.status} ${tradedBody.scope ?? ""}`);
+const access = tradedBody.access_token;
 
 const transport = new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
   requestInit: { headers: { authorization: `Bearer ${access}` } },

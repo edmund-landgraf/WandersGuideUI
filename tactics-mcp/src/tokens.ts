@@ -57,12 +57,21 @@ function hashesEqual(left: string, right: string) {
   return timingSafeEqual(a, b);
 }
 
+/** Lookup tools use `read`. The three mutating tools use `write`. */
+export const KNOWN_SCOPES = ["read", "write"] as const;
+
 export function normalizeScopes(scopes: unknown): string[] {
+  // Omitted scopes stay read-only so tokens minted before `write` existed keep their meaning.
   if (scopes == null) return ["read"];
-  if (!Array.isArray(scopes) || scopes.some((scope) => typeof scope !== "string") || scopes.length === 0) {
+  const list = typeof scopes === "string" ? scopes.trim().split(/\s+/) : scopes;
+  if (!Array.isArray(list) || list.length === 0 || list.some((scope) => typeof scope !== "string" || scope.length === 0)) {
     throw new Error("EMPTY_SCOPES");
   }
-  return scopes as string[];
+  const unique = [...new Set(list as string[])];
+  if (unique.some((scope) => !KNOWN_SCOPES.includes(scope as (typeof KNOWN_SCOPES)[number]))) {
+    throw new Error("UNKNOWN_SCOPE");
+  }
+  return KNOWN_SCOPES.filter((scope) => unique.includes(scope));
 }
 
 export function mintToken(input: { userId: string; label?: string; scopes?: unknown; expiresAt?: string | null; resourceAllowlist?: string[] | null }) {

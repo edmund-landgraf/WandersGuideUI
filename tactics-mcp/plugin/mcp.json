@@ -13,7 +13,7 @@
               "clientId": "chatgpt",
               "tokenEndpointAuthMethod": "none"
             },
-            "baseScopes": ["read"]
+            "baseScopes": ["read", "write"]
           }
         }
       }

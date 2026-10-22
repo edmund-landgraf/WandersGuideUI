@@ -53,6 +53,8 @@ There is no edge function per sheet tab. After the fetch, dispatch picks the sou
 
 ## Account
 
+`ensure_public_user`, `join_campaign`, and `patch_encounter_dice` require the `write` scope. The other tools in this server require `read`. A token that only has `read` still calls the lookup tools and is rejected, before the handler, on the three writes.
+
 | Tool | What it reads |
 | --- | --- |
 | `get_profile` | Supabase user looked up by the token row’s `userId`. No encounter function. No `view`. |
@@ -68,6 +70,7 @@ There is no edge function per sheet tab. After the fetch, dispatch picks the sou
 | Failure | Error |
 | --- | --- |
 | Missing, unknown, expired, or revoked bearer | `AUTH_REQUIRED` |
+| Bearer is valid but lacks the tool's scope | Tool result `AUTH_REQUIRED` naming the missing scope. The HTTP call is still accepted. |
 | `view` missing or not `gm` | `VALIDATION_ERROR` |
 | Extension not deployed, or the function returns a non-success status | `INTERNAL_ERROR` |
 | Encounter id or combatant id absent from a successful extension response | `NOT_FOUND` |
