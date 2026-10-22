@@ -6402,6 +6402,7 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [linkText, setLinkText] = useState('');
+  const [pastePreview, setPastePreview] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const hasArt = Boolean(campaign.meta_data?.image_url?.trim());
   const savedArt = useCampaignArtSrc(campaign.meta_data?.image_url?.trim());
@@ -6419,11 +6420,14 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
         }
         return;
       }
-      // Clipboard image paste is off for now. URL links only.
-      // const file = imageFileFromClipboard(event.clipboardData);
-      // if (!file) return;
-      // event.preventDefault();
-      // void saveArt(file);
+      const file = imageFileFromClipboard(event.clipboardData);
+      if (!file) return;
+      event.preventDefault();
+      setPastePreview((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return URL.createObjectURL(file);
+      });
+      void saveArt(file);
     }
     window.addEventListener('paste', onWindowPaste);
     return () => window.removeEventListener('paste', onWindowPaste);
@@ -6527,7 +6531,6 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
               ...campaign,
               meta_data: { ...campaign.meta_data, image_url: hosted },
             });
-            onFrame(hosted);
             onUploaded(hosted);
             onSaved();
             await forgetTempArt(url).catch(() => undefined);
@@ -6583,7 +6586,20 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
           >
-          <p className='text-xs text-p1-muted'>Paste or type a direct image link.</p>
+          <p className='text-xs text-p1-muted'>Paste an image, or type a direct image link.</p>
+          <div
+            className='mt-2 flex h-16 w-full items-center justify-center overflow-hidden border border-dashed border-p1-border bg-p1-inset text-[10px] uppercase tracking-wide text-p1-faint'
+            onMouseDown={(event) => {
+              event.preventDefault();
+              panelRef.current?.focus();
+            }}
+          >
+            {pastePreview ? (
+              <img src={pastePreview} alt='' className='h-full w-full object-cover' />
+            ) : (
+              'Paste'
+            )}
+          </div>
           <label className='mt-2 block'>
             <span className='text-[10px] uppercase text-p1-faint'>Image URL</span>
             <input
@@ -6835,6 +6851,7 @@ function CampaignStripDialog({ url, initial, busy, error, onCancel, onConfirm }:
   const [focusY, setFocusY] = useState(initial);
   const [band, setBand] = useState(18);
   const [frameHeight, setFrameHeight] = useState(420);
+  const [imageFailed, setImageFailed] = useState(false);
   const allowDismiss = useRef(false);
   const frameRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -6894,7 +6911,11 @@ function CampaignStripDialog({ url, initial, busy, error, onCancel, onConfirm }:
         {error && <p className='mt-2 text-sm text-p1-danger-soft'>{error}</p>}
         <div className='mt-4 flex items-start justify-center gap-3'>
           <div ref={frameRef} className='relative w-full overflow-hidden border border-p1-border'>
-            <img src={url} alt='' referrerPolicy='no-referrer' className='block max-h-[72vh] w-full object-contain' onLoad={measureBand} />
+            {imageFailed ? (
+              <div className='flex h-[420px] items-center justify-center text-sm text-p1-muted'>Cannot load image.</div>
+            ) : (
+              <img src={url} alt='' referrerPolicy='no-referrer' className='block max-h-[72vh] w-full object-contain' onLoad={measureBand} onError={() => setImageFailed(true)} />
+            )}
             <div
               className='absolute inset-x-0 cursor-ns-resize border-y-2 border-white/90 bg-white/15'
               style={{ top: `${bandTop}%`, height: `${band}%` }}
@@ -6915,8 +6936,8 @@ function CampaignStripDialog({ url, initial, busy, error, onCancel, onConfirm }:
             onChange={(event) => setFocusY(Number(event.target.value))}
           />
         </div>
-        <div className='relative mt-4 h-[5.5rem] overflow-hidden border border-p1-border'>
-          <img src={url} alt='' referrerPolicy='no-referrer' className='h-full w-full object-cover' style={{ objectPosition: `center ${focusY}%` }} />
+        <div className='relative mt-4 flex h-[5.5rem] items-center overflow-hidden border border-p1-border px-3 text-sm text-p1-muted'>
+          {imageFailed ? 'Cannot load image.' : <img src={url} alt='' referrerPolicy='no-referrer' className='absolute inset-0 h-full w-full object-cover' style={{ objectPosition: `center ${focusY}%` }} onError={() => setImageFailed(true)} />}
         </div>
         <div className='mt-5 flex justify-end gap-2'>
           <button type='button' className='toolbar-button' disabled={busy} onClick={onCancel}>Cancel</button>
