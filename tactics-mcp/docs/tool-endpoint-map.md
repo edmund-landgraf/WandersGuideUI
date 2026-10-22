@@ -37,6 +37,21 @@ There is no edge function per sheet tab. After the fetch, dispatch picks the sou
 | `get_stat_block` | One combatant’s stored defenses, conditions, current HP, senses, and speeds. |
 | `get_monster` | The creature record on that combatant: inventory, notes, details, log. A character id is not found from the kind check. |
 
+## Builder tools
+
+These eight tools are on the same `wgui-mcp` process. They post to the stock Wanderer's Guide functions. `get_character` remains the encounter PC tabs. The builder row read is `get_character_row`.
+
+| Tool | Function |
+| --- | --- |
+| `create_character` | `create-character` |
+| `get_character_row` | `find-character` |
+| `set_books` | `update-character` `content_sources.enabled` |
+| `list_options` | `find-class`, `find-ancestry`, `find-background`, `find-language`, and the other `find-*` kinds, with the character's enabled book ids |
+| `set_identity` | `update-character` `details` plus cleared child selections |
+| `list_open_choices` | Operation results already computed for the character. No new function. |
+| `choose` | `update-character` `operation_data.selections` |
+| `delete_character` | `delete-content` `{ id, type: "character" }` |
+
 ## Character payload
 
 `wgui-ext-find-campaign-characters` with `{ campaign_id }`, and only when the combatant kind is `character`.

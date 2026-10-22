@@ -27,6 +27,14 @@ const READ_TOOLS = new Set([
   "get_campaign_owner_contacts",
   "list_campaign_characters",
   "export_character",
+  "create_character",
+  "get_character_row",
+  "set_books",
+  "list_options",
+  "set_identity",
+  "list_open_choices",
+  "choose",
+  "delete_character",
 ]);
 
 const WRITE_TOOLS = new Set([

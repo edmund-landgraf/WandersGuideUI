@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import { registerCharacterCatalog } from "./character-catalog.js";
 import { getEncounterReader, type CharacterExport, type CombatantSheet, type EncounterRecord } from "./reader.js";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
@@ -438,6 +439,8 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     if (found.row.kind !== "creature") return notFound("Combatant not found.");
     return textResult(found.row.name, { inventory: found.sheet.inventory ?? null, notes: found.sheet.notes ?? null, details: found.sheet.sourceDetails ?? null, log: found.sheet.log ?? null });
   }, userId);
+
+  registerCharacterCatalog(server, userId);
 }
 
 function formatEncounter(record: EncounterRecord) {

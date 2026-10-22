@@ -127,12 +127,12 @@ switch (command) {
     compose(['up', '-d']);
     break;
   case 'restart':
-    // A plain `up` reuses the running container, and the edge runtime caches the isolate
-    // it already loaded, so a changed handler needs the process replaced. Kong goes with
-    // it: `up` can recreate a container, and kong keeps keepalive connections to the old
-    // address, which then 502s intermittently until it is restarted too.
-    compose(['up', '-d']);
-    compose(['restart', 'functions', 'kong']);
+    // `compose restart` keeps the container's old entrypoint, so a machine reboot
+    // brings back a copy list that omits newer functions. Recreate functions so the
+    // current overlay is what starts. Kong keeps keepalive connections to the old
+    // address and 502s until it is restarted too.
+    compose(['up', '-d', '--force-recreate', '--no-deps', 'functions']);
+    compose(['restart', 'kong']);
     break;
   case 'down':
     compose(['down']);

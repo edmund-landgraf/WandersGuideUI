@@ -19,22 +19,8 @@ services:
       - >
         set -e;
         cp -a /wgui-fn/base/. /home/deno/functions/;
-        cp -a /wgui-fn/ext/_wgui-ext
-        /wgui-fn/ext/wgui-ext-find-encounter
-        /wgui-fn/ext/wgui-ext-find-campaign-characters
-        /wgui-fn/ext/wgui-ext-ensure-public-user
-        /wgui-fn/ext/wgui-ext-join-campaign
-        /wgui-fn/ext/wgui-ext-patch-encounter-dice
-        /wgui-fn/ext/wgui-ext-patch-encounter-combatant
-        /wgui-fn/ext/wgui-ext-add-encounter-character
-        /wgui-fn/ext/wgui-ext-remove-encounter-character
-        /wgui-fn/ext/wgui-ext-roll-initiative
-        /wgui-fn/ext/wgui-ext-patch-campaign-notes
-        /wgui-fn/ext/wgui-ext-find-campaign-notes
-        /wgui-fn/ext/wgui-ext-campaign-owner-email
-        /home/deno/functions/;
-        cp -a /wgui-fn/export/_wgui-export
-        /wgui-fn/export/wgui-export-character
-        /home/deno/functions/;
+        for dir in /wgui-fn/ext/_wgui-ext /wgui-fn/ext/wgui-ext-* /wgui-fn/export/_wgui-export /wgui-fn/export/wgui-export-*; do
+          cp -a "$$dir" /home/deno/functions/;
+        done;
         exec edge-runtime "$$@"
       - edge-runtime

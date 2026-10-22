@@ -264,8 +264,8 @@
     {
       "weekStart": "2026-10-19",
       "label": "Oct 19 – Oct 25, 2026",
-      "count": 80,
-      "summary": "Stamp the running version and list weekly updates in the app. Add email registration and confirm before clearing campaign art. Let Grokbot connect to the tactics MCP server with a registered OAuth client and a stdio bridge. Show the signed-in user id from get_profile so the token identity is the id used for ownership checks. Document WGUI edge-function implementation order and contracts. Polish WGUI edge-function documentation spacing. Add shared encounter command helpers. Plus 73 more.",
+      "count": 81,
+      "summary": "Stamp the running version and list weekly updates in the app. Add email registration and confirm before clearing campaign art. Let Grokbot connect to the tactics MCP server with a registered OAuth client and a stdio bridge. Show the signed-in user id from get_profile so the token identity is the id used for ownership checks. Document WGUI edge-function implementation order and contracts. Polish WGUI edge-function documentation spacing. Add shared encounter command helpers. Plus 74 more.",
       "subjects": [
         "Stamp the running version and list weekly updates in the app.",
         "Add email registration and confirm before clearing campaign art.",
@@ -346,7 +346,8 @@
         "Preserve raw dice log fields in encounter records.",
         "Expose complete dice log rows when reading encounters.",
         "Validate dice log row shape before writing.",
-        "Reject malformed dice log rows before saving."
+        "Reject malformed dice log rows before saving.",
+        "Restore campaign art paste and show a clear failure when the strip image cannot load."
       ]
     }
   ]
