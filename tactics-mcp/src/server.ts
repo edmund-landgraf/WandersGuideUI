@@ -4,7 +4,7 @@ import { registerCatalog } from "./catalog.js";
 
 export const TACTICS_MCP_VERSION = "1.0.0";
 export const TACTICS_MCP_NAME = "wgui-tactics";
-export const TACTICS_MCP_DESCRIPTION = "Encounter and character data for the GM. Mostly read-only, with three scoped writes.";
+export const TACTICS_MCP_DESCRIPTION = "Encounter and character data for the GM. Mostly read-only, with scoped writes.";
 
 const READ_TOOLS = new Set([
   "get_profile",
@@ -27,20 +27,20 @@ const READ_TOOLS = new Set([
   "get_campaign_owner_contacts",
   "list_campaign_characters",
   "export_character",
-  "create_character",
   "get_character_row",
-  "set_books",
   "list_options",
-  "set_identity",
   "list_open_choices",
-  "choose",
-  "delete_character",
 ]);
 
 const WRITE_TOOLS = new Set([
   "ensure_public_user",
   "join_campaign",
   "patch_encounter_dice",
+  "create_character",
+  "set_books",
+  "set_identity",
+  "choose",
+  "delete_character",
 ]);
 
 export function scopeForTool(name: string) {

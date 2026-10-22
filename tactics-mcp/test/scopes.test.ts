@@ -17,6 +17,7 @@ import { createTacticsMcpServer, scopeForTool, TACTICS_MCP_DESCRIPTION, TACTICS_
 import { mintToken, normalizeScopes, resetTokens, resolveBearer } from "../src/tokens.js";
 
 const WRITE_TOOLS = ["ensure_public_user", "join_campaign", "patch_encounter_dice"];
+const CHARACTER_WRITES = ["choose", "create_character", "delete_character", "set_books", "set_identity"];
 
 function textOf(response: { content?: unknown[] }) {
   return String((response.content?.[0] as { text?: string } | undefined)?.text ?? "");
@@ -101,9 +102,9 @@ describe("tactics scopes", { concurrency: 1 }, () => {
       assert.equal(info?.description, TACTICS_MCP_DESCRIPTION);
 
       const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
-      assert.equal(names.length, 23);
-      assert.deepEqual(names.filter((name) => scopeForTool(name) === "write"), [...WRITE_TOOLS].sort());
-      assert.equal(names.filter((name) => scopeForTool(name) === "read").length, 20);
+      assert.equal(names.length, 31);
+      assert.deepEqual(names.filter((name) => scopeForTool(name) === "write"), [...WRITE_TOOLS, ...CHARACTER_WRITES].sort());
+      assert.equal(names.filter((name) => scopeForTool(name) === "read").length, 23);
       assert.equal(scopeForTool("not_a_tool"), null);
 
       const profile = await client.callTool({ name: "get_profile", arguments: {} });
