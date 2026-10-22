@@ -30,11 +30,13 @@
       <a href="rock-fall.html">Rock fall walkthrough</a>
       <a href="owlbear.html">Owlbear extension</a>
       <h2>Reference</h2>
+      <a href="same-sites.html">Why the sites look the same</a>
       <a href="functions.html" aria-current="page">What the functions do</a>
     </nav>
     <main class="main">
-      <h1>What the six functions do</h1>
-      <p class="lead">The home page lists these six calls. Each one is a small piece of play. The launcher marks one up when the server answers.</p>
+      <h1>What the functions do</h1>
+      <p class="lead">The home page lists these calls. Each one is a small piece of play. The launcher marks one up when the server answers.</p>
+      <p>They line up in the order you play. First the account has to exist. Then a character joins a campaign, which is what puts that campaign on your list and your PC on the GM’s bench. The party and the encounters load from that membership: the GM sees every fight, and you see only the ones your character is on. During the fight the GM adds or removes characters, rolls initiative, and edits a combatant; anyone on the fight can save dice they started. Notes follow the campaign’s sharing flag. Export is separate: it writes a character you own.</p>
       <table>
         <thead>
           <tr><th>Call</th><th>What you get</th></tr>
@@ -45,6 +47,12 @@
           <tr><td><code>wgui-ext-find-campaign-characters</code></td><td>Loads the live party so allies show current names and hit points.</td></tr>
           <tr><td><code>wgui-ext-find-encounter</code></td><td>Loads campaign encounters. The GM gets every encounter. You get only the ones your character is on.</td></tr>
           <tr><td><code>wgui-ext-patch-encounter-dice</code></td><td>Saves dice checks and the roll log for people on the fight. Players can change rolls they started. The roster stays with the GM.</td></tr>
+          <tr><td><code>wgui-ext-patch-encounter-combatant</code></td><td>Sets initiative, hit points, temporary hit points, or conditions on one combatant. The GM only.</td></tr>
+          <tr><td><code>wgui-ext-add-encounter-character</code></td><td>Adds a joined character to the fight without replacing the whole list. The GM only.</td></tr>
+          <tr><td><code>wgui-ext-remove-encounter-character</code></td><td>Removes a player character from the fight the same way. The GM only.</td></tr>
+          <tr><td><code>wgui-ext-roll-initiative</code></td><td>Rolls initiative on the server for empty values or for everyone listed, then appends one log row. A second browser cannot overwrite the roll. The GM only.</td></tr>
+          <tr><td><code>wgui-ext-patch-campaign-notes</code></td><td>Updates shared campaign notes when a player is allowed to edit them.</td></tr>
+          <tr><td><code>wgui-ext-find-campaign-notes</code></td><td>Returns the notes the sharing flag allows.</td></tr>
           <tr><td><code>wgui-export-character</code></td><td>Exports your character as JSON or PDF.</td></tr>
         </tbody>
       </table>
