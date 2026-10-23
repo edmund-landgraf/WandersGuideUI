@@ -7,6 +7,7 @@
     "dev": "tsx src/http.ts",
     "test": "tsx --test test/*.test.ts",
     "smoke": "tsx src/smoke.ts",
+    "stdio:local": "tsx src/localStdio.ts",
     "character:smoke": "tsx src/character-smoke.ts",
     "grokbot:bridge": "tsx src/grokbotBridge.ts"
   },

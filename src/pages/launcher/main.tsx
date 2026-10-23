@@ -8,21 +8,42 @@ import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './launcher.css';
 
+type Fn = { name: string; label: string; desc: string };
+
+/** One function, or two functions that share a row and show side-by-side status arrows. */
+type FnRow =
+  | ({ kind: 'one' } & Fn)
+  | { kind: 'pair'; label: string; desc: string; up: Fn; down: Fn };
+
 /** Edge functions. Green when the worker answers, yellow when only the gateway does, red when it is missing. */
-const WGUI_FUNCTIONS = [
-  { name: 'wgui-ext-ensure-public-user', label: 'ensure-user', desc: 'backfill profile' },
-  { name: 'wgui-ext-join-campaign', label: 'join', desc: 'attach by key' },
-  { name: 'wgui-ext-find-encounter', label: 'encounter', desc: 'campaign fights' },
-  { name: 'wgui-ext-find-campaign-characters', label: 'roster', desc: 'campaign pcs' },
-  { name: 'wgui-ext-patch-encounter-dice', label: 'dice', desc: 'shared rolls' },
-  { name: 'wgui-ext-patch-encounter-combatant', label: 'combatant', desc: 'patch combat state' },
-  { name: 'wgui-ext-add-encounter-character', label: 'add-pc', desc: 'add PC to fight' },
-  { name: 'wgui-ext-remove-encounter-character', label: 'remove-pc', desc: 'remove PC from fight' },
-  { name: 'wgui-ext-roll-initiative', label: 'initiative', desc: 'server initiative roll' },
-  { name: 'wgui-ext-patch-campaign-notes', label: 'notes-write', desc: 'patch shared notes' },
-  { name: 'wgui-ext-find-campaign-notes', label: 'notes-read', desc: 'read shared notes' },
-  { name: 'wgui-export-character', label: 'export', desc: 'character file' },
-] as const;
+const WGUI_ROWS: FnRow[] = [
+  { kind: 'one', name: 'wgui-ext-ensure-public-user', label: 'ensure-user', desc: 'backfill profile' },
+  { kind: 'one', name: 'wgui-ext-join-campaign', label: 'join', desc: 'attach by key' },
+  { kind: 'one', name: 'wgui-ext-find-encounter', label: 'encounter', desc: 'campaign fights' },
+  { kind: 'one', name: 'wgui-ext-find-campaign-characters', label: 'roster', desc: 'campaign pcs' },
+  { kind: 'one', name: 'wgui-ext-patch-encounter-dice', label: 'dice', desc: 'shared rolls' },
+  { kind: 'one', name: 'wgui-ext-patch-encounter-combatant', label: 'combatant', desc: 'patch combat state' },
+  {
+    kind: 'pair',
+    label: 'add/remove',
+    desc: 'PC in the fight',
+    up: { name: 'wgui-ext-add-encounter-character', label: 'add-pc', desc: 'add PC to fight' },
+    down: { name: 'wgui-ext-remove-encounter-character', label: 'remove-pc', desc: 'remove PC from fight' },
+  },
+  { kind: 'one', name: 'wgui-ext-roll-initiative', label: 'initiative', desc: 'server initiative roll' },
+  {
+    kind: 'pair',
+    label: 'notes',
+    desc: 'read / write',
+    up: { name: 'wgui-ext-find-campaign-notes', label: 'notes-read', desc: 'read shared notes' },
+    down: { name: 'wgui-ext-patch-campaign-notes', label: 'notes-write', desc: 'patch shared notes' },
+  },
+  { kind: 'one', name: 'wgui-export-character', label: 'export', desc: 'character file' },
+];
+
+function rowFunctions(row: FnRow): Fn[] {
+  return row.kind === 'one' ? [row] : [row.up, row.down];
+}
 
 async function probeFunction(name: string): Promise<Probe> {
   const base = browserSupabaseUrl(import.meta.env.VITE_SUPABASE_URL, window.location.origin);
@@ -44,13 +65,30 @@ async function probeFunction(name: string): Promise<Probe> {
   }
 }
 
+function ProbeMark({ probe }: { probe: Probe | 'pending' }) {
+  return (
+    <span className='flex shrink-0 justify-end' aria-label={probe === 'pending' ? 'checking' : probe}>
+      {probe === 'pending' ? (
+        <span className='inline-block size-3.5 rounded-full bg-white/20' />
+      ) : probe === 'up' ? (
+        <ArrowUpCircle className='size-3.5 text-emerald-400' />
+      ) : probe === 'unconfirmed' ? (
+        <CircleAlert className='size-3.5 text-amber-400' />
+      ) : (
+        <ArrowDownCircle className='size-3.5 text-red-400' />
+      )}
+    </span>
+  );
+}
+
 function FunctionStatus() {
   const [status, setStatus] = useState<Record<string, Probe>>({});
 
   useEffect(() => {
     let cancelled = false;
+    const names = WGUI_ROWS.flatMap((row) => rowFunctions(row).map((fn) => fn.name));
     void Promise.all(
-      WGUI_FUNCTIONS.map(async ({ name }) => {
+      names.map(async (name) => {
         const probe = await probeFunction(name);
         if (!cancelled) setStatus((current) => ({ ...current, [name]: probe }));
       })
@@ -67,22 +105,32 @@ function FunctionStatus() {
     >
       <p className='px-0.5 pb-1.5 text-[10px] tracking-wide text-muted-foreground'>WGUI extended · supabase</p>
       <ul className='m-0 flex list-none flex-col gap-1 p-0'>
-        {WGUI_FUNCTIONS.map(({ name, label, desc }) => {
-          const probe = status[name] ?? 'pending';
+        {WGUI_ROWS.map((row) => {
+          if (row.kind === 'pair') {
+            const up = status[row.up.name] ?? 'pending';
+            const down = status[row.down.name] ?? 'pending';
+            return (
+              <li
+                className='flex items-baseline gap-2 text-[11px] leading-4 text-foreground'
+                key={row.label}
+                title={`${row.up.name} / ${row.down.name}`}
+              >
+                <span className='w-[5.5rem] shrink-0 truncate'>{row.label}</span>
+                <span className='min-w-0 flex-1 truncate text-muted-foreground'>{row.desc}</span>
+                <span className='flex shrink-0 items-center gap-0.5 self-center'>
+                  <ProbeMark probe={up} />
+                  <ProbeMark probe={down} />
+                </span>
+              </li>
+            );
+          }
+          const probe = status[row.name] ?? 'pending';
           return (
-            <li className='flex items-baseline gap-2 text-[11px] leading-4 text-foreground' key={name} title={name}>
-              <span className='w-[5.5rem] shrink-0 truncate'>{label}</span>
-              <span className='min-w-0 flex-1 truncate text-muted-foreground'>{desc}</span>
-              <span className='flex shrink-0 justify-end self-center' aria-label={probe === 'pending' ? 'checking' : probe}>
-                {probe === 'pending' ? (
-                  <span className='inline-block size-3.5 rounded-full bg-white/20' />
-                ) : probe === 'up' ? (
-                  <ArrowUpCircle className='size-3.5 text-emerald-400' />
-                ) : probe === 'unconfirmed' ? (
-                  <CircleAlert className='size-3.5 text-amber-400' />
-                ) : (
-                  <ArrowDownCircle className='size-3.5 text-red-400' />
-                )}
+            <li className='flex items-baseline gap-2 text-[11px] leading-4 text-foreground' key={row.name} title={row.name}>
+              <span className='w-[5.5rem] shrink-0 truncate'>{row.label}</span>
+              <span className='min-w-0 flex-1 truncate text-muted-foreground'>{row.desc}</span>
+              <span className='flex shrink-0 self-center'>
+                <ProbeMark probe={probe} />
               </span>
             </li>
           );
