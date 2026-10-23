@@ -68,7 +68,7 @@ These eight tools are on the same `wgui-mcp` process. They post to the stock Wan
 
 ## Account
 
-`ensure_public_user`, `join_campaign`, and `patch_encounter_dice` require the `write` scope. The other tools in this server require `read`. A token that only has `read` still calls the lookup tools and is rejected, before the handler, on the three writes.
+`ensure_public_user`, `join_campaign`, `patch_encounter_dice`, `create_character`, `set_books`, `set_identity`, `choose`, and `delete_character` require the `write` scope. The other tools in this server require `read`, including `export_character`, `get_character_row`, `list_options`, and `list_open_choices`. A token that only has `read` still calls the lookup tools and is rejected, before the handler, on every write.
 
 | Tool | What it reads |
 | --- | --- |

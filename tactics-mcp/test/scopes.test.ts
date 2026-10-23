@@ -17,7 +17,17 @@ import { createTacticsMcpServer, scopeForTool, TACTICS_MCP_DESCRIPTION, TACTICS_
 import { mintToken, normalizeScopes, resetTokens, resolveBearer } from "../src/tokens.js";
 
 const WRITE_TOOLS = ["ensure_public_user", "join_campaign", "patch_encounter_dice"];
+const CHARACTER_READS = ["export_character", "get_character_row", "list_open_choices", "list_options"];
 const CHARACTER_WRITES = ["choose", "create_character", "delete_character", "set_books", "set_identity"];
+
+function characterArguments(name: string) {
+  if (name === "set_identity") return { characterId: 1, slot: "class", optionId: 1 };
+  if (name === "choose") return { characterId: 1, choiceId: "lang-1", optionId: "thalassic" };
+  if (name === "list_options") return { kind: "class" };
+  if (name === "export_character" || name === "list_open_choices" || name === "set_books" || name === "delete_character") return { characterId: 1 };
+  if (name === "get_character_row") return { id: 1 };
+  return {};
+}
 
 function textOf(response: { content?: unknown[] }) {
   return String((response.content?.[0] as { text?: string } | undefined)?.text ?? "");
@@ -103,6 +113,9 @@ describe("tactics scopes", { concurrency: 1 }, () => {
 
       const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
       assert.equal(names.length, 31);
+      for (const name of [...CHARACTER_READS, ...CHARACTER_WRITES]) assert.ok(names.includes(name), name);
+      assert.deepEqual(CHARACTER_READS.map(scopeForTool), CHARACTER_READS.map(() => "read"));
+      assert.deepEqual(CHARACTER_WRITES.map(scopeForTool), CHARACTER_WRITES.map(() => "write"));
       assert.deepEqual(names.filter((name) => scopeForTool(name) === "write"), [...WRITE_TOOLS, ...CHARACTER_WRITES].sort());
       assert.equal(names.filter((name) => scopeForTool(name) === "read").length, 23);
       assert.equal(scopeForTool("not_a_tool"), null);
@@ -124,11 +137,20 @@ describe("tactics scopes", { concurrency: 1 }, () => {
         assert.equal(denied.isError, true);
         assert.equal(textOf(denied), `MCP token missing scope write for ${name}.`);
       }
+      for (const name of CHARACTER_WRITES) {
+        const denied = await client.callTool({ name, arguments: characterArguments(name) });
+        assert.equal(denied.isError, true);
+        assert.equal(textOf(denied), `MCP token missing scope write for ${name}.`);
+      }
       assert.equal(writes, 0);
 
       granted.scopes = ["write"];
       const readDenied = await client.callTool({ name: "get_profile", arguments: {} });
       assert.equal(textOf(readDenied), "MCP token missing scope read for get_profile.");
+      for (const name of CHARACTER_READS) {
+        const denied = await client.callTool({ name, arguments: characterArguments(name) });
+        assert.equal(textOf(denied), `MCP token missing scope read for ${name}.`);
+      }
       const ensured = await client.callTool({ name: "ensure_public_user", arguments: {} });
       assert.match(textOf(ensured), /Profile already exists/);
       const joined = await client.callTool({ name: "join_campaign", arguments: { characterId: 7, joinKey: "secret" } });

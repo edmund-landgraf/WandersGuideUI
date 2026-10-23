@@ -110,7 +110,25 @@ const transport = new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
 const client = new Client({ name: "wgui-smoke", version: "0.1.0" });
 await client.connect(transport);
 const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
-if (!names.includes("get_stat_block") || !names.includes("get_profile") || !names.includes("export_character")) throw new Error(names.join(","));
+const characterReads = ["export_character", "get_character_row", "list_open_choices", "list_options"];
+const characterWrites = ["choose", "create_character", "delete_character", "set_books", "set_identity"];
+const missingCharacter = [...characterReads, ...characterWrites].filter((name) => !names.includes(name));
+if (!names.includes("get_stat_block") || !names.includes("get_profile") || missingCharacter.length) {
+  throw new Error(missingCharacter.length ? `missing ${missingCharacter.join(",")}` : names.join(","));
+}
+for (const name of characterWrites) {
+  const denied = JSON.stringify(await client.callTool({
+    name,
+    arguments: name === "set_identity"
+      ? { characterId: 1, slot: "class", optionId: 1 }
+      : name === "choose"
+        ? { characterId: 1, choiceId: "lang-1", optionId: "thalassic" }
+        : name === "create_character"
+          ? {}
+          : { characterId: 1 },
+  }));
+  if (!denied.includes(`MCP token missing scope write for ${name}`)) throw new Error(denied);
+}
 const profile = JSON.stringify(await client.callTool({ name: "get_profile", arguments: {} }));
 if (!profile.includes("gm@example.com")) throw new Error(profile);
 const hurt = JSON.stringify(await client.callTool({ name: "list_pcs", arguments: { view: "gm", campaignId: 44, encounterId: 44 } }));

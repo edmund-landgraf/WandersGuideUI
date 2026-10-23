@@ -1,6 +1,6 @@
 # WGUI MCP tool directory
 
-Twenty tools require `read`. `ensure_public_user`, `join_campaign`, and `patch_encounter_dice` require `write`. Encounter tools require `view: "gm"`. See [adr-oauth.md](./adr-oauth.md).
+Twenty-three tools require `read`. Eight tools require `write`: `ensure_public_user`, `join_campaign`, `patch_encounter_dice`, `create_character`, `set_books`, `set_identity`, `choose`, and `delete_character`. Encounter tools require `view: "gm"`. See [adr-oauth.md](./adr-oauth.md).
 
 | Tool | Scope | Returns |
 | --- | --- | --- |
@@ -27,3 +27,11 @@ Twenty tools require `read`. `ensure_public_user`, `join_campaign`, and `patch_e
 | `patch_encounter_dice` | `write` | Dice tray and dice log only |
 | `list_campaign_characters` | `read` | Campaign PC roster |
 | `export_character` | `read` | Compiled character JSON file |
+| `get_character_row` | `read` | Builder character row from `find-character` |
+| `list_options` | `read` | Catalog options for the character's enabled books |
+| `list_open_choices` | `read` | Unfilled builder selections |
+| `create_character` | `write` | New character row |
+| `set_books` | `write` | Enabled content source ids |
+| `set_identity` | `write` | Ancestry, background, or class |
+| `choose` | `write` | One legal option on an open choice |
+| `delete_character` | `write` | Delete a character row |
