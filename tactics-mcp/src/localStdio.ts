@@ -1,4 +1,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { createTacticsMcpServer } from "./server.js";
 import { installSupabaseReader } from "./supabase-reader.js";
@@ -7,6 +10,22 @@ function required(name: string) {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`Missing ${name}`);
   return value;
+}
+
+function loadWorkspaceEnv() {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [join(process.cwd(), ".env.local"), join(here, "..", "..", ".env.local")];
+  const path = candidates.find((candidate) => existsSync(candidate));
+  if (!path) return;
+  for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
+    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)\s*$/);
+    if (!match) continue;
+    const [, key, raw] = match;
+    if (process.env[key]) continue;
+    process.env[key] = raw.replace(/^['"]|['"]$/g, "");
+  }
+  process.env.SUPABASE_URL ||= process.env.VITE_SUPABASE_URL;
+  process.env.SUPABASE_ANON_KEY ||= process.env.VITE_SUPABASE_KEY;
 }
 
 const DEFAULT_TEST_EMAIL = "test2@tester.com";
@@ -27,6 +46,7 @@ async function signIn(email: string, password: string) {
   return { token: body.access_token, userId: body.user.id };
 }
 
+loadWorkspaceEnv();
 const email = process.env.WG_STDIO_TEST_EMAIL?.trim() || DEFAULT_TEST_EMAIL;
 const password = process.env.WG_STDIO_TEST_PASSWORD?.trim() || DEFAULT_TEST_PASSWORD;
 const session = await signIn(email, password);

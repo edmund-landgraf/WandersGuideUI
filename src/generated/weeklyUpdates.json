@@ -264,8 +264,8 @@
     {
       "weekStart": "2026-10-19",
       "label": "Oct 19 – Oct 25, 2026",
-      "count": 81,
-      "summary": "Stamp the running version and list weekly updates in the app. Add email registration and confirm before clearing campaign art. Let Grokbot connect to the tactics MCP server with a registered OAuth client and a stdio bridge. Show the signed-in user id from get_profile so the token identity is the id used for ownership checks. Document WGUI edge-function implementation order and contracts. Polish WGUI edge-function documentation spacing. Add shared encounter command helpers. Plus 74 more.",
+      "count": 87,
+      "summary": "Stamp the running version and list weekly updates in the app. Add email registration and confirm before clearing campaign art. Let Grokbot connect to the tactics MCP server with a registered OAuth client and a stdio bridge. Show the signed-in user id from get_profile so the token identity is the id used for ownership checks. Document WGUI edge-function implementation order and contracts. Polish WGUI edge-function documentation spacing. Add shared encounter command helpers. Plus 80 more.",
       "subjects": [
         "Stamp the running version and list weekly updates in the app.",
         "Add email registration and confirm before clearing campaign art.",
@@ -347,7 +347,13 @@
         "Expose complete dice log rows when reading encounters.",
         "Validate dice log row shape before writing.",
         "Reject malformed dice log rows before saving.",
-        "Restore campaign art paste and show a clear failure when the strip image cannot load."
+        "Restore campaign art paste and show a clear failure when the strip image cannot load.",
+        "Split tactics MCP writes onto a write scope (#1).",
+        "Add character builder tools on the tactics MCP and recreate functions from the current overlay.",
+        "Put character builder mutations on the write scope after the rebase.",
+        "Explain why the two sites look the same and list the extra play functions.",
+        "Pair related launcher probes and start the tactics MCP over local stdio.",
+        "Cover character builder tools in MCP scope checks and docs."
       ]
     }
   ]
