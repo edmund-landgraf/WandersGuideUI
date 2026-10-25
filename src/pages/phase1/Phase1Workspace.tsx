@@ -471,7 +471,6 @@ export function Phase1IndexPage() {
           error={artFrame.error}
           onCancel={() => {
             if (artFrameBusy) return;
-            if (artFrame.preview.startsWith('blob:')) URL.revokeObjectURL(artFrame.preview);
             setArtFrame(null);
           }}
           onConfirm={(focus) => {
@@ -496,7 +495,6 @@ export function Phase1IndexPage() {
                       : item
                   )
                 );
-                if (framed.preview.startsWith('blob:')) URL.revokeObjectURL(framed.preview);
                 setArtFrame(null);
                 return queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] });
               })
@@ -6374,6 +6372,24 @@ async function downloadArtFile(url: string): Promise<File | null> {
   return null;
 }
 
+async function prepareCampaignArt(file: File): Promise<File | null> {
+  let accepted = campaignArtFile(file);
+  if (!accepted) {
+    const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+    const sniffed = sniffImageType(head);
+    if (sniffed) accepted = new File([file], file.name || 'campaign-art', { type: sniffed });
+  }
+  if (!accepted) return null;
+  const readyType = accepted.type === 'image/png' || accepted.type === 'image/jpeg' || accepted.type === 'image/webp';
+  if (readyType && accepted.size <= 700_000) return accepted;
+  try {
+    const shrunk = await shrinkCampaignArt(accepted);
+    return campaignArtFile(shrunk) ?? (readyType ? accepted : null);
+  } catch {
+    return readyType ? accepted : null;
+  }
+}
+
 function campaignArtFile(file: File | null): File | null {
   if (!file) return null;
   const named = file.type.startsWith('image/')
@@ -6434,24 +6450,24 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
   }, [open]);
 
   async function saveArt(file: File) {
-    const accepted = campaignArtFile(file);
-    if (!accepted) {
-      setError('Use a PNG, JPEG, or WebP image.');
-      return;
-    }
-    if (accepted.size > 3 * 1024 * 1024) {
-      setError('Image must be 3 MB or smaller.');
-      return;
-    }
-    const blobUrl = URL.createObjectURL(accepted);
     setError(null);
-    setOpen(false);
-    onFrame(blobUrl);
     setBusy(true);
     try {
-      const uploadFile = await shrinkCampaignArt(accepted);
-      const url = await uploadImage(uploadFile, 'backgrounds');
+      const stored = await prepareCampaignArt(file);
+      if (!stored) {
+        setError('Use a PNG, JPEG, or WebP image.');
+        return;
+      }
+      if (stored.size > 3 * 1024 * 1024) {
+        setError('Image must be 3 MB or smaller.');
+        return;
+      }
+      const blobUrl = URL.createObjectURL(stored);
+      setOpen(false);
+      onFrame(blobUrl);
+      const url = await uploadImage(stored, 'backgrounds');
       if (!url) throw new Error('Upload failed.');
+      rememberTempArt(url, stored);
       await phase1Request('create-campaign', {
         ...campaign,
         meta_data: { ...campaign.meta_data, image_url: url },
@@ -6917,7 +6933,7 @@ function CampaignStripDialog({ url, initial, busy, error, onCancel, onConfirm }:
               <img src={url} alt='' referrerPolicy='no-referrer' className='block max-h-[72vh] w-full object-contain' onLoad={measureBand} onError={() => setImageFailed(true)} />
             )}
             <div
-              className='absolute inset-x-0 cursor-ns-resize border-y-2 border-white/90 bg-white/15'
+              className='absolute inset-x-0 z-10 cursor-ns-resize border-y-2 border-white/90 bg-white/15'
               style={{ top: `${bandTop}%`, height: `${band}%` }}
               onPointerDown={onBandPointerDown}
               onPointerMove={(event) => {
@@ -7008,6 +7024,7 @@ function CampaignWorkspaceRow({ campaign, canDelete, members, ownedCampaigns, on
   const [pendingRename, setPendingRename] = useState(false);
   const [pendingColor, setPendingColor] = useState(false);
   const [viewArt, setViewArt] = useState(false);
+  const [draftArt, setDraftArt] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState(false);
   const [pendingLeave, setPendingLeave] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -7132,7 +7149,11 @@ function CampaignWorkspaceRow({ campaign, canDelete, members, ownedCampaigns, on
     }
   }
 
-  const artUrl = campaign.meta_data?.image_url?.trim();
+  const storedArt = campaign.meta_data?.image_url?.trim();
+  useEffect(() => {
+    setDraftArt(null);
+  }, [storedArt]);
+  const artUrl = draftArt || storedArt;
   const shownArt = useCampaignArtSrc(artUrl);
   const focusY = campaignFocusY(campaign.meta_data?.image_focus_y);
   const rowColor = normalizeRowColor(campaign.meta_data?.row_color);
@@ -7174,7 +7195,18 @@ function CampaignWorkspaceRow({ campaign, canDelete, members, ownedCampaigns, on
         {actionError && <div className='mt-1 text-xs text-p1-danger-soft'>{actionError}</div>}
       </button>
       <div className='flex items-center gap-2'>
-        {canDelete && <CampaignArtControl campaign={campaign} onSaved={onDeleted} onFrame={onFrame} onUploaded={onUploaded} onFrameError={onFrameError} />}
+        {canDelete && (
+          <CampaignArtControl
+            campaign={campaign}
+            onSaved={onDeleted}
+            onFrame={(url) => {
+              setDraftArt(url);
+              onFrame(url);
+            }}
+            onUploaded={onUploaded}
+            onFrameError={onFrameError}
+          />
+        )}
         {hasKey && (
           <button type='button' className='toolbar-button' title='Reveal and copy join key' onClick={revealAndCopy}>
             {copyState === 'copied' ? <Check size={14} /> : visible ? <Copy size={14} /> : <KeyRound size={14} />}
