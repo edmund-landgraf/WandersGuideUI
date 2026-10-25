@@ -5,7 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
-import { setCharacterChoiceRunner, openChoicesFromPackage } from "../src/character-choices.js";
+import { openChoicesFromPackage, setCharacterChoiceRunner, setCharacterWriteApplier } from "../src/character-choices.js";
 import { setCharacterFetch } from "../src/character-client.js";
 import { registerCatalog } from "../src/catalog.js";
 
@@ -33,6 +33,7 @@ test("open choices keep unfilled language options and skip filled selects", () =
     ],
   });
   assert.equal(choices.length, 1);
+  assert.equal(choices[0].id, "class_lang-1");
   assert.equal(choices[0].kind, "language");
   assert.equal(choices[0].remaining, 1);
   assert.deepEqual(choices[0].options[0], { id: "thalassic", name: "Thalassic", traits: ["aquatic"] });
@@ -50,6 +51,7 @@ test("builder tools create, read, set books, reject an illegal choice, and delet
     details: {},
     operation_data: { selections: {} },
   };
+  setCharacterWriteApplier(null);
   setCharacterChoiceRunner(async () => [{
     id: "lang-1",
     source: "class",
@@ -67,6 +69,9 @@ test("builder tools create, read, set books, reject an illegal choice, and delet
       return jsonResponse({ status: "success", data: character });
     }
     if (url.endsWith("/find-character")) return jsonResponse({ status: "success", data: character });
+    if (url.endsWith("/find-ancestry")) {
+      return jsonResponse({ status: "success", data: [{ id: 7, name: "Human" }] });
+    }
     if (url.endsWith("/find-class")) {
       assert.deepEqual(body.content_sources, [1, 2, 3, 9]);
       return jsonResponse({ status: "success", data: [{ id: 44, name: "Thaumaturge" }] });
@@ -92,6 +97,16 @@ test("builder tools create, read, set books, reject an illegal choice, and delet
   const created = await client.callTool({ name: "create_character", arguments: { name: "mcp-smoke-test" } });
   assert.match(JSON.stringify(created.structuredContent), /mcp-smoke-test/);
 
+  const row = await client.callTool({ name: "get_character_row", arguments: { id: 102 } });
+  assert.match(JSON.stringify(row.structuredContent), /mcp-smoke-test/);
+
+  const identity = await client.callTool({ name: "set_identity", arguments: { characterId: 102, slot: "ancestry", optionId: 7 } });
+  assert.equal(identity.isError, undefined);
+  assert.equal((character.details as { ancestry?: { name?: string } }).ancestry?.name, "Human");
+
+  const open = await client.callTool({ name: "list_open_choices", arguments: { characterId: 102 } });
+  assert.match(JSON.stringify(open.structuredContent), /lang-1/);
+
   const books = await client.callTool({ name: "set_books", arguments: { characterId: 102, add: [9] } });
   assert.match(JSON.stringify(books.structuredContent), /9/);
 
@@ -110,4 +125,5 @@ test("builder tools create, read, set books, reject an illegal choice, and delet
 
   setCharacterFetch(null);
   setCharacterChoiceRunner(null);
+  setCharacterWriteApplier(undefined);
 });

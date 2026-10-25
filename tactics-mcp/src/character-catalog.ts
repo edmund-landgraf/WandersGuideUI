@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { listCharacterChoices, type OpenChoice } from "./character-choices.js";
+import { applyCharacterWrite, listCharacterChoices, type OpenChoice } from "./character-choices.js";
 import { asRow, guardOf, invokeFunction, type CharacterRow, type InvokeResult } from "./character-client.js";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
@@ -34,6 +34,25 @@ function textResult(text: string, structuredContent: Record<string, unknown>, is
 
 function fail(result: Extract<InvokeResult, { ok: false }>) {
   return textResult(result.message, { code: result.code, retryable: result.code === "CONFLICT", ...(result.data ? { data: result.data } : {}) }, true);
+}
+
+function thrown(error: unknown) {
+  const message = error instanceof Error ? error.message : "Character operations failed.";
+  return textResult(message, { code: "INTERNAL_ERROR", retryable: true }, true);
+}
+
+const SAVE_FIELDS = [
+  "name", "level", "experience", "hp_current", "hp_temp", "hero_points", "stamina_current", "resolve_current",
+  "inventory", "notes", "details", "roll_history", "custom_operations", "meta_data", "options", "variants",
+  "content_sources", "operation_data", "spells", "companions",
+] as const;
+
+function savePatch(row: CharacterRow) {
+  const patch: Record<string, unknown> = {};
+  for (const key of SAVE_FIELDS) {
+    if (key in row) patch[key] = row[key];
+  }
+  return patch;
 }
 
 function shorten(value: unknown, full: boolean): unknown {
@@ -229,7 +248,7 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
     "set_identity",
     {
       title: "Ancestry, background, or class",
-      description: "Writes details.ancestry, details.background, or details.class from a list_options id and clears the child selection keys the builder clears.",
+      description: "Writes details.ancestry, details.background, or details.class from a list_options id, clears the child selection keys the builder clears, and reruns character operations.",
       annotations: writes,
       inputSchema: {
         characterId: z.number().int(),
@@ -259,10 +278,13 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
         details.class_archetype = undefined;
         selections = dropSelections(selections, ["class_", "class-feature"]);
       }
-      const saved = await saveRow(userId(), loaded.data, {
-        details,
-        operation_data: { ...operation, selections },
-      });
+      let drafted: CharacterRow;
+      try {
+        drafted = await applyCharacterWrite({ ...loaded.data, details, operation_data: { ...operation, selections } });
+      } catch (error) {
+        return thrown(error);
+      }
+      const saved = await saveRow(userId(), loaded.data, savePatch(drafted));
       if (!saved.ok) return fail(saved);
       return textResult("Identity saved", summary(saved.data));
     },
@@ -272,14 +294,19 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
     "list_open_choices",
     {
       title: "Open builder choices",
-      description: "Returns unfilled selects from the character operation results: kind, remaining, already, and legal options. The model asks the question.",
+      description: "Runs character operations and returns unfilled selects: stored selection key, kind, remaining, already, and legal options. Pass that key to choose.",
       annotations: readOnly,
       inputSchema: { characterId: z.number().int() },
     },
     async (args) => {
       const loaded = await loadRow(userId(), args.characterId);
       if (!loaded.ok) return fail(loaded);
-      const choices = await listCharacterChoices(loaded.data, userId());
+      let choices: OpenChoice[];
+      try {
+        choices = await listCharacterChoices(loaded.data, userId());
+      } catch (error) {
+        return thrown(error);
+      }
       return textResult(`${choices.length} open choices`, { id: loaded.data.id, updated_at: loaded.data.updated_at ?? null, choices });
     },
   );
@@ -288,7 +315,7 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
     "choose",
     {
       title: "Record a builder choice",
-      description: "Writes one option id into an open selection. An id that is not in that choice's options is rejected before the save.",
+      description: "Writes one option id into an open selection key from list_open_choices, then reruns character operations and saves the builder fields. An id that is not in that choice's options is rejected before the save.",
       annotations: writes,
       inputSchema: {
         characterId: z.number().int(),
@@ -299,7 +326,12 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
     async (args) => {
       const loaded = await loadRow(userId(), args.characterId);
       if (!loaded.ok) return fail(loaded);
-      const choices = await listCharacterChoices(loaded.data, userId());
+      let choices: OpenChoice[];
+      try {
+        choices = await listCharacterChoices(loaded.data, userId());
+      } catch (error) {
+        return thrown(error);
+      }
       const choice = choices.find((item) => item.id === args.choiceId);
       if (!choice) return textResult("That choice is not open.", { code: "NOT_FOUND", retryable: false }, true);
       if (!choice.options.some((option) => option.id === args.optionId)) {
@@ -307,7 +339,13 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
       }
       const operation = (loaded.data.operation_data as Record<string, unknown> | undefined) ?? {};
       const selections = { ...((operation.selections as Record<string, string> | undefined) ?? {}), [args.choiceId]: args.optionId };
-      const saved = await saveRow(userId(), loaded.data, { operation_data: { ...operation, selections } });
+      let drafted: CharacterRow;
+      try {
+        drafted = await applyCharacterWrite({ ...loaded.data, operation_data: { ...operation, selections } });
+      } catch (error) {
+        return thrown(error);
+      }
+      const saved = await saveRow(userId(), loaded.data, savePatch(drafted));
       if (!saved.ok) return fail(saved);
       return textResult("Choice saved", { ...summary(saved.data), choiceId: args.choiceId, optionId: args.optionId });
     },
@@ -317,12 +355,14 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
     "delete_character",
     {
       title: "Delete character",
-      description: "Deletes a character by posting { id, type: character } to delete-content.",
+      description: "Deletes a character the caller can read by posting { id, type: character } to delete-content.",
       annotations: writes,
       inputSchema: { characterId: z.number().int() },
     },
     async (args) => {
-      const deleted = await invokeFunction(userId(), "delete-content", { id: args.characterId, type: "character" });
+      const loaded = await loadRow(userId(), args.characterId);
+      if (!loaded.ok) return fail(loaded);
+      const deleted = await invokeFunction(userId(), "delete-content", { id: loaded.data.id, type: "character" });
       if (!deleted.ok) return fail(deleted);
       return textResult("Character deleted", { id: args.characterId });
     },

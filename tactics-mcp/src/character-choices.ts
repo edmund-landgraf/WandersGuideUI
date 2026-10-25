@@ -15,7 +15,7 @@ type ResultNode = {
     options?: Record<string, unknown>[];
   };
   result?: {
-    source?: { name?: string };
+    source?: { name?: string; _select_uuid?: string };
     results?: ResultNode[];
   };
 } | null;
@@ -43,16 +43,17 @@ function filledNames(results: ResultNode[] | undefined): string[] {
   return names;
 }
 
-export function collectOpenChoices(results: ResultNode[] | undefined, source: string, alreadyNames: string[] = []): OpenChoice[] {
+export function collectOpenChoices(results: ResultNode[] | undefined, source: string, alreadyNames: string[] = [], trail = ""): OpenChoice[] {
   const already = [...new Set([...alreadyNames, ...filledNames(results)])];
   const found: OpenChoice[] = [];
   for (const result of results ?? []) {
     if (!result) continue;
+    const selectionId = result.selection?.id || result.selection?.title || "";
     if (result.selection && !result.result?.source) {
       const options = (result.selection.options ?? []).map(optionOf).filter((item): item is ChoiceOption => item !== null);
       const kind = options.length ? kindOf(result.selection.options?.[0]) : "select";
       found.push({
-        id: result.selection.id || result.selection.title || `${source}-choice`,
+        id: [source, trail, selectionId].filter(Boolean).join("_"),
         source,
         kind,
         remaining: 1,
@@ -60,7 +61,9 @@ export function collectOpenChoices(results: ResultNode[] | undefined, source: st
         options,
       });
     }
-    found.push(...collectOpenChoices(result.result?.results, source, already));
+    const selectedUuid = result.result?.source?._select_uuid ?? "";
+    const nextTrail = [trail, selectionId, selectedUuid].filter(Boolean).join("_");
+    found.push(...collectOpenChoices(result.result?.results, source, already, nextTrail));
   }
   return found;
 }
@@ -76,23 +79,35 @@ export type ChoicePackage = {
   classResults?: ResultNode[];
   class2Results?: ResultNode[];
   characterResults?: ResultNode[];
-  ancestrySectionResults?: { baseSource?: { name?: string }; baseResults?: ResultNode[] }[];
-  classFeatureResults?: { baseSource?: { name?: string }; baseResults?: ResultNode[] }[];
+  ancestrySectionResults?: { baseSource?: { id?: number; name?: string }; baseResults?: ResultNode[] }[];
+  classFeatureResults?: { baseSource?: { id?: number; name?: string }; baseResults?: ResultNode[] }[];
+  contentSourceResults?: { baseSource?: { id?: number; name?: string }; baseResults?: ResultNode[] }[];
+  itemResults?: { baseSource?: { id?: number; name?: string }; baseResults?: ResultNode[] }[];
 };
+
+function sectionPrefix(fallback: string, source: { id?: number; name?: string } | undefined) {
+  return typeof source?.id === "number" ? `${fallback}-${source.id}` : fallback;
+}
 
 export function openChoicesFromPackage(pkg: ChoicePackage): OpenChoice[] {
   const sections: OpenChoice[][] = [
     collectOpenChoices(pkg.ancestryResults, "ancestry"),
     collectOpenChoices(pkg.backgroundResults, "background"),
     collectOpenChoices(pkg.classResults, "class"),
-    collectOpenChoices(pkg.class2Results, "class"),
+    collectOpenChoices(pkg.class2Results, "class-2"),
     collectOpenChoices(pkg.characterResults, "character"),
   ];
   for (const section of pkg.ancestrySectionResults ?? []) {
-    sections.push(collectOpenChoices(section.baseResults, section.baseSource?.name || "ancestry"));
+    sections.push(collectOpenChoices(section.baseResults, sectionPrefix("ancestry-section", section.baseSource)));
   }
   for (const section of pkg.classFeatureResults ?? []) {
-    sections.push(collectOpenChoices(section.baseResults, section.baseSource?.name || "class"));
+    sections.push(collectOpenChoices(section.baseResults, sectionPrefix("class-feature", section.baseSource)));
+  }
+  for (const section of pkg.contentSourceResults ?? []) {
+    sections.push(collectOpenChoices(section.baseResults, sectionPrefix("content-source", section.baseSource)));
+  }
+  for (const section of pkg.itemResults ?? []) {
+    sections.push(collectOpenChoices(section.baseResults, sectionPrefix("item", section.baseSource)));
   }
   return sections.flat();
 }
@@ -100,12 +115,26 @@ export function openChoicesFromPackage(pkg: ChoicePackage): OpenChoice[] {
 export type ChoiceRunner = (character: Record<string, unknown>, userId: string) => Promise<OpenChoice[]>;
 
 let runner: ChoiceRunner | null = null;
+let applier: ((character: Record<string, unknown>) => Promise<Record<string, unknown>>) | null | undefined;
 
 export function setCharacterChoiceRunner(next: ChoiceRunner | null) {
   runner = next;
 }
 
+/** null skips the operation pass. undefined uses the builder operation pass. */
+export function setCharacterWriteApplier(next: ((character: Record<string, unknown>) => Promise<Record<string, unknown>>) | null | undefined) {
+  applier = next;
+}
+
 export async function listCharacterChoices(character: Record<string, unknown>, userId: string) {
   if (runner) return runner(character, userId);
-  return [];
+  const { liveCharacterChoices } = await import("./character-choices-live.js");
+  return liveCharacterChoices(character, userId);
+}
+
+export async function applyCharacterWrite(character: Record<string, unknown>) {
+  if (applier === null) return character;
+  if (applier) return applier(character);
+  const { liveCharacterWrite } = await import("./character-choices-live.js");
+  return liveCharacterWrite(character);
 }
