@@ -67,6 +67,18 @@ export function sameNumericId(a: unknown, b: unknown): boolean {
   return left !== null && left === right;
 }
 
+function hasSessionId(token: string): boolean {
+  const part = token.split('.')[1];
+  if (!part) return false;
+  try {
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    const claims = JSON.parse(atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4)));
+    return typeof claims?.session_id === 'string' && claims.session_id !== '';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The authenticated caller's user id.
  *
@@ -81,6 +93,12 @@ export async function requireCallerId(
 ): Promise<string> {
   const unauthenticated = new HttpError(401, 'Sign in to view this campaign.', 'AUTH_REQUIRED');
   if (!token) throw unauthenticated;
+
+  // A real GoTrue session token carries session_id. The stock helpers.connect() turns an
+  // API key into a self-signed owner JWT without one; on a stack whose helpers still do
+  // that (upstream prod), an API key would otherwise act as a full owner session on every
+  // wgui-ext endpoint. API keys are only for the *-key-* endpoints.
+  if (!hasSessionId(token)) throw unauthenticated;
 
   const {
     data: { user },
