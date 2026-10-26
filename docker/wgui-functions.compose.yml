@@ -7,6 +7,9 @@
 
 services:
   functions:
+    environment:
+      # Admin panel unlock password; value lives only in the stack .env (ADMIN_PANEL_PASSWORD).
+      ADMIN_PANEL_PASSWORD: ${ADMIN_PANEL_PASSWORD:-}
     volumes: !override
       - ${WG_FUNCTIONS_DIR}:/wgui-fn/base:ro
       - ${WGUI_EXT_DIR}:/wgui-fn/ext:ro

@@ -18,6 +18,8 @@ import { applyDisplayPrefsFromUser } from './display-prefs';
 import { applyPhase1CssTheme, readStoredPhase1CssTheme } from './phase1-css-theme';
 import { applyPhase1Theme, readStoredPhase1Theme } from './phase1-theme';
 import { OperationErrorModalHost } from '@utils/operation-error-modal';
+import { Phase1AdminPage } from '@pages/admin_panel/players/Phase1AdminPage';
+import { Phase1AdminCharacterView } from '@pages/admin_panel/players/Phase1AdminCharacterView';
 import './phase1.css';
 
 const queryClient = new QueryClient({
@@ -66,6 +68,8 @@ const router = createBrowserRouter([
       { path: '/phase1', Component: Phase1IndexPage },
       { path: '/phase1/account', Component: Phase1AccountPage },
       { path: '/phase1/homebrew', Component: Phase1HomebrewPage },
+      { path: '/phase1/admin', Component: Phase1AdminPage },
+      { path: '/phase1/admin/view/:characterId', Component: Phase1AdminCharacterView },
       { path: '/phase1/characters', Component: Phase1CharactersPage },
       { path: '/phase1/encounters', Component: Phase1EncountersPage },
       { path: '/phase1/encounters/:encounterId', Component: Phase1StandaloneEncounterPage },

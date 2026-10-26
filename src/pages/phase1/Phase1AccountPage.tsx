@@ -131,7 +131,7 @@ function AccountCard({ userId, email }: { userId: string; email?: string }) {
         </div>
         <div className='mt-4 flex flex-wrap justify-center gap-1.5'>
           {user.deactivated && <Badge>Deactivated</Badge>}
-          {user.is_admin && <Badge>Admin</Badge>}
+          {user.is_admin && <a href='/phase1/admin' target='_blank' rel='noopener noreferrer' title='Open admin panel in a new tab' data-testid='account-admin-badge' className='hover:opacity-80'><Badge>Admin</Badge></a>}
           {user.is_mod && <Badge>Mod</Badge>}
           {user.is_developer && <Badge>Developer</Badge>}
           <Badge>{patron}</Badge>

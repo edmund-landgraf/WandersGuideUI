@@ -362,12 +362,14 @@
     {
       "weekStart": "2026-10-26",
       "label": "Oct 26 – Nov 1, 2026",
-      "count": 3,
-      "summary": "Add a Phase 1 homebrew page so bundle links stay in the new UI, and hide empty item bulk. Paginate Phase 1 homebrew bundles, unlock keyed packs, and show item images with content feedback. Let the phase switch treat Homebrew as a section so the Phase 1 header type-checks.",
+      "count": 5,
+      "summary": "Add a Phase 1 homebrew page so bundle links stay in the new UI, and hide empty item bulk. Paginate Phase 1 homebrew bundles, unlock keyed packs, and show item images with content feedback. Let the phase switch treat Homebrew as a section so the Phase 1 header type-checks. Give Phase 1 its own homebrew editors and expose the homebrew catalog on the tactics MCP. Add a test plan for the homebrew tactics MCP tools.",
       "subjects": [
         "Add a Phase 1 homebrew page so bundle links stay in the new UI, and hide empty item bulk.",
         "Paginate Phase 1 homebrew bundles, unlock keyed packs, and show item images with content feedback.",
-        "Let the phase switch treat Homebrew as a section so the Phase 1 header type-checks."
+        "Let the phase switch treat Homebrew as a section so the Phase 1 header type-checks.",
+        "Give Phase 1 its own homebrew editors and expose the homebrew catalog on the tactics MCP.",
+        "Add a test plan for the homebrew tactics MCP tools."
       ]
     }
   ]
