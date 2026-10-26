@@ -14,6 +14,7 @@ import { toLabel } from '@utils/strings';
 import { hasPatreonAccess } from '@utils/patreon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { WorkspaceHeader } from './Phase1Workspace';
 
 const SWATCHES = [
@@ -140,6 +141,12 @@ function AccountCard({ userId, email }: { userId: string; email?: string }) {
       </section>
 
       <div className='mt-3 space-y-2'>
+        {user.is_admin && (
+          <Link to='/phase1/admin' className='flex items-center justify-between rounded-lg border border-p1-border bg-p1-surface px-3 py-2 text-sm hover:bg-p1-hover'>
+            <span>Admin</span>
+            <span className='text-xs text-p1-muted'>Open panel</span>
+          </Link>
+        )}
         <Fold title='Patreon' hint={user.patreon?.tier ? 'Connected' : 'Not connected'}>
           <a href={PATREON_AUTH_URL} className='inline-flex rounded-md border border-p1-border px-3 py-1.5 text-sm hover:bg-p1-hover'>
             {user.patreon?.tier ? 'Patreon connected' : 'Connect to Patreon'}

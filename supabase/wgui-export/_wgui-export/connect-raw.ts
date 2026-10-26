@@ -10,6 +10,7 @@ import { HttpError, isAuthenticationError, readJsonBody } from '../_shared/http-
 import { bucketFor, checkRateLimit, rateLimitHeaders } from '../_shared/rate-limit.ts';
 // @ts-ignore
 import { SignJWT } from 'npm:jose@5.9.6';
+import { authenticateBearer, grantedCharacterIds, scopeBodyToGrants } from '../_shared/caller-auth.ts';
 
 function asHttpResponse(result: JSendResponse | Response, rlHeaders: Record<string, string>): Response {
   if (result instanceof Response) {
@@ -51,7 +52,9 @@ async function handleApiRouting<T>(
     token: string
   ) => Promise<JSendResponse | Response>,
   supportsCharacterAPI: boolean | undefined,
-  rlHeaders: Record<string, string>
+  rlHeaders: Record<string, string>,
+  allowAnonymous = false,
+  scopeCharacterList = false
 ): Promise<Response> {
   const adminClient = createClient(
     // @ts-ignore
@@ -85,30 +88,24 @@ async function handleApiRouting<T>(
     );
   }
 
-  let userId = publicUser.user_id;
-  if (
-    supportsCharacterAPI &&
-    (body as Record<string, any>)?.id &&
-    typeof (body as Record<string, any>).id === 'number'
-  ) {
-    const characters = await fetchData<Character>(adminClient, 'character', [
-      { column: 'id', value: (body as Record<string, any>).id },
-    ]);
-    const character = characters.find((c) =>
-      c.details?.api_clients?.client_access.find(
-        (entry) => entry.clientId === apiClient.id && entry.publicUserId === `${publicUser.id}`
-      )
+  const userId = publicUser.user_id;
+  if (!supportsCharacterAPI && !allowAnonymous) {
+    // An API key is a character-API credential, not a full session for its owner.
+    return new Response(
+      JSON.stringify({
+        status: 'fail',
+        data: { message: 'API keys can only be used with character endpoints.' },
+      } satisfies JSendResponse),
+      {
+        headers: { ...corsHeaders, ...rlHeaders, 'Content-Type': 'application/json' },
+        status: 403,
+      }
     );
-    if (!character) {
-      return new Response(
-        JSON.stringify({ status: 'fail', data: { message: 'You do not have access to this character' } }),
-        {
-          headers: { ...corsHeaders, ...rlHeaders, 'Content-Type': 'application/json' },
-          status: 403,
-        }
-      );
-    }
-    userId = character.user_id;
+  }
+  if (supportsCharacterAPI) {
+    // Only characters granted to THIS client and owned by the key's user.
+    const granted = await grantedCharacterIds(adminClient, publicUser, apiClient.id);
+    body = scopeBodyToGrants(body, granted, !!scopeCharacterList);
   }
 
   const { data: userData, error: errorUser } = await adminClient.auth.admin.getUserById(userId);
@@ -182,6 +179,7 @@ export async function connect<T = Record<string, any>>(
       return await handleApiRouting(token, body, executeFn, options?.supportsCharacterAPI, rlHeaders);
     }
 
+    if (!options?.bypassAuth) await authenticateBearer(token, false);
     const supabaseClient = createClient(
       // @ts-ignore
       Deno.env.get('SUPABASE_URL') ?? '',
