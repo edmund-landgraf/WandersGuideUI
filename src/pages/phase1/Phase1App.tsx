@@ -6,6 +6,7 @@ import { Phase1SheetPage } from './Phase1SheetPage';
 import { Phase1StatBlockPage } from './Phase1StatBlockPage';
 import { TacticsPage } from './tactics/TacticsPage';
 import { Phase1AccountPage } from './Phase1AccountPage';
+import { Phase1HomebrewPage } from './Phase1HomebrewPage';
 import { Phase1BuilderPage } from './Phase1BuilderPage';
 import { Phase1AuthCallback } from '@auth/Phase1AuthCallback';
 import { ContentLinkProvider } from './phase1-content-links';
@@ -64,6 +65,7 @@ const router = createBrowserRouter([
       { path: '/', Component: Phase1AuthCallback },
       { path: '/phase1', Component: Phase1IndexPage },
       { path: '/phase1/account', Component: Phase1AccountPage },
+      { path: '/phase1/homebrew', Component: Phase1HomebrewPage },
       { path: '/phase1/characters', Component: Phase1CharactersPage },
       { path: '/phase1/encounters', Component: Phase1EncountersPage },
       { path: '/phase1/encounters/:encounterId', Component: Phase1StandaloneEncounterPage },

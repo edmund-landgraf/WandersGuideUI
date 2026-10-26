@@ -210,13 +210,14 @@ async function loadCatalogContent(entry: ContentLinkRef): Promise<CatalogView | 
       tags: [item.rarity, item.group.replaceAll('_', ' '), ...traitNames].filter(Boolean),
       facts: [
         { label: 'Level', value: String(item.level) },
-        { label: 'Bulk', value: labelizeBulk(item.bulk ?? undefined, true) },
+        { label: 'Bulk', value: (() => { const bulk = labelizeBulk(item.bulk ?? undefined); return bulk === '—' ? null : bulk; })() },
         { label: 'Price', value: formatPrice(item) },
         { label: 'Hands', value: item.hands?.trim() || null },
         { label: 'Usage', value: item.usage?.trim() || null },
         { label: 'Damage', value: formatDamage(item) },
         { label: 'Range', value: item.meta_data?.range != null && `${item.meta_data.range}`.trim() !== '' ? `${item.meta_data.range} ft.` : null },
         { label: 'AC Bonus', value: item.meta_data?.ac_bonus != null ? String(item.meta_data.ac_bonus) : null },
+        { label: 'Craft Requirements', value: item.craft_requirements?.trim() || null },
       ],
       description: item.description,
     };

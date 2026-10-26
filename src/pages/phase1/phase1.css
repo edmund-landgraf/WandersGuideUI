@@ -245,6 +245,37 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+.p1-segment {
+  display: inline-flex;
+  height: 2.25rem;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--p1-border);
+  border-radius: var(--p1-radius);
+  background: var(--p1-bg-raised);
+}
+.p1-segment button {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-right: 1px solid var(--p1-border);
+  padding: 0 0.75rem;
+  color: var(--p1-text-muted);
+  background: transparent;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.p1-segment button:last-child { border-right: 0; }
+.p1-segment button:hover { color: var(--p1-accent-soft); background: var(--p1-hover); }
+.p1-segment button.is-active {
+  color: var(--p1-accent-ink);
+  background: var(--p1-accent);
+}
+.p1-segment button.is-active:hover { color: var(--p1-accent-ink); background: var(--p1-accent); }
 .toolbar-button {
   display: inline-flex;
   height: 2.25rem;
@@ -259,6 +290,13 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   white-space: nowrap;
 }
 .toolbar-button:disabled { cursor: not-allowed; opacity: 0.45; }
+.toolbar-button-accent {
+  border-color: color-mix(in srgb, var(--p1-accent) 50%, var(--p1-border));
+  background: var(--p1-accent);
+  color: var(--p1-accent-ink);
+  font-weight: 600;
+}
+.toolbar-button-accent:hover { opacity: 0.92; }
 .xp-challenge {
   display: inline-flex;
   height: 2.25rem;

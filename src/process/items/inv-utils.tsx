@@ -726,6 +726,9 @@ export function labelizeBulk(bulk?: number | string, displayZero = false) {
     }
   }
   bulk = parseFloat(bulk as string);
+  if (!Number.isFinite(bulk)) {
+    return displayZero ? '0' : '—';
+  }
   if (bulk === 0) {
     if (displayZero) {
       return '0';

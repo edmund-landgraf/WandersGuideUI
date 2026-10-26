@@ -23,7 +23,6 @@ import {
 import { cloneDeep, isEqual, uniq } from 'lodash-es';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { OLD_UI_ORIGIN } from '../phase-switch/PhaseViewSwitch';
 import { Phase1OperationsModal } from './phase1-operations-modal';
 
 type SettingsTab = 'books' | 'homebrew' | 'variants' | 'options';
@@ -530,7 +529,7 @@ function HomebrewPanel({
     return (
       <EmptySettingsState>
         No subscribed bundles found.{' '}
-        <a className='text-p1-accent hover:underline' href={`${OLD_UI_ORIGIN}/homebrew`} target='_blank' rel='noreferrer'>
+        <a className='text-p1-accent hover:underline' href='/phase1/homebrew'>
           Go add some!
         </a>
       </EmptySettingsState>

@@ -264,8 +264,8 @@
     {
       "weekStart": "2026-10-19",
       "label": "Oct 19 – Oct 25, 2026",
-      "count": 87,
-      "summary": "Stamp the running version and list weekly updates in the app. Add email registration and confirm before clearing campaign art. Let Grokbot connect to the tactics MCP server with a registered OAuth client and a stdio bridge. Show the signed-in user id from get_profile so the token identity is the id used for ownership checks. Document WGUI edge-function implementation order and contracts. Polish WGUI edge-function documentation spacing. Add shared encounter command helpers. Plus 80 more.",
+      "count": 90,
+      "summary": "Stamp the running version and list weekly updates in the app. Add email registration and confirm before clearing campaign art. Let Grokbot connect to the tactics MCP server with a registered OAuth client and a stdio bridge. Show the signed-in user id from get_profile so the token identity is the id used for ownership checks. Document WGUI edge-function implementation order and contracts. Polish WGUI edge-function documentation spacing. Add shared encounter command helpers. Plus 83 more.",
       "subjects": [
         "Stamp the running version and list weekly updates in the app.",
         "Add email registration and confirm before clearing campaign art.",
@@ -353,7 +353,10 @@
         "Put character builder mutations on the write scope after the rebase.",
         "Explain why the two sites look the same and list the extra play functions.",
         "Pair related launcher probes and start the tactics MCP over local stdio.",
-        "Cover character builder tools in MCP scope checks and docs."
+        "Cover character builder tools in MCP scope checks and docs.",
+        "Load workspace env for the local tactics MCP so stdio runs pick up Supabase credentials.",
+        "Keep campaign art visible while the framed upload finishes.",
+        "Run builder operations when listing and saving character choices, and show the matching help screenshots."
       ]
     }
   ]

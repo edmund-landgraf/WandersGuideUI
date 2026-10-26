@@ -26,8 +26,6 @@ import { getAllBackgroundImages } from '@utils/background-images';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Phase1ArtworkPreview, Phase1BackgroundModal } from './phase1-background-modal';
 import { Phase1OperationsModal } from './phase1-operations-modal';
-import { OLD_UI_ORIGIN } from '../phase-switch/PhaseViewSwitch';
-
 type HomeTab = 'books' | 'homebrew' | 'variants' | 'options';
 
 const HOME_TABS: { id: HomeTab; label: string; icon: ReactNode }[] = [
@@ -387,7 +385,7 @@ function HomebrewPanel({
     return (
       <p className='px-4 py-8 text-center text-sm italic text-p1-faint'>
         No subscribed bundles found.{' '}
-        <a className='text-p1-accent hover:underline' href={`${OLD_UI_ORIGIN}/homebrew`} target='_blank' rel='noreferrer'>
+        <a className='text-p1-accent hover:underline' href='/phase1/homebrew'>
           Go add some!
         </a>
       </p>

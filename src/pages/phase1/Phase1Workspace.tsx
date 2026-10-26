@@ -3651,7 +3651,7 @@ function useCombatantStatuses(encounterId: number | null, combatants: PopulatedC
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
-export function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, viewingSettings, railOpen, onToggleRail }: { label?: string; section?: 'campaigns' | 'characters' | 'encounters'; campaignId?: number | null; encounterId?: number | null; noteIndex?: number | null; viewingSettings?: boolean; railOpen?: boolean; onToggleRail?: () => void }) {
+export function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, viewingSettings, railOpen, onToggleRail }: { label?: string; section?: 'campaigns' | 'characters' | 'encounters' | 'homebrew'; campaignId?: number | null; encounterId?: number | null; noteIndex?: number | null; viewingSettings?: boolean; railOpen?: boolean; onToggleRail?: () => void }) {
   const navClass = (active: boolean) => `text-sm ${active ? 'text-p1-text' : 'text-p1-muted hover:text-p1-text'}`;
   const user = useQuery({
     queryKey: ['phase1-public-user'],
@@ -3672,6 +3672,7 @@ export function WorkspaceHeader({ label, section, campaignId, encounterId, noteI
       <span className='hidden h-4 w-px bg-p1-border sm:block' />
       <Link to='/phase1' className={navClass(section === 'campaigns')}>Campaigns</Link>
       <Link to='/phase1/characters' className={navClass(section === 'characters')}>Characters</Link>
+      <Link to='/phase1/homebrew' className={navClass(section === 'homebrew')}>Homebrew</Link>
       <Link to='/phase1/encounters' className={navClass(section === 'encounters')}>Encounters</Link>
       <a href='/shops' className={navClass(false)}>Shops</a>
       {label && <><span className='text-p1-faint'>/</span><span className='max-w-40 truncate text-sm text-p1-muted'>{label}</span></>}
