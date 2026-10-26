@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
@@ -13,6 +13,8 @@ import type { AbilityBlock, Creature, Item, Language, Spell, Trait } from '@sche
 import { abilityNameAndCost, proseCastTime } from '@utils/actions';
 import { useContentLinks, type ContentLinkRef } from './phase1-content-links';
 import { ProseMarkdown } from './phase1-markdown';
+import ContentFeedbackModal from '@modals/ContentFeedbackModal';
+import type { AbilityBlockType, ContentType } from '@schemas/content';
 
 export function CloseStackOnNavigate() {
   const { pathname } = useLocation();
@@ -43,6 +45,7 @@ function CatalogModal({
   onClose: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  const [reporting, setReporting] = useState(false);
   const content = useQuery({
     queryKey: ['phase1-content-link', entry.type, entry.id],
     queryFn: () => loadCatalogContent(entry),
@@ -109,6 +112,11 @@ function CatalogModal({
               <h2 id='content-stack-title' className='text-xl font-semibold leading-tight'>Content not found</h2>
             )}
           </div>
+          {loaded && Number.isFinite(Number(entry.id)) && (
+            <button type='button' className='toolbar-button shrink-0' onClick={() => setReporting(true)}>
+              Missing something?
+            </button>
+          )}
           {canGoBack ? (
             <button ref={closeRef} className='icon-button shrink-0' onClick={onBack} title='Back'>
               <ArrowLeft size={18} />
@@ -138,6 +146,17 @@ function CatalogModal({
           )}
         </div>
       </section>
+      {reporting && Number.isFinite(Number(entry.id)) && (
+        <ContentFeedbackModal
+          opened
+          zIndex={200}
+          type={entry.type as ContentType | AbilityBlockType}
+          data={{ id: Number(entry.id) }}
+          onStartFeedback={() => undefined}
+          onCompleteFeedback={() => setReporting(false)}
+          onCancel={() => setReporting(false)}
+        />
+      )}
     </div>,
     document.body
   );

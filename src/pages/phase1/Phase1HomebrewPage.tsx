@@ -1,20 +1,28 @@
 import { CampaignSignIn } from '@auth/CampaignSignIn';
 import { useAuthSession } from '@auth/useAuthSession';
 import { getCachedPublicUser, getPublicUser } from '@auth/user-manager';
+import RichTextInput from '@common/rich_text_input/RichTextInput';
 import { deleteContent, upsertContentSource } from '@content/content-creation';
 import { fetchContentPackage, fetchContentSources, resetContentStore } from '@content/content-store';
-import { updateSubscriptions } from '@content/homebrew';
+import { toHTML } from '@content/content-utils';
+import { defineDefaultSourcesForSource, updateSubscriptions } from '@content/homebrew';
 import { importFromCustomPack } from '@homebrew/import/pathbuilder-custom-packs';
+import ContentFeedbackModal from '@modals/ContentFeedbackModal';
 import { makeRequest } from '@requests/request-manager';
-import type { AbilityBlock, ContentPackage, ContentSource, PublicUser } from '@schemas/content';
+import type { AbilityBlockType, ContentSource, ContentType, PublicUser } from '@schemas/content';
 import { hasPatreonAccess } from '@utils/patreon';
 import { pluralize, toLabel } from '@utils/strings';
+import { getRingIcon } from '@utils/images';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { OLD_UI_ORIGIN } from '../phase-switch/PhaseViewSwitch';
 import { useContentLinks } from './phase1-content-links';
+import { BUNDLE_SECTIONS, BundleEditorColumn, bundleEntries } from './phase1-homebrew-records';
+import { Phase1OperationsModal } from './phase1-operations-modal';
 import { Phase1PickerModal } from './phase1-picker-modal';
 import { WorkspaceHeader } from './Phase1Workspace';
+
+const PAGE_SIZE = 12;
 
 type Tab = 'browse' | 'subscriptions' | 'creations';
 
@@ -64,6 +72,9 @@ function HomebrewBody() {
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<ContentSource | null>(null);
   const [editing, setEditing] = useState<ContentSource | null>(null);
+  const [locked, setLocked] = useState<ContentSource | null>(null);
+  const [unlockedIds, setUnlockedIds] = useState<number[]>([]);
+  const [page, setPage] = useState(0);
   const importRef = useRef<HTMLInputElement>(null);
 
   const userQuery = useQuery({
@@ -106,7 +117,11 @@ function HomebrewBody() {
   );
 
   const list = tab === 'browse' ? browseQuery.data ?? [] : tab === 'subscriptions' ? subscribed : creations;
-  const filtered = list.filter((source) => searchBlob(source).includes(search.trim().toLowerCase()));
+  const filtered = list
+    .filter((source) => searchBlob(source).includes(search.trim().toLowerCase()))
+    .sort((a, b) => Number(a.require_key) - Number(b.require_key) || a.name.localeCompare(b.name));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paged = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
   const loading =
     userQuery.isFetching ||
     (tab === 'browse' ? browseQuery.isFetching : ownedQuery.isFetching || !user);
@@ -122,8 +137,18 @@ function HomebrewBody() {
     }
     setNotice('');
     setTab(next);
+    setPage(0);
     setSelected(null);
     setEditing(null);
+  }
+
+  function openBundle(source: ContentSource) {
+    const subscribedNow = Boolean(user?.subscribed_content_sources?.some((item) => item.source_id === source.id));
+    if (source.require_key && !subscribedNow && !unlockedIds.includes(source.id)) {
+      setLocked(source);
+      return;
+    }
+    setSelected(source);
   }
 
   async function refreshUser() {
@@ -234,7 +259,10 @@ function HomebrewBody() {
           className='settings-input h-9 min-w-0 flex-1 py-0'
           placeholder='Search bundles'
           value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          onChange={(event) => {
+            setSearch(event.target.value);
+            setPage(0);
+          }}
         />
         <div className='p1-segment w-full shrink-0 sm:w-auto'>
           <TabButton active={tab === 'browse'} onClick={() => chooseTab('browse')}>
@@ -266,8 +294,8 @@ function HomebrewBody() {
         <p className='mt-8 text-center text-sm italic text-p1-muted'>Loading bundles...</p>
       ) : tab === 'creations' ? (
         <div className='mt-6 space-y-6'>
-          <BundleGroup title='In Progress' sources={inProgress} empty='No bundles in progress.' user={user} busy={busy} onOpen={setSelected} onEdit={setEditing} onDelete={(source) => void removeBundle(source)} />
-          <BundleGroup title='Published' sources={published} empty='No published bundles.' user={user} busy={busy} onOpen={setSelected} onEdit={setEditing} onDelete={(source) => void removeBundle(source)} />
+          <BundleGroup title='In Progress' sources={inProgress} empty='No bundles in progress.' user={user} busy={busy} onOpen={openBundle} onEdit={setEditing} onDelete={(source) => void removeBundle(source)} />
+          <BundleGroup title='Published' sources={published} empty='No published bundles.' user={user} busy={busy} onOpen={openBundle} onEdit={setEditing} onDelete={(source) => void removeBundle(source)} />
         </div>
       ) : filtered.length === 0 ? (
         <p className='mt-8 text-center text-sm italic text-p1-muted'>
@@ -285,13 +313,13 @@ function HomebrewBody() {
         </p>
       ) : (
         <ul className='mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
-          {filtered.map((source) => (
+          {paged.map((source) => (
             <li key={source.id}>
               <BundleCard
                 source={source}
                 user={user}
                 busy={busy}
-                onOpen={() => setSelected(source)}
+                onOpen={() => openBundle(source)}
                 onUnsubscribe={tab === 'subscriptions' ? () => {
                   if (!window.confirm(`Unsubscribe from “${source.name}”? Characters using this bundle will lose its content.`)) return;
                   void subscribe(source, false);
@@ -300,6 +328,30 @@ function HomebrewBody() {
             </li>
           ))}
         </ul>
+      )}
+      {tab !== 'creations' && pageCount > 1 && (
+        <div className='mt-4 flex justify-center gap-2'>
+          <button type='button' className='toolbar-button' disabled={page === 0} onClick={() => setPage((current) => current - 1)}>
+            Previous
+          </button>
+          <span className='self-center text-xs text-p1-muted'>
+            {page + 1} / {pageCount}
+          </span>
+          <button type='button' className='toolbar-button' disabled={page + 1 >= pageCount} onClick={() => setPage((current) => current + 1)}>
+            Next
+          </button>
+        </div>
+      )}
+      {locked && (
+        <UnlockPrompt
+          source={locked}
+          onCancel={() => setLocked(null)}
+          onUnlock={() => {
+            setUnlockedIds((current) => [...current, locked.id]);
+            setSelected(locked);
+            setLocked(null);
+          }}
+        />
       )}
 
       {selected && !editing && (
@@ -380,16 +432,29 @@ function BundleCard({
   onUnsubscribe?: () => void;
 }) {
   const subscribed = Boolean(user?.subscribed_content_sources?.some((item) => item.source_id === source.id));
+  const stats = useQuery({
+    queryKey: ['phase1-source-stats', source.id],
+    queryFn: () => makeRequest<{ count?: number }>('get-content-source-stats', { content_source_id: source.id }),
+  });
   return (
     <article className='flex h-full flex-col rounded-lg border border-p1-border bg-p1-surface p-3'>
-      <button type='button' className='min-w-0 flex-1 text-left' onClick={onOpen}>
-        <h3 className='font-medium'>{source.name}</h3>
+      <button type='button' className='flex min-w-0 flex-1 gap-3 text-left' onClick={onOpen}>
+        <BundleIcon source={source} />
+        <span className='min-w-0 flex-1'>
+        <span className='flex items-start justify-between gap-2'>
+          <h3 className='font-medium'>{source.name}</h3>
+          <span className='text-right text-[10px] uppercase text-p1-faint'>
+            Subscribers
+            <span className='block text-xs normal-case text-p1-muted'>{stats.data?.count ?? '…'}</span>
+          </span>
+        </span>
         <p className='mt-1 line-clamp-3 text-xs text-p1-muted'>{source.description || 'No description.'}</p>
         <p className='mt-2 text-[11px] text-p1-faint'>
           {bundleCounts(source) || (source.require_key ? 'Locked' : 'Open')}
           {source.contact_info ? ` · ${source.contact_info}` : ''}
           {subscribed ? ' · Subscribed' : ''}
         </p>
+        </span>
       </button>
       {(onEdit || onDelete || onUnsubscribe) && (
         <div className='mt-3 flex gap-2'>
@@ -414,8 +479,6 @@ function BundleCard({
   );
 }
 
-type BundleEntry = { key: string; name: string; kind: string; href: string };
-
 function bundleCounts(source: ContentSource) {
   const counts = Object.entries(source.meta_data?.counts ?? {})
     .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && entry[1] > 0)
@@ -423,35 +486,6 @@ function bundleCounts(source: ContentSource) {
     .slice(0, 3)
     .map(([key, value]) => `${pluralize(toLabel(key))} ${value}`);
   return counts.join(' · ');
-}
-
-function bundleEntries(content: ContentPackage): BundleEntry[] {
-  const rows: BundleEntry[] = [];
-  const add = (kind: string, type: string, records: { id: number; name: string }[]) => {
-    for (const record of records) {
-      rows.push({ key: `${type}-${record.id}`, name: record.name, kind, href: `link_${type}_${record.id}` });
-    }
-  };
-  const blocks = (type: AbilityBlock['type']) => content.abilityBlocks.filter((block) => block.type === type);
-  add('Action', 'action', blocks('action'));
-  add('Feat', 'feat', blocks('feat'));
-  add('Class Feature', 'class-feature', blocks('class-feature'));
-  add('Heritage', 'heritage', blocks('heritage'));
-  add('Physical Feature', 'physical-feature', blocks('physical-feature'));
-  add('Sense', 'sense', blocks('sense'));
-  add('Mode', 'mode', blocks('mode'));
-  add('Ancestry', 'ancestry', content.ancestries);
-  add('Background', 'background', content.backgrounds);
-  add('Class', 'class', content.classes);
-  add('Class Archetype', 'class-archetype', content.classArchetypes);
-  add('Archetype', 'archetype', content.archetypes);
-  add('Versatile Heritage', 'versatile-heritage', content.versatileHeritages);
-  add('Creature', 'creature', content.creatures);
-  add('Item', 'item', content.items);
-  add('Language', 'language', content.languages);
-  add('Spell', 'spell', content.spells);
-  add('Trait', 'trait', content.traits);
-  return rows.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function BundleModal({
@@ -476,8 +510,10 @@ function BundleModal({
     queryFn: () => fetchContentPackage([source.id], { fetchCreatures: true }),
   });
   const entries = useMemo(() => (packageQuery.data ? bundleEntries(packageQuery.data) : []), [packageQuery.data]);
+  const [missing, setMissing] = useState<ContentType | AbilityBlockType | ''>('');
 
   return (
+    <>
     <Phase1PickerModal
       title={source.name}
       titleId='homebrew-bundle-title'
@@ -498,6 +534,23 @@ function BundleModal({
           {source.contact_info && <p>{source.contact_info}</p>}
           {source.required_content_sources && source.required_content_sources.length > 0 && (
             <p>Requires sources: {source.required_content_sources.join(', ')}</p>
+          )}
+          {!source.user_id && (
+            <label className='block pt-1'>
+              Missing something?
+              <select
+                className='settings-input mt-1'
+                value={missing}
+                onChange={(event) => setMissing(event.target.value as ContentType | AbilityBlockType)}
+              >
+                <option value=''>Choose a content type</option>
+                {BUNDLE_SECTIONS.map((section) => (
+                  <option key={section.id} value={section.abilityBlockType ?? section.contentType}>
+                    {section.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
         </div>
       }
@@ -529,34 +582,27 @@ function BundleModal({
           className='flex w-full items-center gap-3 border-b border-p1-border px-3 py-2 text-left hover:bg-p1-hover'
           onClick={() => open(entry.href)}
         >
-          <span className='min-w-0 flex-1 truncate text-sm'>{entry.name}</span>
-          <span className='shrink-0 text-[10px] uppercase text-p1-faint'>{entry.kind}</span>
+          <span className='min-w-0 flex-1 truncate text-sm'>
+            {entry.name}
+            {entry.level != null && <span className='ml-2 text-[10px] uppercase text-p1-faint'>Lvl {entry.level}</span>}
+          </span>
+          <span className='shrink-0 text-[10px] uppercase text-p1-faint'>{entry.rarity ? `${entry.rarity} · ` : ''}{entry.kind}</span>
         </button>
       )}
     />
+    {missing && (
+      <ContentFeedbackModal
+        opened
+        type={missing}
+        data={{ id: -1, contentSourceId: source.id }}
+        onStartFeedback={() => undefined}
+        onCompleteFeedback={() => setMissing('')}
+        onCancel={() => setMissing('')}
+      />
+    )}
+    </>
   );
 }
-
-const BUNDLE_SECTIONS: { id: string; label: string; kind: string }[] = [
-  { id: 'action', label: 'Actions', kind: 'Action' },
-  { id: 'feat', label: 'Feats', kind: 'Feat' },
-  { id: 'item', label: 'Items', kind: 'Item' },
-  { id: 'spell', label: 'Spells', kind: 'Spell' },
-  { id: 'trait', label: 'Traits', kind: 'Trait' },
-  { id: 'language', label: 'Languages', kind: 'Language' },
-  { id: 'creature', label: 'Creatures', kind: 'Creature' },
-  { id: 'ancestry', label: 'Ancestries', kind: 'Ancestry' },
-  { id: 'heritage', label: 'Heritages', kind: 'Heritage' },
-  { id: 'sense', label: 'Senses', kind: 'Sense' },
-  { id: 'physical-feature', label: 'Physical Features', kind: 'Physical Feature' },
-  { id: 'background', label: 'Backgrounds', kind: 'Background' },
-  { id: 'class', label: 'Classes', kind: 'Class' },
-  { id: 'class-feature', label: 'Class Features', kind: 'Class Feature' },
-  { id: 'archetype', label: 'Archetypes', kind: 'Archetype' },
-  { id: 'versatile-heritage', label: 'Versatile Heritages', kind: 'Versatile Heritage' },
-  { id: 'class-archetype', label: 'Class Archetypes', kind: 'Class Archetype' },
-  { id: 'mode', label: 'Modes', kind: 'Mode' },
-];
 
 function EditPanel({
   source,
@@ -571,21 +617,20 @@ function EditPanel({
 }) {
   const { open } = useContentLinks();
   const [draft, setDraft] = useState(source);
-  const [section, setSection] = useState('item');
-  const [query, setQuery] = useState('');
+  const [operationsOpen, setOperationsOpen] = useState(false);
+  const [publishPrompt, setPublishPrompt] = useState(false);
   const packageQuery = useQuery({
     queryKey: ['phase1-homebrew-package', source.id],
     queryFn: () => fetchContentPackage([source.id], { fetchCreatures: true }),
   });
   const entries = useMemo(() => (packageQuery.data ? bundleEntries(packageQuery.data) : []), [packageQuery.data]);
-  const current = BUNDLE_SECTIONS.find((item) => item.id === section) ?? BUNDLE_SECTIONS[2];
-  const visible = entries.filter(
-    (entry) => entry.kind === current.kind && `${entry.name} ${entry.kind}`.toLowerCase().includes(query.trim().toLowerCase())
-  );
   const grouped = BUNDLE_SECTIONS.map((item) => ({
     ...item,
     entries: entries.filter((entry) => entry.kind === item.kind),
   })).filter((item) => item.entries.length > 0);
+  useEffect(() => {
+    void defineDefaultSourcesForSource('INFO', source);
+  }, [source]);
 
   return (
     <div className='fixed inset-0 z-30 bg-black/60 p-3 sm:p-5' onClick={onClose}>
@@ -621,17 +666,51 @@ function EditPanel({
               Image URL
               <input className='settings-input mt-1' value={draft.artwork_url ?? ''} onChange={(event) => setDraft({ ...draft, artwork_url: event.target.value })} />
             </label>
-            <label className='block text-sm'>
-              Description
-              <textarea className='settings-input mt-1' rows={6} required value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
-            </label>
+            <div className='text-sm'>
+              <RichTextInput
+                label='Description'
+                required
+                value={toHTML(draft.description) ?? draft.description}
+                onChange={(text) => setDraft({ ...draft, description: text })}
+                maxHeight={280}
+              />
+            </div>
+            <button type='button' className='toolbar-button' onClick={() => setOperationsOpen(true)}>
+              Operations{draft.operations?.length ? ` (${draft.operations.length})` : ''}
+            </button>
             <label className='flex items-center justify-between gap-2 text-sm'>
               Require key
               <input type='checkbox' checked={draft.require_key} onChange={(event) => setDraft({ ...draft, require_key: event.target.checked })} />
             </label>
+            {draft.require_key && (
+              <label className='block text-sm'>
+                Access key
+                <span className='mt-1 flex gap-2'>
+                  <input
+                    className='settings-input'
+                    value={draft.keys?.access_key ?? ''}
+                    onChange={(event) => setDraft({ ...draft, keys: { access_key: event.target.value } })}
+                  />
+                  <button
+                    type='button'
+                    className='toolbar-button shrink-0'
+                    onClick={() => setDraft({ ...draft, keys: { access_key: crypto.randomUUID().slice(0, 18) } })}
+                  >
+                    Generate
+                  </button>
+                </span>
+              </label>
+            )}
             <label className='flex items-center justify-between gap-2 text-sm'>
               Published
-              <input type='checkbox' checked={draft.is_published} onChange={(event) => setDraft({ ...draft, is_published: event.target.checked })} />
+              <input
+                type='checkbox'
+                checked={draft.is_published}
+                onChange={(event) => {
+                  if (event.target.checked) setPublishPrompt(true);
+                  else setDraft({ ...draft, is_published: false });
+                }}
+              />
             </label>
             <div className='flex flex-wrap gap-2'>
               <button type='button' className='toolbar-button' onClick={onClose}>
@@ -642,53 +721,11 @@ function EditPanel({
               </button>
             </div>
           </div>
-          <div className='grid min-h-0 grid-cols-[180px_minmax(0,1fr)] border-b border-p1-border lg:border-b-0 lg:border-r'>
-            <div className='overflow-y-auto border-r border-p1-border py-2'>
-              {BUNDLE_SECTIONS.map((item) => {
-                const count = entries.filter((entry) => entry.kind === item.kind).length;
-                return (
-                  <button
-                    key={item.id}
-                    type='button'
-                    className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm hover:bg-p1-hover ${section === item.id ? 'bg-p1-hover text-p1-text' : 'text-p1-muted'}`}
-                    onClick={() => {
-                      setSection(item.id);
-                      setQuery('');
-                    }}
-                  >
-                    <span className='truncate'>{item.label}</span>
-                    {count > 0 && <span className='text-[10px] text-p1-accent'>{count}</span>}
-                  </button>
-                );
-              })}
-            </div>
-            <div className='flex min-h-0 flex-col'>
-              <div className='border-b border-p1-border p-3'>
-                <input
-                  className='settings-input h-9 py-0'
-                  placeholder={`Search ${current.label.toLowerCase()}`}
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                />
-              </div>
-              <div className='min-h-0 flex-1 overflow-y-auto'>
-                {packageQuery.isLoading && <p className='px-4 py-8 text-center text-sm italic text-p1-muted'>Loading...</p>}
-                {!packageQuery.isLoading && visible.length === 0 && (
-                  <p className='px-4 py-8 text-center text-sm italic text-p1-muted'>No records found!</p>
-                )}
-                {visible.map((entry) => (
-                  <button
-                    key={entry.key}
-                    type='button'
-                    className='flex w-full items-center border-b border-p1-border px-3 py-2 text-left text-sm hover:bg-p1-hover'
-                    onClick={() => open(entry.href)}
-                  >
-                    {entry.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+          {packageQuery.isLoading ? (
+            <p className='grid place-items-center text-sm italic text-p1-muted'>Loading...</p>
+          ) : (
+            <BundleEditorColumn sourceId={source.id} entries={entries} />
+          )}
           <aside className='min-h-0 overflow-y-auto p-4'>
             <h3 className='text-base font-semibold'>{draft.name || 'Untitled bundle'}</h3>
             <p className='mt-2 whitespace-pre-wrap text-sm text-p1-muted'>{draft.description || 'No description.'}</p>
@@ -711,6 +748,86 @@ function EditPanel({
               ))}
             </div>
           </aside>
+        </div>
+      </form>
+      <Phase1OperationsModal
+        title='Content Source Operations'
+        opened={operationsOpen}
+        operations={draft.operations ?? []}
+        onChange={(operations) => setDraft({ ...draft, operations })}
+        onClose={() => setOperationsOpen(false)}
+      />
+      {publishPrompt && (
+        <div className='fixed inset-0 z-[80] grid place-items-center bg-black/70 p-5' role='presentation'>
+          <section role='dialog' aria-modal='true' className='max-w-lg border border-p1-border bg-p1-surface p-4 text-sm'>
+            <h3 className='text-lg font-semibold'>Publish Bundle</h3>
+            <p className='mt-2 text-p1-muted'>By publishing, you agree that this content:</p>
+            <ul className='mt-2 list-disc space-y-1 pl-5 text-p1-muted'>
+              <li>is published under the ORC license and complies with Paizo's Community Use Policy;</li>
+              <li>does not contain a third party’s intellectual property without permission;</li>
+              <li>keeps a high standard of quality and is not low-effort content;</li>
+              <li>does not contain material the general public would classify as adult, offensive, or inappropriate for minors.</li>
+            </ul>
+            <p className='mt-2 text-p1-muted'>Failure to comply may result in the content being removed.</p>
+            <div className='mt-4 flex justify-end gap-2'>
+              <button type='button' className='toolbar-button' onClick={() => setPublishPrompt(false)}>
+                Cancel
+              </button>
+              <button
+                type='button'
+                className='toolbar-button toolbar-button-accent'
+                onClick={() => {
+                  setDraft({ ...draft, is_published: true });
+                  setPublishPrompt(false);
+                }}
+              >
+                Publish
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BundleIcon({ source }: { source: ContentSource }) {
+  const [icon, setIcon] = useState<string>();
+  useEffect(() => {
+    if (source.artwork_url) return;
+    void getRingIcon(`${source.name}-${source.contact_info}-${source.id}`).then(setIcon);
+  }, [source.artwork_url, source.name, source.contact_info, source.id]);
+  const src = source.artwork_url || (icon ? `data:image/svg+xml;utf8,${encodeURIComponent(icon)}` : undefined);
+  return src ? <img src={src} alt='' className='h-12 w-12 shrink-0 rounded-full bg-p1-inset object-cover' /> : <span className='h-12 w-12 shrink-0 rounded-full bg-p1-inset' />;
+}
+
+function UnlockPrompt({ source, onUnlock, onCancel }: { source: ContentSource; onUnlock: () => void; onCancel: () => void }) {
+  const [value, setValue] = useState('');
+  const [error, setError] = useState('');
+  function submit() {
+    if (value.trim() && value.trim() === source.keys?.access_key?.trim()) onUnlock();
+    else setError('That key does not match the one from the author.');
+  }
+  return (
+    <div className='fixed inset-0 z-40 grid place-items-center bg-black/70 p-5' role='presentation'>
+      <form
+        className='w-full max-w-md border border-p1-border bg-p1-surface p-4'
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
+        <h2 className='text-lg font-semibold'>Locked Bundle</h2>
+        <p className='mt-2 text-sm text-p1-muted'>Enter the access key provided by the author of {source.name}.</p>
+        <input className='settings-input mt-3' value={value} onChange={(event) => setValue(event.target.value)} placeholder='Access key' />
+        {error && <p className='mt-2 text-sm text-p1-danger-soft'>{error}</p>}
+        <div className='mt-4 flex justify-end gap-2'>
+          <button type='button' className='toolbar-button' onClick={onCancel}>
+            Cancel
+          </button>
+          <button type='submit' className='toolbar-button toolbar-button-accent'>
+            Unlock
+          </button>
         </div>
       </form>
     </div>

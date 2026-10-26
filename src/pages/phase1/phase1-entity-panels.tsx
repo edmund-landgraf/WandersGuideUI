@@ -1277,7 +1277,7 @@ function ItemRow({ item, onOpen, onContextMenu, depth, showContents = true, coll
       onContextMenu={onContextMenu ? (event) => onContextMenu(event, item) : undefined}
     >
       <span className='grid place-items-center border-r border-p1-border text-p1-muted' title={item.group}>
-        {icon}
+        {item.imageUrl ? <img src={item.imageUrl} alt='' className='h-8 w-8 object-cover' /> : icon}
       </span>
       <span className='flex min-w-0 items-center gap-2 px-3 py-2.5'>
         {canToggle && (
@@ -1497,7 +1497,7 @@ function ItemModal({ item, actions, onClose }: { item: Phase1InvItem; actions?: 
         <header className='flex items-start gap-4 border-b border-p1-border px-5 py-4'>
           <div className='min-w-0 flex-1'>
             <div className='flex items-center gap-2'>
-              <span className='text-p1-muted'>{itemGroupIcon(item.group)}</span>
+              {item.imageUrl ? <img src={item.imageUrl} alt='' className='h-12 w-12 border border-p1-border object-cover' /> : <span className='text-p1-muted'>{itemGroupIcon(item.group)}</span>}
               <h2 id={`item-${item.key}-title`} className='text-xl font-semibold leading-tight'>{item.name}</h2>
             </div>
             <div className='mt-2 flex flex-wrap gap-1.5'>

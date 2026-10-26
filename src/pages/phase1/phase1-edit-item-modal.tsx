@@ -202,6 +202,17 @@ export function Phase1EditItemModal({
               <CoinField label='SP' value={draft.price?.sp} onChange={(value) => patch({ price: { ...draft.price, sp: value } })} />
               <CoinField label='CP' value={draft.price?.cp} onChange={(value) => patch({ price: { ...draft.price, cp: value } })} />
             </div>
+            <Field label='Image URL'>
+              <input
+                className='settings-input'
+                placeholder='https://…'
+                value={imageUrlFromStored(meta?.image_url)}
+                onChange={(event) => patchMeta({ image_url: event.target.value.trim() ? `image|||${event.target.value.trim()}` : '' })}
+              />
+              {imageUrlFromStored(meta?.image_url) && (
+                <img src={imageUrlFromStored(meta?.image_url)} alt='' className='mt-2 h-16 w-16 border border-p1-border object-cover' />
+              )}
+            </Field>
             <div className='grid grid-cols-3 gap-3'>
               <Field label='Bulk'>
                 <input className='settings-input' value={draft.bulk ?? ''} onChange={(event) => patch({ bulk: event.target.value || null })} />
@@ -422,6 +433,13 @@ function num(value: number | string | undefined) {
   if (value === undefined || value === '') return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+export function imageUrlFromStored(value?: string | null) {
+  if (!value) return '';
+  const parts = value.split('|||');
+  if (parts[0] === 'icon') return '';
+  return parts.length > 1 ? parts[parts.length - 1] : parts[0];
 }
 
 function titleCase(value: string) {

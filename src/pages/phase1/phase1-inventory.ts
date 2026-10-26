@@ -82,6 +82,7 @@ export type Phase1InvItem = {
     bulkIgnored: boolean;
     unselectable: boolean;
     contents: Phase1InvItem[];
+    imageUrl: string | null;
 };
 
 export type Phase1Inventory = {
@@ -117,6 +118,14 @@ export function inventoryItemToPhase1(entry: InventoryItem, key = entry.id || 'i
   return mapInvItem(entry, new Map(), key, 0);
 }
 
+function storedImageUrl(value?: string | null) {
+  if (!value) return null;
+  const parts = value.split('|||');
+  if (parts[0] === 'icon') return null;
+  const url = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+  return url.trim() ? url : null;
+}
+
 function mapInvItem(
   entry: InventoryItem,
   traitNames: Map<number, string>,
@@ -147,6 +156,7 @@ function mapInvItem(
     isContainer: isItemContainer(item),
     bulkIgnored: isItemContainer(item) && isContainerBulkFullyIgnored(item),
     unselectable: Boolean(item.meta_data?.unselectable),
+    imageUrl: storedImageUrl(item.meta_data?.image_url),
     contents: entry.container_contents.map((child, index) => mapInvItem(child, traitNames, `${key}-${index}`, depth + 1)),
   };
 }
