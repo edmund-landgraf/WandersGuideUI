@@ -13,7 +13,7 @@ import type { AbilityBlock, Creature, Item, Language, Spell, Trait } from '@sche
 import { abilityNameAndCost, proseCastTime } from '@utils/actions';
 import { useContentLinks, type ContentLinkRef } from './phase1-content-links';
 import { ProseMarkdown } from './phase1-markdown';
-import ContentFeedbackModal from '@modals/ContentFeedbackModal';
+import { Phase1MissingContent } from './phase1-missing-content';
 import type { AbilityBlockType, ContentType } from '@schemas/content';
 
 export function CloseStackOnNavigate() {
@@ -147,14 +147,10 @@ function CatalogModal({
         </div>
       </section>
       {reporting && Number.isFinite(Number(entry.id)) && (
-        <ContentFeedbackModal
-          opened
-          zIndex={200}
+        <Phase1MissingContent
           type={entry.type as ContentType | AbilityBlockType}
-          data={{ id: Number(entry.id) }}
-          onStartFeedback={() => undefined}
-          onCompleteFeedback={() => setReporting(false)}
-          onCancel={() => setReporting(false)}
+          id={Number(entry.id)}
+          onClose={() => setReporting(false)}
         />
       )}
     </div>,

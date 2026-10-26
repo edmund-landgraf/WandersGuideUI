@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { registerCatalog } from "./catalog.js";
+import { registerHomebrew } from "./homebrew-catalog.js";
 
 export const TACTICS_MCP_VERSION = "1.0.0";
 export const TACTICS_MCP_NAME = "wgui-tactics";
@@ -30,6 +31,21 @@ const READ_TOOLS = new Set([
   "get_character_row",
   "list_options",
   "list_open_choices",
+  "wgui_ext_hb_find_content_source",
+  "wgui_ext_hb_find_trait",
+  "wgui_ext_hb_find_ability_block",
+  "wgui_ext_hb_find_ancestry",
+  "wgui_ext_hb_find_background",
+  "wgui_ext_hb_find_class",
+  "wgui_ext_hb_find_archetype",
+  "wgui_ext_hb_find_versatile_heritage",
+  "wgui_ext_hb_find_class_archetype",
+  "wgui_ext_hb_find_item",
+  "wgui_ext_hb_find_language",
+  "wgui_ext_hb_find_creature",
+  "wgui_ext_hb_find_spell",
+  "wgui_ext_hb_find_content_update",
+  "wgui_ext_hb_get_content_source_stats",
 ]);
 
 const WRITE_TOOLS = new Set([
@@ -41,6 +57,21 @@ const WRITE_TOOLS = new Set([
   "set_identity",
   "choose",
   "delete_character",
+  "wgui_ext_hb_create_content_source",
+  "wgui_ext_hb_create_trait",
+  "wgui_ext_hb_create_ability_block",
+  "wgui_ext_hb_create_ancestry",
+  "wgui_ext_hb_create_background",
+  "wgui_ext_hb_create_class",
+  "wgui_ext_hb_create_archetype",
+  "wgui_ext_hb_create_versatile_heritage",
+  "wgui_ext_hb_create_class_archetype",
+  "wgui_ext_hb_create_item",
+  "wgui_ext_hb_create_language",
+  "wgui_ext_hb_create_creature",
+  "wgui_ext_hb_create_spell",
+  "wgui_ext_hb_create_content_update",
+  "wgui_ext_hb_delete_content",
 ]);
 
 export function scopeForTool(name: string) {
@@ -74,5 +105,6 @@ export function createTacticsMcpServer(userId: () => string, scopes: () => strin
   }) as typeof server.registerTool;
 
   registerCatalog(server, userId);
+  registerHomebrew(server, userId);
   return server;
 }

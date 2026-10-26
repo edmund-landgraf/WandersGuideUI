@@ -1,5 +1,4 @@
 import { ActionSymbol } from '@common/Actions';
-import TraitsDisplay from '@common/TraitsDisplay';
 import {
   deleteContent,
   upsertAbilityBlock,
@@ -16,17 +15,6 @@ import {
   upsertVersatileHeritage,
 } from '@content/content-creation';
 import { fetchContentAll, resetContentStore } from '@content/content-store';
-import { CreateAbilityBlockModal } from '@modals/CreateAbilityBlockModal';
-import { CreateAncestryModal } from '@modals/CreateAncestryModal';
-import { CreateArchetypeModal } from '@modals/CreateArchetypeModal';
-import { CreateBackgroundModal } from '@modals/CreateBackgroundModal';
-import { CreateClassArchetypeModal } from '@modals/CreateClassArchetypeModal';
-import { CreateClassModal } from '@modals/CreateClassModal';
-import { CreateCreatureModal } from '@modals/CreateCreatureModal';
-import { CreateLanguageModal } from '@modals/CreateLanguageModal';
-import { CreateSpellModal } from '@modals/CreateSpellModal';
-import { CreateTraitModal } from '@modals/CreateTraitModal';
-import { CreateVersatileHeritageModal } from '@modals/CreateVersatileHeritageModal';
 import type { AbilityBlock, AbilityBlockType, ContentPackage, ContentType, Item } from '@schemas/content';
 import { toLabel } from '@utils/strings';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -34,6 +22,7 @@ import { cloneDeep } from 'lodash-es';
 import { useMemo, useState } from 'react';
 import { useContentLinks } from './phase1-content-links';
 import { createBlankPhase1Item, Phase1EditItemModal } from './phase1-edit-item-modal';
+import { Phase1HomebrewRecordModal } from './phase1-homebrew-record-modal';
 import { Phase1PickerModal } from './phase1-picker-modal';
 
 export type BundleEntry = {
@@ -214,9 +203,6 @@ export function BundleEditorColumn({
                 </span>
               </button>
               {entry.actions != null && <ActionSymbol cost={entry.actions} size='1.1rem' />}
-              {entry.traits.length > 0 && (
-                <TraitsDisplay traitIds={entry.traits} rarity={entry.rarity as never} size='xs' />
-              )}
               <button type='button' className='toolbar-button' onClick={() => open(entry.href)}>
                 View
               </button>
@@ -282,48 +268,19 @@ export function BundleEditorColumn({
         />
       )}
       {editorId != null && section.contentType !== 'item' && (
-        <RecordEditor
+        <Phase1HomebrewRecordModal
           section={section}
-          editId={editorId}
-          onCancel={() => setEditorId(null)}
-          onComplete={async (record) => {
+          sourceId={sourceId}
+          record={editorId < 0 ? null : (entries.find((entry) => entry.id === editorId && entry.kind === section.kind)?.record ?? null)}
+          onClose={() => setEditorId(null)}
+          onSave={(next) => {
             setBusy(true);
-            record.content_source_id = sourceId;
-            await saveRecord(section.contentType, record);
-            await refresh();
+            void saveRecord(section.contentType, next).then(() => refresh());
           }}
         />
       )}
     </div>
   );
-}
-
-function RecordEditor({
-  section,
-  editId,
-  onComplete,
-  onCancel,
-}: {
-  section: (typeof BUNDLE_SECTIONS)[number];
-  editId: number;
-  onComplete: (record: { content_source_id?: number }) => Promise<void>;
-  onCancel: () => void;
-}) {
-  const type = section.abilityBlockType;
-  if (section.contentType === 'ability-block' && type) {
-    return <CreateAbilityBlockModal opened type={type} editId={editId} onComplete={(record) => void onComplete(record)} onCancel={onCancel} />;
-  }
-  if (section.contentType === 'spell') return <CreateSpellModal opened editId={editId} onComplete={(record) => void onComplete(record)} onCancel={onCancel} />;
-  if (section.contentType === 'trait') return <CreateTraitModal opened editId={editId} onComplete={(record) => void onComplete(record)} onCancel={onCancel} />;
-  if (section.contentType === 'language') return <CreateLanguageModal opened editId={editId} onComplete={(record) => void onComplete(record)} onCancel={onCancel} />;
-  if (section.contentType === 'creature') return <CreateCreatureModal opened editId={editId} onComplete={(record) => void onComplete(record)} onCancel={onCancel} />;
-  if (section.contentType === 'ancestry') return <CreateAncestryModal opened editId={editId} onComplete={(record) => void onComplete(record)} onCancel={onCancel} />;
-  if (section.contentType === 'background') return <CreateBackgroundModal opened editId={editId} onComplete={(record) => void onComplete(record)} onCancel={onCancel} />;
-  if (section.contentType === 'class') return <CreateClassModal opened editId={editId} onComplete={(record) => void onComplete(record)} onCancel={onCancel} />;
-  if (section.contentType === 'archetype') return <CreateArchetypeModal opened editId={editId} onComplete={(record) => void onComplete(record)} onCancel={onCancel} />;
-  if (section.contentType === 'versatile-heritage') return <CreateVersatileHeritageModal opened editId={editId} onComplete={(record) => void onComplete(record)} onCancel={onCancel} />;
-  if (section.contentType === 'class-archetype') return <CreateClassArchetypeModal opened editId={editId} onComplete={(record) => void onComplete(record)} onCancel={onCancel} />;
-  return null;
 }
 
 async function saveRecord(type: ContentType, record: object) {

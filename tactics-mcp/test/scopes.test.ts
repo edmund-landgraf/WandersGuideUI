@@ -19,6 +19,23 @@ import { mintToken, normalizeScopes, resetTokens, resolveBearer } from "../src/t
 const WRITE_TOOLS = ["ensure_public_user", "join_campaign", "patch_encounter_dice"];
 const CHARACTER_READS = ["export_character", "get_character_row", "list_open_choices", "list_options"];
 const CHARACTER_WRITES = ["choose", "create_character", "delete_character", "set_books", "set_identity"];
+const HOMEBREW_WRITES = [
+  "wgui_ext_hb_create_content_source",
+  "wgui_ext_hb_create_trait",
+  "wgui_ext_hb_create_ability_block",
+  "wgui_ext_hb_create_ancestry",
+  "wgui_ext_hb_create_background",
+  "wgui_ext_hb_create_class",
+  "wgui_ext_hb_create_archetype",
+  "wgui_ext_hb_create_versatile_heritage",
+  "wgui_ext_hb_create_class_archetype",
+  "wgui_ext_hb_create_item",
+  "wgui_ext_hb_create_language",
+  "wgui_ext_hb_create_creature",
+  "wgui_ext_hb_create_spell",
+  "wgui_ext_hb_create_content_update",
+  "wgui_ext_hb_delete_content",
+];
 
 function characterArguments(name: string) {
   if (name === "set_identity") return { characterId: 1, slot: "class", optionId: 1 };
@@ -112,12 +129,12 @@ describe("tactics scopes", { concurrency: 1 }, () => {
       assert.equal(info?.description, TACTICS_MCP_DESCRIPTION);
 
       const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
-      assert.equal(names.length, 31);
+      assert.equal(names.length, 61);
       for (const name of [...CHARACTER_READS, ...CHARACTER_WRITES]) assert.ok(names.includes(name), name);
       assert.deepEqual(CHARACTER_READS.map(scopeForTool), CHARACTER_READS.map(() => "read"));
       assert.deepEqual(CHARACTER_WRITES.map(scopeForTool), CHARACTER_WRITES.map(() => "write"));
-      assert.deepEqual(names.filter((name) => scopeForTool(name) === "write"), [...WRITE_TOOLS, ...CHARACTER_WRITES].sort());
-      assert.equal(names.filter((name) => scopeForTool(name) === "read").length, 23);
+      assert.deepEqual(names.filter((name) => scopeForTool(name) === "write"), [...WRITE_TOOLS, ...CHARACTER_WRITES, ...HOMEBREW_WRITES].sort());
+      assert.equal(names.filter((name) => scopeForTool(name) === "read").length, 38);
       assert.equal(scopeForTool("not_a_tool"), null);
 
       const profile = await client.callTool({ name: "get_profile", arguments: {} });

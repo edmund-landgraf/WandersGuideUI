@@ -1,13 +1,10 @@
 import { CampaignSignIn } from '@auth/CampaignSignIn';
 import { useAuthSession } from '@auth/useAuthSession';
 import { getCachedPublicUser, getPublicUser } from '@auth/user-manager';
-import RichTextInput from '@common/rich_text_input/RichTextInput';
 import { deleteContent, upsertContentSource } from '@content/content-creation';
 import { fetchContentPackage, fetchContentSources, resetContentStore } from '@content/content-store';
-import { toHTML } from '@content/content-utils';
 import { defineDefaultSourcesForSource, updateSubscriptions } from '@content/homebrew';
 import { importFromCustomPack } from '@homebrew/import/pathbuilder-custom-packs';
-import ContentFeedbackModal from '@modals/ContentFeedbackModal';
 import { makeRequest } from '@requests/request-manager';
 import type { AbilityBlockType, ContentSource, ContentType, PublicUser } from '@schemas/content';
 import { hasPatreonAccess } from '@utils/patreon';
@@ -18,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { OLD_UI_ORIGIN } from '../phase-switch/PhaseViewSwitch';
 import { useContentLinks } from './phase1-content-links';
 import { BUNDLE_SECTIONS, BundleEditorColumn, bundleEntries } from './phase1-homebrew-records';
+import { Phase1MissingContent } from './phase1-missing-content';
 import { Phase1OperationsModal } from './phase1-operations-modal';
 import { Phase1PickerModal } from './phase1-picker-modal';
 import { WorkspaceHeader } from './Phase1Workspace';
@@ -591,14 +589,7 @@ function BundleModal({
       )}
     />
     {missing && (
-      <ContentFeedbackModal
-        opened
-        type={missing}
-        data={{ id: -1, contentSourceId: source.id }}
-        onStartFeedback={() => undefined}
-        onCompleteFeedback={() => setMissing('')}
-        onCancel={() => setMissing('')}
-      />
+      <Phase1MissingContent type={missing} id={-1} contentSourceId={source.id} onClose={() => setMissing('')} />
     )}
     </>
   );
@@ -666,15 +657,15 @@ function EditPanel({
               Image URL
               <input className='settings-input mt-1' value={draft.artwork_url ?? ''} onChange={(event) => setDraft({ ...draft, artwork_url: event.target.value })} />
             </label>
-            <div className='text-sm'>
-              <RichTextInput
-                label='Description'
+            <label className='block text-sm'>
+              Description
+              <textarea
                 required
-                value={toHTML(draft.description) ?? draft.description}
-                onChange={(text) => setDraft({ ...draft, description: text })}
-                maxHeight={280}
+                className='settings-input mt-1 min-h-40'
+                value={draft.description}
+                onChange={(event) => setDraft({ ...draft, description: event.target.value })}
               />
-            </div>
+            </label>
             <button type='button' className='toolbar-button' onClick={() => setOperationsOpen(true)}>
               Operations{draft.operations?.length ? ` (${draft.operations.length})` : ''}
             </button>

@@ -1,6 +1,3 @@
-import '@mantine/core/styles.css';
-import '@mantine/tiptap/styles.css';
-import { MantineProvider } from '@mantine/core';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Phase1App } from './Phase1App';
@@ -16,8 +13,6 @@ root.removeAttribute('style');
 
 createRoot(root).render(
   <StrictMode>
-    <MantineProvider forceColorScheme='dark'>
-      <Phase1App />
-    </MantineProvider>
+    <Phase1App />
   </StrictMode>
 );

@@ -178,10 +178,16 @@ export default defineConfig(({ mode }) => ({
     },
     tailwindcss(),
     react(),
-    visualizer({
-      emitFile: true,
-      filename: 'stats.html',
-    }),
+    // The treemap walks the whole module graph and emits a ~5 MB stats.html.
+    // Workbox then precaches it. Opt in with ANALYZE=1 when you actually want it.
+    ...(process.env.ANALYZE
+      ? [
+          visualizer({
+            emitFile: true,
+            filename: 'stats.html',
+          }),
+        ]
+      : []),
     ...(mode === 'development' ? [] : [VitePWA(manifestForPlugin)]),
   ],
   optimizeDeps: {
