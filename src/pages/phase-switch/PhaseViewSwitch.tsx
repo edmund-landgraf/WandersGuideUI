@@ -7,7 +7,7 @@ export const OLD_UI_ORIGIN = import.meta.env.VITE_OLD_UI_ORIGIN || 'http://local
 export type PhaseView = 'phase0' | 'phase1';
 
 export type PhaseLocation = {
-  section?: 'campaigns' | 'characters' | 'encounters';
+  section?: 'campaigns' | 'characters' | 'encounters' | 'homebrew';
   campaignId?: number | null;
   encounterId?: number | null;
   noteIndex?: number | null;
@@ -16,6 +16,7 @@ export type PhaseLocation = {
 
 export function phaseWorkspacePath(phase: PhaseView, location: PhaseLocation = {}): string {
   if (!location.campaignId) {
+    if (location.section === 'homebrew') return phase === 'phase1' ? '/phase1/homebrew' : '/phase0';
     if (phase === 'phase1' && location.section === 'characters') return '/phase1/characters';
     if (location.section === 'encounters') {
       if (phase === 'phase1') {
@@ -36,6 +37,7 @@ export function phaseWorkspacePath(phase: PhaseView, location: PhaseLocation = {
 }
 
 export function originalCampaignUrl(location: PhaseLocation = {}): string {
+  if (location.section === 'homebrew') return `${OLD_UI_ORIGIN}/homebrew`;
   if (location.section === 'characters') return `${OLD_UI_ORIGIN}/characters`;
   if (location.section === 'encounters') return `${OLD_UI_ORIGIN}/encounters`;
   if (!location.campaignId) return `${OLD_UI_ORIGIN}/campaigns`;
@@ -63,7 +65,9 @@ export function PhaseViewSwitch({ current, section, campaignId, encounterId, not
   const phase0Href = phaseWorkspacePath('phase0', location);
   const phase1Href = phaseWorkspacePath('phase1', location);
   const originalHref = originalCampaignUrl(location);
-  const originalTitle = section === 'characters'
+  const originalTitle = section === 'homebrew'
+    ? 'Open the original homebrew page'
+    : section === 'characters'
     ? 'Open the original characters page'
     : section === 'encounters'
       ? 'Open the original encounters page'
