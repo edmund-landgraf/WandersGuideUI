@@ -12,7 +12,6 @@ import { pluralize, toLabel } from '@utils/strings';
 import { getRingIcon } from '@utils/images';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { OLD_UI_ORIGIN } from '../phase-switch/PhaseViewSwitch';
 import { useContentLinks } from './phase1-content-links';
 import { BUNDLE_SECTIONS, BundleEditorColumn, bundleEntries } from './phase1-homebrew-records';
 import { Phase1MissingContent } from './phase1-missing-content';
@@ -569,9 +568,15 @@ function BundleModal({
               Source
             </a>
           )}
-          <a className='toolbar-button' href={`${OLD_UI_ORIGIN}/homebrew`} target='_blank' rel='noreferrer'>
-            Open content editor
-          </a>
+          {onEdit ? (
+            <button type='button' className='toolbar-button' onClick={onEdit}>
+              Open content editor
+            </button>
+          ) : (
+            <a className='toolbar-button' href='/phase1/homebrew'>
+              Open content editor
+            </a>
+          )}
         </div>
       }
       renderItem={(entry) => (
