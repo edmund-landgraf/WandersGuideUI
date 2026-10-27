@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import { createPortal } from 'react-dom';
 import { toWgMarkdownLinks } from '@utils/foundry-text';
 import { isContentStackOpen } from './phase1-content-links';
+import { PlateNotesEditor } from './phase1-plate-notes';
 
 const GROUPS: ItemGroup[] = ['GENERAL', 'ARMOR', 'SHIELD', 'WEAPON', 'RUNE', 'UPGRADE', 'MATERIAL'];
 const RARITIES = ['COMMON', 'UNCOMMON', 'RARE', 'UNIQUE'] as const;
@@ -56,6 +57,7 @@ export function Phase1EditItemModal({
   onClose: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  const flushDescription = useRef<(() => string) | null>(null);
   const [draft, setDraft] = useState(() => cloneDeep(item));
 
   useEffect(() => {
@@ -91,9 +93,10 @@ export function Phase1EditItemModal({
     event.preventDefault();
     const name = draft.name.trim();
     if (!name) return;
+    const description = flushDescription.current?.() ?? draft.description;
     onSave({
       ...draft,
-      description: toWgMarkdownLinks(draft.description),
+      description: toWgMarkdownLinks(description),
       name,
       level: Number(draft.level) || 0,
       bulk: draft.bulk === '' ? null : draft.bulk,
@@ -237,17 +240,22 @@ export function Phase1EditItemModal({
                   type='button'
                   className='text-[10px] font-semibold uppercase tracking-wide text-p1-accent hover:text-p1-accent-soft disabled:opacity-40'
                   disabled={draft.description === toWgMarkdownLinks(draft.description)}
-                  onClick={() => patch({ description: toWgMarkdownLinks(draft.description) })}
+                  onClick={() => {
+                    const description = flushDescription.current?.() ?? draft.description;
+                    patch({ description: toWgMarkdownLinks(description) });
+                  }}
                 >
                   Convert to WG links
                 </button>
               </div>
-              <textarea
-                rows={6}
-                className='settings-input min-h-[8rem] resize-y'
-                value={draft.description}
-                onChange={(event) => patch({ description: event.target.value })}
-              />
+              <div className='flex h-56 flex-col'>
+                <PlateNotesEditor
+                  markdown={draft.description}
+                  placeholder='Item description'
+                  flushRef={flushDescription}
+                  onMarkdownChange={(description) => patch({ description })}
+                />
+              </div>
             </div>
             <Section title='Weapon'>
               <div className='grid grid-cols-2 gap-3 sm:grid-cols-4'>

@@ -407,10 +407,13 @@ export function PlateNotesEditor({
   markdown,
   onMarkdownChange,
   placeholder = 'Your notes...',
+  flushRef,
 }: {
   markdown: string;
   onMarkdownChange: (markdown: string) => void;
   placeholder?: string;
+  /** Latest markdown, including edits still waiting on the debounce. */
+  flushRef?: { current: (() => string) | null };
 }) {
   const lastEmitted = useRef(markdown.trim());
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -431,14 +434,30 @@ export function PlateNotesEditor({
     lastEmitted.current = applySavedNotes(editor, markdown, lastEmitted.current);
   }, [editor, markdown]);
 
+  if (flushRef) {
+    flushRef.current = () => {
+      if (pending.current) {
+        clearTimeout(pending.current);
+        pending.current = null;
+      }
+      const text = serializeMarkdown(editor);
+      if (text !== lastEmitted.current) {
+        lastEmitted.current = text;
+        onChangeRef.current(text);
+      }
+      return text;
+    };
+  }
+
   useEffect(() => {
     return () => {
+      if (flushRef) flushRef.current = null;
       if (!pending.current) return;
       clearTimeout(pending.current);
       const text = serializeMarkdown(editor);
       if (text !== lastEmitted.current) onChangeRef.current(text);
     };
-  }, [editor]);
+  }, [editor, flushRef]);
 
   return (
     <DndProvider backend={HTML5Backend}>
