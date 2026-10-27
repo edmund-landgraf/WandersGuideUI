@@ -34,7 +34,90 @@ export function toStandard2eProse(text: string): string {
   out = collapseDoubleParens(out);
   out = resolveAonLinksInMarkdown(out);
   out = toWgMarkdownLinks(out);
+  out = formatPaizoEntryProse(out);
   return out;
+}
+
+const PAIZO_ACTION_GLYPHS: Record<string, string> = {
+  'free action': '`action_symbol_5`',
+  reaction: '`action_symbol_4`',
+  'one action': '`action_symbol_1`',
+  '1 action': '`action_symbol_1`',
+  'two actions': '`action_symbol_2`',
+  '2 actions': '`action_symbol_2`',
+  'three actions': '`action_symbol_3`',
+  '3 actions': '`action_symbol_3`',
+};
+
+const PAIZO_CLAUSE_LABELS = ['Frequency', 'Trigger', 'Requirements', 'Effect', 'Duration', 'Range', 'Area', 'Targets', 'Cost', 'Defense'];
+
+/** Plain "Activate—Name (two actions, concentrate)." prose → Paizo stat-block labels. */
+export function formatPaizoEntryProse(text: string): string {
+  if (!text || /\*\*Activate\*\*/.test(text)) return text;
+  return text
+    .split(/\n{2,}/)
+    .map((block) => block.split('\n').map(formatPaizoLine).join('\n'))
+    .join('\n\n');
+}
+
+function formatPaizoLine(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith('**')) return line;
+
+  const activate = trimmed.match(/^Activate\s*[—–-]\s*(.+)$/i);
+  if (activate) return formatActivate(activate[1]);
+
+  const labeled = trimmed.match(/^(Passive|Special|Critical Success|Success|Failure|Critical Failure)\s*:\s*([\s\S]+)$/i);
+  if (labeled) return `**${titleLabel(labeled[1])}** ${labeled[2].trim()}`;
+  return line;
+}
+
+function formatActivate(body: string): string {
+  const linked = body.match(/^\[([^\]]+)\]\(([^)]+)\)\s*(?:\(([^)]+)\))?(?:[.;]\s*([\s\S]*))?$/);
+  if (linked) {
+    return finishActivate(`[${linked[1]}](${linked[2]})`, linked[3] ?? '', linked[4] ?? '');
+  }
+  const named = body.match(/^([^(.;]+?)(?:\s*\(([^)]+)\))?(?:[.;]\s*([\s\S]*))?$/);
+  const name = (named?.[1] ?? body).trim().replace(/[.;]$/, '');
+  return finishActivate(name, named?.[2] ?? '', named?.[3] ?? '');
+}
+
+function finishActivate(name: string, paren: string, restText: string): string {
+  const { symbols, traits } = splitActionTraits(paren);
+  const rest = formatClauses(restText);
+  const head = ['**Activate**', symbols, name, traits ? `(${traits})` : ''].filter(Boolean).join(' ');
+  return rest ? `${head}; ${rest}` : head;
+}
+
+function splitActionTraits(paren: string): { symbols: string; traits: string } {
+  const symbols: string[] = [];
+  const traits: string[] = [];
+  for (const part of paren.split(',').map((item) => item.trim()).filter(Boolean)) {
+    const glyph = PAIZO_ACTION_GLYPHS[part.toLowerCase()];
+    if (glyph) symbols.push(glyph);
+    else traits.push(part.toLowerCase());
+  }
+  return { symbols: symbols.join(' '), traits: traits.join(', ') };
+}
+
+function formatClauses(rest: string): string {
+  const pattern = new RegExp(`(?:^|\\.\\s+)(${PAIZO_CLAUSE_LABELS.join('|')})\\s*:?\\s+`, 'gi');
+  return rest
+    .trim()
+    .replace(pattern, (_match, label: string, offset: number) => {
+      const prefix = offset === 0 ? '' : '; ';
+      return `${prefix}**${titleLabel(label)}** `;
+    })
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function titleLabel(label: string): string {
+  return label
+    .toLowerCase()
+    .split(' ')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }
 
 /** Markdown `[name](link_type_id)` → `[name](<link_type_id>)` so underscores in WG hrefs survive CommonMark. */
@@ -80,6 +163,31 @@ export function autoLinkConditions(text: string, blacklist: string[] = []): stri
   out = out.replace(new RegExp(`(?<!\\[)\\b(${names})\\b(?!\\])`, 'gi'), (match) => conditionMarkdownLink(match));
   out = out.replace(/persistent (\w*?\s|)damage/gi, (match) => `[${match}](link_condition_persistent~damage)`);
   return out;
+}
+
+/** Traits with a Wanderer's Guide entry. Rarity words such as Uncommon are not traits. */
+const KNOWN_TRAIT_LINKS: Record<string, number> = {
+  concentrate: 1432,
+  manipulate: 1433,
+  cantrip: 1858,
+  general: 1437,
+  occult: 1514,
+};
+
+const PROSE_TRAIT_NAMES = ['concentrate', 'manipulate'];
+
+export function knownTraitHref(label: string): string | null {
+  const id = KNOWN_TRAIT_LINKS[label.trim().toLowerCase()];
+  return id ? `link_trait_${id}` : null;
+}
+
+export function autoLinkKnownTraits(text: string): string {
+  if (!text) return text;
+  const names = PROSE_TRAIT_NAMES.map(escapeRegex).join('|');
+  return text.replace(new RegExp(`(?<!\\[)\\b(${names})\\b(?!\\])`, 'gi'), (match) => {
+    const href = knownTraitHref(match);
+    return href ? `[${match}](${href})` : match;
+  });
 }
 
 function convertHtmlAnchors(text: string): string {

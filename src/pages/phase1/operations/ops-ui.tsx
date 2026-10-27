@@ -1,7 +1,7 @@
 import { Input } from '@components/ui/input';
 import { cn } from '@utils/cn';
 import { ChevronDown, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 export function OpsField({
@@ -225,75 +225,136 @@ export function AddOpMenu({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const ref = useRef<HTMLDivElement>(null);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return options;
     return options.filter((item) => item.label.toLowerCase().includes(needle));
   }, [options, query]);
 
+  function close() {
+    setQuery('');
+    setOpen(false);
+  }
+
   useEffect(() => {
     if (!open) return;
-    const close = (event: MouseEvent) => {
-      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close();
     };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
   }, [open]);
 
   return (
-    <div ref={ref} className='relative'>
+    <>
       <button
         type='button'
         className='inline-flex h-8 min-w-[11.5rem] items-center gap-2 rounded-full border border-p1-border bg-p1-inset px-3 text-sm hover:bg-p1-hover'
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpen(true)}
       >
         <span className='text-p1-accent'>+</span>
         <span className='flex-1 text-left'>+ Add Operation</span>
         <ChevronDown size={14} className='text-p1-muted' />
       </button>
-      {open && (
-        <div className='absolute right-0 z-[90] mt-1 w-64 border border-p1-border bg-p1-surface shadow-xl'>
-          <div className='border-b border-p1-border p-2'>
-            <Input
-              autoFocus
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder='Search operations'
-            />
-          </div>
-          <ul className='max-h-72 overflow-auto py-1'>
-            {filtered.map((item) => (
-              <li key={item.value}>
-                <button
-                  type='button'
-                  className='block w-full px-3 py-1.5 text-left text-sm hover:bg-p1-hover'
-                  onClick={() => {
-                    onPick(item.value);
-                    setQuery('');
-                    setOpen(false);
-                  }}
-                >
-                  {item.label}
+      {open &&
+        createPortal(
+          <div
+            className='fixed inset-0 z-[200] grid place-items-center bg-black/75 p-5'
+            onMouseDown={(event) => {
+              event.stopPropagation();
+              if (event.target === event.currentTarget) close();
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <section
+              role='dialog'
+              aria-modal='true'
+              aria-labelledby='add-operation-title'
+              className='flex max-h-[min(70vh,520px)] w-full max-w-sm flex-col border border-p1-border bg-p1-surface shadow-2xl'
+            >
+              <header className='flex items-center gap-3 border-b border-p1-border px-4 py-3'>
+                <h2 id='add-operation-title' className='min-w-0 flex-1 text-lg font-semibold'>
+                  Add Operation
+                </h2>
+                <button type='button' className='icon-button' title='Close' onClick={close}>
+                  <X size={18} />
                 </button>
-              </li>
-            ))}
-            {filtered.length === 0 && <li className='px-3 py-2 text-xs italic text-p1-muted'>No matches</li>}
-          </ul>
-        </div>
-      )}
-    </div>
+              </header>
+              <div className='border-b border-p1-border p-3'>
+                <Input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder='Search operations' />
+              </div>
+              <ul className='min-h-0 flex-1 overflow-y-auto py-1'>
+                {filtered.map((item) => (
+                  <li key={item.value}>
+                    <button
+                      type='button'
+                      className='block w-full px-4 py-2 text-left text-sm hover:bg-p1-hover'
+                      onClick={() => {
+                        onPick(item.value);
+                        close();
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  </li>
+                ))}
+                {filtered.length === 0 && <li className='px-4 py-3 text-xs italic text-p1-muted'>No matches</li>}
+              </ul>
+            </section>
+          </div>,
+          document.body
+        )}
+    </>
   );
 }
 
 export function HoverHelp({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
+
   return (
-    <span className='group relative inline-block'>
-      <span className='cursor-help text-sm italic text-p1-accent hover:underline'>{label}</span>
-      <span className='absolute bottom-full left-0 z-[100] mb-2 hidden w-64 border border-p1-border bg-p1-surface p-3 text-left text-sm font-normal not-italic text-p1-text shadow-lg group-hover:block'>
-        {children}
-      </span>
-    </span>
+    <>
+      <button type='button' className='text-sm italic text-p1-accent hover:underline' onClick={() => setOpen(true)}>
+        {label}
+      </button>
+      {open &&
+        createPortal(
+          <div
+            className='fixed inset-0 z-[220] grid place-items-center bg-black/75 p-5'
+            onMouseDown={(event) => {
+              event.stopPropagation();
+              if (event.target === event.currentTarget) setOpen(false);
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <section
+              role='dialog'
+              aria-modal='true'
+              aria-labelledby='how-to-use-operations-title'
+              className='w-full max-w-sm border border-p1-border bg-p1-surface shadow-2xl'
+            >
+              <header className='flex items-center gap-3 border-b border-p1-border px-4 py-3'>
+                <h2 id='how-to-use-operations-title' className='min-w-0 flex-1 text-lg font-semibold'>
+                  {label}
+                </h2>
+                <button type='button' className='icon-button' title='Close' onClick={() => setOpen(false)}>
+                  <X size={18} />
+                </button>
+              </header>
+              <div className='p-4 text-sm'>{children}</div>
+            </section>
+          </div>,
+          document.body
+        )}
+    </>
   );
 }
 

@@ -409,6 +409,10 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   background: var(--p1-hover);
   padding: 0.7rem 0.9rem 0.75rem;
 }
+.ability-prose p.ability-passive:has(> strong:first-child) {
+  border-left: 2px dashed var(--p1-text-muted);
+  background: transparent;
+}
 .ability-prose p:has(> strong:first-child) > strong:first-child {
   display: block;
   margin-bottom: 0.25rem;
@@ -417,6 +421,9 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   font-weight: 600;
   line-height: 1.2;
   text-transform: uppercase;
+}
+.ability-prose p.ability-passive > strong:first-child {
+  color: var(--p1-text-muted);
 }
 .ability-prose h1,
 .ability-prose h2,

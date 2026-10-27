@@ -283,7 +283,7 @@ export function BundleEditorColumn({
   );
 }
 
-async function saveRecord(type: ContentType, record: object) {
+export async function saveRecord(type: ContentType, record: object) {
   if (type === 'ability-block') return upsertAbilityBlock(record as never);
   if (type === 'spell') return upsertSpell(record as never);
   if (type === 'item') return upsertItem(record as never);

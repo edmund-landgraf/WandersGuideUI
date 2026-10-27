@@ -362,14 +362,23 @@
     {
       "weekStart": "2026-10-26",
       "label": "Oct 26 – Nov 1, 2026",
-      "count": 5,
-      "summary": "Add a Phase 1 homebrew page so bundle links stay in the new UI, and hide empty item bulk. Paginate Phase 1 homebrew bundles, unlock keyed packs, and show item images with content feedback. Let the phase switch treat Homebrew as a section so the Phase 1 header type-checks. Give Phase 1 its own homebrew editors and expose the homebrew catalog on the tactics MCP. Add a test plan for the homebrew tactics MCP tools.",
+      "count": 14,
+      "summary": "Add a Phase 1 homebrew page so bundle links stay in the new UI, and hide empty item bulk. Paginate Phase 1 homebrew bundles, unlock keyed packs, and show item images with content feedback. Let the phase switch treat Homebrew as a section so the Phase 1 header type-checks. Give Phase 1 its own homebrew editors and expose the homebrew catalog on the tactics MCP. Add a test plan for the homebrew tactics MCP tools. Add an admin Players tab so staff can open characters, and keep the homebrew editor in the app. Plus 8 more.",
       "subjects": [
         "Add a Phase 1 homebrew page so bundle links stay in the new UI, and hide empty item bulk.",
         "Paginate Phase 1 homebrew bundles, unlock keyed packs, and show item images with content feedback.",
         "Let the phase switch treat Homebrew as a section so the Phase 1 header type-checks.",
         "Give Phase 1 its own homebrew editors and expose the homebrew catalog on the tactics MCP.",
-        "Add a test plan for the homebrew tactics MCP tools."
+        "Add a test plan for the homebrew tactics MCP tools.",
+        "Add an admin Players tab so staff can open characters, and keep the homebrew editor in the app.",
+        "Wire the Phase 1 admin routes and pass the admin panel password into the functions stack.",
+        "Drop the extra admin password gate and restrict API keys to granted characters.",
+        "Let any signed-in account reach the admin password prompt, since the server unlock is the real gate.",
+        "Flush the item description editor before save so debounced notes are not dropped.",
+        "GM campaign access: campaign owner's key lists and exports PCs that joined their campaign; key-owner scoping unchanged otherwise.",
+        "wgui-ext-find-key-campaigns: return campaign art (meta_data.image_url, image_focus_y) for visible campaigns; clean doubled URLs.",
+        "Remove bun.lock so the repo no longer tracks the Bun lockfile.",
+        "Add a right-click menu on Phase 1 homebrew bundle cards so owners can edit or unsubscribe without leaving the catalog."
       ]
     }
   ]

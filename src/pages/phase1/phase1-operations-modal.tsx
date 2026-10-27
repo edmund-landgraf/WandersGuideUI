@@ -2,7 +2,7 @@ import type { Operation } from '@schemas/operations';
 import { X } from 'lucide-react';
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { HowToUseOperations, OperationSection } from './operations/operation-section';
+import { HowToUseOperations, OperationSection, OperationsReadOnly } from './operations/operation-section';
 
 export function Phase1OperationsModal(props: {
   title: string;
@@ -10,6 +10,7 @@ export function Phase1OperationsModal(props: {
   onClose: () => void;
   operations: Operation[];
   onChange: (operations: Operation[]) => void;
+  readOnly?: boolean;
 }) {
   useEffect(() => {
     if (!props.opened) return;
@@ -32,8 +33,10 @@ export function Phase1OperationsModal(props: {
       className='fixed inset-0 z-[140] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]'
       role='presentation'
       onMouseDown={(event) => {
+        event.stopPropagation();
         if (event.target === event.currentTarget) props.onClose();
       }}
+      onClick={(event) => event.stopPropagation()}
     >
       <section
         role='dialog'
@@ -50,7 +53,9 @@ export function Phase1OperationsModal(props: {
           </button>
         </header>
         <div className='min-h-0 flex-1 overflow-y-auto p-4'>
-          <OperationSection title={<HowToUseOperations />} operations={props.operations} onChange={props.onChange} />
+          <OperationsReadOnly.Provider value={Boolean(props.readOnly)}>
+            <OperationSection title={<HowToUseOperations />} operations={props.operations} onChange={props.onChange} />
+          </OperationsReadOnly.Provider>
         </div>
       </section>
     </div>,

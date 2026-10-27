@@ -3,13 +3,18 @@ import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
 import { ArrowLeft, X } from 'lucide-react';
+import { getCachedPublicUser } from '@auth/user-manager';
 import { ActionSymbol } from '@common/Actions';
+import { upsertItem } from '@content/content-creation';
 import { fetchContentById, getCachedContent } from '@content/content-store';
 import { convertToContentType, isAbilityBlockType } from '@content/content-utils';
 import { getConditionByName } from '@conditions/condition-handler';
 import { priceToString } from '@items/currency-handler';
 import { determineItemMetaType, labelizeBulk } from '@items/inv-utils';
-import type { AbilityBlock, Creature, Item, Language, Spell, Trait } from '@schemas/content';
+import type { AbilityBlock, ContentSource, Creature, Item, Language, Spell, Trait } from '@schemas/content';
+import type { Operation } from '@schemas/operations';
+import { knownTraitHref } from '@utils/foundry-text';
+import { Phase1OperationsModal } from './phase1-operations-modal';
 import { abilityNameAndCost, proseCastTime } from '@utils/actions';
 import { useContentLinks, type ContentLinkRef } from './phase1-content-links';
 import { ProseMarkdown } from './phase1-markdown';
@@ -44,8 +49,11 @@ function CatalogModal({
   onBack: () => void;
   onClose: () => void;
 }) {
+  const { open } = useContentLinks();
   const closeRef = useRef<HTMLButtonElement>(null);
   const [reporting, setReporting] = useState(false);
+  const [operationsOpen, setOperationsOpen] = useState(false);
+  const [draftOps, setDraftOps] = useState<Operation[] | null>(null);
   const content = useQuery({
     queryKey: ['phase1-content-link', entry.type, entry.id],
     queryFn: () => loadCatalogContent(entry),
@@ -54,7 +62,7 @@ function CatalogModal({
   useEffect(() => {
     closeRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || operationsOpen) return;
       event.stopImmediatePropagation();
       if (canGoBack) onBack();
       else onClose();
@@ -66,9 +74,23 @@ function CatalogModal({
       document.removeEventListener('keydown', onKey, true);
       document.body.style.overflow = overflow;
     };
-  }, [canGoBack, onBack, onClose]);
+  }, [canGoBack, onBack, onClose, entry.type, entry.id, operationsOpen]);
+
+  useEffect(() => {
+    setOperationsOpen(false);
+    setDraftOps(null);
+  }, [entry.type, entry.id]);
 
   const loaded = content.data;
+  const operations = draftOps ?? loaded?.operations;
+
+  async function changeOperations(next: Operation[]) {
+    setDraftOps(next);
+    const item = loaded?.editableItem;
+    if (!item) return;
+    await upsertItem({ ...item, operations: next });
+    await content.refetch();
+  }
   const wide = (loaded?.description.length ?? 0) > 900;
 
   return createPortal(
@@ -102,7 +124,9 @@ function CatalogModal({
                 {loaded.tags.length > 0 && (
                   <div className='mt-2 flex flex-wrap gap-1.5'>
                     {loaded.tags.map((tag) => (
-                      <Tag key={tag}>{tag}</Tag>
+                      <Tag key={tag} onClick={knownTraitHref(tag) ? () => open(knownTraitHref(tag)!) : undefined}>
+                        {tag}
+                      </Tag>
                     ))}
                   </div>
                 )}
@@ -112,6 +136,11 @@ function CatalogModal({
               <h2 id='content-stack-title' className='text-xl font-semibold leading-tight'>Content not found</h2>
             )}
           </div>
+          {operations && (
+            <button type='button' className='toolbar-button shrink-0' onClick={() => setOperationsOpen(true)}>
+              Operations{operations.length > 0 ? ` (${operations.length})` : ''}
+            </button>
+          )}
           {loaded && Number.isFinite(Number(entry.id)) && (
             <button type='button' className='toolbar-button shrink-0' onClick={() => setReporting(true)}>
               Missing something?
@@ -146,6 +175,16 @@ function CatalogModal({
           )}
         </div>
       </section>
+      {operationsOpen && operations && (
+        <Phase1OperationsModal
+          title={`Operations — ${loaded?.title ?? 'Record'}`}
+          opened
+          readOnly={!loaded?.editableItem}
+          operations={operations}
+          onChange={(next) => void changeOperations(next)}
+          onClose={() => setOperationsOpen(false)}
+        />
+      )}
       {reporting && Number.isFinite(Number(entry.id)) && (
         <Phase1MissingContent
           type={entry.type as ContentType | AbilityBlockType}
@@ -166,6 +205,8 @@ type CatalogView = {
   facts: { label: string; value?: string | null }[];
   description: string;
   extra?: ReactNode;
+  operations?: Operation[];
+  editableItem?: Item;
 };
 
 async function loadCatalogContent(entry: ContentLinkRef): Promise<CatalogView | null> {
@@ -187,7 +228,8 @@ async function loadCatalogContent(entry: ContentLinkRef): Promise<CatalogView | 
 
   const contentType = convertToContentType(entry.type);
   const record =
-    cachedRecord(contentType, id) ?? (await fetchContentById<Record<string, unknown>>(contentType, id));
+    (await fetchContentById<Record<string, unknown>>(contentType, id, { skipCache: true })) ??
+    cachedRecord(contentType, id);
   if (!record) return variableView(entry.id) ?? inlineView(entry);
 
   const traitNames = await traitNamesFor(record.traits);
@@ -208,6 +250,7 @@ async function loadCatalogContent(entry: ContentLinkRef): Promise<CatalogView | 
         { label: 'Access', value: ability.access },
       ],
       description: ability.description,
+      operations: ability.operations ?? [],
       extra: ability.special ? (
         <div className='mt-4 border-t border-p1-border pt-4'>
           <strong className='mr-2 text-p1-text'>Special</strong>
@@ -235,6 +278,8 @@ async function loadCatalogContent(entry: ContentLinkRef): Promise<CatalogView | 
         { label: 'Craft Requirements', value: item.craft_requirements?.trim() || null },
       ],
       description: item.description,
+      operations: item.operations ?? [],
+      editableItem: ownsContentSource(item.content_source_id) ? item : undefined,
     };
   }
 
@@ -258,6 +303,7 @@ async function loadCatalogContent(entry: ContentLinkRef): Promise<CatalogView | 
         { label: 'Duration', value: spell.duration },
       ],
       description: spell.description,
+      operations: spell.operations ?? [],
       extra: spell.heightened?.text?.map((heightened, index) => (
         <div key={index} className='mt-4 border-t border-p1-border pt-4'>
           <strong className='mr-2 text-p1-text'>Heightened ({heightened.amount})</strong>
@@ -304,6 +350,13 @@ async function loadCatalogContent(entry: ContentLinkRef): Promise<CatalogView | 
     facts: [],
     description,
   };
+}
+
+function ownsContentSource(sourceId: number | null | undefined) {
+  const userId = getCachedPublicUser()?.user_id;
+  if (!userId || sourceId == null) return false;
+  const source = getCachedContent<ContentSource>('content-source').find((row) => row.id === sourceId);
+  return source?.user_id === userId;
 }
 
 function cachedRecord(type: ReturnType<typeof convertToContentType>, id: number): Record<string, unknown> | null {
@@ -425,6 +478,12 @@ function Fact({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
-function Tag({ children }: { children: ReactNode }) {
-  return <span className='border border-p1-border bg-p1-hover px-2 py-0.5 text-[10px] uppercase text-p1-muted'>{children}</span>;
+function Tag({ children, onClick }: { children: ReactNode; onClick?: () => void }) {
+  const className = 'border border-p1-border bg-p1-inset px-1.5 py-0.5 text-[10px] font-semibold uppercase';
+  if (!onClick) return <span className={`${className} text-p1-muted`}>{children}</span>;
+  return (
+    <button type='button' className={className} onClick={onClick}>
+      {children}
+    </button>
+  );
 }
