@@ -26,7 +26,9 @@ import { DISCORD_URL } from '@constants/urls';
 import { addVariable, getVariable } from '@variables/variable-manager';
 import { cloneDeep } from 'lodash-es';
 import { Copy, Upload, X } from 'lucide-react';
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, createContext, useContext, useEffect, useState } from 'react';
+
+export const OperationsReadOnly = createContext(false);
 import { ConditionalOperation } from './conditional-op';
 import { GiveAbilityOp, GiveItemOp, GiveLanguageOp, GiveTraitOp } from './give-ops';
 import { InjectTextOp, SendNotificationOp } from './misc-ops';
@@ -89,6 +91,7 @@ export function HowToUseOperations() {
 }
 
 export function OperationWrapper(props: { children: React.ReactNode; title: string; onRemove: () => void }) {
+  const readOnly = useContext(OperationsReadOnly);
   const [confirm, setConfirm] = useState(false);
   return (
     <div className='relative w-full max-w-[700px] rounded-2xl border border-p1-border bg-p1-inset py-2 pl-2 pr-10'>
@@ -96,6 +99,7 @@ export function OperationWrapper(props: { children: React.ReactNode; title: stri
         <span className='shrink-0 rounded-full bg-p1-hover px-2.5 py-0.5 text-sm'>{props.title}</span>
         <div className='min-w-0 flex-1'>{props.children}</div>
       </div>
+      {!readOnly && (
       <button
         type='button'
         title='Remove Operation'
@@ -104,7 +108,8 @@ export function OperationWrapper(props: { children: React.ReactNode; title: stri
       >
         <X size={14} />
       </button>
-      {confirm && (
+      )}
+      {!readOnly && confirm && (
         <OpsConfirm
           title='Remove Operation'
           message='Are you sure you want to remove this operation?'
@@ -126,6 +131,7 @@ export function OperationSection(props: {
   onChange: (operations: Operation[]) => void;
   allowCopyPaste?: boolean;
 }) {
+  const readOnly = useContext(OperationsReadOnly);
   const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
 
   useEffect(() => {
@@ -179,7 +185,7 @@ export function OperationSection(props: {
       <div className='flex flex-wrap items-center justify-between gap-2'>
         <div>{props.title}</div>
         <div className='flex items-center gap-2'>
-          {props.allowCopyPaste !== false && (
+          {!readOnly && props.allowCopyPaste !== false && (
             <>
               <IconBtn label='Copy Operations' disabled={(props.operations?.length ?? 0) === 0} onClick={copyOps}>
                 <Copy size={16} />
@@ -189,10 +195,12 @@ export function OperationSection(props: {
               </IconBtn>
             </>
           )}
+          {!readOnly && (
           <AddOpMenu
             options={ADD_OPTIONS.filter((option) => !(props.blacklist ?? []).includes(option.value))}
             onPick={add}
           />
+          )}
         </div>
       </div>
       <div className='space-y-2.5'>

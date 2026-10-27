@@ -14,7 +14,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useContentLinks } from './phase1-content-links';
-import { BUNDLE_SECTIONS, BundleEditorColumn, bundleEntries } from './phase1-homebrew-records';
+import { BUNDLE_SECTIONS, BundleEditorColumn, bundleEntries, saveRecord, type BundleEntry } from './phase1-homebrew-records';
 import { Phase1MissingContent } from './phase1-missing-content';
 import { Phase1OperationsModal } from './phase1-operations-modal';
 import { Phase1PickerModal } from './phase1-picker-modal';
@@ -69,7 +69,7 @@ function HomebrewBody() {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<ContentSource | null>(null);
-  const [editing, setEditing] = useState<ContentSource | null>(null);
+  const [editing, setEditing] = useState<{ source: ContentSource; mode: 'bundle' | 'content' } | null>(null);
   const [locked, setLocked] = useState<ContentSource | null>(null);
   const [unlockedIds, setUnlockedIds] = useState<number[]>([]);
   const [page, setPage] = useState(0);
@@ -184,7 +184,7 @@ function HomebrewBody() {
         await makeRequest('update-user', { subscribed_content_sources: subscriptions ?? [] });
         await refreshUser();
         setTab('creations');
-        setEditing(source);
+        setEditing({ source, mode: 'bundle' });
       }
     } finally {
       setBusy(false);
@@ -206,7 +206,7 @@ function HomebrewBody() {
         await makeRequest('update-user', { subscribed_content_sources: subscriptions ?? [] });
         await refreshUser();
         setTab('creations');
-        setEditing(source);
+        setEditing({ source, mode: 'content' });
       } else {
         setNotice('Import failed. Check that the file is a Pathbuilder custom pack JSON.');
       }
@@ -297,8 +297,8 @@ function HomebrewBody() {
         <p className='mt-8 text-center text-sm italic text-p1-muted'>Loading bundles...</p>
       ) : tab === 'creations' ? (
         <div className='mt-6 space-y-6'>
-          <BundleGroup title='In Progress' sources={inProgress} empty='No bundles in progress.' user={user} busy={busy} onOpen={openBundle} onEdit={setEditing} onDelete={(source) => void removeBundle(source)} onMenuUnsubscribe={unsubscribeFrom} />
-          <BundleGroup title='Published' sources={published} empty='No published bundles.' user={user} busy={busy} onOpen={openBundle} onEdit={setEditing} onDelete={(source) => void removeBundle(source)} onMenuUnsubscribe={unsubscribeFrom} />
+          <BundleGroup title='In Progress' sources={inProgress} empty='No bundles in progress.' user={user} busy={busy} onOpen={openBundle} onEdit={(source) => setEditing({ source, mode: 'bundle' })} onOpenContent={(source) => setEditing({ source, mode: 'content' })} onDelete={(source) => void removeBundle(source)} onMenuUnsubscribe={unsubscribeFrom} />
+          <BundleGroup title='Published' sources={published} empty='No published bundles.' user={user} busy={busy} onOpen={openBundle} onEdit={(source) => setEditing({ source, mode: 'bundle' })} onOpenContent={(source) => setEditing({ source, mode: 'content' })} onDelete={(source) => void removeBundle(source)} onMenuUnsubscribe={unsubscribeFrom} />
         </div>
       ) : filtered.length === 0 ? (
         <p className='mt-8 text-center text-sm italic text-p1-muted'>
@@ -324,7 +324,8 @@ function HomebrewBody() {
                 busy={busy}
                 onOpen={() => openBundle(source)}
                 onUnsubscribe={tab === 'subscriptions' ? () => unsubscribeFrom(source) : undefined}
-                menuEdit={source.user_id === user?.user_id ? () => setEditing(source) : undefined}
+                menuEdit={source.user_id === user?.user_id ? () => setEditing({ source, mode: 'bundle' }) : undefined}
+                menuOpenContent={source.user_id === user?.user_id ? () => setEditing({ source, mode: 'content' }) : undefined}
                 menuUnsubscribe={
                   user?.subscribed_content_sources?.some((item) => item.source_id === source.id)
                     ? () => unsubscribeFrom(source)
@@ -367,10 +368,14 @@ function HomebrewBody() {
           busy={busy}
           onClose={() => setSelected(null)}
           onSubscribe={(add) => void subscribe(selected, add)}
-          onEdit={selected.user_id === user?.user_id ? () => setEditing(selected) : undefined}
+          onEdit={selected.user_id === user?.user_id ? () => setEditing({ source: selected, mode: 'bundle' }) : undefined}
+          onOpenContent={selected.user_id === user?.user_id ? () => setEditing({ source: selected, mode: 'content' }) : undefined}
         />
       )}
-      {editing && <EditPanel source={editing} busy={busy} onClose={() => setEditing(null)} onSave={(next) => void saveEdit(next)} />}
+      {editing?.mode === 'bundle' && (
+        <EditPanel source={editing.source} busy={busy} onClose={() => setEditing(null)} onSave={(next) => void saveEdit(next)} />
+      )}
+      {editing?.mode === 'content' && <ContentEditor source={editing.source} onClose={() => setEditing(null)} />}
     </main>
   );
 }
@@ -391,6 +396,7 @@ function BundleGroup({
   busy,
   onOpen,
   onEdit,
+  onOpenContent,
   onDelete,
   onMenuUnsubscribe,
 }: {
@@ -401,6 +407,7 @@ function BundleGroup({
   busy: boolean;
   onOpen: (source: ContentSource) => void;
   onEdit: (source: ContentSource) => void;
+  onOpenContent: (source: ContentSource) => void;
   onDelete: (source: ContentSource) => void;
   onMenuUnsubscribe: (source: ContentSource) => void;
 }) {
@@ -421,6 +428,7 @@ function BundleGroup({
                 onEdit={() => onEdit(source)}
                 onDelete={() => onDelete(source)}
                 menuEdit={() => onEdit(source)}
+                menuOpenContent={() => onOpenContent(source)}
                 menuUnsubscribe={
                   user?.subscribed_content_sources?.some((item) => item.source_id === source.id)
                     ? () => onMenuUnsubscribe(source)
@@ -444,6 +452,7 @@ function BundleCard({
   onDelete,
   onUnsubscribe,
   menuEdit,
+  menuOpenContent,
   menuUnsubscribe,
 }: {
   source: ContentSource;
@@ -454,6 +463,7 @@ function BundleCard({
   onDelete?: () => void;
   onUnsubscribe?: () => void;
   menuEdit?: () => void;
+  menuOpenContent?: () => void;
   menuUnsubscribe?: () => void;
 }) {
   const subscribed = Boolean(user?.subscribed_content_sources?.some((item) => item.source_id === source.id));
@@ -513,12 +523,7 @@ function BundleCard({
           onClose={() => setMenu(null)}
           onUnsubscribe={(menuUnsubscribe ?? onUnsubscribe) ? () => { setMenu(null); (menuUnsubscribe ?? onUnsubscribe)?.(); } : undefined}
           onEdit={(menuEdit ?? onEdit) ? () => { setMenu(null); (menuEdit ?? onEdit)?.(); } : undefined}
-          onOpenEditor={() => {
-            setMenu(null);
-            const edit = menuEdit ?? onEdit;
-            if (edit) edit();
-            else window.location.assign('/phase1/homebrew');
-          }}
+          onOpenEditor={menuOpenContent ? () => { setMenu(null); menuOpenContent(); } : undefined}
         />
       )}
     </article>
@@ -540,7 +545,7 @@ function BundleCardContextMenu({
   onClose: () => void;
   onUnsubscribe?: () => void;
   onEdit?: () => void;
-  onOpenEditor: () => void;
+  onOpenEditor?: () => void;
 }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
@@ -572,8 +577,57 @@ function BundleCardContextMenu({
             Edit bundle
           </button>
         )}
-        <button type='button' role='menuitem' className='flex w-full px-3 py-2 text-left text-sm hover:bg-p1-hover disabled:opacity-50' disabled={busy} onClick={onOpenEditor}>
-          Open content editor
+        {onOpenEditor && (
+          <button type='button' role='menuitem' className='flex w-full px-3 py-2 text-left text-sm hover:bg-p1-hover disabled:opacity-50' disabled={busy} onClick={onOpenEditor}>
+            Open content editor
+          </button>
+        )}
+      </div>
+    </>,
+    document.body
+  );
+}
+
+function BundleEntryContextMenu({
+  x,
+  y,
+  busy,
+  onClose,
+  onRename,
+  onDelete,
+}: {
+  x: number;
+  y: number;
+  busy: boolean;
+  onClose: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+}) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+  const left = Math.min(x, window.innerWidth - 180);
+  const top = Math.min(y, window.innerHeight - 96);
+  return createPortal(
+    <>
+      <div
+        className='fixed inset-0 z-[119]'
+        onMouseDown={onClose}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onClose();
+        }}
+      />
+      <div role='menu' className='fixed z-[120] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        <button type='button' role='menuitem' className='flex w-full px-3 py-2 text-left text-sm hover:bg-p1-hover disabled:opacity-50' disabled={busy} onClick={onRename}>
+          Rename
+        </button>
+        <button type='button' role='menuitem' className='flex w-full px-3 py-2 text-left text-sm hover:bg-p1-hover disabled:opacity-50' disabled={busy} onClick={onDelete}>
+          Delete
         </button>
       </div>
     </>,
@@ -597,6 +651,7 @@ function BundleModal({
   onClose,
   onSubscribe,
   onEdit,
+  onOpenContent,
 }: {
   source: ContentSource;
   user: PublicUser | null;
@@ -604,15 +659,38 @@ function BundleModal({
   onClose: () => void;
   onSubscribe: (add: boolean) => void;
   onEdit?: () => void;
+  onOpenContent?: () => void;
 }) {
   const { open } = useContentLinks();
+  const queryClient = useQueryClient();
   const subscribed = Boolean(user?.subscribed_content_sources?.some((item) => item.source_id === source.id));
+  const ownsBundle = Boolean(user?.user_id && source.user_id === user.user_id);
   const packageQuery = useQuery({
     queryKey: ['phase1-homebrew-package', source.id],
     queryFn: () => fetchContentPackage([source.id], { fetchCreatures: true }),
   });
   const entries = useMemo(() => (packageQuery.data ? bundleEntries(packageQuery.data) : []), [packageQuery.data]);
   const [missing, setMissing] = useState<ContentType | AbilityBlockType | ''>('');
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; entry: BundleEntry } | null>(null);
+
+  async function refreshBundle() {
+    resetContentStore(false, true);
+    await queryClient.invalidateQueries({ queryKey: ['phase1-homebrew-package', source.id] });
+  }
+
+  async function renameEntry(entry: BundleEntry) {
+    const next = window.prompt('Rename', entry.name);
+    const name = next?.trim();
+    if (!name || name === entry.name) return;
+    await saveRecord(entry.contentType, { ...entry.record, name });
+    await refreshBundle();
+  }
+
+  async function deleteEntry(entry: BundleEntry) {
+    if (!window.confirm(`Delete “${entry.name}”?`)) return;
+    await deleteContent(entry.contentType, entry.id);
+    await refreshBundle();
+  }
 
   return (
     <>
@@ -673,14 +751,10 @@ function BundleModal({
               Source
             </a>
           )}
-          {onEdit ? (
-            <button type='button' className='toolbar-button' onClick={onEdit}>
+          {onOpenContent && (
+            <button type='button' className='toolbar-button' onClick={onOpenContent}>
               Open content editor
             </button>
-          ) : (
-            <a className='toolbar-button' href='/phase1/homebrew'>
-              Open content editor
-            </a>
           )}
         </div>
       }
@@ -689,6 +763,11 @@ function BundleModal({
           type='button'
           className='flex w-full items-center gap-3 border-b border-p1-border px-3 py-2 text-left hover:bg-p1-hover'
           onClick={() => open(entry.href)}
+          onContextMenu={(event) => {
+            if (!ownsBundle) return;
+            event.preventDefault();
+            setRowMenu({ x: event.clientX, y: event.clientY, entry });
+          }}
         >
           <span className='min-w-0 flex-1 truncate text-sm'>
             {entry.name}
@@ -698,10 +777,64 @@ function BundleModal({
         </button>
       )}
     />
+    {rowMenu && (
+      <BundleEntryContextMenu
+        x={rowMenu.x}
+        y={rowMenu.y}
+        busy={busy}
+        onClose={() => setRowMenu(null)}
+        onRename={() => {
+          const entry = rowMenu.entry;
+          setRowMenu(null);
+          void renameEntry(entry);
+        }}
+        onDelete={() => {
+          const entry = rowMenu.entry;
+          setRowMenu(null);
+          void deleteEntry(entry);
+        }}
+      />
+    )}
     {missing && (
       <Phase1MissingContent type={missing} id={-1} contentSourceId={source.id} onClose={() => setMissing('')} />
     )}
     </>
+  );
+}
+
+function ContentEditor({ source, onClose }: { source: ContentSource; onClose: () => void }) {
+  const packageQuery = useQuery({
+    queryKey: ['phase1-homebrew-package', source.id],
+    queryFn: () => fetchContentPackage([source.id], { fetchCreatures: true }),
+  });
+  const entries = useMemo(() => (packageQuery.data ? bundleEntries(packageQuery.data) : []), [packageQuery.data]);
+  useEffect(() => {
+    void defineDefaultSourcesForSource('INFO', source);
+  }, [source]);
+
+  return (
+    <div
+      className='fixed inset-0 z-30 bg-black/60 p-3 sm:p-5'
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className='flex h-full flex-col border border-p1-border bg-p1-page shadow-2xl'>
+        <header className='flex items-center gap-3 border-b border-p1-border px-4 py-3'>
+          <h2 className='min-w-0 flex-1 text-lg font-semibold'>{source.name}</h2>
+          <button type='button' className='text-sm text-p1-muted hover:text-p1-text' onClick={onClose}>
+            Close
+          </button>
+        </header>
+        <div className='min-h-0 flex-1'>
+          {packageQuery.isLoading ? (
+            <p className='grid h-full place-items-center text-sm italic text-p1-muted'>Loading...</p>
+          ) : (
+            <BundleEditorColumn sourceId={source.id} entries={entries} />
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -716,27 +849,19 @@ function EditPanel({
   onClose: () => void;
   onSave: (source: ContentSource) => void;
 }) {
-  const { open } = useContentLinks();
   const [draft, setDraft] = useState(source);
   const [operationsOpen, setOperationsOpen] = useState(false);
   const [publishPrompt, setPublishPrompt] = useState(false);
-  const packageQuery = useQuery({
-    queryKey: ['phase1-homebrew-package', source.id],
-    queryFn: () => fetchContentPackage([source.id], { fetchCreatures: true }),
-  });
-  const entries = useMemo(() => (packageQuery.data ? bundleEntries(packageQuery.data) : []), [packageQuery.data]);
-  const grouped = BUNDLE_SECTIONS.map((item) => ({
-    ...item,
-    entries: entries.filter((entry) => entry.kind === item.kind),
-  })).filter((item) => item.entries.length > 0);
-  useEffect(() => {
-    void defineDefaultSourcesForSource('INFO', source);
-  }, [source]);
 
   return (
-    <div className='fixed inset-0 z-30 bg-black/60 p-3 sm:p-5' onClick={onClose}>
+    <div
+      className='fixed inset-0 z-30 bg-black/60 p-3 sm:p-5'
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <form
-        className='flex h-full flex-col border border-p1-border bg-p1-page shadow-2xl'
+        className='mx-auto flex h-full w-full max-w-md flex-col border border-p1-border bg-p1-page shadow-2xl'
         onClick={(event) => event.stopPropagation()}
         onSubmit={(event) => {
           event.preventDefault();
@@ -749,8 +874,8 @@ function EditPanel({
             Close
           </button>
         </header>
-        <div className='grid min-h-0 flex-1 lg:grid-cols-[280px_minmax(0,1fr)_300px]'>
-          <div className='space-y-3 overflow-y-auto border-b border-p1-border p-4 lg:border-b-0 lg:border-r'>
+        <div className='min-h-0 flex-1 overflow-y-auto'>
+          <div className='space-y-3 p-4'>
             <label className='block text-sm'>
               Name
               <input className='settings-input mt-1' required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
@@ -822,33 +947,6 @@ function EditPanel({
               </button>
             </div>
           </div>
-          {packageQuery.isLoading ? (
-            <p className='grid place-items-center text-sm italic text-p1-muted'>Loading...</p>
-          ) : (
-            <BundleEditorColumn sourceId={source.id} entries={entries} />
-          )}
-          <aside className='min-h-0 overflow-y-auto p-4'>
-            <h3 className='text-base font-semibold'>{draft.name || 'Untitled bundle'}</h3>
-            <p className='mt-2 whitespace-pre-wrap text-sm text-p1-muted'>{draft.description || 'No description.'}</p>
-            <div className='mt-4 space-y-3'>
-              {grouped.map((group) => (
-                <section key={group.id}>
-                  <h4 className='text-xs font-semibold uppercase tracking-wide text-p1-muted'>
-                    {group.label} <span className='text-p1-faint'>{group.entries.length}</span>
-                  </h4>
-                  <ul className='mt-1 border border-p1-border'>
-                    {group.entries.map((entry) => (
-                      <li key={entry.key}>
-                        <button type='button' className='w-full px-2 py-1.5 text-left text-sm hover:bg-p1-hover' onClick={() => open(entry.href)}>
-                          {entry.name}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
-            </div>
-          </aside>
         </div>
       </form>
       <Phase1OperationsModal

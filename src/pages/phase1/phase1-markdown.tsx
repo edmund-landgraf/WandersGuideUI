@@ -1,11 +1,19 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { gmNotesText, insertGmNoteStamp, notePageToMarkdown, sourceImportPages } from '@pages/character_sheet/panels/gm-notes';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { getContentDataFromHref } from '@common/rich_text_input/ContentLinkExtension';
-import { autoLinkConditions, isAonConditionHref, normalizeMarkdownTables, resolveAonHref, toStandard2eProse, toWgMarkdownLinks } from '@utils/foundry-text';
+import { autoLinkConditions, autoLinkKnownTraits, isAonConditionHref, normalizeMarkdownTables, resolveAonHref, toStandard2eProse, toWgMarkdownLinks } from '@utils/foundry-text';
 import { compileExpressions } from '@variables/variable-utils';
 import { useContentLinks } from './phase1-content-links';
+
+function isPassiveCallout(children: ReactNode) {
+  const nodes = Array.isArray(children) ? children : [children];
+  const first = nodes[0];
+  if (!first || typeof first !== 'object' || !('props' in first)) return false;
+  const label = (first.props as { children?: ReactNode } | undefined)?.children;
+  return label === 'Passive' || (Array.isArray(label) && label.join('') === 'Passive');
+}
 
 export function compileWgText(text: string) {
   return (compileExpressions('CHARACTER', text, true) ?? text).replace(/⬆️/g, '⇧');
@@ -20,12 +28,13 @@ export function noteContentsToMarkdown(contents: unknown) {
 export function ProseMarkdown({ children, className = '' }: { children: string; className?: string }) {
   const { open } = useContentLinks();
   if (!children.trim()) return null;
-  const prose = normalizeMarkdownTables(toWgMarkdownLinks(autoLinkConditions(toStandard2eProse(compileWgText(children)))));
+  const prose = normalizeMarkdownTables(toWgMarkdownLinks(autoLinkKnownTraits(autoLinkConditions(toStandard2eProse(compileWgText(children))))));
   return (
     <div className={`ability-prose text-sm leading-7 text-p1-text ${className}`.trim()}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
+          p: ({ children }) => <p className={isPassiveCallout(children) ? 'ability-passive' : undefined}>{children}</p>,
           table: ({ children }) => (
             <div className='table-wrap'>
               <table>{children}</table>

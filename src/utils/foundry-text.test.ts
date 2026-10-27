@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { convertActionSymbolMarkup } from './actions';
-import { autoLinkConditions, normalizeMarkdownTables, toStandard2eProse, toWgMarkdownLinks } from './foundry-text';
+import { autoLinkConditions, autoLinkKnownTraits, formatPaizoEntryProse, normalizeMarkdownTables, toStandard2eProse, toWgMarkdownLinks } from './foundry-text';
 import { getContentDataFromHref } from '@common/rich_text_input/ContentLinkExtension';
 
 function renderProse(text: string) {
@@ -44,6 +44,43 @@ describe('action symbol markup', () => {
   it('decodes entity-escaped action tags', () => {
     const raw = '&lt;abbr cost=&quot;REACTION&quot; class=&quot;action-symbol&quot;&gt;5&lt;/abbr&gt;';
     expect(toStandard2eProse(raw)).toContain('`action_symbol_5`');
+  });
+});
+
+describe('Paizo entry prose', () => {
+  it('turns an Activate sentence into labeled stat-block text', () => {
+    const raw =
+      'Activate—Final Glimmer (two actions, concentrate, manipulate). Frequency once per day. Requirements: you are within 10 feet. Effect: the lantern projects an image.';
+    const out = formatPaizoEntryProse(raw);
+    expect(out).toContain('**Activate** `action_symbol_2` Final Glimmer (concentrate, manipulate)');
+    expect(out).toContain('**Frequency** once per day; **Requirements** you are within 10 feet');
+    expect(out).toContain('**Effect** the lantern projects an image.');
+  });
+
+  it('keeps a content link on an Activate name', () => {
+    const raw = 'Activate—[Dancing Lights](link_spell_9192) (two actions, concentrate, manipulate). Frequency three times per day.';
+    const out = formatPaizoEntryProse(raw);
+    expect(out).toContain('**Activate** `action_symbol_2` [Dancing Lights](link_spell_9192) (concentrate, manipulate)');
+    expect(out).toContain('**Frequency** three times per day.');
+  });
+
+  it('labels a Passive line', () => {
+    expect(formatPaizoEntryProse('Passive: you gain the feat while the shutter is open.')).toBe(
+      '**Passive** you gain the feat while the shutter is open.'
+    );
+  });
+
+  it('labels a Special line', () => {
+    expect(formatPaizoEntryProse('Special: no investment is required.')).toBe('**Special** no investment is required.');
+  });
+});
+
+describe('known trait links', () => {
+  it('links concentrate and manipulate without touching nearby words', () => {
+    const out = autoLinkKnownTraits('Activate concentrate, manipulate, and light.');
+    expect(out).toContain('[concentrate](link_trait_1432)');
+    expect(out).toContain('[manipulate](link_trait_1433)');
+    expect(out).not.toContain('[light]');
   });
 });
 
