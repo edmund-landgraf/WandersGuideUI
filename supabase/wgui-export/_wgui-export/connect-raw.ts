@@ -26,6 +26,19 @@ function asHttpResponse(result: JSendResponse | Response, rlHeaders: Record<stri
   });
 }
 
+async function isInOwnedCampaign(
+  adminClient: SupabaseClient<any, 'public', any>,
+  userId: string,
+  characterId: number
+): Promise<boolean> {
+  const { data: ch, error } = await adminClient.from('character').select('campaign_id').eq('id', characterId).maybeSingle();
+  if (error) throw new HttpError(500, 'Failed to resolve campaign access.', 'GRANT_LOOKUP_FAILED');
+  const campaignId = (ch as any)?.campaign_id;
+  if (campaignId == null) return false;
+  const { data: camp } = await adminClient.from('campaign').select('user_id').eq('id', campaignId).maybeSingle();
+  return (camp as any)?.user_id === userId;
+}
+
 async function generateUserJWT(userId: string) {
   // @ts-ignore
   const JWT_SECRET = Deno.env.get('SB_JWT_SECRET') ?? Deno.env.get('JWT_SECRET');
@@ -105,6 +118,14 @@ async function handleApiRouting<T>(
   if (supportsCharacterAPI) {
     // Only characters granted to THIS client and owned by the key's user.
     const granted = await grantedCharacterIds(adminClient, publicUser, apiClient.id);
+    // GM access: a PC that joined a campaign owned by the key's user may be exported by that
+    // user's key, even though another player owns it. Only a single numeric id qualifies, and
+    // only while the PC's campaign_id points at a campaign this user owns.
+    const requestedId = (body as any)?.id;
+    if (typeof requestedId === 'number' && !granted.includes(requestedId)
+      && (await isInOwnedCampaign(adminClient, publicUser.user_id, requestedId))) {
+      granted.push(requestedId);
+    }
     body = scopeBodyToGrants(body, granted, !!scopeCharacterList);
   }
 

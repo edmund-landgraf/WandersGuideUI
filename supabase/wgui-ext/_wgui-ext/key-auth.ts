@@ -121,6 +121,48 @@ export async function loadCharacterSummaries(
     .sort((a, b) => a.id - b.id);
 }
 
+/**
+ * GM access (Foundry "Import PCs from one campaign"): the caller's user owns the campaign.
+ * A GM may read every PC whose campaign_id is that campaign (players attach PCs through the
+ * join key), and nothing else of those players. Ownership is checked with the service role.
+ */
+export async function ownedCampaigns(
+  admin: SupabaseClient<any, 'public', any>,
+  userId: string
+): Promise<{ id: number; name: string }[]> {
+  const { data, error } = await admin.from('campaign').select('id, name').eq('user_id', userId);
+  if (error) throw new HttpError(500, 'Failed to load campaigns.', 'CAMPAIGN_LOOKUP_FAILED');
+  return ((data ?? []) as { id: number; name: string }[]).sort((a, b) => a.id - b.id);
+}
+
+export async function campaignCharacterIds(
+  admin: SupabaseClient<any, 'public', any>,
+  campaignIds: number[]
+): Promise<Map<number, number[]>> {
+  const out = new Map<number, number[]>(campaignIds.map((id) => [id, []]));
+  if (campaignIds.length === 0) return out;
+  const { data, error } = await admin.from('character').select('id, campaign_id').in('campaign_id', campaignIds);
+  if (error) throw new HttpError(500, 'Failed to load campaign characters.', 'CHARACTER_LOOKUP_FAILED');
+  for (const r of (data ?? []) as { id: number; campaign_id: number }[]) out.get(r.campaign_id)?.push(r.id);
+  for (const ids of out.values()) ids.sort((a, b) => a - b);
+  return out;
+}
+
+/** Display names of the players who own these characters (GM view only). */
+export async function playerNames(
+  admin: SupabaseClient<any, 'public', any>,
+  characterIds: number[]
+): Promise<Map<number, string | null>> {
+  const out = new Map<number, string | null>();
+  if (characterIds.length === 0) return out;
+  const { data: chars } = await admin.from('character').select('id, user_id').in('id', characterIds);
+  const userIds = [...new Set(((chars ?? []) as any[]).map((c) => c.user_id))];
+  const { data: users } = await admin.from('public_user').select('user_id, display_name').in('user_id', userIds);
+  const byUser = new Map(((users ?? []) as any[]).map((u) => [u.user_id, u.display_name ?? null]));
+  for (const c of (chars ?? []) as any[]) out.set(c.id, byUser.get(c.user_id) ?? null);
+  return out;
+}
+
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,

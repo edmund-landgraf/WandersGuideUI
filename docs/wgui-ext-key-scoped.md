@@ -54,3 +54,12 @@ The stock upstream `helpers.connect()` turns a 36-char API key into a self-signe
 3. Smoke-test with a real key: list returns only granted PCs; no auth, the anon key and a bogus key return 401; a JWT minted from an API key returns 401 on, for example, `wgui-ext-find-campaign-characters`; a normal signed-in session still gets 200.
 4. **Dependency warning:** `wgui-export/_wgui-export/connect-raw.ts` (on main since 79526fc) imports `../_shared/caller-auth.ts`. That file exists only in the unpushed wanderers-guide `security/function-auth` patch. On a prod stack without that patch, `wgui-export-character` will fail to boot. These new endpoints do **not** depend on it.
 5. Gateway `VERIFY_JWT=true` would 401 API-key calls (an API key isn't a JWT) to these endpoints and to `wgui-export-character`. If it's turned on, exempt them per function, or keep `VERIFY_JWT=false` and rely on the in-function checks.
+## GM access to campaign PCs
+
+The user who owns a campaign (`campaign.user_id`) is its GM. With any of that user's API keys (or their session):
+
+- `wgui-ext-find-key-campaigns {}` also lists every campaign the user owns (`owned: true`), with `character_ids` = every PC whose `campaign_id` is that campaign.
+- `wgui-ext-find-key-campaigns {campaign_id}` on an owned campaign returns every PC that joined it (players attach PCs through the join key), each with a `player` display name. The players' other PCs are never returned.
+- `wgui-export-character {id}` (connect-raw) accepts a single numeric id that is not granted to the key only when that PC's `campaign_id` is a campaign owned by the key's user. The export then runs under the GM's minted JWT, which the existing `character` RLS policy already lets read PCs in campaigns the user owns. If the PC leaves the campaign, access ends at once.
+- Everything else keeps key-owner scoping: a non-GM key sees only PCs granted to it; a key whose user does not own the campaign gets 403 `CAMPAIGN_FORBIDDEN` / `CHARACTER_FORBIDDEN`.
+
