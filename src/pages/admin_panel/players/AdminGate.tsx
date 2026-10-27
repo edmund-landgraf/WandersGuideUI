@@ -33,9 +33,9 @@ export function AdminGate({ children }: { children: ReactNode }) {
           <p className='text-sm text-p1-muted'>Loading…</p>
         ) : (
           <div className='border border-p1-border bg-p1-surface p-5'>
-            <h1 className='text-xl font-semibold'>Not authorized</h1>
+            <h1 className='text-xl font-semibold'>Sign in required</h1>
             <p className='mt-2 text-sm text-p1-muted'>
-              {access === 'signed-out' ? 'Sign in with an administrator account to use this page.' : 'This page is only available to administrators.'}
+              Sign in to use this page, then enter the admin password.
             </p>
             <Link to='/phase1/characters' className='toolbar-button mt-4 inline-flex'>Back to Characters</Link>
           </div>
