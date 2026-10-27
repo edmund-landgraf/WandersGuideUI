@@ -303,7 +303,6 @@ async function loadCatalogContent(entry: ContentLinkRef): Promise<CatalogView | 
         { label: 'Duration', value: spell.duration },
       ],
       description: spell.description,
-      operations: spell.operations ?? [],
       extra: spell.heightened?.text?.map((heightened, index) => (
         <div key={index} className='mt-4 border-t border-p1-border pt-4'>
           <strong className='mr-2 text-p1-text'>Heightened ({heightened.amount})</strong>
