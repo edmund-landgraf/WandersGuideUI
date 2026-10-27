@@ -37,11 +37,15 @@ Thirty-eight tools require `read`. Twenty-three tools require `write`. Encounter
 | `get_character_row` | `read` | Builder character row from `find-character` |
 | `list_options` | `read` | Catalog options for the character's enabled books |
 | `list_open_choices` | `read` | Unfilled builder selections |
+| `list_spell_options` | `read` | Legal spells for a casting source: tradition, rank, slots, books |
 | `create_character` | `write` | New character row |
 | `set_books` | `write` | Enabled content source ids |
 | `set_identity` | `write` | Ancestry, background, or class |
 | `choose` | `write` | One legal option on an open choice |
 | `delete_character` | `write` | Delete a character row |
+| `add_spell` | `write` | One `spells.list` entry, optionally prepared into a slot |
+| `remove_spell` | `write` | Remove a spell from a source's list and slots |
+| `set_spells` | `write` | Replace a source's list and/or prepared slots |
 
 ## Homebrew
 

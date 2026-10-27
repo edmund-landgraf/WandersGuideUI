@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { registerCharacterCatalog } from "./character-catalog.js";
+import { registerCharacterSpells } from "./character-spells.js";
 import { getEncounterReader, type CharacterExport, type CombatantSheet, type EncounterRecord } from "./reader.js";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
@@ -441,6 +442,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
   }, userId);
 
   registerCharacterCatalog(server, userId);
+  registerCharacterSpells(server, userId);
 }
 
 function formatEncounter(record: EncounterRecord) {

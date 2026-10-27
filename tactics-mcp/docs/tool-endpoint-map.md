@@ -51,6 +51,8 @@ These eight tools are on the same `wgui-mcp` process. They post to the stock Wan
 | `list_open_choices` | Operation results already computed for the character. No new function. |
 | `choose` | `update-character` `operation_data.selections` |
 | `delete_character` | `delete-content` `{ id, type: "character" }` |
+| `list_spell_options` | `find-spell` with the common core plus enabled books, filtered by the casting source's tradition and max rank (sources and slots from the builder operation pass) |
+| `add_spell`, `remove_spell`, `set_spells` | `find-spell` validation, then `update-character` `spells` (`list` entries `{ spell_id, rank, source }`, prepared `slots` `{ rank, source, spell_id }`) |
 
 ## Character payload
 
@@ -68,7 +70,7 @@ These eight tools are on the same `wgui-mcp` process. They post to the stock Wan
 
 ## Account
 
-`ensure_public_user`, `join_campaign`, `patch_encounter_dice`, `create_character`, `set_books`, `set_identity`, `choose`, and `delete_character` require the `write` scope. The other tools in this server require `read`, including `export_character`, `get_character_row`, `list_options`, and `list_open_choices`. A token that only has `read` still calls the lookup tools and is rejected, before the handler, on every write.
+`ensure_public_user`, `join_campaign`, `patch_encounter_dice`, `create_character`, `set_books`, `set_identity`, `choose`, `delete_character`, `add_spell`, `remove_spell`, and `set_spells` require the `write` scope. The other tools in this server require `read`, including `export_character`, `get_character_row`, `list_options`, `list_open_choices`, and `list_spell_options`. A token that only has `read` still calls the lookup tools and is rejected, before the handler, on every write.
 
 | Tool | What it reads |
 | --- | --- |

@@ -61,3 +61,17 @@ export async function liveCharacterWrite(character: Record<string, unknown>) {
   }
   return { ...character, ...patch };
 }
+
+export async function liveSpellcasting(character: Record<string, unknown>) {
+  await runBuilder(character);
+  const { getVariable } = await import("../../src/process/variables/variable-manager.ts");
+  const { parseCastingSources } = await import("./character-spells.js");
+  const level = typeof character.level === "number" ? character.level : 1;
+  const sources = parseCastingSources((getVariable("CHARACTER", "CASTING_SOURCES") as { value?: unknown } | null)?.value);
+  const raw = (getVariable("CHARACTER", "SPELL_SLOTS") as { value?: unknown } | null)?.value;
+  const slots = (Array.isArray(raw) ? raw : [])
+    .map((value) => JSON.parse(String(value)) as { lvl: number; rank: number; amt: number; source: string; spellListSource?: string })
+    .filter((slot) => slot.lvl === level && slot.spellListSource === undefined)
+    .map((slot) => ({ rank: slot.rank, source: slot.source, amount: slot.amt }));
+  return { sources, slots };
+}
