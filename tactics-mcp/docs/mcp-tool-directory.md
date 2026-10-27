@@ -33,7 +33,7 @@ Thirty-eight tools require `read`. Twenty-three tools require `write`. Encounter
 
 | Tool | Scope | Returns |
 | --- | --- | --- |
-| `export_character` | `read` | Compiled character JSON file |
+| `export_character` | `read` | Compiled character JSON file (slim by default, `detail: "full"` for the whole file) or PDF |
 | `get_character_row` | `read` | Builder character row from `find-character` |
 | `list_options` | `read` | Catalog options for the character's enabled books |
 | `list_open_choices` | `read` | Unfilled builder selections |

@@ -98,7 +98,7 @@ function test() {
     '--allow-net',
     '--allow-env',
     '--allow-read',
-    '/wgui-export/_tests/wgui-export.test.ts',
+    '/wgui-export/_tests/',
   ]);
 }
 

@@ -40,9 +40,11 @@ test("encounter tools include their structured data in model-readable text", asy
     diceState: { title: "Reflex save", dc: 22 },
     sheets: {},
   };
+  const exportCalls: string[] = [];
   const reader = {
     async loadEncounter() { return record; },
-    async exportCharacter(_userId: string, _characterId: number, format = "json") {
+    async exportCharacter(_userId: string, _characterId: number, format = "json", detail = "slim") {
+      exportCalls.push(`${format}/${detail}`);
       return format === "pdf"
         ? { ok: true as const, data: { format: "pdf" as const, filename: "character-7.pdf", mimeType: "application/pdf" as const, base64: "JVBERi0x" } }
         : { ok: true as const, data: { format: "json" as const, file: { name: "Lyra", level: 5 } } };
@@ -61,9 +63,13 @@ test("encounter tools include their structured data in model-readable text", asy
     let response = await client.callTool({ name: "export_character", arguments: { characterId: 7 } });
     assert.match(textOf(response), /"name": "Lyra"/);
 
+    response = await client.callTool({ name: "export_character", arguments: { characterId: 7, detail: "full" } });
+    assert.match(textOf(response), /"name":"Lyra"/);
+
     response = await client.callTool({ name: "export_character", arguments: { characterId: 7, format: "pdf" } });
     assert.match(textOf(response), /Character PDF/);
     assert.match(textOf(response), /JVBERi0x/);
+    assert.deepEqual(exportCalls, ["json/slim", "json/full", "pdf/slim"]);
 
     response = await client.callTool({ name: "get_encounter", arguments: args });
     assert.match(textOf(response), /Round: 3/);

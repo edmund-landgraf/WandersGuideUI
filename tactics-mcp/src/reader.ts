@@ -72,7 +72,7 @@ export type EncounterReader = {
   campaignOwnerContacts(userId: string, ownerIds: string[]): Promise<ActionResult<{ userId: string; email: string; displayName: string }[]>>;
   patchEncounterDice(userId: string, campaignId: number, encounterId: number, patch: { diceRollState?: Record<string, unknown> | null; diceRollLog?: unknown[] }): Promise<ActionResult<{ diceRollState: unknown; diceRollLog: unknown[] }>>;
   listCampaignCharacters(userId: string, campaignId: number): Promise<ActionResult<{ id: number; name: string; level: number | null; ancestry: string | null; className: string | null }[]>>;
-  exportCharacter(userId: string, characterId: number, format?: "json" | "pdf"): Promise<ActionResult<CharacterExport>>;
+  exportCharacter(userId: string, characterId: number, format?: "json" | "pdf", detail?: "slim" | "full"): Promise<ActionResult<CharacterExport>>;
 };
 
 function unavailable(message = "This tool is unavailable without the campaign database."): ActionFailure {

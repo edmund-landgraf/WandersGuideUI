@@ -1047,7 +1047,7 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
         }),
       };
     },
-    async exportCharacter(userId, characterId, format = "json"): Promise<ActionResult<CharacterExport>> {
+    async exportCharacter(userId, characterId, format = "json", detail = "slim"): Promise<ActionResult<CharacterExport>> {
       const rows = await rest(`character?id=eq.${characterId}&select=id,user_id,campaign_id`);
       const character = rows[0];
       if (!character) return fail("NOT_FOUND", "Character not found.");
@@ -1060,7 +1060,7 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
       if (!secret && !serviceRole) return fail("INTERNAL_ERROR", "Character export is unavailable until JWT_SECRET or SUPABASE_SERVICE_ROLE_KEY is set on the MCP server.");
       // A user JWT is preferred. The service role is already on this server and the ownership check above has passed.
       const token = secret ? userJwt(userId, secret) : serviceRole;
-      const response = await fetch(`${baseUrl()}/functions/v1/wgui-export-character`, {
+      const call = (fn: string) => fetch(`${baseUrl()}/functions/v1/${fn}`, {
         method: "POST",
         headers: {
           apikey: env("SUPABASE_ANON_KEY"),
@@ -1069,6 +1069,11 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
         },
         body: JSON.stringify({ id: characterId, format }),
       });
+      // Slim JSON drops the content catalog (about 4 MB down to about 0.12 MB). A stack
+      // without wgui-export-character-slim answers 404 or a 5xx worker error; use the full file.
+      const slim = format === "json" && detail !== "full";
+      let response = await call(slim ? "wgui-export-character-slim" : "wgui-export-character");
+      if (slim && (response.status === 404 || response.status >= 500)) response = await call("wgui-export-character");
       if (!response.ok) return fail("INTERNAL_ERROR", "Character export failed.");
       if (format === "pdf") {
         const bytes = new Uint8Array(await response.arrayBuffer());
