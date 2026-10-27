@@ -33,7 +33,7 @@ OAuth endpoints:
 | Protected resource metadata | `https://wgui.wandersguide.site/.well-known/oauth-protected-resource` |
 | Authorization server metadata | `https://wgui.wandersguide.site/.well-known/oauth-authorization-server` |
 
-Grokbot generates `state` and a PKCE verifier, opens authorize with `response_type=code`, `client_id=grokbot-wgui`, the exact redirect URI, `code_challenge_method=S256`, and `scope=read write`, then exchanges the code with the same client id, redirect URI, and verifier. The browser signs in with the same providers as the campaign UI. Granted scopes are the ones requested. Omitting `scope` grants `read` only, which still runs the lookup tools and does not run `ensure_public_user`, `join_campaign`, `patch_encounter_dice`, `create_character`, `set_books`, `set_identity`, `choose`, or `delete_character`. Discovery advertises both scopes. An existing token that only has `read` keeps working for lookups until the next sign-in. Encounter reads still require GM view.
+Grokbot generates `state` and a PKCE verifier, opens authorize with `response_type=code`, `client_id=grokbot-wgui`, the exact redirect URI, `code_challenge_method=S256`, and `scope=read write`, then exchanges the code with the same client id, redirect URI, and verifier. The browser signs in with the same providers as the campaign UI. Granted scopes are the ones requested. Omitting `scope` grants `read` only, which still runs the lookup tools and does not run `ensure_public_user`, `join_campaign`, `patch_encounter_dice`, `create_character`, `set_books`, `set_identity`, `choose`, `delete_character`, `add_spell`, `remove_spell`, or `set_spells`. Discovery advertises both scopes. An existing token that only has `read` keeps working for lookups until the next sign-in. Encounter reads still require GM view.
 
 ## stdio bridge
 
@@ -61,5 +61,5 @@ Set `WGUI_MCP_TOKEN` in that process. Optional `WGUI_MCP_URL` defaults to the UR
 1. Discovery lists the tools in [mcp-tool-directory.md](./mcp-tool-directory.md).
 2. `get_profile` returns the signed-in user.
 3. List campaigns or encounters and read one record by a returned id.
-4. A token with only `read` cannot call `ensure_public_user`, `join_campaign`, `patch_encounter_dice`, `create_character`, `set_books`, `set_identity`, `choose`, or `delete_character`. A token with only `write` cannot call `export_character`, `get_character_row`, `list_options`, or `list_open_choices`. A token with `write` can call the write tools, and those tools still check ownership or campaign access.
+4. A token with only `read` cannot call `ensure_public_user`, `join_campaign`, `patch_encounter_dice`, `create_character`, `set_books`, `set_identity`, `choose`, `delete_character`, `add_spell`, `remove_spell`, or `set_spells`. A token with only `write` cannot call `export_character`, `get_character_row`, `list_options`, `list_open_choices`, or `list_spell_options`. A token with `write` can call the write tools, and those tools still check ownership or campaign access.
 5. Logs contain no token, code, or verifier.

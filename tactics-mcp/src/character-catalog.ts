@@ -24,7 +24,7 @@ const KINDS = {
 
 type Kind = keyof typeof KINDS;
 
-function textResult(text: string, structuredContent: Record<string, unknown>, isError = false) {
+export function textResult(text: string, structuredContent: Record<string, unknown>, isError = false) {
   return {
     isError: isError || undefined,
     content: [{ type: "text" as const, text: `${text}\n${JSON.stringify(structuredContent)}` }],
@@ -32,11 +32,11 @@ function textResult(text: string, structuredContent: Record<string, unknown>, is
   };
 }
 
-function fail(result: Extract<InvokeResult, { ok: false }>) {
+export function fail(result: Extract<InvokeResult, { ok: false }>) {
   return textResult(result.message, { code: result.code, retryable: result.code === "CONFLICT", ...(result.data ? { data: result.data } : {}) }, true);
 }
 
-function thrown(error: unknown) {
+export function thrown(error: unknown) {
   const message = error instanceof Error ? error.message : "Character operations failed.";
   return textResult(message, { code: "INTERNAL_ERROR", retryable: true }, true);
 }
@@ -73,7 +73,7 @@ function named(value: unknown) {
   return typeof name === "string" ? name : null;
 }
 
-function summary(row: CharacterRow) {
+export function summary(row: CharacterRow) {
   const details = (row.details as Record<string, unknown> | undefined) ?? {};
   const sources = (row.content_sources as { enabled?: unknown } | undefined)?.enabled;
   return {
@@ -88,7 +88,7 @@ function summary(row: CharacterRow) {
   };
 }
 
-async function loadRow(userId: string, id: number) {
+export async function loadRow(userId: string, id: number) {
   const found = await invokeFunction(userId, "find-character", { id });
   if (!found.ok) return found;
   const blocked = guardOf(found.data);
@@ -98,7 +98,7 @@ async function loadRow(userId: string, id: number) {
   return { ok: true as const, data: row };
 }
 
-async function saveRow(userId: string, row: CharacterRow, patch: Record<string, unknown>) {
+export async function saveRow(userId: string, row: CharacterRow, patch: Record<string, unknown>) {
   const expected = typeof row.updated_at === "string" ? row.updated_at : undefined;
   const saved = await invokeFunction(userId, "update-character", {
     id: row.id,
@@ -120,7 +120,7 @@ function dropSelections(selections: unknown, prefixes: string[]) {
   return next;
 }
 
-function enabledIds(row: CharacterRow) {
+export function enabledIds(row: CharacterRow) {
   const sources = (row.content_sources as { enabled?: unknown } | undefined)?.enabled;
   return Array.isArray(sources) ? sources.filter((id): id is number => typeof id === "number") : [];
 }
