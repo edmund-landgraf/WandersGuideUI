@@ -116,14 +116,71 @@ export function filterCombatantsBySide<T extends { ally: boolean }>(combatants: 
   return combatants;
 }
 
+type LegacyFlatDiceRoll = {
+  name?: unknown;
+  roll?: unknown;
+  total?: unknown;
+  modifier?: unknown;
+  stat?: unknown;
+  title?: unknown;
+};
+
+function isDiceRollRound(value: unknown): value is DiceRollLog {
+  return Boolean(value && typeof value === 'object' && Array.isArray((value as DiceRollLog).entries));
+}
+
+function legacyFlatEntry(value: LegacyFlatDiceRoll): DiceRollLogEntry | null {
+  if (typeof value.name !== 'string' || !value.name.trim()) return null;
+  const roll = typeof value.roll === 'number' ? value.roll : null;
+  const total = typeof value.total === 'number' ? value.total : roll;
+  if (total == null) return null;
+  const modifier = typeof value.modifier === 'number' ? value.modifier : roll == null ? 0 : total - roll;
+  const die = roll ?? total;
+  return {
+    name: value.name,
+    ally: true,
+    calculation: `${die} + ${modifier} = ${total}`,
+    total,
+  };
+}
+
+/**
+ * Encounter 150 (and other early rolls) stored initiative as a flat list of
+ * `{ name, roll, stat, title, total, modifier }` instead of round objects with `entries`.
+ */
+export function normalizeDiceRollLog(raw: unknown): DiceRollLog[] {
+  if (!Array.isArray(raw)) return [];
+  const rounds: DiceRollLog[] = [];
+  for (const item of raw) {
+    if (isDiceRollRound(item)) {
+      rounds.push(item);
+      continue;
+    }
+    if (!item || typeof item !== 'object') continue;
+    const entry = legacyFlatEntry(item as LegacyFlatDiceRoll);
+    if (!entry) continue;
+    const record = item as LegacyFlatDiceRoll;
+    const title = typeof record.title === 'string' ? record.title : 'Check';
+    const defaultStat = typeof record.stat === 'string' ? record.stat : '';
+    const last = rounds.at(-1);
+    if (last && last.title === title && last.defaultStat === defaultStat && last.dc === 0 && !last.id) {
+      last.entries.push(entry);
+      continue;
+    }
+    rounds.push({ title, dc: 0, defaultStat, entries: [entry] });
+  }
+  return rounds;
+}
+
 /** Replace a client's optimistic dice log with the server copy, including an empty log after a clear. */
 export function adoptServerDiceLogs(
   encounters: Encounter[],
   logs: Map<number, DiceRollLog[]>,
 ) {
   for (const encounter of encounters) {
-    const server = encounter.meta_data.dice_roll_log;
-    if (server !== undefined) logs.set(encounter.id, server);
+    if (encounter.meta_data.dice_roll_log !== undefined) {
+      logs.set(encounter.id, normalizeDiceRollLog(encounter.meta_data.dice_roll_log));
+    }
   }
 }
 

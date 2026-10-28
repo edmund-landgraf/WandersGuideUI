@@ -45,7 +45,7 @@ export function playerSaveDc(modifier: number): number {
 
 export function playerAllyRoundLog<T extends { entries: { ally: boolean }[] }>(log: T[]): T[] {
   return log.flatMap((round) => {
-    const entries = round.entries.filter((entry) => entry.ally);
+    const entries = (round.entries ?? []).filter((entry) => entry.ally);
     if (entries.length === 0) return [];
     return [{ ...round, entries }];
   });

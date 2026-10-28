@@ -1277,7 +1277,7 @@ function ItemRow({ item, onOpen, onContextMenu, depth, showContents = true, coll
       onContextMenu={onContextMenu ? (event) => onContextMenu(event, item) : undefined}
     >
       <span className='grid place-items-center border-r border-p1-border text-p1-muted' title={item.group}>
-        {item.imageUrl ? <img src={item.imageUrl} alt='' className='h-8 w-8 object-cover' /> : icon}
+        {icon}
       </span>
       <span className='flex min-w-0 items-center gap-2 px-3 py-2.5'>
         {canToggle && (
@@ -1497,7 +1497,7 @@ function ItemModal({ item, actions, onClose }: { item: Phase1InvItem; actions?: 
         <header className='flex items-start gap-4 border-b border-p1-border px-5 py-4'>
           <div className='min-w-0 flex-1'>
             <div className='flex items-center gap-2'>
-              {item.imageUrl ? <img src={item.imageUrl} alt='' className='h-12 w-12 border border-p1-border object-cover' /> : <span className='text-p1-muted'>{itemGroupIcon(item.group)}</span>}
+              <span className='text-p1-muted'>{itemGroupIcon(item.group)}</span>
               <h2 id={`item-${item.key}-title`} className='text-xl font-semibold leading-tight'>{item.name}</h2>
             </div>
             <div className='mt-2 flex flex-wrap gap-1.5'>
@@ -1841,7 +1841,7 @@ export function DetailsPanel({ combatant }: { combatant: PopulatedCombatant }) {
           <section className='border border-p1-border bg-p1-surface p-4'>
             {details?.description || fallback ? <ProseMarkdown>{details?.description || fallback}</ProseMarkdown> : <p className='text-sm italic text-p1-muted'>No description given.</p>}
           </section>
-          {details?.info.map((field) => (
+          {(details?.info ?? []).map((field) => (
             <section key={field.label} className='border border-p1-border bg-p1-surface px-3 py-2.5'>
               <h3 className='text-[10px] font-semibold uppercase text-p1-muted'>{field.label}</h3>
               <p className='mt-1 text-sm leading-6 text-p1-text'>{field.value}</p>
@@ -1863,7 +1863,7 @@ export function DetailsPanel({ combatant }: { combatant: PopulatedCombatant }) {
       {detailTab === 'proficiencies' && details && (
         <section className='border border-p1-border bg-p1-surface'>
           <div className='space-y-1 p-2'>
-            {details.profGroups.map((group) => (
+            {(details.profGroups ?? []).map((group) => (
               <section key={group.id} className='border border-p1-border bg-p1-inset'>
                 <button type='button' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-p1-hover' onClick={() => setOpenGroup(openGroup === group.id ? null : group.id)}>
                   <span className='min-w-0 flex-1 font-semibold text-p1-text'>{group.label}</span>

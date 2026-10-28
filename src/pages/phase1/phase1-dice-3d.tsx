@@ -52,7 +52,7 @@ export function parseInitiativeDie(calculation: string | undefined) {
 export function initiativeRoundDiceKey(round: { id?: string; round?: number; entries: Array<{ combatant_id?: string; calculation?: string }> } | undefined) {
   if (!round) return '';
   if (round.id) return round.id;
-  return `${round.round ?? ''}:${round.entries.map((entry) => `${entry.combatant_id ?? ''}:${entry.calculation ?? ''}`).join('|')}`;
+  return `${round.round ?? ''}:${(round.entries ?? []).map((entry) => `${entry.combatant_id ?? ''}:${entry.calculation ?? ''}`).join('|')}`;
 }
 
 export function diceCheckOverlayTitle(dc: number, statLabel: string) {
@@ -62,7 +62,7 @@ export function diceCheckOverlayTitle(dc: number, statLabel: string) {
 export function diceRollLogKey(log: { id?: string; dc?: number; defaultStat?: string; entries: Array<{ combatant_id?: string; calculation?: string }> } | undefined) {
   if (!log) return '';
   if (log.id) return log.id;
-  return `${log.dc ?? ''}:${log.defaultStat ?? ''}:${log.entries.map((entry) => `${entry.combatant_id ?? ''}:${entry.calculation ?? ''}`).join('|')}`;
+  return `${log.dc ?? ''}:${log.defaultStat ?? ''}:${(log.entries ?? []).map((entry) => `${entry.combatant_id ?? ''}:${entry.calculation ?? ''}`).join('|')}`;
 }
 
 export function dice3dThrowsFromCheckLog(
@@ -76,7 +76,7 @@ export function dice3dThrowsFromInitiativeRound(
   round: { entries: Array<{ name: string; ally?: boolean; calculation?: string }> },
   labelName: (entry: { name: string; ally?: boolean }) => string = (entry) => entry.name,
 ): Dice3dThrow[] {
-  return round.entries.flatMap((entry) => {
+  return (round.entries ?? []).flatMap((entry) => {
     const die = parseInitiativeDie(entry.calculation);
     if (die == null) return [];
     return [{ name: labelName(entry), die }];

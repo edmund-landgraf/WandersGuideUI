@@ -243,10 +243,11 @@ function roundKey(round: DiceRollLog, index: number) {
   return round.id ?? `${round.title}-${index}`;
 }
 
-function combatantLogSummary(entries: DiceRollLogEntry[]) {
-  const count = entries.length;
+function combatantLogSummary(entries: DiceRollLogEntry[] | undefined) {
+  const list = entries ?? [];
+  const count = list.length;
   const noun = count === 1 ? 'combatant' : 'combatants';
-  const names = entries.map((entry) => entry.name?.trim()).filter((name): name is string => Boolean(name));
+  const names = list.map((entry) => entry.name?.trim()).filter((name): name is string => Boolean(name));
   if (names.length === 0) return `${count} ${noun}`;
   return `${count} ${noun} (${names.join(', ')})`;
 }
@@ -414,7 +415,7 @@ function DiceRollLogRound({
             {round.audience === 'private' ? ' · Private' : ''}
           </h3>
           <p className='mt-0.5 text-[11px] text-p1-faint'>
-            {combatantLogSummary(round.entries)}
+            {combatantLogSummary(round.entries ?? [])}
           </p>
         </div>
         <ChevronDown size={14} className={`mt-1 shrink-0 text-p1-faint transition-transform ${expanded ? 'rotate-180' : ''}`} />
@@ -432,7 +433,7 @@ function DiceRollLogRound({
               </tr>
             </thead>
             <tbody>
-              {round.entries.map((entry, entryIndex) => {
+              {(round.entries ?? []).map((entry, entryIndex) => {
                 const rolled = diceEntryWasRolled(entry);
                 const clickable = canEdit && rolled;
                 return (
@@ -545,7 +546,7 @@ export function DiceCheckResultToast({
   y: number;
   onClose: () => void;
 }) {
-  const entry = log.entries[0];
+  const entry = log.entries?.[0];
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   useEffect(() => {
