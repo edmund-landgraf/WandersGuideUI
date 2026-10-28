@@ -190,16 +190,18 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     "export_character",
     {
       title: "Export character file",
-      description: "Export a character as JSON or PDF through wgui-export-character. Use the character's numeric id from list_campaign_characters. The caller must own the character, or be the campaign GM. Do not use it for encounter creatures.",
+      description: "Export a character as JSON or PDF. JSON is the slim file by default (wgui-export-character-slim: everything the Foundry importer reads, without the all_spells / all_traits catalog); pass detail \"full\" for the complete WG v4 file (about 4 MB). Use the character's numeric id from list_campaign_characters. The caller must own the character, or be the campaign GM. Do not use it for encounter creatures.",
       annotations: readOnly,
       inputSchema: {
         characterId: z.number().int().describe("Numeric character id, not an encounter combatant id."),
         format: z.enum(["json", "pdf"]).default("json").describe("Export format. Defaults to JSON."),
+        detail: z.enum(["slim", "full"]).default("slim").describe("JSON only. slim (default) omits the content catalog; full is the complete WG export."),
       },
     },
     async (args) => {
       const format = args.format === "pdf" ? "pdf" : "json";
-      const result = await getEncounterReader().exportCharacter(userId(), Number(args.characterId), format);
+      const detail = args.detail === "full" ? "full" : "slim";
+      const result = await getEncounterReader().exportCharacter(userId(), Number(args.characterId), format, detail);
       if (!result.ok) return textResult(result.message, { code: result.code, retryable: false }, true);
       const data = result.data as CharacterExport;
       if (data.format === "pdf") {
@@ -210,7 +212,8 @@ export function registerCatalog(server: McpServer, userId: () => string) {
           base64: data.base64,
         });
       }
-      return textResult(`Character file.\n${JSON.stringify(data.file, null, 2)}`, { format: data.format, file: data.file });
+      // The full file is several MB; indenting it doubles that. Keep the slim file readable.
+      return textResult(`Character file.\n${detail === "full" ? JSON.stringify(data.file) : JSON.stringify(data.file, null, 2)}`, { format: data.format, file: data.file });
     },
   );
 

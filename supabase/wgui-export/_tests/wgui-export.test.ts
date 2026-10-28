@@ -37,3 +37,57 @@ Deno.test({
     }
   },
 });
+
+Deno.test({
+  name: 'wgui-export-character-slim: missing id is 400',
+  ignore: skip,
+  async fn() {
+    const { jwt } = await seed();
+    const result = await callFunction('wgui-export-character-slim', {}, { token: jwt });
+    assertEquals(result.status, 400);
+    assertEquals(result.body?.status, 'fail');
+  },
+});
+
+Deno.test({
+  name: 'wgui-export-character-slim: API key without grant returns 403',
+  ignore: skip,
+  async fn() {
+    const { userId, apiKey } = await seed();
+    const { data: char } = await admin
+      .from('character')
+      .insert({ name: 'Slim Locked', user_id: userId, level: 1, experience: 0 })
+      .select()
+      .single();
+    try {
+      const result = await callFunction('wgui-export-character-slim', { id: char.id }, { token: apiKey });
+      assertEquals(result.status, 403);
+      assertEquals(result.body?.status, 'fail');
+    } finally {
+      await admin.from('character').delete().eq('id', char.id);
+    }
+  },
+});
+
+Deno.test({
+  name: 'wgui-export-character-slim: owner gets a v4 file without the catalog',
+  ignore: skip,
+  async fn() {
+    const { userId, jwt } = await seed();
+    const { data: char } = await admin
+      .from('character')
+      .insert({ name: 'Slim Owner', user_id: userId, level: 1, experience: 0 })
+      .select()
+      .single();
+    try {
+      const result = await callFunction('wgui-export-character-slim', { id: char.id }, { token: jwt });
+      assertEquals(result.status, 200);
+      assertEquals(result.body?.version, 4);
+      assertEquals(result.body?.character?.id, char.id);
+      assertEquals(result.body?.slim?.version, 1);
+      assertEquals('all_traits' in (result.body?.content ?? {}), false);
+    } finally {
+      await admin.from('character').delete().eq('id', char.id);
+    }
+  },
+});

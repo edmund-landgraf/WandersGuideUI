@@ -7,6 +7,7 @@ This is an implementation brief for [wanderers-guide](https://github.com/wandere
 | Function | Overlay in WGUI |
 | --- | --- |
 | `wgui-export-character` | [`supabase/wgui-export/`](../supabase/wgui-export/) |
+| `wgui-export-character-slim` | [`supabase/wgui-export/wgui-export-character-slim/`](../supabase/wgui-export/wgui-export-character-slim/index.ts) |
 | `wgui-ext-patch-encounter-dice` | [`supabase/wgui-ext/wgui-ext-patch-encounter-dice/`](../supabase/wgui-ext/wgui-ext-patch-encounter-dice/index.ts) |
 
 Dice tests live in `supabase/wgui-ext/_tests/wgui-ext.test.ts`. Export tests live in `supabase/wgui-export/_tests/wgui-export.test.ts`.
@@ -68,6 +69,31 @@ supabase/functions/
 - API key with no character grant → **403**.
 - Owner JWT + `format: 'json'` → 200 and a v4 object (`version`, `character`, `content`).
 - Owner JWT + someone else’s id → **403**.
+
+---
+
+## 1b. `wgui-export-character-slim`
+
+The JSON v4 file from `wgui-export-character`, minus the content catalog. For importers (Foundry, AMBA, the MCP `export_character` tool) that read the character, not the rules library.
+
+**Body:** `{ id: number }`. JSON only. **Auth and errors:** the same as `wgui-export-character` (owner JWT, API key with a grant, or the GM of the PC's campaign; `INVALID_ID`, `CHARACTER_FORBIDDEN`).
+
+**Dropped** (`supabase/wgui-export/_wgui-export/slim.ts`):
+
+- `content.all_spells` and `content.all_traits`, except rows from homebrew sources (an `all_sources` row with a `user_id`), which are kept because the export is their source of truth.
+- `content.raw_data_dump.bonuses` and `.history`. `raw_data_dump.variables` stays (the Foundry importer reads `*_IDS`, `CASTING_SOURCES` and `SPELL_SLOTS` from it).
+- `search_tsv` on every row.
+
+Everything else is unchanged: `character` (details, content_sources, operation_data, spells list, companions, inventory, notes), `feats_features`, `spell_sources`, `spell_slots`, `spells`, `focus_spells`, `innate_spells`, `all_sources` and the derived stats. The response adds `slim: { version: 1, dropped: { key: count } }`.
+
+| PC | Full | Slim |
+| --- | --- | --- |
+| 80 Veshka (Summoner 1) | 4,202,772 bytes | 121,536 bytes (2.9%) |
+| 81 Morrow (Necromancer 1) | 4,340,094 bytes | 125,548 bytes (2.9%) |
+
+The Foundry importer's plan (`buildPlan`, `spellcastingPlan`, `spellSlotWarnings`) is identical for the full and slim files of 80 and 81.
+
+**Deploy:** the function imports `../wgui-export-character/compile.bundle.js`, so ship it alongside `wgui-export-character`. `docker/wgui-functions.compose.yml` already copies every `wgui-export-*` directory. A stack without it answers `500 InvalidWorkerCreation`; the MCP connector then falls back to `wgui-export-character`.
 
 ---
 
