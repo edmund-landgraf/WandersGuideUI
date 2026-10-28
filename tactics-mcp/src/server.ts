@@ -60,6 +60,8 @@ const WRITE_TOOLS = new Set([
   "add_spell",
   "remove_spell",
   "set_spells",
+  "add_inventory_item",
+  "remove_inventory_item",
   "delete_character",
   "wgui_ext_hb_create_content_source",
   "wgui_ext_hb_create_trait",
