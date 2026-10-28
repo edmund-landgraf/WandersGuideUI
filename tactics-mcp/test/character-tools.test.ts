@@ -70,7 +70,7 @@ test("builder tools create, read, set books, reject an illegal choice, and delet
     }
     if (url.endsWith("/find-character")) return jsonResponse({ status: "success", data: character });
     if (url.endsWith("/find-ancestry")) {
-      return jsonResponse({ status: "success", data: [{ id: 7, name: "Human" }] });
+      return jsonResponse({ status: "success", data: [{ id: body.id === 8 ? 8 : 7, name: body.id === 8 ? "Kholo" : "Human", content_source_id: body.id === 8 ? 900 : 1 }] });
     }
     if (url.endsWith("/find-class")) {
       assert.deepEqual(body.content_sources, [1, 2, 3, 9]);
@@ -102,6 +102,12 @@ test("builder tools create, read, set books, reject an illegal choice, and delet
 
   const identity = await client.callTool({ name: "set_identity", arguments: { characterId: 102, slot: "ancestry", optionId: 7 } });
   assert.equal(identity.isError, undefined);
+  assert.equal((character.details as { ancestry?: { name?: string } }).ancestry?.name, "Human");
+  const updatesBeforeRejectedIdentity = calls.filter((x) => x.url.endsWith("/update-character")).length;
+  const rejectedIdentity = await client.callTool({ name: "set_identity", arguments: { characterId: 102, slot: "ancestry", optionId: 8 } });
+  assert.equal(rejectedIdentity.isError, true);
+  assert.equal(rejectedIdentity.structuredContent?.code, "NOT_IN_BOOKS");
+  assert.equal(calls.filter((x) => x.url.endsWith("/update-character")).length, updatesBeforeRejectedIdentity);
   assert.equal((character.details as { ancestry?: { name?: string } }).ancestry?.name, "Human");
 
   const open = await client.callTool({ name: "list_open_choices", arguments: { characterId: 102 } });

@@ -264,6 +264,11 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
       if (!found.ok) return fail(found);
       const option = Array.isArray(found.data) ? found.data[0] : found.data;
       if (!option || typeof option !== "object") return textResult("Option not found in the character's books.", { code: "NOT_FOUND", retryable: false }, true);
+      const sourceId = (option as { content_source_id?: unknown }).content_source_id;
+      const allowedSources = new Set([3, ...enabledIds(loaded.data)]);
+      if (typeof sourceId !== "number" || !allowedSources.has(sourceId)) {
+        return textResult("Option not found in the character's books.", { code: "NOT_IN_BOOKS", retryable: false, content_source_id: sourceId ?? null }, true);
+      }
       const details = { ...((loaded.data.details as Record<string, unknown> | undefined) ?? {}) };
       const operation = (loaded.data.operation_data as Record<string, unknown> | undefined) ?? {};
       let selections = operation.selections;
