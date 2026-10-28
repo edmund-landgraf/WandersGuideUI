@@ -184,6 +184,9 @@ export function collectEntitySpellcasting(id: StoreID, entity: LivingEntity) {
   let count = 0;
   for (const strS of spellSlots) {
     const slot = JSON.parse(strS) as { lvl: number; rank: number; amt: number; source: string; opId: string };
+    if (!Number.isFinite(slot.amt) || slot.amt <= 0 || !Number.isFinite(slot.lvl) || !Number.isFinite(slot.rank)) {
+      continue;
+    }
     for (let i = 0; i < slot.amt; i++) {
       if (slot.lvl !== getEntityLevel(entity)) continue;
       slots.push({

@@ -44,6 +44,7 @@ import { cloneDeep, isEqual, mergeWith, unionWith, uniqWith } from 'lodash-es';
 import { setCalculatedStatsInStore } from '@variables/calculated-stats';
 import { getEntityLevel } from '@utils/entity-utils';
 import { defineDefaultSources, importFromContentPackage } from '@content/content-store';
+import { inferAnimistPrimaryMode } from './animist-mode';
 
 /**
  * Inits the op selection tree based on an entity's op data
@@ -935,7 +936,12 @@ export async function _executeCharacterOperations(data: {
     }
 
     let modeResults: { baseSource: AbilityBlock; baseResults: OperationResult[] }[] = [];
-    const activeModes = getVariable<VariableListStr>('CHARACTER', 'ACTIVE_MODES')?.value || [];
+    const activeModes = inferAnimistPrimaryMode(
+      class_?.name,
+      getVariable<VariableListStr>('CHARACTER', 'ACTIVE_MODES')?.value || [],
+      getVariable<VariableListStr>('CHARACTER', 'MODE_IDS')?.value || [],
+      modes
+    );
     for (const mode of modes.filter((m) => activeModes.includes(labelToVariable(m.name)))) {
       const results = await _executeOps(
         'CHARACTER',
