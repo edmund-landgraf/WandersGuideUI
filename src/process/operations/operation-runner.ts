@@ -48,6 +48,7 @@ import {
   determineFilteredSelectionList,
   determinePredefinedSelectionList,
   extendOperations,
+  findSelectedOption,
 } from './operation-utils';
 import { SelectionTrack } from './selection-tree';
 import { isEqual } from 'lodash-es';
@@ -232,7 +233,7 @@ async function runSelect(
   }
   // #endregion
   if (selectionTrack.node && selectionTrack.node.value) {
-    let selectedOption = optionList.find((option) => option._select_uuid === selectionTrack.node?.value);
+    let selectedOption = findSelectedOption(optionList, selectionTrack.node.value, operation.data.optionType);
     if (selectedOption) {
       updateVariables(varId, operation, selectedOption, sourceLabel, options);
     } else if (operation.data.optionType === 'ABILITY_BLOCK') {

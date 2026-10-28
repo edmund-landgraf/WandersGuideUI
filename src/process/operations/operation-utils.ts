@@ -645,6 +645,26 @@ export async function determinePredefinedSelectionList(
   return [];
 }
 
+/**
+ * Resolve a persisted selection to the option exposed by a select operation.
+ *
+ * Most select types persist the option's `_select_uuid`. ADJ_VALUE options are
+ * also persisted by older/current WG clients as the adjusted variable name
+ * (for example `ATTRIBUTE_CON`). Accept that stable semantic identifier only
+ * for ADJ_VALUE selections; other select types retain the strict UUID lookup
+ * so a malformed value can never silently select a different option.
+ */
+export function findSelectedOption(
+  options: ObjectWithUUID[],
+  selectionValue: string,
+  optionType: OperationSelectOptionType
+) {
+  const value = String(selectionValue);
+  const direct = options.find((option) => String(option._select_uuid) === value);
+  if (direct || optionType !== 'ADJ_VALUE') return direct;
+  return options.find((option) => String(option.variable ?? '') === value || String(option.id ?? '') === value);
+}
+
 async function getAbilityBlockPredefinedList(options: OperationSelectOptionAbilityBlock[]) {
   const abilityBlocks = await Promise.all(
     options.map((option) => fetchContentById<AbilityBlock>('ability-block', option.operation.data.abilityBlockId))
