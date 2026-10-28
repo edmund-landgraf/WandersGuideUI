@@ -320,7 +320,7 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
     "choose",
     {
       title: "Record a builder choice",
-      description: "Writes one option id into an open selection key from list_open_choices, then reruns character operations and saves the builder fields. An id that is not in that choice's options is rejected before the save.",
+      description: "Writes or changes one option id in a selection key, reruns character operations, reopens dependent choices, and saves the builder fields. An id that is not legal for that choice is rejected before the save.",
       annotations: writes,
       inputSchema: {
         characterId: z.number().int(),
@@ -331,9 +331,19 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
     async (args) => {
       const loaded = await loadRow(userId(), args.characterId);
       if (!loaded.ok) return fail(loaded);
+      const operation = (loaded.data.operation_data as Record<string, unknown> | undefined) ?? {};
+      const currentSelections = { ...((operation.selections as Record<string, string> | undefined) ?? {}) };
+      const wasAnswered = Object.prototype.hasOwnProperty.call(currentSelections, args.choiceId);
+      // Remove the target and nested answers before rerunning the builder. This
+      // makes an answered choice visible again and prevents stale dependent
+      // selections from surviving a changed parent choice.
+      const selectionsWithoutChoice = Object.fromEntries(Object.entries(currentSelections).filter(([key]) => key !== args.choiceId && !key.startsWith(`${args.choiceId}_`)));
+      const choiceCharacter = wasAnswered
+        ? { ...loaded.data, operation_data: { ...operation, selections: selectionsWithoutChoice } }
+        : loaded.data;
       let choices: OpenChoice[];
       try {
-        choices = await listCharacterChoices(loaded.data, userId());
+        choices = await listCharacterChoices(choiceCharacter, userId());
       } catch (error) {
         return thrown(error);
       }
@@ -342,8 +352,7 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
       if (!choice.options.some((option) => option.id === args.optionId)) {
         return textResult("That option is not legal for this choice.", { code: "VALIDATION_ERROR", retryable: false }, true);
       }
-      const operation = (loaded.data.operation_data as Record<string, unknown> | undefined) ?? {};
-      const selections = { ...((operation.selections as Record<string, string> | undefined) ?? {}), [args.choiceId]: args.optionId };
+      const selections = { ...selectionsWithoutChoice, [args.choiceId]: args.optionId };
       let drafted: CharacterRow;
       try {
         drafted = await applyCharacterWrite({ ...loaded.data, operation_data: { ...operation, selections } });

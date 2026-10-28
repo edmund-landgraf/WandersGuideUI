@@ -125,6 +125,11 @@ test("builder tools create, read, set books, reject an illegal choice, and delet
   const legal = await client.callTool({ name: "choose", arguments: { characterId: 102, choiceId: "lang-1", optionId: "thalassic" } });
   assert.equal(legal.isError, undefined);
   assert.equal((character.operation_data as { selections: Record<string, string> }).selections["lang-1"], "thalassic");
+  (character.operation_data as { selections: Record<string, string> }).selections["lang-1_child"] = "stale-dependent";
+  const changed = await client.callTool({ name: "choose", arguments: { characterId: 102, choiceId: "lang-1", optionId: "thalassic" } });
+  assert.equal(changed.isError, undefined);
+  assert.equal((character.operation_data as { selections: Record<string, string> }).selections["lang-1"], "thalassic");
+  assert.equal((character.operation_data as { selections: Record<string, string> }).selections["lang-1_child"], undefined);
 
   const deleted = await client.callTool({ name: "delete_character", arguments: { characterId: 102 } });
   assert.match(JSON.stringify(deleted.structuredContent), /102/);
