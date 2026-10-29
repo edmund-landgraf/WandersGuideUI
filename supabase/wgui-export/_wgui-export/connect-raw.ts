@@ -9,8 +9,8 @@ import { fetchData, logEvent } from '../_shared/helpers.ts';
 import { HttpError, isAuthenticationError, readJsonBody } from '../_shared/http-errors.ts';
 import { bucketFor, checkRateLimit, rateLimitHeaders } from '../_shared/rate-limit.ts';
 // @ts-ignore
-import { SignJWT } from 'npm:jose@5.9.6';
-import { authenticateBearer, grantedCharacterIds, scopeBodyToGrants } from '../_shared/caller-auth.ts';
+import { SignJWT } from 'https://esm.sh/jose@5.9.6';
+import { authenticateBearer, grantedCharacterIds, scopeBodyToGrants } from './caller-auth.ts';
 
 function asHttpResponse(result: JSendResponse | Response, rlHeaders: Record<string, string>): Response {
   if (result instanceof Response) {

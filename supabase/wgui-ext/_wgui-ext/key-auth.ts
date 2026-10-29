@@ -58,8 +58,8 @@ export async function resolveKeyCaller(
       .select('id, user_id, details')
       .eq('user_id', publicUser.user_id);
     if (rowsError) throw new HttpError(500, 'Failed to resolve API grants.', 'GRANT_LOOKUP_FAILED');
+    // An API key is account-wide: every character the key's user owns (no per-character grant filter).
     const characterIds = ((rows ?? []) as Character[])
-      .filter((c) => isGrantedTo(c, publicUser.id, client.id))
       .map((c) => c.id)
       .sort((a, b) => a - b);
     return { kind: 'api_key', userId: publicUser.user_id, publicUserId: publicUser.id, clientId: client.id, characterIds };

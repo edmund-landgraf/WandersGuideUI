@@ -21,6 +21,7 @@ import { sessionState } from '@atoms/supabaseAtoms';
 import { useAtom, useAtomValue } from 'jotai';
 import { useEffect, useState } from 'react';
 import { setPageTitle } from '@utils/document-change';
+import { signInWithOAuthProvider } from '@auth/campaign-auth';
 import { clearUserData } from '@auth/user-manager';
 import { IconMail } from '@tabler/icons-react';
 import { supabase } from '../main';
@@ -117,33 +118,27 @@ export function Component() {
           <Button
             color='dark'
             leftSection={<Image radius='md' h={20} src={GoogleIcon} alt='Google Icon' />}
-            onClick={() =>
-              supabase.auth.signInWithOAuth({
-                provider: 'google',
-              })
-            }
+            onClick={() => {
+              void signInWithOAuthProvider('google');
+            }}
           >
             Sign in with Google
           </Button>
           <Button
             color='dark'
             leftSection={<Image radius='md' h={15} src={DicordIcon} alt='Dicord Icon' />}
-            onClick={() =>
-              supabase.auth.signInWithOAuth({
-                provider: 'discord',
-              })
-            }
+            onClick={() => {
+              void signInWithOAuthProvider('discord');
+            }}
           >
             Sign in with Discord
           </Button>
           <Button
             color='dark'
             leftSection={<Image radius='md' h={20} src={GitHubIcon} alt='GitHub Icon' />}
-            onClick={() =>
-              supabase.auth.signInWithOAuth({
-                provider: 'github',
-              })
-            }
+            onClick={() => {
+              void signInWithOAuthProvider('github');
+            }}
           >
             Sign in with GitHub
           </Button>

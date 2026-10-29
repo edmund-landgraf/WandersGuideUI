@@ -167,5 +167,16 @@ if (typeof URL !== 'undefined') {
 });
 
 mkdirSync(outDir, { recursive: true });
-writeFileSync(join(outDir, 'compile.bundle.js'), result.outputFiles[0].text);
-console.log(`wrote ${join(outDir, 'compile.bundle.js')} (${result.outputFiles[0].text.length} bytes)`);
+// mathjs ships an identifier test as one enormous unicode regexp. The edge
+// runtime's module graph fails to parse it ("failed to create the graph"),
+// so the export worker never boots. Formulas in a character export are ASCII.
+const text = result.outputFiles[0].text
+  .split('\n')
+  .map((line) =>
+    line.length > 8000 && line.includes('isString2 && /^(?:[A-Za-z\\xAA')
+      ? '      test: (s) => isString2 && /^[A-Za-z_][A-Za-z0-9_]*$/.test(s)'
+      : line
+  )
+  .join('\n');
+writeFileSync(join(outDir, 'compile.bundle.js'), text);
+console.log(`wrote ${join(outDir, 'compile.bundle.js')} (${text.length} bytes)`);

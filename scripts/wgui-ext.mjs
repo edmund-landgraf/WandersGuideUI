@@ -68,6 +68,8 @@ function compose(args) {
       '-f',
       stackFile,
       '-f',
+      path.join(wgDir, 'docker-compose.override.yml'),
+      '-f',
       overrideFile,
       '--project-directory',
       wgDir,

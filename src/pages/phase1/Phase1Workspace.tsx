@@ -6923,16 +6923,16 @@ function CampaignStripDialog({ url, initial, busy, error, onCancel, onConfirm }:
         if (event.target === event.currentTarget) onCancel();
       }}
     >
-      <section role='dialog' aria-modal='true' aria-labelledby='campaign-strip-title' className='w-full max-w-6xl border border-p1-border bg-p1-surface p-5 shadow-2xl'>
-        <h2 id='campaign-strip-title' className='text-lg font-semibold'>Choose the band</h2>
-        <p className='mt-1 text-sm text-p1-muted'>Drag the band up and down, or use the slider.</p>
-        {error && <p className='mt-2 text-sm text-p1-danger-soft'>{error}</p>}
-        <div className='mt-4 flex items-start justify-center gap-3'>
-          <div ref={frameRef} className='relative w-full overflow-hidden border border-p1-border'>
+      <section role='dialog' aria-modal='true' aria-labelledby='campaign-strip-title' className='flex max-h-[calc(100vh-2.5rem)] w-full max-w-6xl flex-col overflow-hidden border border-p1-border bg-p1-surface p-5 shadow-2xl'>
+        <h2 id='campaign-strip-title' className='shrink-0 text-lg font-semibold'>Choose the band</h2>
+        <p className='mt-1 shrink-0 text-sm text-p1-muted'>Drag the band up and down, or use the slider.</p>
+        {error && <p className='mt-2 shrink-0 text-sm text-p1-danger-soft'>{error}</p>}
+        <div className='mt-4 flex min-h-0 flex-1 items-start justify-center gap-3'>
+          <div ref={frameRef} className='relative min-h-0 w-full overflow-hidden border border-p1-border'>
             {imageFailed ? (
-              <div className='flex h-[420px] items-center justify-center text-sm text-p1-muted'>Cannot load image.</div>
+              <div className='flex h-[420px] max-h-full items-center justify-center text-sm text-p1-muted'>Cannot load image.</div>
             ) : (
-              <img src={url} alt='' referrerPolicy='no-referrer' className='block max-h-[72vh] w-full object-contain' onLoad={measureBand} onError={() => setImageFailed(true)} />
+              <img src={url} alt='' referrerPolicy='no-referrer' className='block max-h-[calc(100vh-18rem)] w-full object-contain' onLoad={measureBand} onError={() => setImageFailed(true)} />
             )}
             <div
               className='absolute inset-x-0 z-10 cursor-ns-resize border-y-2 border-white/90 bg-white/15'
@@ -6954,10 +6954,10 @@ function CampaignStripDialog({ url, initial, busy, error, onCancel, onConfirm }:
             onChange={(event) => setFocusY(Number(event.target.value))}
           />
         </div>
-        <div className='relative mt-4 flex h-[5.5rem] items-center overflow-hidden border border-p1-border px-3 text-sm text-p1-muted'>
+        <div className='relative mt-4 flex h-[5.5rem] shrink-0 items-center overflow-hidden border border-p1-border px-3 text-sm text-p1-muted'>
           {imageFailed ? 'Cannot load image.' : <img src={url} alt='' referrerPolicy='no-referrer' className='absolute inset-0 h-full w-full object-cover' style={{ objectPosition: `center ${focusY}%` }} onError={() => setImageFailed(true)} />}
         </div>
-        <div className='mt-5 flex justify-end gap-2'>
+        <div className='mt-5 flex shrink-0 justify-end gap-2'>
           <button type='button' className='toolbar-button' disabled={busy} onClick={onCancel}>Cancel</button>
           <button type='button' className='toolbar-button' disabled={busy} onClick={() => onConfirm(focusY)}>{busy ? 'Saving…' : 'Use band'}</button>
         </div>
