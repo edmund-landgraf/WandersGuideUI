@@ -4,9 +4,9 @@
 // connect() swaps an API key for a minted owner JWT before the handler runs, which loses
 // the client id and so the grant scope. Here an API key stays an API key.
 //
-//   Authorization: Bearer <36-char API key>  -> characters granted to that client
-//                                               (details.api_clients.client_access) AND
-//                                               owned by the key's user
+//   Authorization: Bearer <36-char API key>  -> every character owned by the key's user
+//                                               (keys are account-wide; no per-character
+//                                               client_access grant is required)
 //   Authorization: Bearer <user session JWT> -> the caller's own characters
 //   anything else / nothing                  -> 401
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -29,11 +29,6 @@ export interface KeyCaller {
 
 const unauthorized = () =>
   new HttpError(401, 'Authentication required. Send an API key or a user session JWT.', 'AUTH_REQUIRED');
-
-function isGrantedTo(character: Character, publicUserId: number, clientId: string): boolean {
-  const grants = ((character as any).details?.api_clients?.client_access ?? []) as any[];
-  return grants.some((g) => g?.clientId === clientId && `${g?.publicUserId}` === `${publicUserId}`);
-}
 
 export async function resolveKeyCaller(
   req: Request,

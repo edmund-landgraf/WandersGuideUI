@@ -32,11 +32,8 @@ export async function grantedCharacterIds(
     .select('id, details')
     .eq('user_id', publicUser.user_id);
   if (error) throw new HttpError(500, 'Failed to resolve API grants.', 'GRANT_LOOKUP_FAILED');
+  // API keys are account-wide: every character the key's user owns.
   return ((data ?? []) as Character[])
-    .filter((character) => {
-      const grants = ((character as any).details?.api_clients?.client_access ?? []) as any[];
-      return grants.some((grant) => grant?.clientId === clientId && `${grant?.publicUserId}` === `${publicUser.id}`);
-    })
     .map((character) => character.id);
 }
 
