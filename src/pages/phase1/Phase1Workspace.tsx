@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Crown, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, Image as ImageIcon, KeyRound, ListChecks, LogOut, Maximize2, Menu, Minimize2, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -206,6 +206,21 @@ export function Phase1IndexPage() {
     enabled: Boolean(session),
     queryFn: () => phase1Request<Character[]>('find-character', { user_id: session!.user.id }),
   });
+  const campaignIds = useMemo(
+    () =>
+      (campaigns.data ?? [])
+        .map((campaign) => numericId(campaign.id))
+        .filter((id): id is number => id != null),
+    [campaigns.data]
+  );
+  const rosterQueries = useQueries({
+    queries: campaignIds.map((id) => ({
+      queryKey: ['phase1-players', id, session?.user.id],
+      enabled: Boolean(session && id),
+      staleTime: 30_000,
+      queryFn: () => loadPhase1CampaignPlayers(id, session!.user.id, session!.access_token),
+    })),
+  });
   const charactersByCampaign = useMemo(() => {
     const names = new Map<number, Character[]>();
     for (const character of characters.data ?? []) {
@@ -215,8 +230,12 @@ export function Phase1IndexPage() {
       list.push(character);
       names.set(campaignId, list);
     }
+    campaignIds.forEach((id, index) => {
+      const roster = rosterQueries[index]?.data;
+      if (roster) names.set(id, roster);
+    });
     return names;
-  }, [characters.data]);
+  }, [campaignIds, characters.data, rosterQueries]);
 
   function nextCampaignName() {
     const used = new Set((campaigns.data ?? []).map((campaign) => campaign.name.trim().toLowerCase()));
@@ -5874,6 +5893,32 @@ function ResizeRail({ onResize }: { onResize: (delta: number) => void }) {
   return <button aria-label='Resize detail panel' className='cursor-col-resize bg-p1-raised hover:bg-p1-accent' onMouseDown={() => setDragging(true)} />;
 }
 
+function CampaignMemberToken({ member, onContextMenu }: { member: Character; onContextMenu: (event: ReactMouseEvent) => void }) {
+  const rawArt = member.details?.image_url?.trim() || (member as Character & { image_url?: string | null }).image_url?.trim() || '';
+  const stored = parseIconValue(rawArt);
+  const src = stored.type === 'image' ? stored.value.trim() : '';
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [src]);
+  const tokenClass = 'grid h-14 w-14 shrink-0 place-items-center overflow-hidden border border-p1-pc/50 bg-p1-inset text-p1-pc hover:border-p1-accent/60';
+  return (
+    <a
+      href={`/sheet/${member.id}`}
+      title={member.name}
+      aria-label={member.name}
+      className={tokenClass}
+      onContextMenu={onContextMenu}
+    >
+      {src && !failed ? (
+        <img src={src} alt={member.name} className='h-full w-full object-cover' onError={() => setFailed(true)} />
+      ) : stored.type === 'icon' && stored.value ? (
+        <span style={{ color: stored.color || undefined }}><Icon name={stored.value} size={22} /></span>
+      ) : (
+        <UserRound size={22} />
+      )}
+    </a>
+  );
+}
+
 function EntityIcon({ type, name, imageUrl }: { type: Combatant['type']; name?: string; imageUrl?: string }) {
   const stored = parseIconValue(imageUrl?.trim() ?? '');
   const portrait = stored.type === 'image' ? stored.value.trim() : '';
@@ -7217,18 +7262,9 @@ function CampaignWorkspaceRow({ campaign, canDelete, members, ownedCampaigns, on
         )}
         {members.length > 0 && (
           <span className='flex items-center gap-1'>
-            {members.map((member) => {
-              const imageUrl = member.details?.image_url?.trim();
-              return imageUrl ? (
-                <a key={member.id} href={`/sheet/${member.id}`} title={member.name} className='block h-14 w-14 overflow-hidden border border-p1-border hover:border-p1-accent/60' onContextMenu={(event) => openCharacterMenu(event, member)}>
-                  <img src={imageUrl} alt='' className='h-full w-full object-cover' />
-                </a>
-              ) : (
-                <a key={member.id} href={`/sheet/${member.id}`} title={member.name} className='grid h-14 w-14 place-items-center border border-p1-border bg-p1-inset text-p1-faint hover:border-p1-accent/60 hover:text-p1-muted' onContextMenu={(event) => openCharacterMenu(event, member)}>
-                  <User size={22} />
-                </a>
-              );
-            })}
+            {members.map((member) => (
+              <CampaignMemberToken key={member.id} member={member} onContextMenu={(event) => openCharacterMenu(event, member)} />
+            ))}
           </span>
         )}
         <button type='button' className='icon-button' title={`Open ${campaign.name}`} onClick={onOpen}>

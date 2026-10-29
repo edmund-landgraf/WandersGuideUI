@@ -1,20 +1,13 @@
-import generatedStamp from '../generated/appVersion.json';
 import {
   FALLBACK_APP_VERSION_STAMP,
   formatAppVersionLabel,
   formatAppVersionTitle,
-  type AppVersionStamp,
 } from '@utils/appVersion';
-
-function clientStamp(): AppVersionStamp {
-  if (!generatedStamp?.version) return FALLBACK_APP_VERSION_STAMP;
-  return generatedStamp;
-}
 
 const REPO_URL = 'https://github.com/edmund-landgraf/WandersGuideUI';
 
 export function AppVersionStamp() {
-  const stamp = clientStamp();
+  const stamp = FALLBACK_APP_VERSION_STAMP;
   const href = stamp.shortSha === 'unknown' ? REPO_URL : `${REPO_URL}/commit/${stamp.shortSha}`;
   return (
     <a

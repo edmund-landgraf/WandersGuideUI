@@ -3,13 +3,6 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
-import { spawnSync } from 'node:child_process';
-
-spawnSync(process.execPath, [path.resolve(__dirname, 'scripts/generate-app-meta.mjs')], {
-  cwd: __dirname,
-  stdio: 'ignore',
-  shell: false,
-});
 import { visualizer } from 'rollup-plugin-visualizer';
 import { VitePWA, VitePWAOptions } from 'vite-plugin-pwa';
 import tailwindcss from '@tailwindcss/vite';

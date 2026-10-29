@@ -1,14 +1,15 @@
 import { List, Stack, Text, Title } from '@mantine/core';
 import BlurBox from '@common/BlurBox';
 import { setPageTitle } from '@utils/document-change';
-import { groupUpdateLines } from '@utils/weeklyUpdates';
-import generated from '../generated/weeklyUpdates.json';
+import { groupUpdateLines, type WeeklyUpdate } from '@utils/weeklyUpdates';
+
+const weeksSource: WeeklyUpdate[] = [];
 
 export function Component() {
   setPageTitle('Updates');
-  const weeks = [...generated.weeks].reverse();
-  const first = generated.weeks[0];
-  const last = generated.weeks[generated.weeks.length - 1];
+  const weeks = [...weeksSource].reverse();
+  const first = weeksSource[0];
+  const last = weeksSource[weeksSource.length - 1];
 
   return (
     <Stack maw={760} mx='auto' gap='md' pb={40}>
@@ -17,9 +18,9 @@ export function Component() {
           Updates
         </Title>
         <Text c='gray.3' size='sm' mt={4}>
-          {generated.weeks.length === 0
+          {weeksSource.length === 0
             ? 'No updates yet.'
-            : `${generated.weeks.reduce((total, week) => total + week.count, 0)} updates from ${first?.label ?? ''} through ${last?.label ?? ''}, one summary per week.`}
+            : `${weeksSource.reduce((total, week) => total + week.count, 0)} updates from ${first?.label ?? ''} through ${last?.label ?? ''}, one summary per week.`}
         </Text>
       </div>
       {weeks.map((week) => (

@@ -1,15 +1,16 @@
 import { LauncherHeader } from './launcher-header';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import generated from '../../generated/weeklyUpdates.json';
-import { groupUpdateLines } from '@utils/weeklyUpdates';
+import { groupUpdateLines, type WeeklyUpdate } from '@utils/weeklyUpdates';
 import './launcher.css';
 
+const weeksSource: WeeklyUpdate[] = [];
+
 function Updates() {
-  const weeks = [...generated.weeks].reverse();
-  const first = generated.weeks[0];
-  const last = generated.weeks[generated.weeks.length - 1];
-  const total = generated.weeks.reduce((sum, week) => sum + week.count, 0);
+  const weeks = [...weeksSource].reverse();
+  const first = weeksSource[0];
+  const last = weeksSource[weeksSource.length - 1];
+  const total = weeksSource.reduce((sum, week) => sum + week.count, 0);
 
   return (
     <div className='dark min-h-screen bg-background font-sans text-foreground antialiased'>
