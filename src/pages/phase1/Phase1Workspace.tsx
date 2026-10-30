@@ -8,7 +8,7 @@ import { CampaignSignIn } from '@auth/CampaignSignIn';
 import { signOut } from '@auth/campaign-auth';
 import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
-import { phase1Request, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
+import { phase1Request, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, encounterMasksCombatants, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
 import { isEnemyCreature, playerAllyRoundLog, playerEnemyLabel, playerVisibleCombatants } from './phase1-player-combat';
 import { TacticsPublisher } from './tactics/TacticsPublisher';
 import { loadEntityAbilities, type Phase1Ability } from './phase1-abilities';
@@ -434,8 +434,18 @@ export function Phase1IndexPage() {
                           ownedCampaigns={ownedCampaigns}
                           onOpen={() => navigate(`/phase1/campaign/${campaign.id}`)}
                           onDeleted={() => queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] })}
-                          onFrame={(url) => setArtFrame({ id: campaign.id, preview: url, focus: campaignFocusY(campaign.meta_data?.image_focus_y) })}
-                          onUploaded={(url) => setArtFrame((current) => (current?.id === campaign.id ? { ...current, savedUrl: url, error: undefined } : current))}
+                          onFrame={(url) => setArtFrame((current) => ({
+                            id: campaign.id,
+                            preview: url,
+                            focus: campaignFocusY(campaign.meta_data?.image_focus_y),
+                            savedUrl: current?.id === campaign.id && current.savedUrl ? current.savedUrl : (/^https?:\/\//i.test(url) ? url : undefined),
+                          }))}
+                          onUploaded={(url) => setArtFrame((current) => ({
+                            id: campaign.id,
+                            preview: current?.id === campaign.id ? current.preview : url,
+                            focus: current?.id === campaign.id ? current.focus : campaignFocusY(campaign.meta_data?.image_focus_y),
+                            savedUrl: url,
+                          }))}
                           onFrameError={(message) => setArtFrame((current) => (current?.id === campaign.id ? { ...current, error: message } : current))}
                         />
                       ))}
@@ -456,8 +466,18 @@ export function Phase1IndexPage() {
               ownedCampaigns={ownedCampaigns}
               onOpen={() => navigate(`/phase1/campaign/${campaign.id}`)}
               onDeleted={() => queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] })}
-              onFrame={(url) => setArtFrame({ id: campaign.id, preview: url, focus: campaignFocusY(campaign.meta_data?.image_focus_y) })}
-              onUploaded={(url) => setArtFrame((current) => (current?.id === campaign.id ? { ...current, savedUrl: url, error: undefined } : current))}
+              onFrame={(url) => setArtFrame((current) => ({
+                id: campaign.id,
+                preview: url,
+                focus: campaignFocusY(campaign.meta_data?.image_focus_y),
+                savedUrl: current?.id === campaign.id && current.savedUrl ? current.savedUrl : (/^https?:\/\//i.test(url) ? url : undefined),
+              }))}
+              onUploaded={(url) => setArtFrame((current) => ({
+                id: campaign.id,
+                preview: current?.id === campaign.id ? current.preview : url,
+                focus: current?.id === campaign.id ? current.focus : campaignFocusY(campaign.meta_data?.image_focus_y),
+                savedUrl: url,
+              }))}
               onFrameError={(message) => setArtFrame((current) => (current?.id === campaign.id ? { ...current, error: message } : current))}
             />
           ))}
@@ -487,7 +507,8 @@ export function Phase1IndexPage() {
         <CampaignStripDialog
           url={artFrame.preview}
           initial={artFrame.focus}
-          busy={artFrameBusy || !artFrame.savedUrl}
+          busy={artFrameBusy}
+          canSave={Boolean(artFrame.savedUrl)}
           error={artFrame.error}
           onCancel={() => {
             if (artFrameBusy) return;
@@ -517,6 +538,10 @@ export function Phase1IndexPage() {
                 );
                 setArtFrame(null);
                 return queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] });
+              })
+              .catch((cause) => {
+                const message = cause instanceof Error ? cause.message : 'Could not save campaign art.';
+                setArtFrame((frame) => (frame?.id === framed.id ? { ...frame, error: message } : frame));
               })
               .finally(() => setArtFrameBusy(false));
           }}
@@ -2582,7 +2607,9 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     ? (!diceSide || !diceStat ? [] : filterCombatantsBySide(livingActive, diceSide))
     : playerDiceRows;
   const gmDiceGridRows = diceSide ? filterCombatantsBySide(livingActive, diceSide) : livingActive;
-  const diceGridRows = isGm ? gmDiceGridRows : playerDiceRows;
+  const maskForPlayers = !isGm && (selectedEncounter ? encounterMasksCombatants(selectedEncounter) : true);
+  const shownName = (ally: boolean | null | undefined, name: string) => (maskForPlayers && ally !== true ? playerEnemyLabel(name) : name);
+  const diceGridRows = isGm || !maskForPlayers ? gmDiceGridRows : playerDiceRows;
   const canRollCheck = Boolean(!rosterSaving && diceStat && diceDc != null && Number.isFinite(diceDc) && diceRows.length > 0 && (isGm ? Boolean(diceSide) : true));
   const canEditDice = !rosterSaving;
 
@@ -2666,10 +2693,6 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
 
   function leaveParty(characterId: number) {
     writeParty((partyIds ? [...partyIds] : players.map((player) => player.id)).filter((id) => id !== characterId));
-  }
-
-  function addAllToParty() {
-    writeParty(players.map((player) => player.id));
   }
 
   function addAllPlayers() {
@@ -2852,9 +2875,9 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     seenInitiativeDiceKeyRef.current = key;
     if (!latest) return;
     maybeShowDice3d(
-      dice3dThrowsFromInitiativeRound(latest, (entry) => (isGm || entry.ally ? entry.name : playerEnemyLabel(entry.name))),
+      dice3dThrowsFromInitiativeRound(latest, (entry) => (maskForPlayers && !entry.ally ? playerEnemyLabel(entry.name) : entry.name)),
     );
-  }, [selectedEncounter?.id, initiativeLog, isGm]);
+  }, [selectedEncounter?.id, initiativeLog, maskForPlayers]);
 
   const diceRollLog = selectedEncounter?.meta_data.dice_roll_log;
   useEffect(() => {
@@ -2870,12 +2893,12 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     seenDiceCheckKeyRef.current = key;
     if (!latest) return;
     const gmRoll = !latest.initiated_by_user_id || sameUserId(latest.initiated_by_user_id, campaign?.user_id);
-    if (!isGm && gmRoll && latest.audience !== 'public') return;
+    if (maskForPlayers && gmRoll && latest.audience !== 'public') return;
     maybeShowDice3d(
-      dice3dThrowsFromCheckLog(latest, (entry) => (isGm || entry.ally ? entry.name : playerEnemyLabel(entry.name))),
+      dice3dThrowsFromCheckLog(latest, (entry) => (maskForPlayers && !entry.ally ? playerEnemyLabel(entry.name) : entry.name)),
       diceCheckOverlayTitle(latest.dc, checkStatLabel(latest.defaultStat)),
     );
-  }, [selectedEncounter?.id, diceRollLog, isGm, campaign?.user_id]);
+  }, [selectedEncounter?.id, diceRollLog, maskForPlayers, campaign?.user_id]);
 
   function persistDiceState(patch: Partial<DiceRollState>) {
     const encounter = selectedEncounterRef.current;
@@ -2955,7 +2978,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     maybeShowDice3d(
       rows
         .filter((combatant) => results[combatant._id])
-        .map((combatant) => ({ name: isGm || combatant.ally ? combatantDisplayName(combatant) : playerEnemyLabel(combatantDisplayName(combatant)), die: results[combatant._id].die })),
+        .map((combatant) => ({ name: shownName(combatant.ally, combatantDisplayName(combatant)), die: results[combatant._id].die })),
       diceCheckOverlayTitle(dc, checkStatLabel(stat)),
     );
     setCheckOpen(false);
@@ -2990,7 +3013,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     seenDiceCheckEncounterRef.current = encounter.id;
     persistDiceMeta({ dice_roll_log: [...existingLog, log] });
     maybeShowDice3d(
-      [{ name: isGm || combatant.ally ? combatantDisplayName(combatant) : playerEnemyLabel(combatantDisplayName(combatant)), die: result.die }],
+      [{ name: shownName(combatant.ally, combatantDisplayName(combatant)), die: result.die }],
       diceCheckOverlayTitle(dc, checkStatLabel(resolvedStat)),
     );
     setCheckToast({ log, x, y });
@@ -3344,10 +3367,10 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     return () => window.removeEventListener(PHASE1_SHEET_ART_TONE_EVENT, sync);
   }, []);
   const rail = (
-    <CampaignRail campaign={campaign} encounters={encounters} players={players} campaignPlayers={players} inParty={inParty} onAddToParty={addToParty} onLeaveParty={leaveParty} onAddAllToParty={addAllToParty} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddPlayer={addPlayer} onAddAllPlayers={addAllPlayers} onAddAllPcsToEncounters={campaign && isGm ? onAddAllPcsToEncounters : undefined} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onDeleteNote={onDeleteNote} onDeleteAllNotes={onDeleteAllNotes} onDeleteEncounter={onDeleteEncounter} onDeleteAllEncounters={onDeleteAllEncounters} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} onRenameNote={renameNote} onRenameEncounter={renameEncounter} onCollapse={() => setRailOpen(false)} />
+    <CampaignRail campaign={campaign} encounters={encounters} players={players} campaignPlayers={players} inParty={inParty} onAddToParty={addToParty} onLeaveParty={leaveParty} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} maskCombatants={maskForPlayers} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddPlayer={addPlayer} onAddAllPlayers={addAllPlayers} onAddAllPcsToEncounters={campaign && isGm ? onAddAllPcsToEncounters : undefined} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onDeleteNote={onDeleteNote} onDeleteAllNotes={onDeleteAllNotes} onDeleteEncounter={onDeleteEncounter} onDeleteAllEncounters={onDeleteAllEncounters} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} onRenameNote={renameNote} onRenameEncounter={renameEncounter} onCollapse={() => setRailOpen(false)} />
   );
   const inspector = (
-    <Inspector fill={narrow} combatant={selected && (isGm || !isEnemyCreature(selected)) ? selected : null} width={detailWidth} activeTab={normalizeDetailTab(activeTab)} onTab={setActiveTab} onCollapse={narrow ? undefined : () => setInspectorOpen(false)} hasMatchingCampaignNote={Boolean(encounterNote)} status={selected ? statuses.data?.[selected._id] : undefined} statusLoading={statuses.isLoading} canManageSpells={canManageSpells} spellActions={spellActions} onChangeConditions={canManageSpells && selected?.type !== 'HAZARD' ? persistConditions : undefined} onSaveGmNotes={isGm && selected?.type === 'CREATURE' ? persistGmNotes : undefined} onPersistHpCurrent={selected && canManageSpells && selected.data ? (raw, note) => persistHpCurrent(selected, raw, note, statuses.data?.[selected._id]?.maxHp ?? statsFor(selected.data).maxHp) : undefined} onPersistTempHp={selected && canManageSpells && selected.data ? (raw, note) => persistTempHp(selected, raw, note) : undefined} initiativeLog={selectedEncounter?.meta_data.initiative_log ?? []} canEditRoundNotes={isGm && !rosterSaving} onUpdateRoundNote={updateRoundNote} onLogAction={selected && canManageSpells && selected.type !== 'HAZARD' ? persistLogAction : undefined} onDeleteLogEntry={selected && canManageSpells && selected.type !== 'HAZARD' ? persistDeleteLogEntry : undefined} />
+    <Inspector fill={narrow} combatant={selected && (isGm || !maskForPlayers || !isEnemyCreature(selected)) ? selected : null} width={detailWidth} activeTab={normalizeDetailTab(activeTab)} onTab={setActiveTab} onCollapse={narrow ? undefined : () => setInspectorOpen(false)} hasMatchingCampaignNote={Boolean(encounterNote)} status={selected ? statuses.data?.[selected._id] : undefined} statusLoading={statuses.isLoading} canManageSpells={canManageSpells} spellActions={spellActions} onChangeConditions={canManageSpells && selected?.type !== 'HAZARD' ? persistConditions : undefined} onSaveGmNotes={isGm && selected?.type === 'CREATURE' ? persistGmNotes : undefined} onPersistHpCurrent={selected && canManageSpells && selected.data ? (raw, note) => persistHpCurrent(selected, raw, note, statuses.data?.[selected._id]?.maxHp ?? statsFor(selected.data).maxHp) : undefined} onPersistTempHp={selected && canManageSpells && selected.data ? (raw, note) => persistTempHp(selected, raw, note) : undefined} initiativeLog={selectedEncounter?.meta_data.initiative_log ?? []} canEditRoundNotes={isGm && !rosterSaving} onUpdateRoundNote={updateRoundNote} onLogAction={selected && canManageSpells && selected.type !== 'HAZARD' ? persistLogAction : undefined} onDeleteLogEntry={selected && canManageSpells && selected.type !== 'HAZARD' ? persistDeleteLogEntry : undefined} />
   );
   const viewingHome = Boolean(campaign) && !viewingNotes && !viewingSettings && !selectedEncounter;
   const phoneInspector = narrow && selectedId && !viewingNotes && !viewingSettings && !viewingHome;
@@ -3408,6 +3431,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               onFoldersChange={(encounterFolders) => onUpdateCampaign({ ...campaign, meta_data: { ...campaign.meta_data, encounter_folders: encounterFolders } })}
               onMoveEncounter={(encounter, folderId) => onUpdateEncounter({ ...encounter, meta_data: { ...encounter.meta_data, folder_id: folderId } })}
               onTogglePlayerVisible={(encounter, shown) => onUpdateEncounter({ ...encounter, meta_data: { ...encounter.meta_data, player_visible: shown } })}
+              onToggleMaskCombatants={(encounter, masked) => onUpdateEncounter({ ...encounter, meta_data: { ...encounter.meta_data, mask_combatants: masked } })}
               notes={notePages.map(({ page, index }) => ({ index, name: page.name, shared: page.shared, markdown: noteContentsToMarkdown(page.contents) }))}
               onAddEncounterNote={onAddEncounterNote}
               onDeleteNote={isGm ? onDeleteNote : undefined}
@@ -3473,13 +3497,13 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               {selectedEncounter && <div className='p-5'>
                 {encounterTab === 'combat' ? (
                   <>
-                    <CombatantGrid combatants={orderedCombatants} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={initiativeRollNonce} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onToggleHazardDisabled={persistHazardDisabled} playerView={!isGm} />
-                    <InitiativeRoundLogPanel log={isGm ? (selectedEncounter?.meta_data.initiative_log ?? []) : playerAllyRoundLog(selectedEncounter?.meta_data.initiative_log ?? [])} canEdit={isGm && !rosterSaving} canClear={isGm && !rosterSaving} onClear={clearInitiativeLog} onUpdateNote={updateRoundNote} />
+                    <CombatantGrid combatants={orderedCombatants} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={initiativeRollNonce} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onToggleHazardDisabled={persistHazardDisabled} playerView={maskForPlayers} />
+                    <InitiativeRoundLogPanel log={maskForPlayers ? playerAllyRoundLog(selectedEncounter?.meta_data.initiative_log ?? []) : (selectedEncounter?.meta_data.initiative_log ?? [])} canEdit={isGm && !rosterSaving} canClear={isGm && !rosterSaving} onClear={clearInitiativeLog} onUpdateNote={updateRoundNote} />
                   </>
                 ) : (
                   <>
-                    <CombatantGrid combatants={diceGridRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onSingleCheck={!rosterSaving ? rollSingleCheck : undefined} onSingleChallenge={!rosterSaving && ambaChallenges.length > 0 ? rollSingleChallenge : undefined} challenges={ambaChallenges} dice={{ challengeId: isGm ? diceState?.challenge_id : undefined, checkStat: diceStat ?? undefined, columnLabel: checkStatLabel(diceStat ?? undefined), dc: diceDc, results: !isGm && diceState?.results_audience === 'private' ? {} : diceState?.results ?? {}, emptyMessage: livingActive.length === 0 ? 'No combatants in this encounter yet. Add a creature or a party member from the bench.' : diceGridRows.length === 0 ? 'No combatants match this side. Switch Allies, Enemies, or Both above.' : 'Right-click a combatant to roll a check. Group rolls still use the toolbar.' }} playerView={!isGm} />
-                    <DiceRollLogPanel log={isGm ? (selectedEncounter?.meta_data.dice_roll_log ?? []) : playerAllyRoundLog(playerVisibleDiceRollLog(selectedEncounter?.meta_data.dice_roll_log ?? []))} canClear={isGm && !rosterSaving} canEdit={isGm && !rosterSaving} canRemoveEntry={(entry) => isGm || sameUserId(entry.initiated_by_user_id, sessionUserId)} onClear={clearDiceRollLog} onRemove={removeDiceRollLog} onUpdateNote={updateDiceRollNote} />
+                    <CombatantGrid combatants={diceGridRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onSingleCheck={!rosterSaving ? rollSingleCheck : undefined} onSingleChallenge={!rosterSaving && ambaChallenges.length > 0 ? rollSingleChallenge : undefined} challenges={ambaChallenges} dice={{ challengeId: isGm ? diceState?.challenge_id : undefined, checkStat: diceStat ?? undefined, columnLabel: checkStatLabel(diceStat ?? undefined), dc: diceDc, results: !isGm && diceState?.results_audience === 'private' ? {} : diceState?.results ?? {}, emptyMessage: livingActive.length === 0 ? 'No combatants in this encounter yet. Add a creature or a party member from the bench.' : diceGridRows.length === 0 ? 'No combatants match this side. Switch Allies, Enemies, or Both above.' : 'Right-click a combatant to roll a check. Group rolls still use the toolbar.' }} playerView={maskForPlayers} />
+                    <DiceRollLogPanel log={maskForPlayers ? playerAllyRoundLog(playerVisibleDiceRollLog(selectedEncounter?.meta_data.dice_roll_log ?? [])) : (selectedEncounter?.meta_data.dice_roll_log ?? [])} canClear={isGm && !rosterSaving} canEdit={isGm && !rosterSaving} canRemoveEntry={(entry) => isGm || sameUserId(entry.initiated_by_user_id, sessionUserId)} onClear={clearDiceRollLog} onRemove={removeDiceRollLog} onUpdateNote={updateDiceRollNote} />
                   </>
                 )}
               </div>}
@@ -3750,7 +3774,14 @@ export function WorkspaceHeader({ label, section, campaignId, encounterId, noteI
               <Menu size={16} />
             </button>
           )}
-          <a href='/' className='whitespace-nowrap font-semibold'>Wanderer's Guide</a>
+          <div className='flex flex-col justify-center leading-none'>
+            <a href='/' className='whitespace-nowrap font-semibold leading-tight'>Wanderer's Guide</a>
+            {user.data && (
+              <span className='mt-0.5 text-[11px] tracking-[0.12em] text-p1-muted [font-variant-caps:all-small-caps]'>
+                {user.data.is_admin ? 'Admin view' : 'Player view'}
+              </span>
+            )}
+          </div>
         </div>
         <span className='hidden h-4 w-px bg-p1-border sm:block' />
         <Link to='/phase1' className={navClass(section === 'campaigns')}>Campaigns</Link>
@@ -3759,7 +3790,8 @@ export function WorkspaceHeader({ label, section, campaignId, encounterId, noteI
         <Link to='/phase1/encounters' className={navClass(section === 'encounters')}>Encounters</Link>
         <a href='/shops' className={navClass(false)}>Shops</a>
         {user.data?.is_admin && <Link to='/phase1/admin' className={navClass(label === 'Admin')}>Admin</Link>}
-        {label && <><span className='text-p1-faint'>/</span><span className='max-w-40 truncate text-sm text-p1-muted'>{label}</span></>}
+        {label && campaignId != null && <><span className='text-p1-faint'>/</span><Link to={`/phase1/campaign/${campaignId}`} className='max-w-40 truncate text-sm text-p1-muted hover:text-p1-text' title={label}>{label}</Link></>}
+        {label && campaignId == null && <><span className='text-p1-faint'>/</span><span className='max-w-40 truncate text-sm text-p1-muted'>{label}</span></>}
       </div>
       <div className='flex shrink-0 flex-wrap items-center gap-2'>
         <span className='hidden text-[11px] uppercase tracking-[0.14em] text-p1-faint sm:inline' title='patreon.tier from get-user'>
@@ -3775,8 +3807,8 @@ export function WorkspaceHeader({ label, section, campaignId, encounterId, noteI
   );
 }
 
-function CampaignRail({ campaign, encounters, players, campaignPlayers, outCombatants, selectedEncounter, selectedId, notePages, selectedNoteIndex, viewingSettings, isGm, rosterSaving, inParty, onAddToParty, onLeaveParty, onAddAllToParty, onRemovePlayer, onAddPlayer, onAddAllPlayers, onAddAllPcsToEncounters, onSelectCombatant, onMarkOut, onRequestRemoveFromCampaign, onDeleteNote, onDeleteAllNotes, onDeleteEncounter, onDeleteAllEncounters, onCreateNote, onCreateEncounter, onRenameNote, onRenameEncounter, onCollapse }: {
-  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; campaignPlayers: Character[]; outCombatants: PopulatedCombatant[]; selectedEncounter: Encounter | null; selectedId: string | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; rosterSaving: boolean; inParty?: (characterId: number) => boolean; onAddToParty?: (characterId: number) => void; onLeaveParty?: (characterId: number) => void; onAddAllToParty?: () => void; onRemovePlayer: (combatantId: string) => void; onAddPlayer: (characterId: number) => void; onAddAllPlayers: () => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onSelectCombatant: (id: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onRequestRemoveFromCampaign?: (characterId: number, name: string) => void; onDeleteNote: (index: number) => void; onDeleteAllNotes?: () => void; onDeleteEncounter: (id: number) => void; onDeleteAllEncounters?: () => Promise<void> | void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; onRenameNote: (index: number, name: string) => void; onRenameEncounter: (id: number, name: string) => void; onCollapse?: () => void;
+function CampaignRail({ campaign, encounters, players, campaignPlayers, outCombatants, selectedEncounter, selectedId, notePages, selectedNoteIndex, viewingSettings, isGm, maskCombatants = false, rosterSaving, inParty, onAddToParty, onLeaveParty, onRemovePlayer, onAddPlayer, onAddAllPlayers, onAddAllPcsToEncounters, onSelectCombatant, onMarkOut, onRequestRemoveFromCampaign, onDeleteNote, onDeleteAllNotes, onDeleteEncounter, onDeleteAllEncounters, onCreateNote, onCreateEncounter, onRenameNote, onRenameEncounter, onCollapse }: {
+  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; campaignPlayers: Character[]; outCombatants: PopulatedCombatant[]; selectedEncounter: Encounter | null; selectedId: string | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; maskCombatants?: boolean; rosterSaving: boolean; inParty?: (characterId: number) => boolean; onAddToParty?: (characterId: number) => void; onLeaveParty?: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onAddPlayer: (characterId: number) => void; onAddAllPlayers: () => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onSelectCombatant: (id: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onRequestRemoveFromCampaign?: (characterId: number, name: string) => void; onDeleteNote: (index: number) => void; onDeleteAllNotes?: () => void; onDeleteEncounter: (id: number) => void; onDeleteAllEncounters?: () => Promise<void> | void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; onRenameNote: (index: number, name: string) => void; onRenameEncounter: (id: number, name: string) => void; onCollapse?: () => void;
 }) {
   const standalone = campaign == null;
   const [benchActive, setBenchActive] = useState(false);
@@ -3839,6 +3871,13 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
     setBenchMenu({ x: event.clientX, y: event.clientY, characterId, name });
   }
 
+  const encounterCharacterIds = new Set(
+    (selectedEncounter?.combatants.list ?? [])
+      .filter((combatant) => combatant.type === 'CHARACTER' && combatant.character != null)
+      .map((combatant) => combatant.character),
+  );
+  const waitingForEncounter = players.filter((player) => !encounterCharacterIds.has(player.id));
+
   return (
     <aside className='h-full min-h-0 overflow-y-auto border-r border-p1-border bg-p1-header'>
       <div className='border-b border-p1-border p-4'>
@@ -3853,7 +3892,10 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
           </>
         ) : campaign ? (
           <>
-            <Eyebrow>{isGm ? 'Game master' : 'Player'}</Eyebrow><h1 className='mt-2 text-lg font-semibold leading-tight'>{campaign.name}</h1>
+            <Eyebrow>{isGm ? 'Game master' : 'Player'}</Eyebrow>
+            <h1 className='mt-2 text-lg font-semibold leading-tight'>
+              <Link to={`/phase1/campaign/${campaign.id}`} className='hover:text-p1-accent'>{campaign.name}</Link>
+            </h1>
           </>
         ) : null}
       </div>
@@ -3959,11 +4001,11 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
                 )}
                 <button
                   type='button'
-                  onClick={() => { if (isGm || !isEnemyCreature(combatant)) onSelectCombatant(combatant._id); }}
+                  onClick={() => { if (!maskCombatants || !isEnemyCreature(combatant)) onSelectCombatant(combatant._id); }}
                   className='flex min-w-0 flex-1 items-center gap-2 text-left'
                 >
                   <Skull size={15} className='shrink-0' />
-                  <span className='min-w-0 flex-1 truncate'>{!isGm && isEnemyCreature(combatant) ? playerEnemyLabel(combatantDisplayName(combatant)) : combatantDisplayName(combatant)}</span>
+                  <span className='min-w-0 flex-1 truncate'>{maskCombatants && isEnemyCreature(combatant) ? playerEnemyLabel(combatantDisplayName(combatant)) : combatantDisplayName(combatant)}</span>
                   <span className='shrink-0 text-[10px] uppercase text-p1-faint'>{combatant.out === 'dead' ? 'Dead' : 'Incap.'}</span>
                 </button>
               </div>
@@ -4060,7 +4102,7 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
           y={benchMenu.y}
           showAdd={benchMenu.characterId != null && !(inParty?.(benchMenu.characterId) ?? true)}
           showLeave={benchMenu.characterId != null && (inParty?.(benchMenu.characterId) ?? false)}
-          addAllDisabled={players.length === 0 || players.every((player) => inParty?.(player.id) ?? true)}
+          addAllDisabled={rosterSaving || !selectedEncounter || waitingForEncounter.length === 0}
           showRemoveFromCampaign={benchMenu.characterId != null && Boolean(onRequestRemoveFromCampaign)}
           onClose={() => setBenchMenu(null)}
           onAdd={() => {
@@ -4075,7 +4117,7 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
           }}
           onAddAll={() => {
             setBenchMenu(null);
-            onAddAllToParty?.();
+            onAddAllPlayers();
           }}
           onRemoveFromCampaign={() => {
             const characterId = benchMenu.characterId;
@@ -4561,7 +4603,7 @@ function BenchContextMenu({ x, y, showAdd, showLeave, addAllDisabled, showRemove
           </button>
         )}
         <button type='button' role='menuitem' disabled={addAllDisabled} className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint disabled:hover:bg-transparent' onClick={onAddAll}>
-          <Plus size={14} /> Add all to party
+          <Plus size={14} /> Add all to encounter
         </button>
         {showRemoveFromCampaign && (
           <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onRemoveFromCampaign}>
@@ -6595,13 +6637,15 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
       }
       const url = await uploadImage(stored, 'backgrounds');
       if (!url) throw new Error('Could not save campaign art.');
+      rememberTempArt(url, stored);
+      void writeTempArt(url, stored).catch(() => undefined);
       await phase1Request('create-campaign', {
         ...campaign,
         meta_data: { ...campaign.meta_data, image_url: url },
       });
       setOpen(false);
-      onUploaded(url);
       onFrame(url);
+      onUploaded(url);
       onSaved();
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'Could not save campaign art.';
@@ -6664,13 +6708,15 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
         if (stored.size <= 3 * 1024 * 1024) {
           const hosted = await uploadImage(stored, 'backgrounds');
           if (!hosted) throw new Error('Could not save campaign art.');
+          rememberTempArt(hosted, stored);
+          void writeTempArt(hosted, stored).catch(() => undefined);
           await phase1Request('create-campaign', {
             ...campaign,
             meta_data: { ...campaign.meta_data, image_url: hosted },
           });
           setOpen(false);
-          onUploaded(hosted);
           onFrame(hosted);
+          onUploaded(hosted);
           onSaved();
           return;
         }
@@ -6910,8 +6956,9 @@ function campaignArtSrc(url: string): string {
   if (!import.meta.env.DEV || typeof window === 'undefined') return url;
   try {
     const parsed = new URL(url, window.location.origin);
+    if (!parsed.pathname.startsWith('/storage/')) return url;
     const localHost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '::1' || parsed.hostname === 'kong';
-    if (!localHost || !parsed.pathname.startsWith('/storage/')) return url;
+    if (parsed.protocol !== 'http:' || (!localHost && parsed.port !== '8000')) return url;
     return window.location.origin + parsed.pathname + parsed.search;
   } catch {
     return url;
@@ -6961,12 +7008,16 @@ function campaignFocusY(value?: number | string | null): number {
   return Math.min(100, Math.max(0, parsed));
 }
 
-function CampaignStripDialog({ url, initial, busy, error, onCancel, onConfirm }: { url: string; initial: number; busy: boolean; error?: string; onCancel: () => void; onConfirm: (focusY: number) => void }) {
+function CampaignStripDialog({ url, initial, busy, canSave = true, error, onCancel, onConfirm }: { url: string; initial: number; busy: boolean; canSave?: boolean; error?: string; onCancel: () => void; onConfirm: (focusY: number) => void }) {
   const [focusY, setFocusY] = useState(initial);
   const [band, setBand] = useState(18);
   const [frameHeight, setFrameHeight] = useState(420);
   const [imageFailed, setImageFailed] = useState(false);
+  const src = useCampaignArtSrc(url);
   const allowDismiss = useRef(false);
+  useEffect(() => {
+    setImageFailed(false);
+  }, [src]);
   const frameRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -7028,7 +7079,7 @@ function CampaignStripDialog({ url, initial, busy, error, onCancel, onConfirm }:
             {imageFailed ? (
               <div className='flex h-[420px] max-h-full items-center justify-center text-sm text-p1-muted'>Cannot load image.</div>
             ) : (
-              <img src={url} alt='' referrerPolicy='no-referrer' className='block max-h-[calc(100vh-18rem)] w-full object-contain' onLoad={measureBand} onError={() => setImageFailed(true)} />
+              <img src={src} alt='' referrerPolicy='no-referrer' className='block max-h-[calc(100vh-18rem)] w-full object-contain' onLoad={measureBand} onError={() => setImageFailed(true)} />
             )}
             <div
               className='absolute inset-x-0 z-10 cursor-ns-resize border-y-2 border-white/90 bg-white/15'
@@ -7051,11 +7102,11 @@ function CampaignStripDialog({ url, initial, busy, error, onCancel, onConfirm }:
           />
         </div>
         <div className='relative mt-4 flex h-[5.5rem] shrink-0 items-center overflow-hidden border border-p1-border px-3 text-sm text-p1-muted'>
-          {imageFailed ? 'Cannot load image.' : <img src={url} alt='' referrerPolicy='no-referrer' className='absolute inset-0 h-full w-full object-cover' style={{ objectPosition: `center ${focusY}%` }} onError={() => setImageFailed(true)} />}
+          {imageFailed ? 'Cannot load image.' : <img src={src} alt='' referrerPolicy='no-referrer' className='absolute inset-0 h-full w-full object-cover' style={{ objectPosition: `center ${focusY}%` }} onError={() => setImageFailed(true)} />}
         </div>
         <div className='mt-5 flex shrink-0 justify-end gap-2'>
           <button type='button' className='toolbar-button' disabled={busy} onClick={onCancel}>Cancel</button>
-          <button type='button' className='toolbar-button' disabled={busy} onClick={() => onConfirm(focusY)}>{busy ? 'Saving…' : 'Use band'}</button>
+          <button type='button' className='toolbar-button' disabled={busy || !canSave} onClick={() => onConfirm(focusY)}>{busy ? 'Saving…' : 'Use band'}</button>
         </div>
       </section>
     </div>,
@@ -7288,7 +7339,10 @@ function CampaignWorkspaceRow({ campaign, canDelete, members, ownedCampaigns, on
         </div>
       )}
       <button type='button' className='min-w-0 text-left' onClick={onOpen} onContextMenu={openMenu}>
-        <div className='font-semibold'>{campaign.name}</div>
+        <div className='flex items-center gap-1.5 font-semibold'>
+          <span className='truncate'>{campaign.name}</span>
+          {canDelete && <Crown size={14} className='shrink-0 text-p1-accent' aria-label='You own this campaign' />}
+        </div>
         <div className='mt-1 line-clamp-1 text-sm text-p1-muted'>{campaign.description || 'No campaign description'}</div>
         {actionError && <div className='mt-1 text-xs text-p1-danger-soft'>{actionError}</div>}
       </button>

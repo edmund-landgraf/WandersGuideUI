@@ -187,8 +187,8 @@ export function encounterIncludesCharacter(
 
 /**
  * Whether a player may receive this encounter.
- * `player_visible: true` shows it to the whole party. `false` hides it even from
- * a player whose character is in the fight. Omitted keeps the older membership rule.
+ * `player_visible: true` shows it to every character in the campaign, even one who is
+ * not in the fight. `false` hides it. Omitted keeps it to players whose character is in it.
  */
 export function encounterListedForPlayer(encounter: EncounterLike, characterIds: Set<number>): boolean {
   const flag = encounter.meta_data?.player_visible;

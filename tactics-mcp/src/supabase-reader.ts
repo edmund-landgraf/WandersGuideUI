@@ -374,20 +374,16 @@ async function campaignAccess(userId: string, campaignId: number) {
   return { isGm, characterIds: new Set(mine.map((row) => num(row.id)).filter((id): id is number => id !== undefined)) };
 }
 
-function includesCharacter(encounter: Json, characterIds: Set<number>) {
+function listedForPlayer(encounter: Json, characterIds: Set<number>) {
+  const flag = (encounter.meta_data as Json | undefined)?.player_visible;
+  if (flag === false) return false;
+  if (flag === true) return true;
   const list = ((encounter.combatants as Json | undefined)?.list as Json[] | undefined) ?? [];
   return list.some((combatant) => {
     if (combatant.type && combatant.type !== "CHARACTER") return false;
     const id = characterIdOf(combatant);
     return id !== undefined && characterIds.has(id);
   });
-}
-
-function listedForPlayer(encounter: Json, characterIds: Set<number>) {
-  const flag = (encounter.meta_data as Json | undefined)?.player_visible;
-  if (flag === false) return false;
-  if (flag === true) return true;
-  return includesCharacter(encounter, characterIds);
 }
 
 async function encountersFor(userId: string, campaignId: number, encounterId?: number) {

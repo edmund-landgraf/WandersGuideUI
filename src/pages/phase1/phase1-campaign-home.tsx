@@ -15,7 +15,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { ConfirmDialog } from './phase1-campaign-settings';
-import { gmEncounterShownToPlayers, loadPhase1SheetCharacter } from './phase1-api';
+import { encounterMasksCombatants, gmEncounterShownToPlayers, loadPhase1SheetCharacter } from './phase1-api';
 import { combatantDisplayName } from './phase1-initiative';
 import { creatureStatBlockText } from './phase1-creature-defenses';
 import { isContentStackOpen, useContentLinks } from './phase1-content-links';
@@ -23,7 +23,24 @@ import { encounterDisplayName, encounterNamesMatch } from './phase1-encounter-ti
 import { ProseMarkdown } from './phase1-markdown';
 import { ContentLinkHoverCard } from './phase1-content-stack';
 import { characterSheetMaxHp, withPhase1Store } from './phase1-entity';
+import { lookupMonsterArt } from './phase1-monster-image';
 import { Phase1StatBlockCardsPacked } from './phase1-stat-block-cards-packed';
+import { isPlayerVisibleCombatant, playerEnemyLabel } from './phase1-player-combat';
+
+const FOLDER_PANE_KEY = 'p1-encounter-folder-width';
+const FOLDER_PANE_MIN = 160;
+const FOLDER_PANE_MAX_SHARE = 0.55;
+const FOLDER_PANE_TABLE_MIN = 280;
+
+function readFolderPaneWidth() {
+  const stored = Number(window.localStorage.getItem(FOLDER_PANE_KEY));
+  return Number.isFinite(stored) && stored >= FOLDER_PANE_MIN ? stored : 0;
+}
+
+function clampFolderPane(next: number, sectionWidth: number) {
+  const max = Math.max(FOLDER_PANE_MIN, Math.min(sectionWidth * FOLDER_PANE_MAX_SHARE, sectionWidth - FOLDER_PANE_TABLE_MIN));
+  return Math.min(max, Math.max(FOLDER_PANE_MIN, next));
+}
 
 export type CampaignHomeNote = {
   index: number;
@@ -289,6 +306,24 @@ function PlayerVisibleToggle({ shown, mixed = false, disabled = false, name, onC
   );
 }
 
+function MaskCombatantsToggle({ masked, mixed = false, disabled = false, name, onChange }: { masked: boolean; mixed?: boolean; disabled?: boolean; name: string; onChange: (masked: boolean) => void }) {
+  const on = masked && !mixed;
+  return (
+    <button
+      type='button'
+      role='switch'
+      aria-checked={mixed ? 'mixed' : masked}
+      aria-label={mixed ? `Mask or reveal combatants in ${name}` : on ? `Show ${name} to players the way you see it` : `Mask combatants in ${name}`}
+      title={mixed ? 'Some encounters mask combatants' : on ? 'Players see initials' : 'Players see this encounter the way you do'}
+      disabled={disabled}
+      className={`relative h-4 w-8 shrink-0 rounded-full border disabled:opacity-40 ${on ? 'border-p1-accent bg-p1-accent/80' : 'border-p1-border bg-p1-inset'}`}
+      onClick={() => onChange(!on)}
+    >
+      <span className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-p1-text transition-all ${mixed ? 'left-2' : on ? 'left-4' : 'left-0.5'}`} />
+    </button>
+  );
+}
+
 function encounterCounts(encounter: Encounter) {
   const list = encounter.combatants?.list ?? [];
   const allies = list.filter((combatant) => combatant.ally).length;
@@ -390,7 +425,7 @@ function folderDescendantIds(folders: EncounterFolder[], id: string) {
   return doomed;
 }
 
-export function Phase1CampaignHome({ campaignId, players, encounters, notes = [], wide = false, isGm = false, folders = [], onFoldersChange, onMoveEncounter, onTogglePlayerVisible, onAddEncounterNote, onDeleteNote }: { campaignId: number; players: Character[]; encounters: Encounter[]; notes?: CampaignHomeNote[]; wide?: boolean; isGm?: boolean; folders?: EncounterFolder[]; onFoldersChange?: (folders: EncounterFolder[]) => void; onMoveEncounter?: (encounter: Encounter, folderId: string | null) => void; onTogglePlayerVisible?: (encounter: Encounter, shown: boolean) => void; onAddEncounterNote?: (encounter: Encounter) => void; onDeleteNote?: (index: number) => void }) {
+export function Phase1CampaignHome({ campaignId, players, encounters, notes = [], wide = false, isGm = false, folders = [], onFoldersChange, onMoveEncounter, onTogglePlayerVisible, onToggleMaskCombatants, onAddEncounterNote, onDeleteNote }: { campaignId: number; players: Character[]; encounters: Encounter[]; notes?: CampaignHomeNote[]; wide?: boolean; isGm?: boolean; folders?: EncounterFolder[]; onFoldersChange?: (folders: EncounterFolder[]) => void; onMoveEncounter?: (encounter: Encounter, folderId: string | null) => void; onTogglePlayerVisible?: (encounter: Encounter, shown: boolean) => void; onToggleMaskCombatants?: (encounter: Encounter, masked: boolean) => void; onAddEncounterNote?: (encounter: Encounter) => void; onDeleteNote?: (index: number) => void }) {
   const navigate = useNavigate();
   const [windows, setWindows] = useState<PcWindow[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -413,6 +448,8 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
   const [folderDraft, setFolderDraft] = useState<{ name: string; parentId: string } | null>(null);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+  const splitRef = useRef<HTMLElement>(null);
+  const [folderPaneWidth, setFolderPaneWidth] = useState(readFolderPaneWidth);
   const knownFolderIds = new Set(folders.map((folder) => folder.id));
   const rootFolders = folderChildren(folders, null);
   const ungrouped = encounters.filter((encounter) => {
@@ -423,6 +460,33 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
   useEffect(() => {
     setOpenFolderId(localStorage.getItem(openKey));
   }, [openKey]);
+
+  useEffect(() => {
+    if (folderPaneWidth > 0) window.localStorage.setItem(FOLDER_PANE_KEY, String(Math.round(folderPaneWidth)));
+  }, [folderPaneWidth]);
+
+  function startFolderResize(event: React.MouseEvent) {
+    event.preventDefault();
+    const section = splitRef.current;
+    if (!section) return;
+    const startX = event.clientX;
+    const startWidth = section.querySelector('aside')?.getBoundingClientRect().width ?? section.clientWidth / 3;
+    const previousCursor = document.body.style.cursor;
+    const previousSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const move = (moveEvent: MouseEvent) => {
+      setFolderPaneWidth(clampFolderPane(startWidth + moveEvent.clientX - startX, section.clientWidth));
+    };
+    const up = () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousSelect;
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }
 
   function selectFolder(id: string) {
     setOpenFolderId((current) => {
@@ -652,26 +716,40 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
           setMoveMenu({ x: event.clientX, y: event.clientY, ids });
         }}
       >
-        <td className={`py-1 pr-2 font-semibold ${depth === 0 ? 'pl-2' : depth === 1 ? 'pl-8' : 'pl-14'}`}>
-          <span className='block truncate'>{encounter.name}</span>
+        <td className={`max-w-0 overflow-hidden py-1 pr-2 font-semibold ${depth === 0 ? 'pl-2' : depth === 1 ? 'pl-8' : 'pl-14'}`}>
+          <span className='block truncate' title={encounter.name}>{encounter.name}</span>
         </td>
         {isGm ? (
-          <td className='px-2 py-1' onClick={(event) => event.stopPropagation()}>
-            <PlayerVisibleToggle
-              shown={gmEncounterShownToPlayers(encounter)}
-              name={encounter.name}
-              onChange={(shown) => onTogglePlayerVisible?.(encounter, shown)}
-            />
+          <td className='px-1 py-1 text-center' onClick={(event) => event.stopPropagation()}>
+            <span className='inline-flex justify-center'>
+              <PlayerVisibleToggle
+                shown={gmEncounterShownToPlayers(encounter)}
+                name={encounter.name}
+                onChange={(shown) => onTogglePlayerVisible?.(encounter, shown)}
+              />
+            </span>
           </td>
         ) : null}
-        <td className='px-2 py-1'>
+        {isGm ? (
+          <td className='px-1 py-1 text-center' onClick={(event) => event.stopPropagation()}>
+            <span className='inline-flex justify-center'>
+              <MaskCombatantsToggle
+                masked={encounterMasksCombatants(encounter)}
+                name={encounter.name}
+                onChange={(masked) => onToggleMaskCombatants?.(encounter, masked)}
+              />
+            </span>
+          </td>
+        ) : null}
+        <td className='max-w-0 overflow-hidden px-2 py-1'>
           {matched.length === 0 ? <span className='text-p1-faint'>—</span> : (
-            <span className='flex flex-wrap gap-1'>
+            <span className='flex min-w-0 flex-col gap-1'>
               {matched.map((note) => (
                 <button
                   key={note.index}
                   type='button'
-                  className='max-w-56 truncate border border-p1-border bg-p1-raised px-1.5 py-0.5 text-left text-p1-text hover:border-p1-accent'
+                  title={encounterDisplayName(note.name)}
+                  className='block min-w-0 max-w-full truncate border border-p1-border bg-p1-raised px-1.5 py-0.5 text-left text-p1-text hover:border-p1-accent'
                   onMouseEnter={(event) => {
                     const rect = event.currentTarget.getBoundingClientRect();
                     showNoteHover({ note, encounterId: encounter.id, encounterName: encounter.name, x: rect.left, y: rect.bottom + 6 });
@@ -689,16 +767,19 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
             </span>
           )}
         </td>
-        <td className='px-2 py-1'>{counts.total}</td>
+        <td className='px-1 py-1 text-center tabular-nums' title='Total combatants'>{counts.total}</td>
         <td
-          className='px-2 py-1'
+          className='px-1 py-1 text-center tabular-nums'
+          title='Allies'
           onMouseEnter={(event) => {
+            if (counts.allies === 0) return;
             const rect = event.currentTarget.getBoundingClientRect();
             showRosterHover({ kind: 'allies', encounterId: encounter.id, x: rect.left, y: rect.bottom + 6 });
           }}
           onMouseLeave={hideRosterHover}
           onClick={(event) => {
             event.stopPropagation();
+            if (counts.allies === 0) return;
             const rect = event.currentTarget.getBoundingClientRect();
             lockRoster('allies', encounter, Math.min(rect.left, window.innerWidth - 420), rect.bottom + 8);
           }}
@@ -706,14 +787,17 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
           {counts.allies}
         </td>
         <td
-          className='px-2 py-1'
+          className='px-1 py-1 text-center tabular-nums'
+          title='Enemies'
           onMouseEnter={(event) => {
+            if (counts.enemies === 0) return;
             const rect = event.currentTarget.getBoundingClientRect();
             showRosterHover({ kind: 'enemies', encounterId: encounter.id, x: rect.left, y: rect.bottom + 6 });
           }}
           onMouseLeave={hideRosterHover}
           onClick={(event) => {
             event.stopPropagation();
+            if (counts.enemies === 0) return;
             const rect = event.currentTarget.getBoundingClientRect();
             lockRoster('enemies', encounter, Math.min(rect.left, window.innerWidth - 420), rect.bottom + 8);
           }}
@@ -793,6 +877,8 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
   const listedEncounters = openFolder ? encountersIn(openFolder.id) : ungrouped;
   const allListedShown = listedEncounters.length > 0 && listedEncounters.every((encounter) => gmEncounterShownToPlayers(encounter));
   const someListedShown = listedEncounters.some((encounter) => gmEncounterShownToPlayers(encounter));
+  const allListedMasked = listedEncounters.length > 0 && listedEncounters.every((encounter) => encounterMasksCombatants(encounter));
+  const someListedMasked = listedEncounters.some((encounter) => encounterMasksCombatants(encounter));
 
   useEffect(() => {
     setSelectedIds([]);
@@ -987,8 +1073,8 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
         </table>
       </section>
       <div className='h-px shrink-0 bg-p1-border' />
-      <section className={wide ? 'flex min-h-0 flex-1 bg-p1-page py-2 pl-3 pr-10' : 'flex min-h-0 flex-1 bg-p1-page py-2'}>
-        <aside className='flex w-1/3 min-w-0 shrink-0 flex-col overflow-auto border-r border-p1-border pr-2'>
+      <section ref={splitRef} className={wide ? 'flex min-h-0 flex-1 bg-p1-page py-2 pl-3 pr-10' : 'flex min-h-0 flex-1 bg-p1-page py-2'}>
+        <aside className='flex min-w-0 shrink-0 flex-col overflow-auto pr-2' style={{ width: folderPaneWidth > 0 ? folderPaneWidth : '33.333%' }}>
           <button
             type='button'
             aria-current={openFolder ? undefined : 'true'}
@@ -1060,15 +1146,33 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
           </ul>
           {folders.length === 0 ? <p className='px-2 py-4 text-xs text-p1-faint'>No folders.</p> : null}
         </aside>
-        <div className='min-w-0 flex-1 overflow-auto pl-2'>
-          <table className='w-full border-collapse text-xs'>
+        <div
+          role='separator'
+          aria-orientation='vertical'
+          aria-label='Resize folders'
+          aria-valuemin={FOLDER_PANE_MIN}
+          aria-valuenow={folderPaneWidth > 0 ? Math.round(folderPaneWidth) : undefined}
+          tabIndex={0}
+          className='w-1 shrink-0 cursor-col-resize bg-p1-border hover:bg-p1-accent focus:bg-p1-accent'
+          onMouseDown={startFolderResize}
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+            event.preventDefault();
+            const section = splitRef.current;
+            if (!section) return;
+            const current = section.querySelector('aside')?.getBoundingClientRect().width ?? section.clientWidth / 3;
+            const delta = event.key === 'ArrowRight' ? 16 : -16;
+            setFolderPaneWidth(clampFolderPane(current + delta, section.clientWidth));
+          }}
+        />
+        <div className='min-w-0 flex-1 overflow-x-hidden overflow-y-auto pl-2'>
+          <table className='w-full table-fixed border-collapse text-xs'>
             <thead className='sticky top-0 border-b border-p1-border bg-p1-header/92 text-[10px] uppercase text-p1-faint'>
               <tr>
                 <th className='px-2 py-1.5 text-left font-medium'>Encounter</th>
                 {isGm ? (
-                  <th className='w-28 px-2 py-1.5 text-left font-medium'>
-                    <span className='inline-flex items-center gap-1.5'>
-                      Players
+                  <th className='w-10 px-1 py-1.5 text-center font-medium' title='Show encounters to players'>
+                    <span className='inline-flex justify-center'>
                       <PlayerVisibleToggle
                         shown={allListedShown}
                         mixed={someListedShown && !allListedShown}
@@ -1083,17 +1187,34 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
                     </span>
                   </th>
                 ) : null}
+                {isGm ? (
+                  <th className='w-10 px-1 py-1.5 text-center font-medium' title='Mask combatants'>
+                    <span className='inline-flex justify-center'>
+                      <MaskCombatantsToggle
+                        masked={allListedMasked}
+                        mixed={someListedMasked && !allListedMasked}
+                        disabled={listedEncounters.length === 0}
+                        name='all listed encounters'
+                        onChange={(masked) => {
+                          for (const encounter of listedEncounters) {
+                            if (encounterMasksCombatants(encounter) !== masked) onToggleMaskCombatants?.(encounter, masked);
+                          }
+                        }}
+                      />
+                    </span>
+                  </th>
+                ) : null}
                 <th className='px-2 py-1.5 text-left font-medium'>Notes</th>
-                <th className='w-24 px-2 py-1.5 text-left font-medium'>Combatants</th>
-                <th className='w-24 px-2 py-1.5 text-left font-medium'>Allies</th>
-                <th className='w-24 px-2 py-1.5 text-left font-medium'>Enemies</th>
+                <th className='w-8 px-1 py-1.5 text-center font-medium' title='Total combatants'>T</th>
+                <th className='w-8 px-1 py-1.5 text-center font-medium' title='Allies'>A</th>
+                <th className='w-8 px-1 py-1.5 text-center font-medium' title='Enemies'>E</th>
               </tr>
             </thead>
             <tbody>
               {listedEncounters.map((encounter) => renderEncounterRow(encounter, 0))}
               {listedEncounters.length === 0 ? (
                 <tr>
-                  <td colSpan={isGm ? 6 : 5} className='px-3 py-8 text-center text-sm text-p1-faint'>
+                  <td colSpan={isGm ? 7 : 5} className='px-3 py-8 text-center text-sm text-p1-faint'>
                     {openFolder ? 'This folder is empty.' : 'No encounters.'}
                   </td>
                 </tr>
@@ -1183,6 +1304,7 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
           hover={rosterHover}
           encounter={encounters.find((item) => item.id === rosterHover.encounterId)}
           players={players}
+          isGm={isGm}
           onEnter={() => { if (rosterTimer.current != null) window.clearTimeout(rosterTimer.current); }}
           onLeave={hideRosterHover}
           onLock={() => lockRoster(rosterHover.kind, encounters.find((item) => item.id === rosterHover.encounterId)!, rosterHover.x, rosterHover.y)}
@@ -1194,6 +1316,7 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
           frame={item}
           encounter={encounters.find((entry) => entry.id === item.encounterId)}
           players={players}
+          isGm={isGm}
           onFocus={() => setRosterWindows((current) => {
             const z = current.reduce((max, entry) => Math.max(max, entry.z), 50) + 1;
             return current.map((entry) => (entry.encounterId === item.encounterId && entry.kind === item.kind ? { ...entry, z } : entry));
@@ -1377,40 +1500,64 @@ function enemySource(combatant: Combatant) {
   return { href, imageUrl };
 }
 
-function enemyRows(encounter: Encounter | undefined) {
-  return (encounter?.combatants?.list ?? []).filter((combatant) => !combatant.ally).map((combatant) => {
+function enemyRows(encounter: Encounter | undefined, mask: boolean) {
+  return (encounter?.combatants?.list ?? []).filter((combatant) => !combatant.ally && (!mask || isPlayerVisibleCombatant(combatant))).map((combatant) => {
     const name = combatantDisplayName(combatant);
     const source = enemySource(combatant);
     return {
       id: combatant._id,
-      name,
+      name: mask ? playerEnemyLabel(name) : name,
+      artName: name,
       level: combatant.hazard?.level ?? combatant.creature?.level ?? combatant.data?.level,
       imageUrl: source.imageUrl,
-      href: source.href,
+      href: mask ? undefined : source.href,
     };
   });
 }
 
-function RosterArt({ imageUrl }: { imageUrl?: string }) {
+/** Dev upload URLs point at Kong (:8000). The image tag has to use the Vite origin, same as campaign art. */
+function rosterArtSrc(url: string): string {
+  if (!import.meta.env.DEV || typeof window === 'undefined') return url;
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (!parsed.pathname.startsWith('/storage/')) return url;
+    const localHost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '::1' || parsed.hostname === 'kong';
+    if (parsed.protocol !== 'http:' || (!localHost && parsed.port !== '8000')) return url;
+    return `${window.location.origin}${parsed.pathname}${parsed.search}`;
+  } catch {
+    return url;
+  }
+}
+
+function RosterArt({ name, imageUrl }: { name: string; imageUrl?: string }) {
   const [failed, setFailed] = useState(false);
   const stored = parseIconValue(imageUrl?.trim() ?? '');
   const portrait = stored.type === 'image' ? stored.value.trim() : '';
-  if (stored.type === 'icon' && stored.value && !portrait) {
+  const art = useQuery({
+    queryKey: ['phase1-creature-picker-art', name, portrait],
+    queryFn: () => lookupMonsterArt(name, portrait || undefined, 'thumb'),
+    enabled: Boolean(name.trim() || portrait),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  // The creature's own picture is what the GM row shows. The art service only fills a gap.
+  const src = rosterArtSrc(portrait || art.data?.thumbSrc || '');
+  useEffect(() => { setFailed(false); }, [src]);
+  if (src && !failed) {
+    return <img src={src} alt='' referrerPolicy='no-referrer' className='h-8 w-8 border border-p1-border bg-p1-inset object-contain' onError={() => setFailed(true)} />;
+  }
+  if (stored.type === 'icon' && stored.value) {
     return (
       <span className='grid h-8 w-8 place-items-center border border-p1-border bg-p1-inset' style={{ color: stored.color || undefined }}>
         <Icon name={stored.value} size={16} />
       </span>
     );
   }
-  if (portrait && !failed) {
-    return <img src={portrait} alt='' className='h-8 w-8 border border-p1-border bg-p1-inset object-cover' onError={() => setFailed(true)} />;
-  }
   return <span className='grid h-8 w-8 place-items-center border border-p1-border bg-p1-inset text-p1-faint'>—</span>;
 }
 
-function RosterTable({ kind, encounter, players }: { kind: RosterHover['kind']; encounter: Encounter | undefined; players: Character[] }) {
+function RosterTable({ kind, encounter, players, mask }: { kind: RosterHover['kind']; encounter: Encounter | undefined; players: Character[]; mask: boolean }) {
   const allies = kind === 'allies' ? allyRows(encounter, players) : [];
-  const enemies = kind === 'enemies' ? enemyRows(encounter) : [];
+  const enemies = kind === 'enemies' ? enemyRows(encounter, mask) : [];
   return (
     <table className='w-full border-collapse text-xs'>
       <thead className='text-[10px] uppercase text-p1-faint'>
@@ -1442,7 +1589,7 @@ function RosterTable({ kind, encounter, players }: { kind: RosterHover['kind']; 
         ))}
         {kind === 'enemies' && enemies.map((row) => (
           <tr key={row.id} className='border-t border-p1-border'>
-            <td className='px-2 py-1'><RosterArt imageUrl={row.imageUrl} /></td>
+            <td className='px-2 py-1'><RosterArt name={row.artName} imageUrl={row.imageUrl} /></td>
             <td className='px-2 py-1 font-semibold'>
               {row.href ? (
                 <a href={row.href} target='_blank' rel='noreferrer' className='hover:text-p1-accent hover:underline' onClick={(event) => event.stopPropagation()}>
@@ -1463,7 +1610,12 @@ function RosterTable({ kind, encounter, players }: { kind: RosterHover['kind']; 
   );
 }
 
-function RosterPreview({ hover, encounter, players, onEnter, onLeave, onLock }: { hover: RosterHover; encounter: Encounter | undefined; players: Character[]; onEnter: () => void; onLeave: () => void; onLock: () => void }) {
+function rosterMasksNames(encounter: Encounter | undefined, isGm: boolean) {
+  if (isGm) return false;
+  return encounter ? encounterMasksCombatants(encounter) : true;
+}
+
+function RosterPreview({ hover, encounter, players, isGm, onEnter, onLeave, onLock }: { hover: RosterHover; encounter: Encounter | undefined; players: Character[]; isGm: boolean; onEnter: () => void; onLeave: () => void; onLock: () => void }) {
   const left = Math.min(Math.max(8, hover.x), window.innerWidth - 420);
   const top = Math.min(hover.y, window.innerHeight - 240);
   return createPortal(
@@ -1474,13 +1626,13 @@ function RosterPreview({ hover, encounter, players, onEnter, onLeave, onLock }: 
       onMouseLeave={onLeave}
       onClick={(event) => { event.stopPropagation(); onLock(); }}
     >
-      <RosterTable kind={hover.kind} encounter={encounter} players={players} />
+      <RosterTable kind={hover.kind} encounter={encounter} players={players} mask={rosterMasksNames(encounter, isGm)} />
     </div>,
     document.body,
   );
 }
 
-function RosterLockWindow({ frame, encounter, players, onFocus, onClose, onMove }: { frame: RosterWindow; encounter: Encounter | undefined; players: Character[]; onFocus: () => void; onClose: () => void; onMove: (x: number, y: number) => void }) {
+function RosterLockWindow({ frame, encounter, players, isGm, onFocus, onClose, onMove }: { frame: RosterWindow; encounter: Encounter | undefined; players: Character[]; isGm: boolean; onFocus: () => void; onClose: () => void; onMove: (x: number, y: number) => void }) {
   function startDrag(event: React.PointerEvent<HTMLElement>) {
     if ((event.target as HTMLElement).closest('button, a')) return;
     event.preventDefault();
@@ -1509,7 +1661,7 @@ function RosterLockWindow({ frame, encounter, players, onFocus, onClose, onMove 
         <button type='button' className='icon-button' title='Close' onClick={onClose}><X size={14} /></button>
       </header>
       <div className='min-h-0 flex-1 overflow-auto p-2'>
-        <RosterTable kind={frame.kind} encounter={encounter} players={players} />
+        <RosterTable kind={frame.kind} encounter={encounter} players={players} mask={rosterMasksNames(encounter, isGm)} />
       </div>
     </div>,
     document.body,

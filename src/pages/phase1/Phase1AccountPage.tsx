@@ -13,8 +13,10 @@ import type { Campaign, Character, PublicUser } from '@schemas/content';
 import { toLabel } from '@utils/strings';
 import { hasPatreonAccess } from '@utils/patreon';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Eye, EyeOff } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { clearArtPassword, readArtPassword, unlockMonsterArt } from './phase1-monster-image';
 import { WorkspaceHeader } from './Phase1Workspace';
 
 const SWATCHES = [
@@ -221,6 +223,10 @@ function AccountCard({ userId, email }: { userId: string; email?: string }) {
           />
         </Fold>
 
+        <Fold title='Art' hint={readArtPassword() ? 'Saved' : 'Not set'}>
+          <ArtPasswordField />
+        </Fold>
+
         <Fold title='Developer'>
           <Toggle
             label='View operations'
@@ -368,6 +374,78 @@ function CopyRow({ label, value }: { label: string; value: string }) {
           });
         }}
       >{copied ? 'Copied' : 'Copy'}</button>
+    </div>
+  );
+}
+
+function ArtPasswordField() {
+  const queryClient = useQueryClient();
+  const [password, setPassword] = useState(() => readArtPassword());
+  const [visible, setVisible] = useState(false);
+  const [status, setStatus] = useState('');
+  const [pending, setPending] = useState(false);
+
+  async function save() {
+    setPending(true);
+    setStatus('');
+    const unlocked = await unlockMonsterArt(password);
+    setPending(false);
+    if (!unlocked) {
+      setStatus('That password did not unlock art.');
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ['phase1-creature-picker-art'] });
+    await queryClient.invalidateQueries({ queryKey: ['phase1-monster-art'] });
+    setStatus('Art unlocked on this browser.');
+  }
+
+  return (
+    <div>
+      <label className='block text-sm' htmlFor='art-password'>Art password</label>
+      <div className='mt-1 flex items-center gap-1'>
+        <input
+          id='art-password'
+          type={visible ? 'text' : 'password'}
+          value={password}
+          autoComplete='off'
+          aria-label='Art password'
+          className='min-w-0 flex-1 rounded border border-p1-border bg-transparent px-2 py-1 text-sm'
+          onChange={(event) => setPassword(event.target.value)}
+        />
+        <button
+          type='button'
+          className='grid h-8 w-8 shrink-0 place-items-center rounded border border-p1-border text-p1-muted hover:bg-p1-hover hover:text-p1-text'
+          title={visible ? 'Hide art password' : 'Show art password'}
+          aria-label={visible ? 'Hide art password' : 'Show art password'}
+          onClick={() => setVisible((shown) => !shown)}
+        >
+          {visible ? <EyeOff size={15} /> : <Eye size={15} />}
+        </button>
+      </div>
+      <div className='mt-2 flex gap-2'>
+        <button
+          type='button'
+          disabled={pending || !password.trim()}
+          className='rounded-md border border-p1-border px-3 py-1.5 text-sm hover:bg-p1-hover disabled:opacity-50'
+          onClick={() => void save()}
+        >
+          Save
+        </button>
+        <button
+          type='button'
+          className='rounded-md border border-p1-border px-3 py-1.5 text-sm hover:bg-p1-hover'
+          onClick={() => {
+            clearArtPassword();
+            setPassword('');
+            setStatus('Art password cleared.');
+            void queryClient.invalidateQueries({ queryKey: ['phase1-creature-picker-art'] });
+            void queryClient.invalidateQueries({ queryKey: ['phase1-monster-art'] });
+          }}
+        >
+          Clear
+        </button>
+      </div>
+      {status && <p className='mt-2 text-xs text-p1-muted'>{status}</p>}
     </div>
   );
 }

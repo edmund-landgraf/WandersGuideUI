@@ -1,4 +1,11 @@
-const PATHFINDER_API_ORIGIN = import.meta.env.VITE_PATHFINDER_API_ORIGIN || 'http://localhost:3333';
+const LOCAL_PATHFINDER_PREFIX = '/local-pf';
+
+function pathfinderApiOrigin() {
+  if (typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname)) {
+    return LOCAL_PATHFINDER_PREFIX;
+  }
+  return import.meta.env.VITE_PATHFINDER_API_ORIGIN || 'http://localhost:3333';
+}
 const ART_PASSWORD_COOKIE = 'wgui_art_password';
 const ART_PASSWORD_MAX_AGE = 60 * 60 * 24 * 180;
 
@@ -24,7 +31,7 @@ function normalizeName(name: string) {
 }
 
 async function searchCreatures(path: '/api/monsters' | '/api/npcs', name: string): Promise<MonsterRow[]> {
-  const url = `${PATHFINDER_API_ORIGIN}${path}?name=${encodeURIComponent(name)}&limit=25`;
+  const url = `${pathfinderApiOrigin()}${path}?name=${encodeURIComponent(name)}&limit=25`;
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Monster lookup failed (${response.status})`);
   const payload = (await response.json()) as { rows?: MonsterRow[] };
@@ -40,13 +47,13 @@ function pickMonsterRow(rows: MonsterRow[], name: string) {
 
 function resolveImageUrl(imageUrl: string) {
   if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
-  if (imageUrl.startsWith('/')) return `${PATHFINDER_API_ORIGIN}${imageUrl}`;
+  if (imageUrl.startsWith('/')) return `${pathfinderApiOrigin()}${imageUrl}`;
   return imageUrl;
 }
 
 function hostedMonsterImage(monsterId: number, size: 'thumb' | 'full') {
   const suffix = size === 'thumb' ? '/image/thumb' : '/image';
-  return `${PATHFINDER_API_ORIGIN}/api/monsters/${monsterId}${suffix}`;
+  return `${pathfinderApiOrigin()}/api/monsters/${monsterId}${suffix}`;
 }
 
 export function monsterArtUrl(monsterId: number, size: 'thumb' | 'full' = 'full') {
@@ -97,7 +104,7 @@ export function unlockMonsterArt(password: string) {
   if (!trimmed) return Promise.resolve(false);
   if (artUnlock && unlockedPassword === trimmed) return artUnlock;
   unlockedPassword = trimmed;
-  artUnlock = fetch(`${PATHFINDER_API_ORIGIN}/api/art/unlock`, {
+  artUnlock = fetch(`${pathfinderApiOrigin()}/api/art/unlock`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },

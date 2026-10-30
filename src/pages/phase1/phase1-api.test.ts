@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Character, Encounter } from '@schemas/content';
-import { encounterIncludesOwnCharacter, gmEncounterShownToPlayers, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
+import { encounterIncludesOwnCharacter, encounterMasksCombatants, gmEncounterShownToPlayers, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
 
 function encounter(partial: Partial<Encounter> & Pick<Encounter, 'id' | 'campaign_id' | 'combatants'>): Encounter {
   return {
@@ -34,7 +34,7 @@ describe('visibleCampaignEncounters', () => {
     expect(visibleCampaignEncounters([row], 21, true, new Set())).toHaveLength(1);
   });
 
-  it('shows a player only encounters that include their PC', () => {
+  it('shows an untoggled encounter only to a player whose PC is in it', () => {
     const own = ownCharacterIds([{ id: 44, user_id: 'player' } as Character], 'player');
     expect(visibleCampaignEncounters([fight], 21, false, own).map((item) => item.id)).toEqual([9]);
     expect(visibleCampaignEncounters([fight], 21, false, new Set([99]))).toEqual([]);
@@ -66,11 +66,18 @@ describe('visibleCampaignEncounters', () => {
     expect(visibleCampaignEncounters([shown], 21, false, new Set()).map((item) => item.id)).toEqual([3]);
   });
 
-  it('reads the GM switch as on when a player character is already in an untoggled encounter', () => {
-    expect(gmEncounterShownToPlayers(fight)).toBe(true);
+  it('reads the GM switch as on only when the encounter was explicitly shown to the campaign', () => {
+    expect(gmEncounterShownToPlayers(fight)).toBe(false);
     const empty = encounter({ id: 4, campaign_id: 21, combatants: { list: [] } });
     expect(gmEncounterShownToPlayers(empty)).toBe(false);
     expect(gmEncounterShownToPlayers(encounter({ ...empty, meta_data: { player_visible: true } }))).toBe(true);
+    expect(gmEncounterShownToPlayers(encounter({ ...fight, meta_data: { player_visible: false } }))).toBe(false);
+  });
+
+  it('masks combatants unless the GM turned the switch off', () => {
+    expect(encounterMasksCombatants(fight)).toBe(true);
+    expect(encounterMasksCombatants(encounter({ ...fight, meta_data: { mask_combatants: true } }))).toBe(true);
+    expect(encounterMasksCombatants(encounter({ ...fight, meta_data: { mask_combatants: false } }))).toBe(false);
   });
 
   it('matches a PC stored only on combatant.data.id', () => {
