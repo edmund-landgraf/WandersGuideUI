@@ -12,7 +12,8 @@ import { flatten } from 'lodash-es';
 import { ChevronDown, ChevronRight, UserRound, X } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { ConfirmDialog } from './phase1-campaign-settings';
 import { gmEncounterShownToPlayers, phase1Request } from './phase1-api';
 import { combatantDisplayName } from './phase1-initiative';
 import { creatureStatBlockText } from './phase1-creature-defenses';
@@ -274,18 +275,20 @@ function Portrait({ character }: { character: Character }) {
   );
 }
 
-function PlayerVisibleToggle({ shown, name, onChange }: { shown: boolean; name: string; onChange: (shown: boolean) => void }) {
+function PlayerVisibleToggle({ shown, mixed = false, disabled = false, name, onChange }: { shown: boolean; mixed?: boolean; disabled?: boolean; name: string; onChange: (shown: boolean) => void }) {
+  const on = shown && !mixed;
   return (
     <button
       type='button'
       role='switch'
-      aria-checked={shown}
-      aria-label={shown ? `Hide ${name} from players` : `Show ${name} to players`}
-      title={shown ? 'Shown to players' : 'Hidden from players'}
-      className={`relative h-4 w-8 shrink-0 rounded-full border ${shown ? 'border-p1-accent bg-p1-accent/80' : 'border-p1-border bg-p1-inset'}`}
-      onClick={() => onChange(!shown)}
+      aria-checked={mixed ? 'mixed' : shown}
+      aria-label={mixed ? `Show or hide ${name}` : on ? `Hide ${name} from players` : `Show ${name} to players`}
+      title={mixed ? 'Some shown to players' : on ? 'Shown to players' : 'Hidden from players'}
+      disabled={disabled}
+      className={`relative h-4 w-8 shrink-0 rounded-full border disabled:opacity-40 ${on ? 'border-p1-accent bg-p1-accent/80' : 'border-p1-border bg-p1-inset'}`}
+      onClick={() => onChange(!on)}
     >
-      <span className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-p1-text transition-all ${shown ? 'left-4' : 'left-0.5'}`} />
+      <span className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-p1-text transition-all ${mixed ? 'left-2' : on ? 'left-4' : 'left-0.5'}`} />
     </button>
   );
 }
@@ -296,7 +299,7 @@ function encounterCounts(encounter: Encounter) {
   return { total: list.length, allies, enemies: list.length - allies };
 }
 
-function FolderMoveMenu({ x, y, folders, ids, onClose, onMove }: { x: number; y: number; folders: EncounterFolder[]; ids: number[]; onClose: () => void; onMove: (folderId: string | null) => void }) {
+function FolderMoveMenu({ x, y, folders, ids, note, onClose, onMove, onAddNote, onEditNote, onDeleteNote }: { x: number; y: number; folders: EncounterFolder[]; ids: number[]; note: CampaignHomeNote | null; onClose: () => void; onMove: (folderId: string | null) => void; onAddNote?: () => void; onEditNote?: () => void; onDeleteNote?: () => void }) {
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -305,11 +308,16 @@ function FolderMoveMenu({ x, y, folders, ids, onClose, onMove }: { x: number; y:
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
   const left = Math.min(x, window.innerWidth - 200);
-  const top = Math.min(y, window.innerHeight - 48);
+  const top = Math.min(y, window.innerHeight - 160);
+  const single = ids.length === 1;
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} onContextMenu={(event) => { event.preventDefault(); onClose(); }} />
       <div role='menu' aria-label={`Move ${ids.length} encounter${ids.length === 1 ? '' : 's'}`} className='fixed z-[110] min-w-44 border border-p1-border bg-p1-surface py-1 text-xs text-p1-text shadow-2xl' style={{ left, top }}>
+        {single && !note && onAddNote ? <button type='button' role='menuitem' className='block w-full px-3 py-1.5 text-left hover:bg-p1-hover' onClick={onAddNote}>Add note</button> : null}
+        {single && note && onEditNote ? <button type='button' role='menuitem' className='block w-full px-3 py-1.5 text-left hover:bg-p1-hover' onClick={onEditNote}>Edit note</button> : null}
+        {single && note && onDeleteNote ? <button type='button' role='menuitem' className='block w-full px-3 py-1.5 text-left text-p1-danger-soft hover:bg-p1-hover' onClick={onDeleteNote}>Delete note</button> : null}
+        {single && (onAddNote || onEditNote) ? <div className='my-1 h-px bg-p1-border' /> : null}
         <button type='button' role='menuitem' className='block w-full px-3 py-1.5 text-left hover:bg-p1-hover' onClick={() => onMove(null)}>Ungrouped</button>
         <FolderMoveItems folders={folders} parentId={null} onMove={onMove} />
       </div>
@@ -386,11 +394,13 @@ function folderDescendantIds(folders: EncounterFolder[], id: string) {
   return doomed;
 }
 
-export function Phase1CampaignHome({ campaignId, players, encounters, notes = [], wide = false, isGm = false, folders = [], onFoldersChange, onMoveEncounter, onTogglePlayerVisible }: { campaignId: number; players: Character[]; encounters: Encounter[]; notes?: CampaignHomeNote[]; wide?: boolean; isGm?: boolean; folders?: EncounterFolder[]; onFoldersChange?: (folders: EncounterFolder[]) => void; onMoveEncounter?: (encounter: Encounter, folderId: string | null) => void; onTogglePlayerVisible?: (encounter: Encounter, shown: boolean) => void }) {
+export function Phase1CampaignHome({ campaignId, players, encounters, notes = [], wide = false, isGm = false, folders = [], onFoldersChange, onMoveEncounter, onTogglePlayerVisible, onAddEncounterNote, onDeleteNote }: { campaignId: number; players: Character[]; encounters: Encounter[]; notes?: CampaignHomeNote[]; wide?: boolean; isGm?: boolean; folders?: EncounterFolder[]; onFoldersChange?: (folders: EncounterFolder[]) => void; onMoveEncounter?: (encounter: Encounter, folderId: string | null) => void; onTogglePlayerVisible?: (encounter: Encounter, shown: boolean) => void; onAddEncounterNote?: (encounter: Encounter) => void; onDeleteNote?: (index: number) => void }) {
+  const navigate = useNavigate();
   const [windows, setWindows] = useState<PcWindow[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [dropFolderId, setDropFolderId] = useState<string | null>(null);
   const [moveMenu, setMoveMenu] = useState<{ x: number; y: number; ids: number[] } | null>(null);
+  const [pendingNoteDelete, setPendingNoteDelete] = useState<CampaignHomeNote | null>(null);
   const [folderMenu, setFolderMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const selectionAnchor = useRef<number | null>(null);
   const [openPartyIds, setOpenPartyIds] = useState<number[]>([]);
@@ -785,6 +795,8 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
 
   const openFolder = openFolderId ? folders.find((folder) => folder.id === openFolderId) : undefined;
   const listedEncounters = openFolder ? encountersIn(openFolder.id) : ungrouped;
+  const allListedShown = listedEncounters.length > 0 && listedEncounters.every((encounter) => gmEncounterShownToPlayers(encounter));
+  const someListedShown = listedEncounters.some((encounter) => gmEncounterShownToPlayers(encounter));
 
   useEffect(() => {
     setSelectedIds([]);
@@ -1057,7 +1069,24 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
             <thead className='sticky top-0 border-b border-p1-border bg-p1-header/92 text-[10px] uppercase text-p1-faint'>
               <tr>
                 <th className='px-2 py-1.5 text-left font-medium'>Encounter</th>
-                {isGm ? <th className='w-20 px-2 py-1.5 text-left font-medium'>Players</th> : null}
+                {isGm ? (
+                  <th className='w-28 px-2 py-1.5 text-left font-medium'>
+                    <span className='inline-flex items-center gap-1.5'>
+                      Players
+                      <PlayerVisibleToggle
+                        shown={allListedShown}
+                        mixed={someListedShown && !allListedShown}
+                        disabled={listedEncounters.length === 0}
+                        name='all listed encounters'
+                        onChange={(shown) => {
+                          for (const encounter of listedEncounters) {
+                            if (gmEncounterShownToPlayers(encounter) !== shown) onTogglePlayerVisible?.(encounter, shown);
+                          }
+                        }}
+                      />
+                    </span>
+                  </th>
+                ) : null}
                 <th className='px-2 py-1.5 text-left font-medium'>Notes</th>
                 <th className='w-24 px-2 py-1.5 text-left font-medium'>Combatants</th>
                 <th className='w-24 px-2 py-1.5 text-left font-medium'>Allies</th>
@@ -1113,6 +1142,7 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
           y={moveMenu.y}
           folders={folders}
           ids={moveMenu.ids}
+          note={moveMenu.ids.length === 1 ? notes.find((note) => encounterNamesMatch(note.name, encounters.find((item) => item.id === moveMenu.ids[0])?.name)) ?? null : null}
           onClose={() => setMoveMenu(null)}
           onMove={(folderId) => {
             for (const id of moveMenu.ids) {
@@ -1120,6 +1150,35 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
               if (encounter) onMoveEncounter?.(encounter, folderId);
             }
             setMoveMenu(null);
+          }}
+          onAddNote={isGm && onAddEncounterNote ? () => {
+            const encounter = encounters.find((item) => item.id === moveMenu.ids[0]);
+            setMoveMenu(null);
+            if (encounter) onAddEncounterNote(encounter);
+          } : undefined}
+          onEditNote={isGm ? () => {
+            const encounter = encounters.find((item) => item.id === moveMenu.ids[0]);
+            const note = notes.find((item) => encounterNamesMatch(item.name, encounter?.name));
+            setMoveMenu(null);
+            if (note) navigate(`/phase1/campaign/${campaignId}/notes/${note.index}`);
+          } : undefined}
+          onDeleteNote={isGm && onDeleteNote ? () => {
+            const encounter = encounters.find((item) => item.id === moveMenu.ids[0]);
+            const note = notes.find((item) => encounterNamesMatch(item.name, encounter?.name));
+            setMoveMenu(null);
+            if (note) setPendingNoteDelete(note);
+          } : undefined}
+        />
+      ) : null}
+      {pendingNoteDelete ? (
+        <ConfirmDialog
+          title='Delete note'
+          message={`Delete the note linked to "${encounterDisplayName(pendingNoteDelete.name)}"?`}
+          confirmLabel='Delete'
+          onCancel={() => setPendingNoteDelete(null)}
+          onConfirm={() => {
+            onDeleteNote?.(pendingNoteDelete.index);
+            setPendingNoteDelete(null);
           }}
         />
       ) : null}

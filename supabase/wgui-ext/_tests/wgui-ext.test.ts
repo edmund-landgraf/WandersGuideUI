@@ -257,6 +257,45 @@ Deno.test({
 });
 
 Deno.test({
+  name: 'wgui-ext: player_visible shows an encounter to the whole party and false hides it',
+  ignore: skip,
+  async fn() {
+    const gm = await createSignedInUser();
+    const { userId: playerId, jwt: playerJwt } = await ensureTestUser();
+    const campaign = await seedCampaign(gm.userId);
+    const playerCharacter = await seedCharacter(playerId, campaign.id);
+    const shown = await seedEncounter(gm.userId, campaign.id, []);
+    const hidden = await seedEncounter(gm.userId, campaign.id, [playerCharacter.id]);
+    const shownUpdate = await admin.from('encounter').update({
+      meta_data: { ...(shown.meta_data ?? {}), player_visible: true },
+    }).eq('id', shown.id);
+    const hiddenUpdate = await admin.from('encounter').update({
+      meta_data: { ...(hidden.meta_data ?? {}), player_visible: false },
+    }).eq('id', hidden.id);
+    if (shownUpdate.error || hiddenUpdate.error) throw shownUpdate.error ?? hiddenUpdate.error;
+
+    try {
+      const playerResult = await callFunction(
+        'wgui-ext-find-encounter',
+        { campaign_id: campaign.id },
+        { token: playerJwt }
+      );
+      assertEquals(playerResult.body?.status, 'success');
+      assertEquals(
+        (playerResult.body.data as { id: number }[]).map((row) => row.id),
+        [shown.id],
+        'a shown encounter is visible without the player character; a hidden one is not, even when they are in it'
+      );
+    } finally {
+      await admin.from('encounter').delete().in('id', [shown.id, hidden.id]);
+      await admin.from('character').delete().eq('id', playerCharacter.id);
+      await admin.from('campaign').delete().eq('id', campaign.id);
+      await admin.auth.admin.deleteUser(gm.userId);
+    }
+  },
+});
+
+Deno.test({
   name: 'wgui-ext: non-members and unauthenticated callers are refused',
   ignore: skip,
   async fn() {

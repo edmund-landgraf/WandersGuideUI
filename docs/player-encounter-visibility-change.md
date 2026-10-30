@@ -67,8 +67,10 @@ pattern `find-campaign` uses. Authorization is:
 
 `wgui-ext-find-encounter` requires `campaign_id` in the body. Resolving it from the
 encounter row instead would let the row authorize itself. The GM receives every campaign
-encounter; a player receives only those whose `combatants.list` contains one of their
-characters, matched on `combatant.character` or `combatant.data.id`. Neither is redacted,
+encounter. A player receives a row when `meta_data.player_visible` is true, and does
+not receive it when that flag is false. When the flag is omitted, the older rule applies:
+the row is included only when `combatants.list` contains one of their characters, matched
+on `combatant.character` or `combatant.data.id`. Neither is redacted,
 which is what "no dual view" means in practice.
 
 `wgui-ext-find-campaign-characters` exists because character SELECT RLS covers self,

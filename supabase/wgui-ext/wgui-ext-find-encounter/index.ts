@@ -3,7 +3,7 @@ import { serve } from 'std/server';
 import type { Encounter } from '../_shared/content';
 import { connect, createServiceClient, fetchData } from '../_shared/helpers.ts';
 import { HttpError } from '../_shared/http-errors.ts';
-import { authorizeCampaign, encounterIncludesCharacter, sameNumericId } from '../_wgui-ext/shared.ts';
+import { authorizeCampaign, encounterListedForPlayer, sameNumericId } from '../_wgui-ext/shared.ts';
 
 interface FindCampaignEncountersBody {
   campaign_id?: number;
@@ -59,7 +59,8 @@ function withResolvedHitPoints<T extends Encounter>(encounter: T): T {
 }
 
 /**
- * Campaign encounters, for the GM *or* for a player whose PC is in the fight.
+ * Campaign encounters, for the GM, for a player whose PC is in the fight, or for any
+ * player when the GM has set meta_data.player_visible.
  *
  * Stock find-encounter runs on the caller's JWT against an owner-only policy, so it
  * returns [] for every player. This endpoint authorizes campaign membership explicitly
@@ -99,7 +100,7 @@ serve(async (req: Request) => {
 
     const visible = access.isGm
       ? scoped
-      : scoped.filter((encounter) => encounterIncludesCharacter(encounter, access.characterIds));
+      : scoped.filter((encounter) => encounterListedForPlayer(encounter, access.characterIds));
 
     return {
       status: 'success',

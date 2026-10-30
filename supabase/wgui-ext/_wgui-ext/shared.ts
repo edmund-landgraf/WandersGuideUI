@@ -34,6 +34,7 @@ export interface EncounterLike {
   id: number;
   campaign_id?: number | null;
   combatants?: { list?: CombatantLike[] | null } | null;
+  meta_data?: { player_visible?: boolean | null } | null;
 }
 
 /** What the caller is allowed to see in one campaign. */
@@ -182,6 +183,18 @@ export function encounterIncludesCharacter(
     const id = combatantCharacterId(combatant);
     return id !== null && characterIds.has(id);
   });
+}
+
+/**
+ * Whether a player may receive this encounter.
+ * `player_visible: true` shows it to the whole party. `false` hides it even from
+ * a player whose character is in the fight. Omitted keeps the older membership rule.
+ */
+export function encounterListedForPlayer(encounter: EncounterLike, characterIds: Set<number>): boolean {
+  const flag = encounter.meta_data?.player_visible;
+  if (flag === false) return false;
+  if (flag === true) return true;
+  return encounterIncludesCharacter(encounter, characterIds);
 }
 
 type DiceLogLike = {

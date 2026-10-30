@@ -1,5 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Crown, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, Image as ImageIcon, KeyRound, ListChecks, LogOut, Maximize2, Menu, Minimize2, Package, PanelLeft, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Crown, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, Image as ImageIcon, KeyRound, ListChecks, LogOut, Maximize2, Menu, Minimize2, Moon, Package, PanelLeft, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -2387,6 +2387,12 @@ export function Phase1CampaignPage() {
     updateCampaign.mutate({ ...campaignData, notes: { ...campaignData.notes, pages } });
     navigate(`/phase1/campaign/${campaignId}/notes/${pages.length - 1}`);
   }
+  function handleAddEncounterNote(encounter: Encounter) {
+    const pages = [...(campaignData.notes?.pages ?? [])];
+    if (pages.some((page) => encounterNamesMatch(page.name, encounter.name))) return;
+    pages.push({ name: encounter.name, icon: 'notebook', color: GUIDE_BLUE, contents: null, shared: false });
+    updateCampaign.mutate({ ...campaignData, notes: { ...campaignData.notes, pages } });
+  }
   function handleCreateEncounter(name: string) {
     const trimmed = name.trim();
     createEncounter.mutate(trimmed ? encounterDisplayName(trimmed) : nextEncounterName(visible.map((item) => item.name)));
@@ -2446,6 +2452,7 @@ export function Phase1CampaignPage() {
       onDeleteEncounter={handleDeleteEncounter}
       onDeleteAllEncounters={handleDeleteAllEncounters}
       onCreateNote={handleCreateNote}
+      onAddEncounterNote={isGm ? handleAddEncounterNote : undefined}
       onCreateEncounter={handleCreateEncounter}
       rosterSaving={updateEncounter.isPending || patchEncounterDice.isPending}
       campaignSaving={updateCampaign.isPending}
@@ -2456,8 +2463,8 @@ export function Phase1CampaignPage() {
 }
 
 
-function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, viewingSettings, isGm, sessionUserId, onUpdateEncounter, onAddAllPcsToEncounters, onPatchEncounterDice, onUpdateCharacter, onUpdateCampaign, onResetJoinKey, onKickPlayer, onDeleteCampaign, onDeleteNote, onDeleteAllNotes, onDeleteEncounter, onDeleteAllEncounters, onCreateNote, onCreateEncounter, rosterSaving, campaignSaving, rosterError, campaignError }: {
-  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onPatchEncounterDice?: (patch: { encounterId: number; campaignId: number; dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] }) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteAllNotes?: () => void; onDeleteEncounter: (id: number) => void; onDeleteAllEncounters?: () => Promise<void> | void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; campaignError: Error | null;
+function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, viewingSettings, isGm, sessionUserId, onUpdateEncounter, onAddAllPcsToEncounters, onPatchEncounterDice, onUpdateCharacter, onUpdateCampaign, onResetJoinKey, onKickPlayer, onDeleteCampaign, onDeleteNote, onDeleteAllNotes, onDeleteEncounter, onDeleteAllEncounters, onCreateNote, onAddEncounterNote, onCreateEncounter, rosterSaving, campaignSaving, rosterError, campaignError }: {
+  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onPatchEncounterDice?: (patch: { encounterId: number; campaignId: number; dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] }) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteAllNotes?: () => void; onDeleteEncounter: (id: number) => void; onDeleteAllEncounters?: () => Promise<void> | void; onCreateNote: (name: string) => void; onAddEncounterNote?: (encounter: Encounter) => void; onCreateEncounter: (name: string) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; campaignError: Error | null;
 }) {
   const standalone = campaign == null;
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -3219,6 +3226,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     const page = pages[index];
     const nextName = encounterDisplayName(trimmed);
     if (!page || !nextName || page.name === nextName) return;
+    if (encounters.some((encounter) => encounterNamesMatch(encounter.name, page.name))) return;
     pages[index] = { ...page, name: nextName };
     onUpdateCampaign({ ...campaign, notes: { ...campaign.notes, pages } });
   }
@@ -3397,6 +3405,8 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               onMoveEncounter={(encounter, folderId) => onUpdateEncounter({ ...encounter, meta_data: { ...encounter.meta_data, folder_id: folderId } })}
               onTogglePlayerVisible={(encounter, shown) => onUpdateEncounter({ ...encounter, meta_data: { ...encounter.meta_data, player_visible: shown } })}
               notes={notePages.map(({ page, index }) => ({ index, name: page.name, shared: page.shared, markdown: noteContentsToMarkdown(page.contents) }))}
+              onAddEncounterNote={onAddEncounterNote}
+              onDeleteNote={isGm ? onDeleteNote : undefined}
             />
           ) : (
             <>
@@ -3768,16 +3778,12 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
   const [benchActive, setBenchActive] = useState(false);
   const [outActive, setOutActive] = useState(false);
   const [notesOpen, setNotesOpen] = useState(selectedNoteIndex != null);
-  const [encountersOpen, setEncountersOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(viewingSettings);
   const [benchOpen, setBenchOpen] = useState(true);
   const [outOpen, setOutOpen] = useState(true);
   useEffect(() => {
     if (viewingSettings) setSettingsOpen(true);
   }, [viewingSettings]);
-  useEffect(() => {
-    setEncountersOpen(false);
-  }, [selectedEncounter?.id]);
   const [menu, setMenu] = useState<RailContextTarget | null>(null);
   const [sectionMenu, setSectionMenu] = useState<{ kind: 'note' | 'encounter'; x: number; y: number } | null>(null);
   const [createKind, setCreateKind] = useState<'note' | 'encounter' | null>(null);
@@ -3944,12 +3950,33 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
           </div>}
         </>
       )}
+      {!standalone && isGm && campaign && (
+        <>
+          <RailLabel icon={<BookOpen size={14} />} label='Notes' count={notePages.length} open={notesOpen} onToggle={() => setNotesOpen((value) => !value)} onContextMenu={(event) => openSectionMenu(event, 'note')} />
+          {notesOpen && (
+            <nav className='px-2 pb-4' onContextMenu={(event) => openSectionMenu(event, 'note')}>
+              {notePages.map(({ page, index }) => (
+                <Link
+                  key={`${page.name}-${index}`}
+                  to={`/phase1/campaign/${campaign.id}/notes/${index}`}
+                  onContextMenu={(event) => openRailMenu(event, { kind: 'note', id: index, name: encounterDisplayName(page.name) })}
+                  className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedNoteIndex === index ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
+                >
+                  <span className='block truncate'>{encounterDisplayName(page.name)}</span>
+                  <span className='mt-0.5 block text-[11px] text-p1-faint'>{page.shared ? 'Shared with party' : 'GM only'}</span>
+                </Link>
+              ))}
+              {notePages.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>No campaign notes yet.</p>}
+            </nav>
+          )}
+        </>
+      )}
       {menu && (
         <RailContextMenu
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
-          onRename={() => {
+          onRename={menu.kind === 'note' && encounters.some((encounter) => encounterNamesMatch(encounter.name, menu.name)) ? undefined : () => {
             setMenu(null);
             setPendingRename(menu);
           }}
@@ -3973,7 +4000,6 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
             const kind = sectionMenu.kind;
             setSectionMenu(null);
             if (kind === 'note') setNotesOpen(true);
-            else setEncountersOpen(true);
             setCreateKind(kind);
           }}
           onAddAllPcs={sectionMenu.kind === 'encounter' && onAddAllPcsToEncounters ? () => {
@@ -4508,7 +4534,7 @@ function BenchContextMenu({ x, y, showAdd, showLeave, addAllDisabled, showRemove
         )}
         {showLeave && (
           <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onLeave}>
-            <UserMinus size={14} /> Leave party
+            <Moon size={14} /> Take a rest
           </button>
         )}
         <button type='button' role='menuitem' disabled={addAllDisabled} className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint disabled:hover:bg-transparent' onClick={onAddAll}>
