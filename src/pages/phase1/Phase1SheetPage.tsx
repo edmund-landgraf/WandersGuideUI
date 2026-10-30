@@ -362,6 +362,102 @@ export function Phase1SheetPage() {
     });
   }
 
+  const identityCard = (
+    <section className='relative z-30 flex h-full flex-wrap items-start gap-2 border border-p1-border bg-p1-surface p-2'>
+      <button
+        type='button'
+        className='grid h-12 w-12 shrink-0 place-items-center overflow-hidden border border-p1-border bg-p1-inset text-p1-faint hover:border-p1-accent/60 disabled:hover:border-p1-border'
+        title={canEdit ? 'Change portrait' : character.details?.image_url ? character.name : undefined}
+        disabled={!canEdit}
+        onClick={() => {
+          if (canEdit) setPortraitOpen(true);
+        }}
+      >
+        {character.details?.image_url ? (
+          <img src={character.details.image_url} alt='' className='h-full w-full object-cover' />
+        ) : (
+          <User size={18} />
+        )}
+      </button>
+      <div className='min-w-0 flex-1'>
+        <div className='flex flex-wrap items-baseline gap-2'>
+          <h1 className='truncate text-lg font-semibold leading-tight'>{character.name}</h1>
+          <span className='text-xs text-p1-faint'>Level {character.level}</span>
+          {isAnonymousPublicView && (
+            <span className='border border-p1-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-p1-muted'>
+              Read only
+            </span>
+          )}
+        </div>
+        <p className='truncate text-sm text-p1-muted'>
+          {identityParts.length > 0
+            ? identityParts.map((part, index) => (
+                <span key={part.label}>
+                  {index > 0 ? ' · ' : null}
+                  <span title={part.label}>{part.name}</span>
+                </span>
+              ))
+            : 'Ancestry, background, and class load with calculated details.'}
+        </p>
+        <div className='mt-1.5 flex flex-wrap items-center gap-1.5'>
+          {canEdit && <button type='button' className='toolbar-button' onClick={() => setRestOpen(true)}><RotateCcw size={14} /> Rest</button>}
+          <div className='toolbar-button'>
+            <Star size={14} />
+            Hero
+            {canEdit ? (
+              <span className='ml-2 flex items-center gap-1'>
+                <button type='button' onClick={() => patchCharacter((current) => ({ ...current, hero_points: Math.max(0, (current.hero_points ?? 0) - 1) }))}>-</button>
+                <strong>{character.hero_points ?? 0}</strong>
+                <button type='button' onClick={() => patchCharacter((current) => ({ ...current, hero_points: Math.min(3, (current.hero_points ?? 0) + 1) }))}>+</button>
+              </span>
+            ) : <strong className='ml-2'>{character.hero_points ?? 0}</strong>}
+          </div>
+          {view === 'builder' ? (
+            <button type='button' className='toolbar-button' onClick={() => setSearchParams({}, { replace: true })} title='Character sheet'>
+              <User size={14} /> Sheet
+            </button>
+          ) : isOwner ? (
+            <button type='button' className='toolbar-button' onClick={() => setSearchParams({ view: 'builder', step: 'builder' }, { replace: true })} title='Character builder'>
+              <Hammer size={14} /> Builder
+            </button>
+          ) : null}
+          <Phase1CharacterMenu
+            character={character}
+            canEdit={canEdit}
+            xpDraft={xpDraft}
+            onXpDraftChange={setXpDraft}
+            onXpCommit={() => {
+              const value = Number.parseInt(xpDraft, 10);
+              if (Number.isFinite(value)) patchCharacter((current) => ({ ...current, experience: Math.max(0, value) }));
+            }}
+          />
+          {showBuilderReminder && (
+            <button
+              type='button'
+              className='toolbar-button border-p1-accent/50 text-p1-accent-soft'
+              onClick={() =>
+                setSearchParams(
+                  remainingChoices > 0 ? { view: 'builder', step: 'builder' } : { view: 'builder' },
+                  { replace: true }
+                )
+              }
+            >
+              <Hammer size={14} />
+              {remainingChoices > 0
+                ? `${remainingChoices} ${remainingChoices === 1 ? 'choice' : 'choices'} remaining`
+                : 'Finish setup'}
+              {choiceCounts && remainingChoices > 0 && (
+                <span className='text-p1-faint'>
+                  {choiceCounts.current}/{choiceCounts.max}
+                </span>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+
   return (
     <div className={`relative flex h-dvh min-h-0 flex-col overflow-hidden bg-p1-page text-p1-text${sheetArtUrl ? ` p1-sheet-has-art p1-sheet-art-${artTone}` : ''}`}>
       {sheetArtUrl && (
@@ -387,122 +483,18 @@ export function Phase1SheetPage() {
           <Phase1CssThemeToggle />
         </div>
       </header>
-      <main className={`relative z-10 mx-auto min-h-0 w-full flex-1 overflow-y-scroll px-4 py-6 pb-28 sm:pb-10 ${view === 'builder' ? 'max-w-6xl' : 'max-w-5xl'}`}>
-        <section className='relative z-30 mb-4 flex flex-wrap items-start gap-4 border border-p1-border bg-p1-surface p-4'>
-          <button
-            type='button'
-            className='grid h-20 w-20 shrink-0 place-items-center overflow-hidden border border-p1-border bg-p1-inset text-p1-faint hover:border-p1-accent/60 disabled:hover:border-p1-border'
-            title={canEdit ? 'Change portrait' : character.details?.image_url ? character.name : undefined}
-            disabled={!canEdit}
-            onClick={() => {
-              if (canEdit) setPortraitOpen(true);
-            }}
-          >
-            {character.details?.image_url ? (
-              <img src={character.details.image_url} alt='' className='h-full w-full object-cover' />
-            ) : (
-              <User size={28} />
-            )}
-          </button>
-          <div className='min-w-0 flex-1'>
-            <div className='flex flex-wrap items-center gap-2'>
-              <Eyebrow>Player character</Eyebrow>
-              {isAnonymousPublicView && (
-                <span className='border border-p1-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-p1-muted'>
-                  Read only
-                </span>
-              )}
-            </div>
-            <h1 className='mt-1 truncate text-2xl font-semibold'>{character.name}</h1>
-            <p className='mt-1 text-sm text-p1-muted'>
-              {identityParts.length > 0
-                ? identityParts.map((part, index) => (
-                    <span key={part.label}>
-                      {index > 0 ? ' · ' : null}
-                      <span title={part.label}>{part.name}</span>
-                    </span>
-                  ))
-                : 'Ancestry, background, and class load with calculated details.'}
-            </p>
-            <p className='mt-1 text-xs text-p1-faint'>Level {character.level}{canEdit || isAnonymousPublicView ? '' : ' · Read only'}</p>
-          </div>
-          <div className='flex min-w-0 flex-col items-end gap-2'>
-            <div className='flex flex-wrap items-center justify-end gap-2'>
-            {canEdit && <button type='button' className='toolbar-button' onClick={() => setRestOpen(true)}><RotateCcw size={14} /> Rest</button>}
-            <div className='toolbar-button'>
-              <Star size={14} />
-              Hero
-              {canEdit ? (
-                <span className='ml-2 flex items-center gap-1'>
-                  <button type='button' onClick={() => patchCharacter((current) => ({ ...current, hero_points: Math.max(0, (current.hero_points ?? 0) - 1) }))}>-</button>
-                  <strong>{character.hero_points ?? 0}</strong>
-                  <button type='button' onClick={() => patchCharacter((current) => ({ ...current, hero_points: Math.min(3, (current.hero_points ?? 0) + 1) }))}>+</button>
-                </span>
-              ) : <strong className='ml-2'>{character.hero_points ?? 0}</strong>}
-            </div>
-            {view === 'builder' ? (
-              <button
-                type='button'
-                className='toolbar-button'
-                onClick={() => setSearchParams({}, { replace: true })}
-                title='Character sheet'
-              >
-                <User size={14} /> Sheet
-              </button>
-            ) : isOwner ? (
-              <button
-                type='button'
-                className='toolbar-button'
-                onClick={() => setSearchParams({ view: 'builder', step: 'builder' }, { replace: true })}
-                title='Character builder'
-              >
-                <Hammer size={14} /> Builder
-              </button>
-            ) : null}
-            <Phase1CharacterMenu
-              character={character}
-              canEdit={canEdit}
-              xpDraft={xpDraft}
-              onXpDraftChange={setXpDraft}
-              onXpCommit={() => {
-                const value = Number.parseInt(xpDraft, 10);
-                if (Number.isFinite(value)) patchCharacter((current) => ({ ...current, experience: Math.max(0, value) }));
-              }}
-            />
-            </div>
-            {showBuilderReminder && (
-              <button
-                type='button'
-                className='toolbar-button border-p1-accent/50 text-p1-accent-soft'
-                onClick={() =>
-                  setSearchParams(
-                    remainingChoices > 0 ? { view: 'builder', step: 'builder' } : { view: 'builder' },
-                    { replace: true }
-                  )
-                }
-              >
-                <Hammer size={14} />
-                {remainingChoices > 0
-                  ? `${remainingChoices} ${remainingChoices === 1 ? 'choice' : 'choices'} remaining`
-                  : 'Finish setup'}
-                {choiceCounts && remainingChoices > 0 && (
-                  <span className='text-p1-faint'>
-                    {choiceCounts.current}/{choiceCounts.max}
-                  </span>
-                )}
-              </button>
-            )}
-          </div>
-        </section>
-
+      <main className={`relative z-10 mx-auto min-h-0 w-full flex-1 overflow-y-scroll px-4 py-3 pb-28 sm:pb-10 ${view === 'builder' ? 'max-w-6xl' : 'max-w-5xl'}`}>
         {view === 'builder' ? (
-          <Phase1BuilderWorkspace characterId={character.id} embedded seed={character} />
+          <>
+            <div className='mb-2'>{identityCard}</div>
+            <Phase1BuilderWorkspace characterId={character.id} embedded seed={character} />
+          </>
         ) : (
           <>
         {(modesQuery.data?.modes.length ?? 0) > 0 && (
-          <section className='mb-4 border border-p1-border bg-p1-surface p-3'>
-            <h2 className='mb-2 text-xs font-semibold uppercase text-p1-muted'>Modes</h2>
-            <div className='flex flex-wrap gap-2'>
+          <section className='mb-2 border border-p1-border bg-p1-surface px-2 py-1.5'>
+            <div className='flex flex-wrap items-center gap-2'>
+              <h2 className='text-[10px] font-semibold uppercase text-p1-muted'>Modes</h2>
               {modesQuery.data!.modes.map((mode) => {
                 const active = (character.meta_data?.active_modes ?? []).includes(labelToVariable(mode.name));
                 return (
@@ -510,7 +502,7 @@ export function Phase1SheetPage() {
                     key={mode.id}
                     type='button'
                     disabled={!canEdit}
-                    className={`border px-3 py-1.5 text-xs ${active ? 'border-p1-accent bg-p1-accent/15 text-p1-accent-soft' : 'border-p1-border text-p1-muted'}`}
+                    className={`border px-2 py-1 text-xs ${active ? 'border-p1-accent bg-p1-accent/15 text-p1-accent-soft' : 'border-p1-border text-p1-muted'}`}
                     onClick={() => toggleMode(mode.name)}
                   >
                     {mode.name}
@@ -522,6 +514,8 @@ export function Phase1SheetPage() {
         )}
 
         <HealthStatusPanel
+          layout='sheet'
+          identity={identityCard}
           combatant={combatant}
           calculatedStatus={statusQuery.data ?? null}
           calculating={statusQuery.isLoading}
@@ -530,12 +524,12 @@ export function Phase1SheetPage() {
           onPersistTempHp={canEdit ? persistTempHp : undefined}
         />
 
-        <div className='mt-4 grid grid-cols-4 border border-p1-border bg-p1-inset sm:grid-cols-8'>
+        <div className='mt-2 grid grid-cols-4 border border-p1-border bg-p1-inset sm:grid-cols-8'>
           {SHEET_TABS.map((item) => (
-            <button key={item} className={`border-b-2 px-2 py-2.5 text-[11px] ${tab === item ? 'border-p1-accent text-p1-accent-soft' : 'border-transparent text-p1-faint hover:text-p1-text'}`} onClick={() => setTab(item)}>{item}</button>
+            <button key={item} className={`border-b-2 px-2 py-1.5 text-[11px] ${tab === item ? 'border-p1-accent text-p1-accent-soft' : 'border-transparent text-p1-faint hover:text-p1-text'}`} onClick={() => setTab(item)}>{item}</button>
           ))}
         </div>
-        <div className='border border-t-0 border-p1-border bg-p1-inset p-4'>
+        <div className='border border-t-0 border-p1-border bg-p1-inset p-2'>
           {tab === 'Skills' && <SkillsActionsPanel combatant={combatant} />}
           {tab === 'Inventory' && <InventoryPanel combatant={combatant} itemActions={itemActions} status={statusQuery.data ?? null} />}
           {tab === 'Spells' && <SpellsPanel combatant={combatant} spellActions={spellActions} />}

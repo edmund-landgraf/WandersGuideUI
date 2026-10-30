@@ -49,7 +49,7 @@ function initiativeOf(encounter: Encounter, id: string) {
 
 export async function loadTacticsBundle(campaignId: number, encounterId: number, userId: string) {
   const encounters = campaignId > 0
-    ? await loadPhase1CampaignEncounters(campaignId)
+    ? await loadPhase1CampaignEncounters(campaignId, undefined, userId)
     : await phase1Request<Encounter[]>('find-encounter', { user_id: userId });
   const encounter = (encounters ?? []).find((item) => item.id === encounterId);
   if (!encounter) throw new Error('Encounter not found.');

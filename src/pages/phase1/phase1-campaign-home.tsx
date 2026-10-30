@@ -987,7 +987,7 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
         </table>
       </section>
       <div className='h-px shrink-0 bg-p1-border' />
-      <section className={wide ? 'flex min-h-0 flex-1 py-2 pl-3 pr-10' : 'flex min-h-0 flex-1 py-2'}>
+      <section className={wide ? 'flex min-h-0 flex-1 bg-p1-page py-2 pl-3 pr-10' : 'flex min-h-0 flex-1 bg-p1-page py-2'}>
         <aside className='flex w-1/3 min-w-0 shrink-0 flex-col overflow-auto border-r border-p1-border pr-2'>
           <button
             type='button'

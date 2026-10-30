@@ -266,14 +266,38 @@ export async function loadPhase1SheetCharacter(characterId: number, userId: stri
   return null;
 }
 
-export async function loadPhase1CampaignEncounters(campaignId: number, accessToken?: string): Promise<Encounter[]> {
-  let results: Encounter[];
+export async function loadPhase1CampaignEncounters(campaignId: number, accessToken?: string, userId?: string): Promise<Encounter[]> {
+  let fromCampaign: Encounter[] = [];
   try {
-    results = asRecordList(
+    fromCampaign = asRecordList(
       await phase1Request<Encounter | Encounter[]>('wgui-ext-find-encounter', { campaign_id: campaignId }, accessToken)
     );
   } catch {
-    results = asRecordList(await phase1Request<Encounter | Encounter[]>('find-encounter', { campaign_id: campaignId }, accessToken));
+    try {
+      fromCampaign = asRecordList(
+        await phase1Request<Encounter | Encounter[]>('find-encounter', { campaign_id: campaignId }, accessToken)
+      );
+    } catch {
+      fromCampaign = [];
+    }
   }
-  return results.filter((item) => encounterBelongsToCampaign(item, campaignId));
+  // The original campaign page lists find-encounter({ user_id }) filtered by campaign.
+  // The extension can return an empty success (player filter, or a stack where the
+  // campaign_id read misses rows the owner query still has). Merge the owner's rows in.
+  let owned: Encounter[] = [];
+  if (userId) {
+    try {
+      owned = asRecordList(await phase1Request<Encounter | Encounter[]>('find-encounter', { user_id: userId }, accessToken));
+    } catch {
+      owned = [];
+    }
+  }
+  const byId = new Map<number, Encounter>();
+  for (const item of [...fromCampaign, ...owned]) {
+    if (!encounterBelongsToCampaign(item, campaignId)) continue;
+    const id = numericId(item.id);
+    if (id == null || byId.has(id)) continue;
+    byId.set(id, item);
+  }
+  return [...byId.values()];
 }

@@ -2147,7 +2147,7 @@ export function Phase1CampaignPage() {
     enabled,
     refetchInterval: 4000,
     queryFn: async () => {
-      const fetched = overlayInitiativeLogs(await loadPhase1CampaignEncounters(campaignId, session!.access_token), initiativeLogsRef.current);
+      const fetched = overlayInitiativeLogs(await loadPhase1CampaignEncounters(campaignId, session!.access_token, session!.user.id), initiativeLogsRef.current);
       const diceWriteInFlight = queryClient.isMutating({ mutationKey: ['phase1-patch-encounter-dice', campaignId] }) > 0
         || queryClient.isMutating({ mutationKey: ['phase1-update-encounter', campaignId] }) > 0;
       if (!diceWriteInFlight) adoptServerDiceLogs(fetched, diceLogsRef.current);
@@ -3009,6 +3009,10 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   async function rollSingleChallenge(combatantId: string, challengeId: string, x: number, y: number, preferredStat?: string) {
     const challenge = findAmbaChallenge(ambaChallenges, challengeId);
     if (!challenge) return;
+    if (!isGm) {
+      const target = activeCombatants.find((item) => item._id === combatantId);
+      if (!target || target.type !== 'CHARACTER' || !canManageCombatant(target)) return;
+    }
     const mapped = preferredStat || mapAmbaChallengeStat(challenge, DICE_CHECK_VALUES) || '';
     await rollSingleAgainst(combatantId, mapped, challenge.check.dc, challenge.title, challenge, x, y);
   }
@@ -3474,7 +3478,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
                   </>
                 ) : (
                   <>
-                    <CombatantGrid combatants={diceGridRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onSingleCheck={!rosterSaving ? rollSingleCheck : undefined} onSingleChallenge={isGm && !rosterSaving && ambaChallenges.length > 0 ? rollSingleChallenge : undefined} challenges={ambaChallenges} dice={{ challengeId: isGm ? diceState?.challenge_id : undefined, checkStat: diceStat ?? undefined, columnLabel: checkStatLabel(diceStat ?? undefined), dc: diceDc, results: !isGm && diceState?.results_audience === 'private' ? {} : diceState?.results ?? {}, emptyMessage: livingActive.length === 0 ? 'No combatants in this encounter yet. Add a creature or a party member from the bench.' : diceGridRows.length === 0 ? 'No combatants match this side. Switch Allies, Enemies, or Both above.' : 'Right-click a combatant to roll a check. Group rolls still use the toolbar.' }} playerView={!isGm} />
+                    <CombatantGrid combatants={diceGridRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onSingleCheck={!rosterSaving ? rollSingleCheck : undefined} onSingleChallenge={!rosterSaving && ambaChallenges.length > 0 ? rollSingleChallenge : undefined} challenges={ambaChallenges} dice={{ challengeId: isGm ? diceState?.challenge_id : undefined, checkStat: diceStat ?? undefined, columnLabel: checkStatLabel(diceStat ?? undefined), dc: diceDc, results: !isGm && diceState?.results_audience === 'private' ? {} : diceState?.results ?? {}, emptyMessage: livingActive.length === 0 ? 'No combatants in this encounter yet. Add a creature or a party member from the bench.' : diceGridRows.length === 0 ? 'No combatants match this side. Switch Allies, Enemies, or Both above.' : 'Right-click a combatant to roll a check. Group rolls still use the toolbar.' }} playerView={!isGm} />
                     <DiceRollLogPanel log={isGm ? (selectedEncounter?.meta_data.dice_roll_log ?? []) : playerAllyRoundLog(playerVisibleDiceRollLog(selectedEncounter?.meta_data.dice_roll_log ?? []))} canClear={isGm && !rosterSaving} canEdit={isGm && !rosterSaving} canRemoveEntry={(entry) => isGm || sameUserId(entry.initiated_by_user_id, sessionUserId)} onClear={clearDiceRollLog} onRemove={removeDiceRollLog} onUpdateNote={updateDiceRollNote} />
                   </>
                 )}
@@ -3853,6 +3857,23 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
           </>
         ) : null}
       </div>
+      <RailLabel icon={<Swords size={14} />} label='Encounters' count={encounters.length} open={encountersOpen} onToggle={() => setEncountersOpen((value) => !value)} onContextMenu={isGm ? (event) => openSectionMenu(event, 'encounter') : undefined} />
+      {encountersOpen && (
+        <nav className='px-2 pb-4' onContextMenu={isGm ? (event) => openSectionMenu(event, 'encounter') : undefined}>
+          {encounters.map((encounter) => (
+            <Link
+              key={encounter.id}
+              to={phase1EncounterPath(encounter.id, campaign?.id)}
+              onContextMenu={isGm ? (event) => openRailMenu(event, { kind: 'encounter', id: encounter.id, name: encounterDisplayName(encounter.name) }) : undefined}
+              className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedEncounter?.id === encounter.id ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
+            >
+              <span className='block truncate'>{encounterDisplayName(encounter.name)}</span>
+              {isGm && <span className='mt-0.5 block text-[11px] text-p1-faint'>{encounter.combatants.list.length} combatants</span>}
+            </Link>
+          ))}
+          {encounters.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>{standalone ? 'No standalone encounters yet.' : isGm ? 'No encounters in this campaign yet.' : 'None of your characters are in an encounter yet.'}</p>}
+        </nav>
+      )}
       {!standalone && isGm && campaign && (
         <>
           <RailLabel icon={<Settings size={14} />} label='Settings' open={settingsOpen} onToggle={() => setSettingsOpen((value) => !value)} />
@@ -3950,23 +3971,6 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
             {outCombatants.length === 0 && <p className='px-2 py-3 text-xs text-p1-faint'>{selectedEncounter ? 'No combatants out of the fight.' : 'No player characters out of the fight.'}</p>}
           </div>}
         </>
-      )}
-      <RailLabel icon={<Swords size={14} />} label='Encounters' count={encounters.length} open={encountersOpen} onToggle={() => setEncountersOpen((value) => !value)} onContextMenu={isGm ? (event) => openSectionMenu(event, 'encounter') : undefined} />
-      {encountersOpen && (
-        <nav className='px-2 pb-4' onContextMenu={isGm ? (event) => openSectionMenu(event, 'encounter') : undefined}>
-          {encounters.map((encounter) => (
-            <Link
-              key={encounter.id}
-              to={phase1EncounterPath(encounter.id, campaign?.id)}
-              onContextMenu={isGm ? (event) => openRailMenu(event, { kind: 'encounter', id: encounter.id, name: encounterDisplayName(encounter.name) }) : undefined}
-              className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedEncounter?.id === encounter.id ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
-            >
-              <span className='block truncate'>{encounterDisplayName(encounter.name)}</span>
-              {isGm && <span className='mt-0.5 block text-[11px] text-p1-faint'>{encounter.combatants.list.length} combatants</span>}
-            </Link>
-          ))}
-          {encounters.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>{standalone ? 'No standalone encounters yet.' : isGm ? 'No encounters in this campaign yet.' : 'None of your characters are in an encounter yet.'}</p>}
-        </nav>
       )}
       {!standalone && campaign && (
         <>
@@ -5528,7 +5532,7 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
           y={menu.y}
           combatant={menuCombatant}
           canCheck={Boolean(onSingleCheck)}
-          canChallenge={!playerView && Boolean(onSingleChallenge)}
+          canChallenge={Boolean(onSingleChallenge) && (!playerView || (menuCombatant.type === 'CHARACTER' && canManageCombatant(menuCombatant)))}
           selectedChallengeId={dice.challengeId}
           selectedStat={dice.checkStat}
           challenges={challenges ?? []}

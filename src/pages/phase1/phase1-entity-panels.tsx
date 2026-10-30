@@ -27,7 +27,6 @@ import CopperCoin from '@assets/images/currency/copper.png';
 import GoldCoin from '@assets/images/currency/gold.png';
 import PlatinumCoin from '@assets/images/currency/platinum.png';
 import SilverCoin from '@assets/images/currency/silver.png';
-import { lookupMonsterArt, monsterArtUrl, type Phase1MonsterArt } from './phase1-monster-image';
 import { addConditionWithSpawns, compiledConditions, removeConditionWithSpawns } from '@conditions/condition-handler';
 import { ConditionDetailModal, SelectConditionModal } from './phase1-conditions';
 import { ActionSymbol } from '@common/Actions';
@@ -1600,7 +1599,7 @@ function abilityGroupLabel(source: Phase1Ability['source']) {
   if (source === 'Feat') return 'Feats';
   return `${source} Abilities`;
 }
-export function HealthStatusPanel({ combatant, calculatedStatus, calculating, onChangeConditions, onPersistHpCurrent, onPersistTempHp }: { combatant: PopulatedCombatant; calculatedStatus?: Phase1CreatureStatus | null; calculating: boolean; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void }) {
+export function HealthStatusPanel({ combatant, calculatedStatus, calculating, onChangeConditions, onPersistHpCurrent, onPersistTempHp, layout = 'stack', identity }: { combatant: PopulatedCombatant; calculatedStatus?: Phase1CreatureStatus | null; calculating: boolean; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void; layout?: 'sheet' | 'stack'; identity?: ReactNode }) {
   const entity = combatant.data;
   const status = calculatedStatus ?? fallbackStatus(entity);  const resistanceSummary = status.resistances.length + status.weaknesses.length + status.immunities.length;
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1617,134 +1616,152 @@ export function HealthStatusPanel({ combatant, calculatedStatus, calculating, on
   const shield = getBestShield('CHARACTER', entity.inventory ?? undefined);
   const shieldHealth = shield ? getItemHealth(shield.item) : null;
   const currentHp = entity.hp_current ?? status.maxHp;
+  const speedDetail = status.otherSpeeds.join(', ');
 
-  return (
-    <div className='space-y-2.5'>
-      <div className='grid grid-cols-[minmax(0,1fr)_86px] gap-2.5'>
-        <section className='border border-p1-border bg-p1-surface'>
-          <div className='grid grid-cols-2 px-3 py-3 text-center'>
-            {canEditHp ? (
-              <EditableValueWithNote
-                label='Hit points'
-                displayValue={<><span className='text-p1-hp'>{currentHp}</span><span className='mx-1.5 text-p1-faint'>/</span>{status.maxHp}</>}
-                editValue={String(currentHp)}
-                canEdit
-                accentClass='text-p1-hp'
-                onCommit={(raw, note) => onPersistHpCurrent?.(raw, note)}
-              />
-            ) : (
-              <MetricButton disabled={!openStatDetail} onClick={() => openStatDetail?.('hp')} label='Hit points' value={<><span className='text-p1-hp'>{currentHp}</span><span className='mx-1.5 text-p1-faint'>/</span>{status.maxHp}</>} />
-            )}
-            {canEditTempHp ? (
-              <EditableValueWithNote
-                label='Temp. HP'
-                displayValue={entity.hp_temp || '-'}
-                editValue={entity.hp_temp ? String(entity.hp_temp) : ''}
-                canEdit
-                accentClass={entity.hp_temp ? 'text-p1-temp-hp' : 'text-p1-faint'}
-                onCommit={(raw, note) => onPersistTempHp?.(raw, note)}
-              />
-            ) : (
-              <Metric label='Temp. HP' value={entity.hp_temp || '-'} />
-            )}
-          </div>
+  const hitPoints = (
+    <section className='border border-p1-border bg-p1-surface'>
+      <div className='grid grid-cols-2 px-2 py-1.5 text-center'>
+        {canEditHp ? (
+          <EditableValueWithNote
+            label='Hit points'
+            displayValue={<><span className='text-p1-hp'>{currentHp}</span><span className='mx-1 text-p1-faint'>/</span>{status.maxHp}</>}
+            editValue={String(currentHp)}
+            canEdit
+            accentClass='text-p1-hp'
+            onCommit={(raw, note) => onPersistHpCurrent?.(raw, note)}
+          />
+        ) : (
+          <MetricButton disabled={!openStatDetail} onClick={() => openStatDetail?.('hp')} label='Hit points' value={<><span className='text-p1-hp'>{currentHp}</span><span className='mx-1 text-p1-faint'>/</span>{status.maxHp}</>} />
+        )}
+        {canEditTempHp ? (
+          <EditableValueWithNote
+            label='Temp. HP'
+            displayValue={entity.hp_temp || '-'}
+            editValue={entity.hp_temp ? String(entity.hp_temp) : ''}
+            canEdit
+            accentClass={entity.hp_temp ? 'text-p1-temp-hp' : 'text-p1-faint'}
+            onCommit={(raw, note) => onPersistTempHp?.(raw, note)}
+          />
+        ) : (
+          <Metric label='Temp. HP' value={entity.hp_temp || '-'} />
+        )}
+      </div>
+      <button
+        type='button'
+        disabled={!openStatDetail}
+        className='w-full border-t border-p1-border px-2 py-1 text-left text-[11px] leading-4 hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-transparent'
+        onClick={() => openStatDetail?.('resist')}
+      >
+        {resistanceSummary > 0 ? (
+          <>
+            <StatusLine label='Resist' values={status.resistances} />
+            <StatusLine label='Weak' values={status.weaknesses} />
+            <StatusLine label='Immune' values={status.immunities} />
+          </>
+        ) : (
+          <span className='block text-center text-[10px] text-p1-muted'>No resistances or weaknesses</span>
+        )}
+      </button>
+    </section>
+  );
+
+  const conditionCell = (
+    <section className='border border-p1-border bg-p1-surface px-2 py-1.5'>
+      <div className='flex items-center justify-center gap-1.5 text-xs text-p1-muted'>
+        <Activity size={14} />
+        Conditions
+        {canManage && (
           <button
             type='button'
-            disabled={!openStatDetail}
-            className='w-full border-t border-p1-border px-3 py-2 text-center text-[10px] text-p1-muted hover:bg-p1-hover hover:text-p1-text disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-p1-muted'
-            onClick={() => openStatDetail?.('resist')}
+            aria-label='Add condition'
+            className='grid h-4 w-4 place-items-center rounded-full bg-p1-hover text-p1-muted hover:text-p1-text'
+            onClick={() => setPickerOpen(true)}
           >
-            {resistanceSummary ? 'Resistances, weaknesses & immunities' : 'No resistances or weaknesses'}
+            <Plus size={10} strokeWidth={2.5} />
           </button>
-        </section>
-        <CreaturePortrait combatant={combatant} />
+        )}
       </div>
+      <div className='mt-1 flex max-h-[70px] min-h-6 flex-wrap items-start justify-center gap-1 overflow-y-auto'>
+        {conditions.length === 0 && <span className='text-[10px] italic text-p1-faint'>None active</span>}
+        {conditions.map((condition) => (
+          <button
+            key={`${condition.name}-${condition.source ?? 'direct'}`}
+            type='button'
+            className={`${CONDITION_PILL_CLASS} hover:border-p1-border hover:bg-p1-hover`}
+            title={condition.source ? `${conditionLabel(condition)} from ${condition.source}` : conditionLabel(condition)}
+            onClick={() => {
+              if (canManage && (condition.source || condition.value === undefined)) {
+                onChangeConditions?.(removeConditionWithSpawns(rawConditions, condition), null);
+                return;
+              }
+              setViewing(condition);
+            }}
+          >
+            {conditionLabel(condition)}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
 
-      {resistanceSummary > 0 && (
-        <button type='button' disabled={!openStatDetail} className='w-full border border-p1-border bg-p1-surface px-3 py-2 text-left text-[11px] leading-5 hover:border-p1-border hover:bg-p1-hover disabled:cursor-default disabled:hover:border-p1-border disabled:hover:bg-p1-surface' onClick={() => openStatDetail?.('resist')}>
-          <StatusLine label='Resist' values={status.resistances} />
-          <StatusLine label='Weak' values={status.weaknesses} />
-          <StatusLine label='Immune' values={status.immunities} />
+  const attributes = (
+    <section className='grid grid-cols-2 content-start gap-x-1.5 gap-y-0.5 border border-p1-border bg-p1-surface p-1.5'>
+      {ATTRIBUTE_LABELS.map(([key, label]) => <AttributePill key={key} label={label} value={status.attributes[key]} onClick={() => openStatDetail?.(key)} disabled={!openStatDetail} />)}
+    </section>
+  );
+
+  const armor = (
+    <section className='border border-p1-border bg-p1-surface'>
+      <div className='grid grid-cols-[72px_minmax(0,1fr)]'>
+        <button type='button' disabled={!openStatDetail} className='grid place-items-center border-r border-p1-border px-1 py-1 text-center hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-transparent' onClick={() => openStatDetail?.('ac')}>
+          <Shield size={16} className='text-p1-faint' />
+          <strong className='text-base leading-none'>{status.ac}</strong>
         </button>
-      )}
-
-      {combatant.type === 'CREATURE' && <section className='border border-p1-border bg-p1-surface px-3 py-2 text-center text-[11px] text-p1-muted'>
-        {status.recallKnowledge ? <><strong className='font-semibold text-p1-text'>Recall Knowledge</strong> <span className='italic text-p1-muted'>({[status.recallKnowledge.trait, status.recallKnowledge.rarity].filter(Boolean).join(', ')})</span> {status.recallKnowledge.skill} DC {status.recallKnowledge.dc}</> : <span className='text-p1-faint'>Recall Knowledge unavailable</span>}
-      </section>}
-
-      <section className='grid grid-cols-3 divide-x divide-p1-border border border-p1-border bg-p1-surface'>
-        <IconMetric icon={<Eye size={15} />} label='Perception' value={signed(status.perception)} detail={status.vision} onClick={() => openStatDetail?.('perception')} disabled={!openStatDetail} />
-        <IconMetric icon={<Footprints size={15} />} label='Speed' value={status.speed ? `${status.speed} ft.` : '-'} detail={status.otherSpeeds.join(', ') || 'Land speed'} onClick={() => openStatDetail?.('speed')} disabled={!openStatDetail} />
-        <div className='min-w-0 px-2 py-3 text-center'>
-          <div className='flex items-center justify-center gap-1.5 text-xs text-p1-muted'>
-            <Activity size={15} />
-            Conditions
-            {canManage && (
-              <button
-                type='button'
-                aria-label='Add condition'
-                className='grid h-4 w-4 place-items-center rounded-full bg-p1-hover text-p1-muted hover:bg-p1-hover hover:text-p1-text'
-                onClick={() => setPickerOpen(true)}
-              >
-                <Plus size={10} strokeWidth={2.5} />
-              </button>
-            )}
-          </div>
-          <div className='mt-1.5 flex min-h-6 flex-wrap items-center justify-center gap-1'>
-            {conditions.length === 0 && <span className='text-[9px] italic text-p1-faint'>None active</span>}
-            {conditions.map((condition) => (
-              <button
-                key={`${condition.name}-${condition.source ?? 'direct'}`}
-                type='button'
-                className={`${CONDITION_PILL_CLASS} hover:border-p1-border hover:bg-p1-hover`}
-                title={condition.source ? `${conditionLabel(condition)} from ${condition.source}` : conditionLabel(condition)}
-                onClick={() => {
-                  if (canManage && (condition.source || condition.value === undefined)) {
-                    onChangeConditions?.(removeConditionWithSpawns(rawConditions, condition), null);
-                    return;
-                  }
-                  setViewing(condition);
-                }}
-              >
-                {conditionLabel(condition)}
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className='grid grid-cols-[42%_58%] border border-p1-border bg-p1-surface'>
-        <button type='button' disabled={!openStatDetail} className='grid place-items-center border-r border-p1-border px-3 py-3 text-center hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-transparent' onClick={() => openStatDetail?.('ac')}>
-          <Shield size={26} className='mb-1 text-p1-faint' />
-          <strong className='text-xl leading-none'>{status.ac}</strong>
-          <span className='mt-1 text-[9px] uppercase text-p1-faint'>Armor class</span>
-        </button>
-        <div className='divide-y divide-white/[0.07] px-3 py-1.5'>
+        <div className='divide-y divide-white/[0.07] px-2'>
           <DefenseRow label='Fortitude' value={status.fortitude} onClick={() => openStatDetail?.('fortitude')} disabled={!openStatDetail} />
           <DefenseRow label='Reflex' value={status.reflex} onClick={() => openStatDetail?.('reflex')} disabled={!openStatDetail} />
           <DefenseRow label='Will' value={status.will} onClick={() => openStatDetail?.('will')} disabled={!openStatDetail} />
-          <button type='button' disabled={!openStatDetail} className='flex w-full items-center py-1.5 text-left text-xs hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-transparent' onClick={() => openStatDetail?.('classDc')}>
-            <span className='text-p1-muted'>Class DC</span>
-            <strong className='ml-auto'>{status.classDc}</strong>
-          </button>
         </div>
-      </section>
+      </div>
       {shield && shieldHealth && (
-        <button type='button' className='flex w-full items-center gap-3 border border-p1-border bg-p1-surface px-3 py-2 text-left text-xs hover:border-p1-border hover:bg-p1-hover' onClick={() => setShieldItem(inventoryItemToPhase1(shield, 'equipped-shield'))}>
-          <Shield size={16} className='shrink-0 text-p1-faint' />
+        <button type='button' className='flex w-full items-center gap-2 border-t border-p1-border px-2 py-1 text-left text-[11px] hover:bg-p1-hover' onClick={() => setShieldItem(inventoryItemToPhase1(shield, 'equipped-shield'))}>
+          <Shield size={12} className='shrink-0 text-p1-faint' />
           <span className='min-w-0 flex-1 truncate text-p1-muted'>{shield.item.name}</span>
-          <span className='shrink-0 text-p1-text'>{signed(shield.item.meta_data?.ac_bonus ?? 0)} AC</span>
-          <span className='shrink-0 text-p1-muted'>Hardness {shieldHealth.hardness}</span>
-          <span className='shrink-0 text-p1-muted'>HP {shieldHealth.hp_current}/{shieldHealth.hp_max}</span>
+          <span className='shrink-0'>{signed(shield.item.meta_data?.ac_bonus ?? 0)}</span>
+          <span className='shrink-0 text-p1-muted'>H {shieldHealth.hardness}</span>
+          <span className='shrink-0 text-p1-muted'>{shieldHealth.hp_current}/{shieldHealth.hp_max}</span>
         </button>
       )}
+    </section>
+  );
 
-      <section className='grid grid-cols-2 gap-x-2 gap-y-1.5 border border-p1-border bg-p1-surface p-3'>
-        {ATTRIBUTE_LABELS.map(([key, label]) => <AttributePill key={key} label={label} value={status.attributes[key]} onClick={() => openStatDetail?.(key)} disabled={!openStatDetail} />)}
-      </section>
+  const senses = (
+    <section className='grid grid-cols-3 divide-x divide-p1-border border border-p1-border bg-p1-surface'>
+      <IconMetric icon={<Eye size={14} />} label='Perception' value={signed(status.perception)} detail={status.vision} onClick={() => openStatDetail?.('perception')} disabled={!openStatDetail} />
+      <IconMetric icon={<Footprints size={14} />} label='Speed' value={status.speed ? `${status.speed} ft.` : '-'} detail={speedDetail} onClick={() => openStatDetail?.('speed')} disabled={!openStatDetail} />
+      <IconMetric icon={null} label='Class DC' value={status.classDc} onClick={() => openStatDetail?.('classDc')} disabled={!openStatDetail} />
+    </section>
+  );
 
-      {calculating && !calculatedStatus && <p className='text-center text-[10px] text-p1-faint'>Calculating combatant statistics...</p>}
-      {calculatedStatus === null && <p className='text-center text-[10px] text-p1-danger-soft'>Using stored values; calculated statistics were unavailable.</p>}
+  const recall = combatant.type === 'CREATURE' ? (
+    <section className={`border border-p1-border bg-p1-surface px-2 py-1 text-center text-[11px] text-p1-muted ${layout === 'sheet' ? 'sm:col-span-3' : ''}`}>
+      {status.recallKnowledge ? <><strong className='font-semibold text-p1-text'>Recall Knowledge</strong> <span className='italic text-p1-muted'>({[status.recallKnowledge.trait, status.recallKnowledge.rarity].filter(Boolean).join(', ')})</span> {status.recallKnowledge.skill} DC {status.recallKnowledge.dc}</> : <span className='text-p1-faint'>Recall Knowledge unavailable</span>}
+    </section>
+  ) : null;
+
+  return (
+    <>
+    <div className={layout === 'sheet' ? 'grid grid-cols-1 gap-2 sm:grid-cols-3' : 'space-y-1.5'}>
+      {layout === 'sheet' ? identity : null}
+      {hitPoints}
+      {conditionCell}
+      {attributes}
+      {armor}
+      {senses}
+      {recall}
+      {calculating && !calculatedStatus && <p className={`text-center text-[10px] text-p1-faint ${layout === 'sheet' ? 'sm:col-span-3' : ''}`}>Calculating combatant statistics...</p>}
+      {calculatedStatus === null && <p className={`text-center text-[10px] text-p1-danger-soft ${layout === 'sheet' ? 'sm:col-span-3' : ''}`}>Using stored values; calculated statistics were unavailable.</p>}
+    </div>
       {pickerOpen && (
         <SelectConditionModal
           current={compiledConditions(rawConditions)}
@@ -1779,7 +1796,7 @@ export function HealthStatusPanel({ combatant, calculatedStatus, calculating, on
         />
       )}
       {shieldItem && <ItemModal item={shieldItem} onClose={() => setShieldItem(null)} />}
-    </div>
+    </>
   );
 }
 
@@ -1790,16 +1807,16 @@ const ATTRIBUTE_LABELS: Array<[keyof Phase1CreatureStatus['attributes'], string]
 ];
 
 function Metric({ label, value }: { label: string; value: ReactNode }) {
-  return <div><div className='text-xs text-p1-muted'>{label}</div><div className='mt-1 text-lg font-semibold'>{value}</div></div>;
+  return <div><div className='text-[11px] text-p1-muted'>{label}</div><div className='text-base font-semibold leading-tight'>{value}</div></div>;
 }
 function MetricButton({ label, value, onClick, disabled }: { label: string; value: ReactNode; onClick: () => void; disabled?: boolean }) {
   return <button type='button' disabled={disabled} className='w-full hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-transparent' onClick={onClick}><Metric label={label} value={value} /></button>;
 }
-function IconMetric({ icon, label, value, detail, onClick, disabled }: { icon: ReactNode; label: string; value: ReactNode; detail: string; onClick?: () => void; disabled?: boolean }) {
-  return <button type='button' disabled={disabled} className='min-w-0 px-2 py-3 text-center hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-transparent' title={detail} onClick={onClick}><div className='flex items-center justify-center gap-1.5 text-xs text-p1-muted'>{icon}{label}</div><div className='mt-1 text-lg font-semibold'>{value}</div><div className='mt-1 truncate text-[9px] text-p1-faint'>{detail}</div></button>;
+function IconMetric({ icon, label, value, detail, onClick, disabled }: { icon: ReactNode; label: string; value: ReactNode; detail?: string; onClick?: () => void; disabled?: boolean }) {
+  return <button type='button' disabled={disabled} className='min-w-0 px-1.5 py-1.5 text-center hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-transparent' title={detail} onClick={onClick}><div className='flex items-center justify-center gap-1 text-[11px] text-p1-muted'>{icon}{label}</div><div className='mt-0.5 truncate text-sm font-semibold'>{value}{detail ? <span className='ml-1 text-[10px] font-normal text-p1-faint'>{detail}</span> : null}</div></button>;
 }
 function DefenseRow({ label, value, onClick, disabled }: { label: string; value: number; onClick?: () => void; disabled?: boolean }) {
-  return <button type='button' disabled={disabled} className='flex w-full items-center py-1.5 text-left text-xs hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-transparent' onClick={onClick}><span className='text-p1-muted'>{label}</span><strong className='ml-auto'>{signed(value)}</strong></button>;
+  return <button type='button' disabled={disabled} className='flex w-full items-center py-1 text-left text-xs hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-transparent' onClick={onClick}><span className='text-p1-muted'>{label}</span><strong className='ml-auto'>{signed(value)}</strong></button>;
 }
 function AttributePill({ label, value, onClick, disabled }: { label: string; value: number; onClick?: () => void; disabled?: boolean }) {
   return <button type='button' disabled={disabled} className='flex h-6 items-center bg-p1-hover px-2 text-left text-[11px] hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-p1-hover' onClick={onClick}><span className='truncate text-p1-muted'>{label}</span><strong className='ml-auto pl-2'>{signed(value)}</strong></button>;
@@ -1910,61 +1927,6 @@ function ProficiencyRow({ item, onOpen }: { item: Phase1ProfRow; onOpen: () => v
       <span className='shrink-0 border border-p1-border px-1.5 py-0.5 text-[10px] font-semibold text-p1-text'>{item.rank}</span>
     </button>
   );
-}
-
-function CreaturePortrait({ combatant }: { combatant: PopulatedCombatant }) {
-  const art = useMonsterArt(combatant, 'thumb');
-  const [failed, setFailed] = useState(false);
-  const [open, setOpen] = useState(false);
-  const src = art.data?.thumbSrc;
-  const name = combatant.data.name;
-  const fullSrc = art.data?.monsterId ? monsterArtUrl(art.data.monsterId, 'full') : art.data?.fullSrc;
-  useEffect(() => setFailed(false), [src]);
-  return (
-    <>
-      <button
-        type='button'
-        className='grid min-h-[96px] place-items-center overflow-hidden border border-p1-border bg-p1-surface hover:border-p1-border'
-        disabled={!src || failed}
-        onClick={() => { if (fullSrc && !failed) setOpen(true); }}
-        title={src && !failed ? 'View image' : undefined}
-      >
-        {src && !failed ? <img src={src} alt={name} className='h-full max-h-28 w-full object-contain p-1.5' onError={() => setFailed(true)} /> : <Swords size={24} className='text-p1-faint' />}
-      </button>
-      {open && fullSrc && <ImageModal src={fullSrc} alt={name} onClose={() => setOpen(false)} />}
-    </>
-  );
-}
-
-function ImageModal({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
-  const closeRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    closeRef.current?.focus();
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', closeOnEscape);
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.removeEventListener('keydown', closeOnEscape); document.body.style.overflow = overflow; };
-  }, [onClose]);
-  return createPortal(
-    <div className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]' role='presentation' onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section role='dialog' aria-modal='true' aria-label={alt} className='relative max-h-[min(90vh,900px)] max-w-[min(90vw,900px)] border border-p1-border bg-p1-surface p-3 shadow-2xl'>
-        <button ref={closeRef} className='icon-button absolute right-2 top-2 z-10' onClick={onClose} title='Close image'><X size={18} /></button>
-        <img src={src} alt={alt} className='max-h-[min(84vh,840px)] max-w-[min(86vw,860px)] object-contain' />
-      </section>
-    </div>,
-    document.body
-  );
-}
-
-function useMonsterArt(combatant: PopulatedCombatant, size: 'thumb' | 'full' = 'thumb') {
-  const name = combatant.data.name;
-  const fallback = combatant.data.details?.image_url;
-  return useQuery<Phase1MonsterArt | null>({
-    queryKey: ['phase1-monster-art', size, combatant.type, combatant._id, name, fallback],
-    queryFn: () => combatant.type === 'CREATURE' ? lookupMonsterArt(name, fallback, size) : Promise.resolve(fallback ? { monsterId: null, fullSrc: fallback, thumbSrc: fallback } : null),
-    staleTime: Number.POSITIVE_INFINITY,
-  });
 }
 
 function entityDescription(entity: LivingEntity) {

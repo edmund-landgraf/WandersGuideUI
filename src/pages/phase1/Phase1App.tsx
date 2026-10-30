@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { Outlet, RouterProvider, createBrowserRouter } from 'react-router-dom';
+import { isRouteErrorResponse, Link, Outlet, RouterProvider, createBrowserRouter, useRouteError } from 'react-router-dom';
 import { Phase1CampaignPage, Phase1CharactersPage, Phase1EncountersPage, Phase1IndexPage, Phase1StandaloneEncounterPage } from './Phase1Workspace';
 import { Phase1SheetPage } from './Phase1SheetPage';
 import { Phase1StatBlockPage } from './Phase1StatBlockPage';
@@ -60,9 +60,38 @@ export function Phase1Shell() {
   );
 }
 
+function Phase1NotFound({ detail }: { detail?: string }) {
+  return (
+    <div className='min-h-screen bg-p1-page p-8 text-p1-text'>
+      <h1 className='text-xl font-semibold'>Page not found</h1>
+      <p className='mt-2 max-w-md text-sm text-p1-muted'>{detail ?? `${window.location.pathname} is not a page in this app.`}</p>
+      <Link to='/phase1' className='mt-4 inline-block text-sm text-p1-accent hover:underline'>
+        Back to campaigns
+      </Link>
+    </div>
+  );
+}
+
+function Phase1RouteError() {
+  const error = useRouteError();
+  if (isRouteErrorResponse(error) && error.status === 404) {
+    return <Phase1NotFound detail={`${window.location.pathname} is not a page in this app.`} />;
+  }
+  return (
+    <div className='min-h-screen bg-p1-page p-8 text-p1-text'>
+      <h1 className='text-xl font-semibold'>Something went wrong</h1>
+      <p className='mt-2 max-w-md text-sm text-p1-muted'>This page failed to load.</p>
+      <Link to='/phase1' className='mt-4 inline-block text-sm text-p1-accent hover:underline'>
+        Back to campaigns
+      </Link>
+    </div>
+  );
+}
+
 const router = createBrowserRouter([
   {
     element: <Phase1Shell />,
+    errorElement: <Phase1RouteError />,
     children: [
       { path: '/', Component: Phase1AuthCallback },
       { path: '/phase1', Component: Phase1IndexPage },
@@ -81,6 +110,7 @@ const router = createBrowserRouter([
       { path: '/builder/:characterId', Component: Phase1BuilderPage },
       { path: '/stat-block/:type/:id', Component: Phase1StatBlockPage },
       { path: '/tactics/:campaignId/:encounterId', Component: TacticsPage },
+      { path: '*', Component: Phase1NotFound },
     ],
   },
 ]);
