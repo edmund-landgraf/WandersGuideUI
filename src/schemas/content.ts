@@ -1168,6 +1168,8 @@ export const EncounterSchema = z.object({
       dice_roll_state: DiceRollStateSchema.optional(),
       dice_roll_log: z.array(DiceRollLogSchema).optional(),
       amba: EncounterAmbaMetaSchema.optional(),
+      /** GM switch: true shows the encounter to every player, false hides it. Omitted keeps the older rule (visible to a player whose character is in it). */
+      player_visible: z.boolean().optional(),
     })
     .passthrough(),
 });

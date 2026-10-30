@@ -3386,7 +3386,15 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
           ) : viewingNotes ? (
             <NoteSurface campaign={campaign} note={selectedNote} isGm={isGm} encounterLink={noteEncounter ? { href: phase1EncounterPath(noteEncounter.id, campaign?.id), name: noteEncounter.name } : undefined} onUpdateCampaign={onUpdateCampaign} />
           ) : viewingHome && campaign ? (
-            <Phase1CampaignHome wide={!dockedRail} campaignId={campaign.id} players={partyPlayers} encounters={encounters} notes={notePages.map(({ page, index }) => ({ index, name: page.name, shared: page.shared, markdown: noteContentsToMarkdown(page.contents) }))} />
+            <Phase1CampaignHome
+              wide={!dockedRail}
+              campaignId={campaign.id}
+              players={partyPlayers}
+              encounters={encounters}
+              isGm={isGm}
+              onTogglePlayerVisible={(encounter, shown) => onUpdateEncounter({ ...encounter, meta_data: { ...encounter.meta_data, player_visible: shown } })}
+              notes={notePages.map(({ page, index }) => ({ index, name: page.name, shared: page.shared, markdown: noteContentsToMarkdown(page.contents) }))}
+            />
           ) : (
             <>
               <EncounterHeader encounter={selectedEncounter} combatants={activeCombatants} count={activeCombatants.length} isGm={isGm} campaignId={campaign?.id ?? null} noteLink={!standalone && encounterNote && campaign ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} tab={encounterTab} onTab={setEncounterTab} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} showAddHazard={campaign?.meta_data?.settings?.show_hazards_button === true} canAddHazard={isGm && !rosterSaving} onAddHazard={() => setHazardPickerOpen(true)} canRollInitiative={isGm && activeCombatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && activeCombatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} onOpenStatBlocks={() => setStatBlocksOpen(true)} onCreateEncounter={isGm ? onCreateEncounter : undefined} />

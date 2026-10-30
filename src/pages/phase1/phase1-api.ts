@@ -131,6 +131,31 @@ export function encounterIncludesOwnCharacter(encounter: Encounter, characterIds
   });
 }
 
+/** Explicit GM show/hide. Undefined means the encounter has never been toggled. */
+export function encounterPlayerVisibleFlag(encounter: Encounter): boolean | undefined {
+  const flag = encounter.meta_data?.player_visible;
+  return flag === true || flag === false ? flag : undefined;
+}
+
+/**
+ * Whether this encounter belongs on a player's list.
+ * Hidden is never shown. Shown is shown to the whole party.
+ * An encounter the GM has not toggled stays visible only to players whose character is in it.
+ */
+export function encounterListedForPlayers(encounter: Encounter, characterIds: Set<number>): boolean {
+  const flag = encounterPlayerVisibleFlag(encounter);
+  if (flag === false) return false;
+  if (flag === true) return true;
+  return encounterIncludesOwnCharacter(encounter, characterIds);
+}
+
+/** Checked state of the GM switch. Untoggled encounters read as on when a player character is already in them. */
+export function gmEncounterShownToPlayers(encounter: Encounter): boolean {
+  const flag = encounterPlayerVisibleFlag(encounter);
+  if (flag != null) return flag;
+  return (encounter.combatants?.list ?? []).some((item) => !item.type || item.type === 'CHARACTER');
+}
+
 export function visibleCampaignEncounters(
   encounters: Encounter[],
   campaignId: number,
@@ -139,7 +164,7 @@ export function visibleCampaignEncounters(
 ): Encounter[] {
   const forCampaign = encounters.filter((encounter) => encounterBelongsToCampaign(encounter, campaignId));
   if (isGm) return forCampaign;
-  return forCampaign.filter((encounter) => encounterIncludesOwnCharacter(encounter, characterIds));
+  return forCampaign.filter((encounter) => encounterListedForPlayers(encounter, characterIds));
 }
 
 async function findCharacterList(body: Record<string, unknown>, accessToken?: string): Promise<Character[]> {
