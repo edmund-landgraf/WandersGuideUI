@@ -940,6 +940,7 @@ export const CampaignSchema = z.object({
           show_party_member_status: z.enum(['OFF', 'STATUS', 'DETAILED']).optional(),
           dice_3d: z.boolean().optional(),
           show_hazards_button: z.boolean().optional(),
+          players_manage_party: z.boolean().optional(),
         })
         .optional(),
       party_ids: z.array(z.number()).optional(),
@@ -1177,7 +1178,7 @@ export const EncounterSchema = z.object({
       dice_roll_state: DiceRollStateSchema.optional(),
       dice_roll_log: z.array(DiceRollLogSchema).optional(),
       amba: EncounterAmbaMetaSchema.optional(),
-      /** GM switch: true shows the encounter to every player, false hides it. Omitted keeps the older rule (visible to a player whose character is in it). */
+      /** GM switch: true shows the encounter to every player, false hides it. Omitted shows it to the party when a player character is already in it. */
       player_visible: z.boolean().optional(),
       /** GM switch: false lets players see this encounter the way the GM does. Omitted or true keeps enemy names as initials and the player combat filters. */
       mask_combatants: z.boolean().optional(),

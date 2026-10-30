@@ -1,5 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Crown, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, Image as ImageIcon, KeyRound, ListChecks, LogOut, Maximize2, Menu, Minimize2, Moon, Package, PanelLeft, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Crown, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, Image as ImageIcon, KeyRound, ListChecks, LogOut, Maximize2, Menu, Minimize2, Package, PanelLeft, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -258,6 +258,7 @@ export function Phase1IndexPage() {
         meta_data: {
           settings: {
             show_party_member_status: 'STATUS',
+            players_manage_party: true,
           },
         },
       },
@@ -2353,6 +2354,24 @@ export function Phase1CampaignPage() {
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: campaignKey }),
   });
+  const patchParty = useMutation<unknown, Error, number[], { previous?: Campaign | null }>({
+    mutationFn: (partyIds) => phase1Request('wgui-ext-patch-party', { campaign_id: campaignId, party_ids: partyIds }),
+    onMutate: async (partyIds) => {
+      await queryClient.cancelQueries({ queryKey: campaignKey });
+      const previous = queryClient.getQueryData<Campaign | null>(campaignKey);
+      if (previous) {
+        queryClient.setQueryData(campaignKey, {
+          ...previous,
+          meta_data: { ...previous.meta_data, party_ids: partyIds },
+        });
+      }
+      return { previous };
+    },
+    onError: (_error, _partyIds, context) => {
+      if (context?.previous !== undefined) queryClient.setQueryData(campaignKey, context.previous);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: campaignKey }),
+  });
   const resetJoinKey = useMutation({
     mutationFn: () => phase1Request<Campaign>('reset-campaign-key', { id: campaignId }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: campaignKey }),
@@ -2469,6 +2488,7 @@ export function Phase1CampaignPage() {
       onPatchEncounterDice={(patch) => patchEncounterDice.mutate(patch)}
       onUpdateCharacter={(id, fields) => updateCharacter.mutate({ id, ...fields })}
       onUpdateCampaign={(next) => updateCampaign.mutate(next)}
+      onPatchParty={(partyIds) => patchParty.mutate(partyIds)}
       onResetJoinKey={() => resetJoinKey.mutateAsync()}
       onKickPlayer={(characterId) => kickPlayer.mutateAsync(characterId)}
       onDeleteCampaign={() => deleteCampaign.mutateAsync()}
@@ -2480,16 +2500,16 @@ export function Phase1CampaignPage() {
       onAddEncounterNote={isGm ? handleAddEncounterNote : undefined}
       onCreateEncounter={handleCreateEncounter}
       rosterSaving={updateEncounter.isPending || patchEncounterDice.isPending}
-      campaignSaving={updateCampaign.isPending}
+      campaignSaving={updateCampaign.isPending || patchParty.isPending}
       rosterError={updateEncounter.error ?? patchEncounterDice.error ?? updateCharacter.error ?? deleteEncounter.error ?? deleteNote.error}
-      campaignError={updateCampaign.error ?? resetJoinKey.error ?? kickPlayer.error ?? deleteCampaign.error}
+      campaignError={updateCampaign.error ?? patchParty.error ?? resetJoinKey.error ?? kickPlayer.error ?? deleteCampaign.error}
     />
   );
 }
 
 
-function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, viewingSettings, isGm, sessionUserId, onUpdateEncounter, onAddAllPcsToEncounters, onPatchEncounterDice, onUpdateCharacter, onUpdateCampaign, onResetJoinKey, onKickPlayer, onDeleteCampaign, onDeleteNote, onDeleteAllNotes, onDeleteEncounter, onDeleteAllEncounters, onCreateNote, onAddEncounterNote, onCreateEncounter, rosterSaving, campaignSaving, rosterError, campaignError }: {
-  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onPatchEncounterDice?: (patch: { encounterId: number; campaignId: number; dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] }) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteAllNotes?: () => void; onDeleteEncounter: (id: number) => void; onDeleteAllEncounters?: () => Promise<void> | void; onCreateNote: (name: string) => void; onAddEncounterNote?: (encounter: Encounter) => void; onCreateEncounter: (name: string) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; campaignError: Error | null;
+function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, viewingSettings, isGm, sessionUserId, onUpdateEncounter, onAddAllPcsToEncounters, onPatchEncounterDice, onUpdateCharacter, onUpdateCampaign, onPatchParty, onResetJoinKey, onKickPlayer, onDeleteCampaign, onDeleteNote, onDeleteAllNotes, onDeleteEncounter, onDeleteAllEncounters, onCreateNote, onAddEncounterNote, onCreateEncounter, rosterSaving, campaignSaving, rosterError, campaignError }: {
+  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onPatchEncounterDice?: (patch: { encounterId: number; campaignId: number; dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] }) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onPatchParty?: (partyIds: number[]) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteAllNotes?: () => void; onDeleteEncounter: (id: number) => void; onDeleteAllEncounters?: () => Promise<void> | void; onCreateNote: (name: string) => void; onAddEncounterNote?: (encounter: Encounter) => void; onCreateEncounter: (name: string) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; campaignError: Error | null;
 }) {
   const standalone = campaign == null;
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -2679,9 +2699,16 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     updateRoster([...selectedEncounter.combatants.list, { _id: crypto.randomUUID(), type: 'CHARACTER', ally: true, initiative: undefined, character: characterId, data: undefined }]);
   }
 
+  const playersCanManageParty = campaign?.meta_data?.settings?.players_manage_party !== false;
+  const canEditParty = isGm || playersCanManageParty;
+
   function writeParty(ids: number[]) {
-    if (!campaign) return;
-    onUpdateCampaign({ ...campaign, meta_data: { ...campaign.meta_data, party_ids: ids } });
+    if (!campaign || !canEditParty) return;
+    if (isGm) {
+      onUpdateCampaign({ ...campaign, meta_data: { ...campaign.meta_data, party_ids: ids } });
+      return;
+    }
+    onPatchParty?.(ids);
   }
 
   function addToParty(characterId: number) {
@@ -3367,7 +3394,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     return () => window.removeEventListener(PHASE1_SHEET_ART_TONE_EVENT, sync);
   }, []);
   const rail = (
-    <CampaignRail campaign={campaign} encounters={encounters} players={players} campaignPlayers={players} inParty={inParty} onAddToParty={addToParty} onLeaveParty={leaveParty} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} maskCombatants={maskForPlayers} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddPlayer={addPlayer} onAddAllPlayers={addAllPlayers} onAddAllPcsToEncounters={campaign && isGm ? onAddAllPcsToEncounters : undefined} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onDeleteNote={onDeleteNote} onDeleteAllNotes={onDeleteAllNotes} onDeleteEncounter={onDeleteEncounter} onDeleteAllEncounters={onDeleteAllEncounters} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} onRenameNote={renameNote} onRenameEncounter={renameEncounter} onCollapse={() => setRailOpen(false)} />
+    <CampaignRail campaign={campaign} encounters={encounters} players={players} campaignPlayers={players} inParty={inParty} canEditParty={canEditParty} onAddToParty={addToParty} onLeaveParty={leaveParty} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} maskCombatants={maskForPlayers} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddPlayer={addPlayer} onAddAllPlayers={addAllPlayers} onAddAllPcsToEncounters={campaign && isGm ? onAddAllPcsToEncounters : undefined} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onDeleteNote={onDeleteNote} onDeleteAllNotes={onDeleteAllNotes} onDeleteEncounter={onDeleteEncounter} onDeleteAllEncounters={onDeleteAllEncounters} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} onRenameNote={renameNote} onRenameEncounter={renameEncounter} onCollapse={() => setRailOpen(false)} />
   );
   const inspector = (
     <Inspector fill={narrow} combatant={selected && (isGm || !maskForPlayers || !isEnemyCreature(selected)) ? selected : null} width={detailWidth} activeTab={normalizeDetailTab(activeTab)} onTab={setActiveTab} onCollapse={narrow ? undefined : () => setInspectorOpen(false)} hasMatchingCampaignNote={Boolean(encounterNote)} status={selected ? statuses.data?.[selected._id] : undefined} statusLoading={statuses.isLoading} canManageSpells={canManageSpells} spellActions={spellActions} onChangeConditions={canManageSpells && selected?.type !== 'HAZARD' ? persistConditions : undefined} onSaveGmNotes={isGm && selected?.type === 'CREATURE' ? persistGmNotes : undefined} onPersistHpCurrent={selected && canManageSpells && selected.data ? (raw, note) => persistHpCurrent(selected, raw, note, statuses.data?.[selected._id]?.maxHp ?? statsFor(selected.data).maxHp) : undefined} onPersistTempHp={selected && canManageSpells && selected.data ? (raw, note) => persistTempHp(selected, raw, note) : undefined} initiativeLog={selectedEncounter?.meta_data.initiative_log ?? []} canEditRoundNotes={isGm && !rosterSaving} onUpdateRoundNote={updateRoundNote} onLogAction={selected && canManageSpells && selected.type !== 'HAZARD' ? persistLogAction : undefined} onDeleteLogEntry={selected && canManageSpells && selected.type !== 'HAZARD' ? persistDeleteLogEntry : undefined} />
@@ -3435,6 +3462,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               notes={notePages.map(({ page, index }) => ({ index, name: page.name, shared: page.shared, markdown: noteContentsToMarkdown(page.contents) }))}
               onAddEncounterNote={onAddEncounterNote}
               onDeleteNote={isGm ? onDeleteNote : undefined}
+              onLeaveParty={canEditParty ? leaveParty : undefined}
             />
           ) : (
             <>
@@ -3497,12 +3525,12 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               {selectedEncounter && <div className='p-5'>
                 {encounterTab === 'combat' ? (
                   <>
-                    <CombatantGrid combatants={orderedCombatants} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={initiativeRollNonce} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onToggleHazardDisabled={persistHazardDisabled} playerView={maskForPlayers} />
+                    <CombatantGrid combatants={orderedCombatants} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={initiativeRollNonce} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onToggleHazardDisabled={persistHazardDisabled} playerView={maskForPlayers} canEditParty={canEditParty} inParty={inParty} onAddToParty={addToParty} onLeaveParty={leaveParty} />
                     <InitiativeRoundLogPanel log={maskForPlayers ? playerAllyRoundLog(selectedEncounter?.meta_data.initiative_log ?? []) : (selectedEncounter?.meta_data.initiative_log ?? [])} canEdit={isGm && !rosterSaving} canClear={isGm && !rosterSaving} onClear={clearInitiativeLog} onUpdateNote={updateRoundNote} />
                   </>
                 ) : (
                   <>
-                    <CombatantGrid combatants={diceGridRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onSingleCheck={!rosterSaving ? rollSingleCheck : undefined} onSingleChallenge={!rosterSaving && ambaChallenges.length > 0 ? rollSingleChallenge : undefined} challenges={ambaChallenges} dice={{ challengeId: isGm ? diceState?.challenge_id : undefined, checkStat: diceStat ?? undefined, columnLabel: checkStatLabel(diceStat ?? undefined), dc: diceDc, results: !isGm && diceState?.results_audience === 'private' ? {} : diceState?.results ?? {}, emptyMessage: livingActive.length === 0 ? 'No combatants in this encounter yet. Add a creature or a party member from the bench.' : diceGridRows.length === 0 ? 'No combatants match this side. Switch Allies, Enemies, or Both above.' : 'Right-click a combatant to roll a check. Group rolls still use the toolbar.' }} playerView={maskForPlayers} />
+                    <CombatantGrid combatants={diceGridRows} encounterId={selectedEncounter?.id ?? null} initiativeRollNonce={0} selectedId={selectedId} onSelect={setSelectedId} statuses={statuses.data} calculating={statuses.isLoading} canManageRoster={isGm && !rosterSaving} canManageCombatant={canManageCombatant} onAddPlayer={addPlayer} onRemovePlayer={removePlayer} onCloneCreature={cloneCreature} onDeleteCreature={deleteCreature} onRestoreCombatant={(id) => setCombatantOut(id, undefined)} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onUpdateInitiative={updateInitiative} onUpdateHp={persistHpCurrentById} onSingleCheck={!rosterSaving ? rollSingleCheck : undefined} onSingleChallenge={!rosterSaving && ambaChallenges.length > 0 ? rollSingleChallenge : undefined} challenges={ambaChallenges} dice={{ challengeId: isGm ? diceState?.challenge_id : undefined, checkStat: diceStat ?? undefined, columnLabel: checkStatLabel(diceStat ?? undefined), dc: diceDc, results: !isGm && diceState?.results_audience === 'private' ? {} : diceState?.results ?? {}, emptyMessage: livingActive.length === 0 ? 'No combatants in this encounter yet. Add a creature or a party member from the bench.' : diceGridRows.length === 0 ? 'No combatants match this side. Switch Allies, Enemies, or Both above.' : 'Right-click a combatant to roll a check. Group rolls still use the toolbar.' }} playerView={maskForPlayers} canEditParty={canEditParty} inParty={inParty} onAddToParty={addToParty} onLeaveParty={leaveParty} />
                     <DiceRollLogPanel log={maskForPlayers ? playerAllyRoundLog(playerVisibleDiceRollLog(selectedEncounter?.meta_data.dice_roll_log ?? [])) : (selectedEncounter?.meta_data.dice_roll_log ?? [])} canClear={isGm && !rosterSaving} canEdit={isGm && !rosterSaving} canRemoveEntry={(entry) => isGm || sameUserId(entry.initiated_by_user_id, sessionUserId)} onClear={clearDiceRollLog} onRemove={removeDiceRollLog} onUpdateNote={updateDiceRollNote} />
                   </>
                 )}
@@ -3776,7 +3804,7 @@ export function WorkspaceHeader({ label, section, campaignId, encounterId, noteI
           )}
           <div className='flex flex-col justify-center leading-none'>
             <a href='/' className='whitespace-nowrap font-semibold leading-tight'>Wanderer's Guide</a>
-            {user.data && (
+            {user.data && campaignId != null && (
               <span className='mt-0.5 text-[11px] tracking-[0.12em] text-p1-muted [font-variant-caps:all-small-caps]'>
                 {user.data.is_admin ? 'Admin view' : 'Player view'}
               </span>
@@ -3807,8 +3835,8 @@ export function WorkspaceHeader({ label, section, campaignId, encounterId, noteI
   );
 }
 
-function CampaignRail({ campaign, encounters, players, campaignPlayers, outCombatants, selectedEncounter, selectedId, notePages, selectedNoteIndex, viewingSettings, isGm, maskCombatants = false, rosterSaving, inParty, onAddToParty, onLeaveParty, onRemovePlayer, onAddPlayer, onAddAllPlayers, onAddAllPcsToEncounters, onSelectCombatant, onMarkOut, onRequestRemoveFromCampaign, onDeleteNote, onDeleteAllNotes, onDeleteEncounter, onDeleteAllEncounters, onCreateNote, onCreateEncounter, onRenameNote, onRenameEncounter, onCollapse }: {
-  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; campaignPlayers: Character[]; outCombatants: PopulatedCombatant[]; selectedEncounter: Encounter | null; selectedId: string | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; maskCombatants?: boolean; rosterSaving: boolean; inParty?: (characterId: number) => boolean; onAddToParty?: (characterId: number) => void; onLeaveParty?: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onAddPlayer: (characterId: number) => void; onAddAllPlayers: () => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onSelectCombatant: (id: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onRequestRemoveFromCampaign?: (characterId: number, name: string) => void; onDeleteNote: (index: number) => void; onDeleteAllNotes?: () => void; onDeleteEncounter: (id: number) => void; onDeleteAllEncounters?: () => Promise<void> | void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; onRenameNote: (index: number, name: string) => void; onRenameEncounter: (id: number, name: string) => void; onCollapse?: () => void;
+function CampaignRail({ campaign, encounters, players, campaignPlayers, outCombatants, selectedEncounter, selectedId, notePages, selectedNoteIndex, viewingSettings, isGm, maskCombatants = false, rosterSaving, inParty, canEditParty = false, onAddToParty, onLeaveParty, onRemovePlayer, onAddPlayer, onAddAllPlayers, onAddAllPcsToEncounters, onSelectCombatant, onMarkOut, onRequestRemoveFromCampaign, onDeleteNote, onDeleteAllNotes, onDeleteEncounter, onDeleteAllEncounters, onCreateNote, onCreateEncounter, onRenameNote, onRenameEncounter, onCollapse }: {
+  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; campaignPlayers: Character[]; outCombatants: PopulatedCombatant[]; selectedEncounter: Encounter | null; selectedId: string | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; maskCombatants?: boolean; rosterSaving: boolean; inParty?: (characterId: number) => boolean; canEditParty?: boolean; onAddToParty?: (characterId: number) => void; onLeaveParty?: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onAddPlayer: (characterId: number) => void; onAddAllPlayers: () => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onSelectCombatant: (id: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onRequestRemoveFromCampaign?: (characterId: number, name: string) => void; onDeleteNote: (index: number) => void; onDeleteAllNotes?: () => void; onDeleteEncounter: (id: number) => void; onDeleteAllEncounters?: () => Promise<void> | void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; onRenameNote: (index: number, name: string) => void; onRenameEncounter: (id: number, name: string) => void; onCollapse?: () => void;
 }) {
   const standalone = campaign == null;
   const [benchActive, setBenchActive] = useState(false);
@@ -3865,7 +3893,9 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
   }
 
   function openBenchMenu(event: ReactMouseEvent, characterId?: number, name?: string) {
-    if (!isGm || rosterSaving) return;
+    const partyOnly = !isGm;
+    if (isGm && rosterSaving) return;
+    if (partyOnly && (!canEditParty || characterId == null)) return;
     event.preventDefault();
     event.stopPropagation();
     setBenchMenu({ x: event.clientX, y: event.clientY, characterId, name });
@@ -3975,7 +4005,9 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
                 key={combatant._id}
                 className={`flex w-full items-center gap-2 px-2 py-2 text-xs hover:bg-p1-hover ${combatant._id === selectedId ? 'bg-p1-hover text-p1-text' : 'text-p1-muted hover:text-p1-text'}`}
                 onContextMenu={(event) => {
-                  if (!isGm || rosterSaving) return;
+                  const characterId = combatant.type === 'CHARACTER' ? combatant.character : undefined;
+                  const partyOnly = !isGm && canEditParty && characterId != null;
+                  if ((isGm && rosterSaving) || (!isGm && !partyOnly)) return;
                   event.preventDefault();
                   event.stopPropagation();
                   setOutMenu({
@@ -4103,7 +4135,8 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
           showAdd={benchMenu.characterId != null && !(inParty?.(benchMenu.characterId) ?? true)}
           showLeave={benchMenu.characterId != null && (inParty?.(benchMenu.characterId) ?? false)}
           addAllDisabled={rosterSaving || !selectedEncounter || waitingForEncounter.length === 0}
-          showRemoveFromCampaign={benchMenu.characterId != null && Boolean(onRequestRemoveFromCampaign)}
+          showRosterActions={isGm}
+          showRemoveFromCampaign={isGm && benchMenu.characterId != null && Boolean(onRequestRemoveFromCampaign)}
           onClose={() => setBenchMenu(null)}
           onAdd={() => {
             const characterId = benchMenu.characterId;
@@ -4131,8 +4164,21 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
         <OutContextMenu
           x={outMenu.x}
           y={outMenu.y}
-          showRemoveFromCampaign={outMenu.characterId != null && Boolean(onRequestRemoveFromCampaign)}
+          showReturn={isGm}
+          showAdd={outMenu.characterId != null && !(inParty?.(outMenu.characterId) ?? true)}
+          showLeave={outMenu.characterId != null && (inParty?.(outMenu.characterId) ?? false)}
+          showRemoveFromCampaign={isGm && outMenu.characterId != null && Boolean(onRequestRemoveFromCampaign)}
           onClose={() => setOutMenu(null)}
+          onAdd={() => {
+            const characterId = outMenu.characterId;
+            setOutMenu(null);
+            if (characterId != null) onAddToParty?.(characterId);
+          }}
+          onLeave={() => {
+            const characterId = outMenu.characterId;
+            setOutMenu(null);
+            if (characterId != null) onLeaveParty?.(characterId);
+          }}
           onReturn={() => {
             setOutMenu(null);
             onMarkOut(outMenu.id, undefined);
@@ -4218,7 +4264,7 @@ function RailLabel({ icon, label, count, open, onToggle, onContextMenu }: { icon
 
 type RailContextTarget = { kind: 'note' | 'encounter'; id: number; name: string; x: number; y: number };
 
-function PlayerContextMenu({ x, y, onClose, onRemove, onRemoveFromCampaign, onIncapacitate, onMarkDead }: { x: number; y: number; onClose: () => void; onRemove: () => void; onRemoveFromCampaign?: () => void; onIncapacitate: () => void; onMarkDead: () => void }) {
+function PlayerContextMenu({ x, y, onClose, onRemove, onRemoveFromCampaign, onIncapacitate, onMarkDead, onAddToParty, onRemoveFromParty, gmActions = true }: { x: number; y: number; onClose: () => void; onRemove: () => void; onRemoveFromCampaign?: () => void; onIncapacitate: () => void; onMarkDead: () => void; onAddToParty?: () => void; onRemoveFromParty?: () => void; gmActions?: boolean }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -4232,15 +4278,31 @@ function PlayerContextMenu({ x, y, onClose, onRemove, onRemoveFromCampaign, onIn
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
       <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        {onAddToParty && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 whitespace-nowrap px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onAddToParty}>
+            Get back in there
+          </button>
+        )}
+        {onRemoveFromParty && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 whitespace-nowrap px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onRemoveFromParty}>
+            Take a rest
+          </button>
+        )}
+        {gmActions && (
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onIncapacitate}>
           <Skull size={14} /> Move to incap
         </button>
+        )}
+        {gmActions && (
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onMarkDead}>
           <Skull size={14} /> Mark dead
         </button>
+        )}
+        {gmActions && (
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onRemove}>
           <UserMinus size={14} /> Remove
         </button>
+        )}
         {onRemoveFromCampaign && (
           <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onRemoveFromCampaign}>
             <UserMinus size={14} /> Remove from campaign
@@ -4271,7 +4333,7 @@ function challengeMenuGroups(challenges: Array<{ id: string; title: string; chec
   });
 }
 
-function DiceCombatantContextMenu({ x, y, combatant, canCheck, challenges, canChallenge, selectedChallengeId, selectedStat, onClose, onCheck, onChallenge, onRemoveFromCampaign }: {
+function DiceCombatantContextMenu({ x, y, combatant, canCheck, challenges, canChallenge, selectedChallengeId, selectedStat, onClose, onCheck, onChallenge, onAddToParty, onRemoveFromParty, onRemoveFromCampaign }: {
   x: number;
   y: number;
   combatant: PopulatedCombatant;
@@ -4283,6 +4345,8 @@ function DiceCombatantContextMenu({ x, y, combatant, canCheck, challenges, canCh
   onClose: () => void;
   onCheck: (stat: string) => void;
   onChallenge: (id: string, stat?: string) => void;
+  onAddToParty?: () => void;
+  onRemoveFromParty?: () => void;
   onRemoveFromCampaign?: () => void;
 }) {
   const [openMenu, setOpenMenu] = useState<'check' | 'challenge' | null>(null);
@@ -4332,6 +4396,16 @@ function DiceCombatantContextMenu({ x, y, combatant, canCheck, challenges, canCh
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
       <div role='menu' className='fixed z-[110] min-w-48 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        {onAddToParty && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 whitespace-nowrap px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onAddToParty}>
+            Get back in there
+          </button>
+        )}
+        {onRemoveFromParty && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 whitespace-nowrap px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onRemoveFromParty}>
+            Take a rest
+          </button>
+        )}
         <button
           type='button'
           role='menuitem'
@@ -4550,7 +4624,7 @@ function CombatantContextMenu({ x, y, onClose, onClone, onIncapacitate, onMarkDe
   );
 }
 
-function OutContextMenu({ x, y, showRemoveFromCampaign, onClose, onReturn, onRemoveFromCampaign }: { x: number; y: number; showRemoveFromCampaign?: boolean; onClose: () => void; onReturn: () => void; onRemoveFromCampaign?: () => void }) {
+function OutContextMenu({ x, y, showReturn = true, showAdd = false, showLeave = false, showRemoveFromCampaign, onClose, onReturn, onAdd, onLeave, onRemoveFromCampaign }: { x: number; y: number; showReturn?: boolean; showAdd?: boolean; showLeave?: boolean; showRemoveFromCampaign?: boolean; onClose: () => void; onReturn: () => void; onAdd?: () => void; onLeave?: () => void; onRemoveFromCampaign?: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -4564,9 +4638,21 @@ function OutContextMenu({ x, y, showRemoveFromCampaign, onClose, onReturn, onRem
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
       <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        {showAdd && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 whitespace-nowrap px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onAdd}>
+            Get back in there
+          </button>
+        )}
+        {showLeave && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 whitespace-nowrap px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onLeave}>
+            Take a rest
+          </button>
+        )}
+        {showReturn && (
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onReturn}>
           <RotateCcw size={14} /> Return to encounter
         </button>
+        )}
         {showRemoveFromCampaign && (
           <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onRemoveFromCampaign}>
             <UserMinus size={14} /> Remove from campaign
@@ -4578,7 +4664,7 @@ function OutContextMenu({ x, y, showRemoveFromCampaign, onClose, onReturn, onRem
   );
 }
 
-function BenchContextMenu({ x, y, showAdd, showLeave, addAllDisabled, showRemoveFromCampaign, onClose, onAdd, onLeave, onAddAll, onRemoveFromCampaign }: { x: number; y: number; showAdd: boolean; showLeave?: boolean; addAllDisabled: boolean; showRemoveFromCampaign?: boolean; onClose: () => void; onAdd: () => void; onLeave?: () => void; onAddAll: () => void; onRemoveFromCampaign?: () => void }) {
+function BenchContextMenu({ x, y, showAdd, showLeave, addAllDisabled, showRosterActions = true, showRemoveFromCampaign, onClose, onAdd, onLeave, onAddAll, onRemoveFromCampaign }: { x: number; y: number; showAdd: boolean; showLeave?: boolean; addAllDisabled: boolean; showRosterActions?: boolean; showRemoveFromCampaign?: boolean; onClose: () => void; onAdd: () => void; onLeave?: () => void; onAddAll: () => void; onRemoveFromCampaign?: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -4593,18 +4679,20 @@ function BenchContextMenu({ x, y, showAdd, showLeave, addAllDisabled, showRemove
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
       <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
         {showAdd && (
-          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onAdd}>
-            <Plus size={14} /> Add to party
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 whitespace-nowrap px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onAdd}>
+            Get back in there
           </button>
         )}
         {showLeave && (
-          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onLeave}>
-            <Moon size={14} /> Take a rest
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 whitespace-nowrap px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onLeave}>
+            Take a rest
           </button>
         )}
+        {showRosterActions && (
         <button type='button' role='menuitem' disabled={addAllDisabled} className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint disabled:hover:bg-transparent' onClick={onAddAll}>
           <Plus size={14} /> Add all to encounter
         </button>
+        )}
         {showRemoveFromCampaign && (
           <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onRemoveFromCampaign}>
             <UserMinus size={14} /> Remove from campaign
@@ -5340,7 +5428,7 @@ function SortGlyph({ dir }: { dir: 'asc' | 'desc' | null }) {
   return <ArrowUpDown size={12} className='opacity-50' />;
 }
 
-function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedId, onSelect, statuses, calculating, canManageRoster, canManageCombatant, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature, onRestoreCombatant, onMarkOut, onRequestRemoveFromCampaign, onUpdateInitiative, onUpdateHp, onToggleHazardDisabled, onSingleCheck, onSingleChallenge, challenges, dice, playerView = false }: { combatants: PopulatedCombatant[]; encounterId: number | null; initiativeRollNonce: number; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; canManageCombatant: (combatant: PopulatedCombatant) => boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void; onRestoreCombatant: (combatantId: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onRequestRemoveFromCampaign?: (characterId: number, name: string) => void; onUpdateInitiative: (combatantId: string, initiative: number) => void; onUpdateHp: (combatantId: string, raw: string, note: string | null) => void; onToggleHazardDisabled?: (combatantId: string, disabled: boolean) => void; onSingleCheck?: (combatantId: string, stat: string, x: number, y: number) => void; onSingleChallenge?: (combatantId: string, challengeId: string, x: number, y: number, preferredStat?: string) => void; challenges?: Array<{ id: string; title: string }>; dice?: { challengeId?: string; checkStat?: string; columnLabel: string; dc: number | null; results: Record<string, DiceCheckResult>; emptyMessage: string }; playerView?: boolean }) {
+function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedId, onSelect, statuses, calculating, canManageRoster, canManageCombatant, onAddPlayer, onRemovePlayer, onCloneCreature, onDeleteCreature, onRestoreCombatant, onMarkOut, onRequestRemoveFromCampaign, onUpdateInitiative, onUpdateHp, onToggleHazardDisabled, onSingleCheck, onSingleChallenge, challenges, dice, playerView = false, canEditParty = false, inParty, onAddToParty, onLeaveParty }: { combatants: PopulatedCombatant[]; encounterId: number | null; initiativeRollNonce: number; selectedId: string | null; onSelect: (id: string) => void; statuses?: CombatantStatusMap; calculating: boolean; canManageRoster: boolean; canManageCombatant: (combatant: PopulatedCombatant) => boolean; onAddPlayer: (characterId: number) => void; onRemovePlayer: (combatantId: string) => void; onCloneCreature: (combatantId: string) => void; onDeleteCreature: (combatantId: string) => void; onRestoreCombatant: (combatantId: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onRequestRemoveFromCampaign?: (characterId: number, name: string) => void; onUpdateInitiative: (combatantId: string, initiative: number) => void; onUpdateHp: (combatantId: string, raw: string, note: string | null) => void; onToggleHazardDisabled?: (combatantId: string, disabled: boolean) => void; onSingleCheck?: (combatantId: string, stat: string, x: number, y: number) => void; onSingleChallenge?: (combatantId: string, challengeId: string, x: number, y: number, preferredStat?: string) => void; challenges?: Array<{ id: string; title: string }>; dice?: { challengeId?: string; checkStat?: string; columnLabel: string; dc: number | null; results: Record<string, DiceCheckResult>; emptyMessage: string }; playerView?: boolean; canEditParty?: boolean; inParty?: (characterId: number) => boolean; onAddToParty?: (characterId: number) => void; onLeaveParty?: (characterId: number) => void }) {
   const [encounterActive, setEncounterActive] = useState(false);
   const [gridSort, setGridSort] = useState<GridSort>(() => (
     dice ? null : combatants.some((combatant) => initiativeValue(combatant) != null) ? { key: 'init', dir: 'desc' } : null
@@ -5432,7 +5520,10 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                   setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY });
                   return;
                 }
-                if (!canManageRoster || (combatant.type !== 'CREATURE' && combatant.type !== 'CHARACTER' && combatant.type !== 'HAZARD')) return;
+                const characterId = combatant.type === 'CHARACTER' ? combatant.character : undefined;
+                const canPartyMenu = canEditParty && characterId != null;
+                if (!canManageRoster && !canPartyMenu) return;
+                if (!canManageRoster && combatant.type !== 'CHARACTER') return;
                 event.preventDefault();
                 setMenu({ id: combatant._id, type: combatant.type, x: event.clientX, y: event.clientY });
               }} className={`border-b border-p1-border last:border-0 ${canOpen ? 'cursor-pointer' : ''} ${rowTone}`}>
@@ -5578,6 +5669,16 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
           selectedChallengeId={dice.challengeId}
           selectedStat={dice.checkStat}
           challenges={challenges ?? []}
+          onAddToParty={canEditParty && menuCombatant.type === 'CHARACTER' && menuCombatant.character != null && !(inParty?.(menuCombatant.character) ?? true) ? () => {
+            const characterId = menuCombatant.character;
+            setMenu(null);
+            if (characterId != null) onAddToParty?.(characterId);
+          } : undefined}
+          onRemoveFromParty={canEditParty && menuCombatant.type === 'CHARACTER' && menuCombatant.character != null && (inParty?.(menuCombatant.character) ?? false) ? () => {
+            const characterId = menuCombatant.character;
+            setMenu(null);
+            if (characterId != null) onLeaveParty?.(characterId);
+          } : undefined}
           onRemoveFromCampaign={!playerView && menuCombatant.type === 'CHARACTER' && menuCombatant.character != null && onRequestRemoveFromCampaign ? () => {
             const characterId = menuCombatant.character;
             const name = menuCombatant.data.name;
@@ -5621,11 +5722,24 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
         <PlayerContextMenu
           x={menu.x}
           y={menu.y}
+          gmActions={canManageRoster}
+          onAddToParty={(() => {
+            const combatant = combatants.find((item) => item._id === menu.id);
+            const characterId = combatant?.type === 'CHARACTER' ? combatant.character : undefined;
+            if (!canEditParty || characterId == null || (inParty?.(characterId) ?? true)) return undefined;
+            return () => { setMenu(null); onAddToParty?.(characterId); };
+          })()}
+          onRemoveFromParty={(() => {
+            const combatant = combatants.find((item) => item._id === menu.id);
+            const characterId = combatant?.type === 'CHARACTER' ? combatant.character : undefined;
+            if (!canEditParty || characterId == null || !(inParty?.(characterId) ?? false)) return undefined;
+            return () => { setMenu(null); onLeaveParty?.(characterId); };
+          })()}
           onClose={() => setMenu(null)}
           onIncapacitate={() => { setMenu(null); onMarkOut(menu.id, 'incapacitated'); }}
           onMarkDead={() => { setMenu(null); onMarkOut(menu.id, 'dead'); }}
           onRemove={() => { setMenu(null); onRemovePlayer(menu.id); }}
-          onRemoveFromCampaign={onRequestRemoveFromCampaign ? () => {
+          onRemoveFromCampaign={canManageRoster && onRequestRemoveFromCampaign ? () => {
             const combatant = combatants.find((item) => item._id === menu.id);
             const characterId = combatant?.type === 'CHARACTER' ? combatant.character : undefined;
             const name = combatant ? combatantDisplayName(combatant) : undefined;

@@ -188,12 +188,15 @@ export function encounterIncludesCharacter(
 /**
  * Whether a player may receive this encounter.
  * `player_visible: true` shows it to every character in the campaign, even one who is
- * not in the fight. `false` hides it. Omitted keeps it to players whose character is in it.
+ * not in the fight. `false` hides it. Omitted keeps it on the party list when any
+ * player character is already in the fight, matching the GM switch.
  */
 export function encounterListedForPlayer(encounter: EncounterLike, characterIds: Set<number>): boolean {
   const flag = encounter.meta_data?.player_visible;
   if (flag === false) return false;
   if (flag === true) return true;
+  const list = encounter.combatants?.list ?? [];
+  if (list.some((combatant) => !combatant.type || combatant.type === 'CHARACTER')) return true;
   return encounterIncludesCharacter(encounter, characterIds);
 }
 

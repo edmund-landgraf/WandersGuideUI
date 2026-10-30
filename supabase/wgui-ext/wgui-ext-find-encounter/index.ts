@@ -59,8 +59,8 @@ function withResolvedHitPoints<T extends Encounter>(encounter: T): T {
 }
 
 /**
- * Campaign encounters for the GM, for a player whose PC is in the fight, and for every
- * campaign character when the GM has set meta_data.player_visible.
+ * Campaign encounters for the GM, for a player whose PC is in the fight, and for the
+ * whole party when the fight already has a player character or the GM set player_visible.
  *
  * Stock find-encounter runs on the caller's JWT against an owner-only policy, so it
  * returns [] for every player. This endpoint authorizes campaign membership explicitly

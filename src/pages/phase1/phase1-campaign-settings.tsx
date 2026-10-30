@@ -350,6 +350,27 @@ export function SettingsSurface({
                 </label>
                 <p className='mt-1 text-xs text-p1-faint'>Off by default. The catalog currently has only a few War of Immortals hazards.</p>
               </Field>
+              <Field label='Players manage party'>
+                <label className='flex items-center gap-2 text-sm text-p1-text'>
+                  <input
+                    type='checkbox'
+                    checked={campaign.meta_data?.settings?.players_manage_party !== false}
+                    onChange={(event) =>
+                      patchCampaign({
+                        meta_data: {
+                          ...campaign.meta_data,
+                          settings: {
+                            ...campaign.meta_data?.settings,
+                            players_manage_party: event.target.checked,
+                          },
+                        },
+                      })
+                    }
+                  />
+                  Let any player add or remove party members
+                </label>
+                <p className='mt-1 text-xs text-p1-faint'>On by default. Right-click a PC to add them to the party or remove them from it. This does not delete the character.</p>
+              </Field>
               <Field label='Show Party Member Status'>
                 <select
                   className='settings-input'

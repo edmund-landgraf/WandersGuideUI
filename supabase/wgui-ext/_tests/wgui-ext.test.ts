@@ -587,3 +587,64 @@ Deno.test({
     }
   },
 });
+
+Deno.test({
+  name: 'wgui-ext: a player can add and remove party members unless the GM turns it off',
+  ignore: skip,
+  async fn() {
+    const gm = await createSignedInUser();
+    const player = await createSignedInUser();
+    const campaign = await seedCampaign(gm.userId);
+    const character = await seedCharacter(player.userId, campaign.id);
+    const other = await seedCharacter(gm.userId, campaign.id);
+
+    try {
+      const added = await callFunction(
+        'wgui-ext-patch-party',
+        { campaign_id: campaign.id, party_ids: [character.id, other.id] },
+        { token: player.jwt },
+      );
+      assertEquals(added.body?.status, 'success');
+      assertEquals(added.body?.data?.party_ids, [character.id, other.id]);
+
+      const removed = await callFunction(
+        'wgui-ext-patch-party',
+        { campaign_id: campaign.id, party_ids: [other.id] },
+        { token: player.jwt },
+      );
+      assertEquals(removed.body?.status, 'success');
+      assertEquals(removed.body?.data?.party_ids, [other.id]);
+
+      const { data: stored } = await admin.from('campaign').select('meta_data').eq('id', campaign.id).single();
+      assertEquals(stored?.meta_data?.party_ids, [other.id]);
+
+      await admin.from('campaign').update({
+        meta_data: { ...(stored?.meta_data ?? {}), settings: { players_manage_party: false } },
+      }).eq('id', campaign.id);
+      const locked = await callFunction(
+        'wgui-ext-patch-party',
+        { campaign_id: campaign.id, party_ids: [character.id] },
+        { token: player.jwt },
+      );
+      assertEquals(locked.status, 403);
+
+      const stranger = await createSignedInUser();
+      try {
+        const forbidden = await callFunction(
+          'wgui-ext-patch-party',
+          { campaign_id: campaign.id, party_ids: [] },
+          { token: stranger.jwt },
+        );
+        assertEquals(forbidden.status, 403);
+      } finally {
+        await admin.auth.admin.deleteUser(stranger.userId);
+      }
+    } finally {
+      await admin.from('character').delete().eq('id', character.id);
+      await admin.from('character').delete().eq('id', other.id);
+      await admin.from('campaign').delete().eq('id', campaign.id);
+      await admin.auth.admin.deleteUser(gm.userId);
+      await admin.auth.admin.deleteUser(player.userId);
+    }
+  },
+});

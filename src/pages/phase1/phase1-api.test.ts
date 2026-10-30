@@ -34,10 +34,10 @@ describe('visibleCampaignEncounters', () => {
     expect(visibleCampaignEncounters([row], 21, true, new Set())).toHaveLength(1);
   });
 
-  it('shows an untoggled encounter only to a player whose PC is in it', () => {
+  it('shows an untoggled encounter that already has a player character to the whole party', () => {
     const own = ownCharacterIds([{ id: 44, user_id: 'player' } as Character], 'player');
     expect(visibleCampaignEncounters([fight], 21, false, own).map((item) => item.id)).toEqual([9]);
-    expect(visibleCampaignEncounters([fight], 21, false, new Set([99]))).toEqual([]);
+    expect(visibleCampaignEncounters([fight], 21, false, new Set([99])).map((item) => item.id)).toEqual([9]);
   });
 
   it('matches character ids when the encounter stores them as strings', () => {
@@ -66,8 +66,8 @@ describe('visibleCampaignEncounters', () => {
     expect(visibleCampaignEncounters([shown], 21, false, new Set()).map((item) => item.id)).toEqual([3]);
   });
 
-  it('reads the GM switch as on only when the encounter was explicitly shown to the campaign', () => {
-    expect(gmEncounterShownToPlayers(fight)).toBe(false);
+  it('reads the GM switch as on when a player character is already in an untoggled encounter', () => {
+    expect(gmEncounterShownToPlayers(fight)).toBe(true);
     const empty = encounter({ id: 4, campaign_id: 21, combatants: { list: [] } });
     expect(gmEncounterShownToPlayers(empty)).toBe(false);
     expect(gmEncounterShownToPlayers(encounter({ ...empty, meta_data: { player_visible: true } }))).toBe(true);

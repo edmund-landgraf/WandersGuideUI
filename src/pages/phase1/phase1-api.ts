@@ -137,22 +137,28 @@ export function encounterPlayerVisibleFlag(encounter: Encounter): boolean | unde
   return flag === true || flag === false ? flag : undefined;
 }
 
+function encounterHasPlayerCharacter(encounter: Encounter): boolean {
+  return (encounter.combatants?.list ?? []).some((item) => !item.type || item.type === 'CHARACTER');
+}
+
 /**
  * Whether this encounter belongs on a player's list.
- * The GM's Players switch (`player_visible: true`) shows it to every character in the
- * campaign. Off hides it. An encounter the GM has not toggled stays visible only to
- * players whose character is in it; the rest of the party is on the bench.
+ * Off hides it. On shows it to the whole party. An encounter the GM has not toggled
+ * stays on the party list when a player character is already in it — that is the same
+ * state the Players switch shows — and otherwise only for the player whose character is in it.
  */
 export function encounterListedForPlayers(encounter: Encounter, characterIds: Set<number>): boolean {
   const flag = encounterPlayerVisibleFlag(encounter);
   if (flag === false) return false;
-  if (flag === true) return true;
+  if (flag === true || encounterHasPlayerCharacter(encounter)) return true;
   return encounterIncludesOwnCharacter(encounter, characterIds);
 }
 
-/** Checked state of the GM switch. On only when the GM has explicitly shown the encounter to the campaign. */
+/** Checked state of the GM switch. Untoggled encounters read as on when a player character is already in them. */
 export function gmEncounterShownToPlayers(encounter: Encounter): boolean {
-  return encounterPlayerVisibleFlag(encounter) === true;
+  const flag = encounterPlayerVisibleFlag(encounter);
+  if (flag != null) return flag;
+  return encounterHasPlayerCharacter(encounter);
 }
 
 /** On unless the GM turned masking off. Players then see enemy initials and the usual combat filters. */

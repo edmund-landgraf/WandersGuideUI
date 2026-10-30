@@ -15,7 +15,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { ConfirmDialog } from './phase1-campaign-settings';
-import { encounterMasksCombatants, gmEncounterShownToPlayers, loadPhase1SheetCharacter } from './phase1-api';
+import { encounterMasksCombatants, gmEncounterShownToPlayers, loadPhase1SheetCharacter, phase1Request, sameUserId } from './phase1-api';
 import { combatantDisplayName } from './phase1-initiative';
 import { creatureStatBlockText } from './phase1-creature-defenses';
 import { isContentStackOpen, useContentLinks } from './phase1-content-links';
@@ -425,8 +425,9 @@ function folderDescendantIds(folders: EncounterFolder[], id: string) {
   return doomed;
 }
 
-export function Phase1CampaignHome({ campaignId, players, encounters, notes = [], wide = false, isGm = false, folders = [], onFoldersChange, onMoveEncounter, onTogglePlayerVisible, onToggleMaskCombatants, onAddEncounterNote, onDeleteNote }: { campaignId: number; players: Character[]; encounters: Encounter[]; notes?: CampaignHomeNote[]; wide?: boolean; isGm?: boolean; folders?: EncounterFolder[]; onFoldersChange?: (folders: EncounterFolder[]) => void; onMoveEncounter?: (encounter: Encounter, folderId: string | null) => void; onTogglePlayerVisible?: (encounter: Encounter, shown: boolean) => void; onToggleMaskCombatants?: (encounter: Encounter, masked: boolean) => void; onAddEncounterNote?: (encounter: Encounter) => void; onDeleteNote?: (index: number) => void }) {
+export function Phase1CampaignHome({ campaignId, players, encounters, notes = [], wide = false, isGm = false, folders = [], onFoldersChange, onMoveEncounter, onTogglePlayerVisible, onToggleMaskCombatants, onAddEncounterNote, onDeleteNote, onLeaveParty }: { campaignId: number; players: Character[]; encounters: Encounter[]; notes?: CampaignHomeNote[]; wide?: boolean; isGm?: boolean; folders?: EncounterFolder[]; onFoldersChange?: (folders: EncounterFolder[]) => void; onMoveEncounter?: (encounter: Encounter, folderId: string | null) => void; onTogglePlayerVisible?: (encounter: Encounter, shown: boolean) => void; onToggleMaskCombatants?: (encounter: Encounter, masked: boolean) => void; onAddEncounterNote?: (encounter: Encounter) => void; onDeleteNote?: (index: number) => void; onLeaveParty?: (characterId: number) => void }) {
   const navigate = useNavigate();
+  const session = useAuthSession();
   const [windows, setWindows] = useState<PcWindow[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [dropFolderId, setDropFolderId] = useState<string | null>(null);
@@ -1073,7 +1074,7 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
         </table>
       </section>
       <div className='h-px shrink-0 bg-p1-border' />
-      <section ref={splitRef} className={wide ? 'flex min-h-0 flex-1 bg-p1-page py-2 pl-3 pr-10' : 'flex min-h-0 flex-1 bg-p1-page py-2'}>
+      <section ref={splitRef} className={wide ? 'mb-3 flex min-h-0 flex-1 bg-p1-page py-2 pl-3 pr-10' : 'mb-3 flex min-h-0 flex-1 bg-p1-page py-2'}>
         <aside className='flex min-w-0 shrink-0 flex-col overflow-auto pr-2' style={{ width: folderPaneWidth > 0 ? folderPaneWidth : '33.333%' }}>
           <button
             type='button'
@@ -1346,6 +1347,7 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
           x={partyMenu.x}
           y={partyMenu.y}
           name={players.find((player) => player.id === partyMenu.id)?.name ?? 'Character'}
+          canRest={Boolean(onLeaveParty) && (isGm || sameUserId(players.find((player) => player.id === partyMenu.id)?.user_id, session?.user.id))}
           onClose={() => setPartyMenu(null)}
           onOpen={() => {
             const player = players.find((item) => item.id === partyMenu.id);
@@ -1354,6 +1356,11 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
           onOpenSheet={() => {
             setPartyMenu(null);
             window.open(`/sheet/${partyMenu.id}`, '_blank', 'noopener,noreferrer');
+          }}
+          onRest={() => {
+            const player = players.find((item) => item.id === partyMenu.id);
+            setPartyMenu(null);
+            if (player) onLeaveParty?.(player.id);
           }}
         />
       ) : null}
@@ -1373,7 +1380,7 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
   );
 }
 
-function PartyStatMenu({ x, y, name, onClose, onOpen, onOpenSheet }: { x: number; y: number; name: string; onClose: () => void; onOpen: () => void; onOpenSheet: () => void }) {
+function PartyStatMenu({ x, y, name, canRest, onClose, onOpen, onOpenSheet, onRest }: { x: number; y: number; name: string; canRest: boolean; onClose: () => void; onOpen: () => void; onOpenSheet: () => void; onRest: () => void }) {
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -1382,13 +1389,14 @@ function PartyStatMenu({ x, y, name, onClose, onOpen, onOpenSheet }: { x: number
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
   const left = Math.min(x, window.innerWidth - 180);
-  const top = Math.min(y, window.innerHeight - 72);
+  const top = Math.min(y, window.innerHeight - (canRest ? 104 : 72));
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} onContextMenu={(event) => { event.preventDefault(); onClose(); }} />
       <div role='menu' aria-label={name} className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 text-xs text-p1-text shadow-2xl' style={{ left, top }}>
         <button type='button' role='menuitem' className='block w-full px-3 py-1.5 text-left hover:bg-p1-hover' onClick={onOpen}>Open stat card</button>
         <button type='button' role='menuitem' className='block w-full px-3 py-1.5 text-left hover:bg-p1-hover' onClick={onOpenSheet}>Open sheet</button>
+        {canRest ? <button type='button' role='menuitem' className='block w-full whitespace-nowrap px-3 py-1.5 text-left hover:bg-p1-hover' onClick={onRest}>Take a rest</button> : null}
       </div>
     </>,
     document.body,
