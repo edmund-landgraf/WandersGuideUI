@@ -1,5 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Crown, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, Image as ImageIcon, KeyRound, ListChecks, LogOut, Maximize2, Menu, Minimize2, Package, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
+import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Crown, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, Image as ImageIcon, KeyRound, ListChecks, LogOut, Maximize2, Menu, Minimize2, Package, PanelLeft, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -65,6 +65,7 @@ import { maxCombatantStats, maxEntityStats, resetCombatant, resetEntityCombatSta
 import { CombatantChangeLogFooter, EditableValueWithNote, GridHpEditPopover, RoundNoteField } from './phase1-change-log-ui';
 import { PhaseViewSwitch } from '../phase-switch/PhaseViewSwitch';
 import { ConfirmDialog, SettingsSurface } from './phase1-campaign-settings';
+import { Phase1CampaignHome } from './phase1-campaign-home';
 import { Phase1PcStatBlocksModal } from './phase1-pc-stat-blocks';
 import { CAMPAIGN_SLOT_CAP, CHARACTER_SLOT_CAP, GUIDE_BLUE } from '@constants/data';
 import { PATREON_URL } from '@constants/urls';
@@ -2415,7 +2416,6 @@ export function Phase1CampaignPage() {
       if (next) await updateEncounter.mutateAsync(next);
     }
   }
-  if (!viewingNotes && !viewingSettings && !encounterId && visible[0]) return <Navigate replace to={`/phase1/campaign/${campaignId}/encounters/${visible[0].id}`} />;
   if (viewingNotes && !isGm) {
     if (visible[0]) return <Navigate replace to={`/phase1/campaign/${campaignId}/encounters/${visible[0].id}`} />;
     return <Navigate replace to={`/phase1/campaign/${campaignId}`} />;
@@ -2497,7 +2497,18 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const [dcDraft, setDcDraft] = useState(selectedEncounter?.meta_data.dice_roll_state?.dc != null ? String(selectedEncounter.meta_data.dice_roll_state.dc) : '');
   const combatants = useMemo(() => populateCombatants(selectedEncounter?.combatants.list ?? [], players), [selectedEncounter, players]);
   const activeCombatants = useMemo(() => combatants.filter((combatant) => !isCombatantOut(combatant)), [combatants]);
-  const outCombatants = useMemo(() => combatants.filter((combatant) => isCombatantOut(combatant)), [combatants]);
+  const outCombatants = useMemo(() => {
+    if (selectedEncounter) return combatants.filter((combatant) => isCombatantOut(combatant));
+    const byCharacter = new Map<number, PopulatedCombatant>();
+    for (const encounter of encounters) {
+      for (const combatant of populateCombatants(encounter.combatants?.list ?? [], players)) {
+        if (combatant.type !== 'CHARACTER' || combatant.character == null || !isCombatantOut(combatant)) continue;
+        const previous = byCharacter.get(combatant.character);
+        if (!previous || (previous.out !== 'dead' && combatant.out === 'dead')) byCharacter.set(combatant.character, combatant);
+      }
+    }
+    return [...byCharacter.values()];
+  }, [selectedEncounter, combatants, encounters, players]);
   const orderedCombatants = useMemo(() => sortCombatantsByInitiative(activeCombatants), [activeCombatants]);
   const selectedEncounterRef = useRef(selectedEncounter);
   const initiativeLogRef = useRef<InitiativeRoundLog[]>(selectedEncounter?.meta_data.initiative_log ?? []);
@@ -2549,7 +2560,10 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   const encounterNote = notePages.find((item) => encounterNamesMatch(item.page.name, selectedEncounter?.name));
   const noteEncounter = encounters.find((item) => encounterNamesMatch(item.name, selectedNote?.page.name));
   const activeCharacterIds = new Set((selectedEncounter?.combatants.list ?? []).filter((combatant) => combatant.type === 'CHARACTER').map((combatant) => combatant.character));
-  const benchPlayers = players.filter((player) => !activeCharacterIds.has(player.id));
+  const storedPartyIds = campaign?.meta_data?.party_ids;
+  const partyIds = storedPartyIds ? new Set(storedPartyIds) : null;
+  const inParty = (characterId: number) => partyIds == null || partyIds.has(characterId);
+  const partyPlayers = players.filter((player) => inParty(player.id));
   const diceState = selectedEncounter?.meta_data.dice_roll_state;
   const ambaChallenges = useMemo(() => readAmbaChallenges(selectedEncounter?.meta_data), [selectedEncounter?.meta_data]);
   const diceSide = isGm ? (diceState?.side ?? 'allies') : diceState?.side;
@@ -2631,12 +2645,33 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     updateRoster([...selectedEncounter.combatants.list, { _id: crypto.randomUUID(), type: 'CHARACTER', ally: true, initiative: undefined, character: characterId, data: undefined }]);
   }
 
+  function writeParty(ids: number[]) {
+    if (!campaign) return;
+    onUpdateCampaign({ ...campaign, meta_data: { ...campaign.meta_data, party_ids: ids } });
+  }
+
+  function addToParty(characterId: number) {
+    if (inParty(characterId) && partyIds != null) return;
+    const next = new Set(partyIds ?? players.map((player) => player.id));
+    next.add(characterId);
+    writeParty([...next]);
+  }
+
+  function leaveParty(characterId: number) {
+    writeParty((partyIds ? [...partyIds] : players.map((player) => player.id)).filter((id) => id !== characterId));
+  }
+
+  function addAllToParty() {
+    writeParty(players.map((player) => player.id));
+  }
+
   function addAllPlayers() {
-    if (!selectedEncounter || benchPlayers.length === 0) return;
+    const waiting = players.filter((player) => !activeCharacterIds.has(player.id));
+    if (!selectedEncounter || waiting.length === 0) return;
     setEncounterTab('combat');
     updateRoster([
       ...selectedEncounter.combatants.list,
-      ...benchPlayers.map((player) => ({ _id: crypto.randomUUID(), type: 'CHARACTER' as const, ally: true, initiative: undefined, character: player.id, data: undefined })),
+      ...waiting.map((player) => ({ _id: crypto.randomUUID(), type: 'CHARACTER' as const, ally: true, initiative: undefined, character: player.id, data: undefined })),
     ]);
   }
 
@@ -3297,13 +3332,14 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     return () => window.removeEventListener(PHASE1_SHEET_ART_TONE_EVENT, sync);
   }, []);
   const rail = (
-    <CampaignRail campaign={campaign} encounters={encounters} players={benchPlayers} campaignPlayers={players} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddPlayer={addPlayer} onAddAllPlayers={addAllPlayers} onAddAllPcsToEncounters={campaign && isGm ? onAddAllPcsToEncounters : undefined} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onDeleteNote={onDeleteNote} onDeleteAllNotes={onDeleteAllNotes} onDeleteEncounter={onDeleteEncounter} onDeleteAllEncounters={onDeleteAllEncounters} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} onRenameNote={renameNote} onRenameEncounter={renameEncounter} />
+    <CampaignRail campaign={campaign} encounters={encounters} players={players} campaignPlayers={players} inParty={inParty} onAddToParty={addToParty} onLeaveParty={leaveParty} onAddAllToParty={addAllToParty} outCombatants={outCombatants} selectedEncounter={selectedEncounter} selectedId={selectedId} notePages={notePages} selectedNoteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} rosterSaving={rosterSaving} onRemovePlayer={removePlayer} onAddPlayer={addPlayer} onAddAllPlayers={addAllPlayers} onAddAllPcsToEncounters={campaign && isGm ? onAddAllPcsToEncounters : undefined} onSelectCombatant={setSelectedId} onMarkOut={setCombatantOut} onRequestRemoveFromCampaign={campaign ? (characterId, name) => setPendingCampaignRemove({ id: characterId, name }) : undefined} onDeleteNote={onDeleteNote} onDeleteAllNotes={onDeleteAllNotes} onDeleteEncounter={onDeleteEncounter} onDeleteAllEncounters={onDeleteAllEncounters} onCreateNote={onCreateNote} onCreateEncounter={onCreateEncounter} onRenameNote={renameNote} onRenameEncounter={renameEncounter} onCollapse={() => setRailOpen(false)} />
   );
   const inspector = (
     <Inspector fill={narrow} combatant={selected && (isGm || !isEnemyCreature(selected)) ? selected : null} width={detailWidth} activeTab={normalizeDetailTab(activeTab)} onTab={setActiveTab} onCollapse={narrow ? undefined : () => setInspectorOpen(false)} hasMatchingCampaignNote={Boolean(encounterNote)} status={selected ? statuses.data?.[selected._id] : undefined} statusLoading={statuses.isLoading} canManageSpells={canManageSpells} spellActions={spellActions} onChangeConditions={canManageSpells && selected?.type !== 'HAZARD' ? persistConditions : undefined} onSaveGmNotes={isGm && selected?.type === 'CREATURE' ? persistGmNotes : undefined} onPersistHpCurrent={selected && canManageSpells && selected.data ? (raw, note) => persistHpCurrent(selected, raw, note, statuses.data?.[selected._id]?.maxHp ?? statsFor(selected.data).maxHp) : undefined} onPersistTempHp={selected && canManageSpells && selected.data ? (raw, note) => persistTempHp(selected, raw, note) : undefined} initiativeLog={selectedEncounter?.meta_data.initiative_log ?? []} canEditRoundNotes={isGm && !rosterSaving} onUpdateRoundNote={updateRoundNote} onLogAction={selected && canManageSpells && selected.type !== 'HAZARD' ? persistLogAction : undefined} onDeleteLogEntry={selected && canManageSpells && selected.type !== 'HAZARD' ? persistDeleteLogEntry : undefined} />
   );
-  const phoneInspector = narrow && selectedId && !viewingNotes && !viewingSettings;
-  const showDetail = !narrow && !viewingNotes && !viewingSettings;
+  const viewingHome = Boolean(campaign) && !viewingNotes && !viewingSettings && !selectedEncounter;
+  const phoneInspector = narrow && selectedId && !viewingNotes && !viewingSettings && !viewingHome;
+  const showDetail = !narrow && !viewingNotes && !viewingSettings && !viewingHome;
   const detailOpen = showDetail && inspectorOpen;
   const dockedRail = !railDrawer && railOpen;
   const encounterGrid = dockedRail && detailOpen
@@ -3349,6 +3385,8 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
             />
           ) : viewingNotes ? (
             <NoteSurface campaign={campaign} note={selectedNote} isGm={isGm} encounterLink={noteEncounter ? { href: phase1EncounterPath(noteEncounter.id, campaign?.id), name: noteEncounter.name } : undefined} onUpdateCampaign={onUpdateCampaign} />
+          ) : viewingHome && campaign ? (
+            <Phase1CampaignHome wide={!dockedRail} campaignId={campaign.id} players={partyPlayers} encounters={encounters} notes={notePages.map(({ page, index }) => ({ index, name: page.name, shared: page.shared, markdown: noteContentsToMarkdown(page.contents) }))} />
           ) : (
             <>
               <EncounterHeader encounter={selectedEncounter} combatants={activeCombatants} count={activeCombatants.length} isGm={isGm} campaignId={campaign?.id ?? null} noteLink={!standalone && encounterNote && campaign ? { href: `/phase1/campaign/${campaign.id}/notes/${encounterNote.index}`, name: encounterNote.page.name } : undefined} tab={encounterTab} onTab={setEncounterTab} canAddCreature={isGm && !rosterSaving} onAddCreature={() => setCreaturePickerOpen(true)} showAddHazard={campaign?.meta_data?.settings?.show_hazards_button === true} canAddHazard={isGm && !rosterSaving} onAddHazard={() => setHazardPickerOpen(true)} canRollInitiative={isGm && activeCombatants.length > 0} onRollInitiative={() => setInitiativeOpen(true)} canClearInitiative={isGm && activeCombatants.some((combatant) => combatant.initiative != null)} onClearInitiative={clearInitiative} canMaxStats={isGm && combatants.length > 0 && !rosterSaving} onMaxStats={maxEncounterStats} canReset={isGm && Boolean(selectedEncounter) && !rosterSaving} onReset={() => setResetOpen(true)} onOpenStatBlocks={() => setStatBlocksOpen(true)} onCreateEncounter={isGm ? onCreateEncounter : undefined} />
@@ -3679,24 +3717,26 @@ export function WorkspaceHeader({ label, section, campaignId, encounterId, noteI
   });
   const patreonTier = user.data?.patreon?.tier ?? null;
   return (
-    <header className='flex w-full min-w-0 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-p1-border bg-p1-header px-3 py-2 md:h-14 md:flex-nowrap md:gap-4 md:px-5 md:py-0'>
-      <div className='flex shrink-0 items-center gap-2'>
-        {onToggleRail && (
-          <button type='button' className='icon-button' title={railOpen ? 'Hide campaign sidebar' : 'Show campaign sidebar'} aria-expanded={Boolean(railOpen)} aria-controls='campaign-rail' aria-label={railOpen ? 'Hide campaign sidebar' : 'Show campaign sidebar'} onClick={onToggleRail}>
-            <Menu size={16} />
-          </button>
-        )}
-        <a href='/' className='whitespace-nowrap font-semibold'>Wanderer's Guide</a>
+    <header className='flex w-full min-w-0 shrink-0 flex-col gap-2 border-b border-p1-border bg-p1-header px-3 py-2 min-[1440px]:h-14 min-[1440px]:flex-row min-[1440px]:items-center min-[1440px]:gap-4 min-[1440px]:px-5 min-[1440px]:py-0'>
+      <div className='flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2'>
+        <div className='flex shrink-0 items-center gap-2'>
+          {onToggleRail && (
+            <button type='button' className='icon-button' title={railOpen ? 'Hide campaign sidebar' : 'Show campaign sidebar'} aria-expanded={Boolean(railOpen)} aria-controls='campaign-rail' aria-label={railOpen ? 'Hide campaign sidebar' : 'Show campaign sidebar'} onClick={onToggleRail}>
+              <Menu size={16} />
+            </button>
+          )}
+          <a href='/' className='whitespace-nowrap font-semibold'>Wanderer's Guide</a>
+        </div>
+        <span className='hidden h-4 w-px bg-p1-border sm:block' />
+        <Link to='/phase1' className={navClass(section === 'campaigns')}>Campaigns</Link>
+        <Link to='/phase1/characters' className={navClass(section === 'characters')}>Characters</Link>
+        <Link to='/phase1/homebrew' className={navClass(section === 'homebrew')}>Homebrew</Link>
+        <Link to='/phase1/encounters' className={navClass(section === 'encounters')}>Encounters</Link>
+        <a href='/shops' className={navClass(false)}>Shops</a>
+        {user.data?.is_admin && <Link to='/phase1/admin' className={navClass(label === 'Admin')}>Admin</Link>}
+        {label && <><span className='text-p1-faint'>/</span><span className='max-w-40 truncate text-sm text-p1-muted'>{label}</span></>}
       </div>
-      <span className='hidden h-4 w-px bg-p1-border sm:block' />
-      <Link to='/phase1' className={navClass(section === 'campaigns')}>Campaigns</Link>
-      <Link to='/phase1/characters' className={navClass(section === 'characters')}>Characters</Link>
-      <Link to='/phase1/homebrew' className={navClass(section === 'homebrew')}>Homebrew</Link>
-      <Link to='/phase1/encounters' className={navClass(section === 'encounters')}>Encounters</Link>
-      <a href='/shops' className={navClass(false)}>Shops</a>
-      {user.data?.is_admin && <Link to='/phase1/admin' className={navClass(label === 'Admin')}>Admin</Link>}
-      {label && <><span className='text-p1-faint'>/</span><span className='max-w-40 truncate text-sm text-p1-muted'>{label}</span></>}
-      <div className='flex w-full min-w-0 flex-wrap items-center gap-2 md:ml-auto md:w-auto'>
+      <div className='flex shrink-0 flex-wrap items-center gap-2'>
         <span className='hidden text-[11px] uppercase tracking-[0.14em] text-p1-faint sm:inline' title='patreon.tier from get-user'>
           {user.isPending ? 'Patreon…' : patreonTier ?? 'no Patreon tier'}
         </span>
@@ -3710,14 +3750,20 @@ export function WorkspaceHeader({ label, section, campaignId, encounterId, noteI
   );
 }
 
-function CampaignRail({ campaign, encounters, players, campaignPlayers, outCombatants, selectedEncounter, selectedId, notePages, selectedNoteIndex, viewingSettings, isGm, rosterSaving, onRemovePlayer, onAddPlayer, onAddAllPlayers, onAddAllPcsToEncounters, onSelectCombatant, onMarkOut, onRequestRemoveFromCampaign, onDeleteNote, onDeleteAllNotes, onDeleteEncounter, onDeleteAllEncounters, onCreateNote, onCreateEncounter, onRenameNote, onRenameEncounter }: {
-  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; campaignPlayers: Character[]; outCombatants: PopulatedCombatant[]; selectedEncounter: Encounter | null; selectedId: string | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; rosterSaving: boolean; onRemovePlayer: (combatantId: string) => void; onAddPlayer: (characterId: number) => void; onAddAllPlayers: () => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onSelectCombatant: (id: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onRequestRemoveFromCampaign?: (characterId: number, name: string) => void; onDeleteNote: (index: number) => void; onDeleteAllNotes?: () => void; onDeleteEncounter: (id: number) => void; onDeleteAllEncounters?: () => Promise<void> | void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; onRenameNote: (index: number, name: string) => void; onRenameEncounter: (id: number, name: string) => void;
+function CampaignRail({ campaign, encounters, players, campaignPlayers, outCombatants, selectedEncounter, selectedId, notePages, selectedNoteIndex, viewingSettings, isGm, rosterSaving, inParty, onAddToParty, onLeaveParty, onAddAllToParty, onRemovePlayer, onAddPlayer, onAddAllPlayers, onAddAllPcsToEncounters, onSelectCombatant, onMarkOut, onRequestRemoveFromCampaign, onDeleteNote, onDeleteAllNotes, onDeleteEncounter, onDeleteAllEncounters, onCreateNote, onCreateEncounter, onRenameNote, onRenameEncounter, onCollapse }: {
+  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; campaignPlayers: Character[]; outCombatants: PopulatedCombatant[]; selectedEncounter: Encounter | null; selectedId: string | null; notePages: IndexedNotePage[]; selectedNoteIndex: number | null; viewingSettings: boolean; isGm: boolean; rosterSaving: boolean; inParty?: (characterId: number) => boolean; onAddToParty?: (characterId: number) => void; onLeaveParty?: (characterId: number) => void; onAddAllToParty?: () => void; onRemovePlayer: (combatantId: string) => void; onAddPlayer: (characterId: number) => void; onAddAllPlayers: () => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onSelectCombatant: (id: string) => void; onMarkOut: (combatantId: string, out: Combatant['out']) => void; onRequestRemoveFromCampaign?: (characterId: number, name: string) => void; onDeleteNote: (index: number) => void; onDeleteAllNotes?: () => void; onDeleteEncounter: (id: number) => void; onDeleteAllEncounters?: () => Promise<void> | void; onCreateNote: (name: string) => void; onCreateEncounter: (name: string) => void; onRenameNote: (index: number, name: string) => void; onRenameEncounter: (id: number, name: string) => void; onCollapse?: () => void;
 }) {
   const standalone = campaign == null;
   const [benchActive, setBenchActive] = useState(false);
   const [outActive, setOutActive] = useState(false);
   const [notesOpen, setNotesOpen] = useState(selectedNoteIndex != null);
   const [encountersOpen, setEncountersOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(viewingSettings);
+  const [benchOpen, setBenchOpen] = useState(true);
+  const [outOpen, setOutOpen] = useState(true);
+  useEffect(() => {
+    if (viewingSettings) setSettingsOpen(true);
+  }, [viewingSettings]);
   useEffect(() => {
     setEncountersOpen(false);
   }, [selectedEncounter?.id]);
@@ -3774,7 +3820,10 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
   return (
     <aside className='h-full min-h-0 overflow-y-auto border-r border-p1-border bg-p1-header'>
       <div className='border-b border-p1-border p-4'>
-        <Link to={standalone ? '/phase1/encounters' : '/phase1'} className='mb-5 flex items-center gap-2 text-xs text-p1-muted hover:text-p1-text'><ArrowLeft size={14} /> {standalone ? 'Encounters' : 'Campaigns'}</Link>
+        <div className='mb-5 flex items-center gap-2'>
+          <Link to={standalone ? '/phase1/encounters' : '/phase1'} className='flex min-w-0 flex-1 items-center gap-2 text-xs text-p1-muted hover:text-p1-text'><ArrowLeft size={14} /> {standalone ? 'Encounters' : 'Campaigns'}</Link>
+          {onCollapse && <button type='button' className='icon-button shrink-0' title='Hide sidebar' aria-label='Hide sidebar' onClick={onCollapse}><PanelLeft size={16} /></button>}
+        </div>
         {standalone ? (
           <>
             <Eyebrow>Standalone</Eyebrow>
@@ -3788,45 +3837,8 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
       </div>
       {!standalone && isGm && campaign && (
         <>
-      <RailLabel icon={<BookOpen size={14} />} label='Notes' count={notePages.length} open={notesOpen} onToggle={() => setNotesOpen((value) => !value)} onContextMenu={(event) => openSectionMenu(event, 'note')} />
-      {notesOpen && (
-        <nav className='px-2 pb-4' onContextMenu={(event) => openSectionMenu(event, 'note')}>
-          {notePages.map(({ page, index }) => (
-            <Link
-              key={`${page.name}-${index}`}
-              to={`/phase1/campaign/${campaign.id}/notes/${index}`}
-              onContextMenu={(event) => openRailMenu(event, { kind: 'note', id: index, name: encounterDisplayName(page.name) })}
-              className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedNoteIndex === index ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
-            >
-              <span className='block truncate'>{encounterDisplayName(page.name)}</span>
-              {isGm && <span className='mt-0.5 block text-[11px] text-p1-faint'>{page.shared ? 'Shared with party' : 'GM only'}</span>}
-            </Link>
-          ))}
-          {notePages.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>{isGm ? 'No campaign notes yet.' : 'No shared campaign notes.'}</p>}
-        </nav>
-      )}
-        </>
-      )}
-      <RailLabel icon={<Swords size={14} />} label='Encounters' count={encounters.length} open={encountersOpen} onToggle={() => setEncountersOpen((value) => !value)} onContextMenu={(event) => openSectionMenu(event, 'encounter')} />
-      {encountersOpen && (
-        <nav className='px-2 pb-4' onContextMenu={(event) => openSectionMenu(event, 'encounter')}>
-          {encounters.map((encounter) => (
-            <Link
-              key={encounter.id}
-              to={phase1EncounterPath(encounter.id, campaign?.id)}
-              onContextMenu={(event) => openRailMenu(event, { kind: 'encounter', id: encounter.id, name: encounterDisplayName(encounter.name) })}
-              className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedEncounter?.id === encounter.id ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
-            >
-              <span className='block truncate'>{encounterDisplayName(encounter.name)}</span>
-              {isGm && <span className='mt-0.5 block text-[11px] text-p1-faint'>{encounter.combatants.list.length} combatants</span>}
-            </Link>
-          ))}
-          {encounters.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>{standalone ? 'No standalone encounters yet.' : isGm ? 'No encounters in this campaign yet.' : 'None of your characters are in an encounter yet.'}</p>}
-        </nav>
-      )}
-      {!standalone && isGm && campaign && (
-        <>
-          <RailLabel icon={<Settings size={14} />} label='Settings' />
+          <RailLabel icon={<Settings size={14} />} label='Settings' open={settingsOpen} onToggle={() => setSettingsOpen((value) => !value)} />
+          {settingsOpen && (
           <nav className='px-2 pb-4'>
             <Link
               to={`/phase1/campaign/${campaign.id}/settings`}
@@ -3836,16 +3848,17 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
               <span className='mt-0.5 block text-[11px] text-p1-faint'>Player defaults and game config</span>
             </Link>
           </nav>
+          )}
         </>
       )}
       {!standalone && campaign && (
         <>
-          <RailLabel icon={<UsersRound size={14} />} label='Party bench' count={players.length} onContextMenu={openBenchMenu} />
-          <div className={`mx-2 min-h-16 border px-1 pb-4 pt-1 transition-colors ${benchActive ? 'border-p1-accent bg-p1-accent/[0.07]' : 'border-transparent'}`} onContextMenu={openBenchMenu} onDragOver={(event) => { if (canManageRoster && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setBenchActive(true); } }} onDragLeave={() => setBenchActive(false)} onDrop={dropOnBench}>
+          <RailLabel icon={<UsersRound size={14} />} label='Party bench' count={players.length} open={benchOpen} onToggle={() => setBenchOpen((value) => !value)} onContextMenu={openBenchMenu} />
+          {benchOpen && <div className={`mx-2 min-h-16 border px-1 pb-4 pt-1 transition-colors ${benchActive ? 'border-p1-accent bg-p1-accent/[0.07]' : 'border-transparent'}`} onContextMenu={openBenchMenu} onDragOver={(event) => { if (canManageRoster && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setBenchActive(true); } }} onDragLeave={() => setBenchActive(false)} onDrop={dropOnBench}>
             {players.map((player) => (
               <div
                 key={player.id}
-                className='flex items-center gap-2 px-2 py-2 text-sm text-p1-muted hover:bg-p1-hover hover:text-p1-text'
+                className='flex items-center gap-2 px-2 py-2 text-xs text-p1-muted hover:bg-p1-hover hover:text-p1-text'
                 onContextMenu={(event) => openBenchMenu(event, player.id, player.name)}
                 draggable={canManageRoster}
                 onDragStart={(event) => writeCombatantDrag(event, { source: 'bench', characterId: player.id })}
@@ -3863,22 +3876,23 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
                 <a href={`/sheet/${player.id}`} target='_blank' rel='noreferrer' draggable={false} className='flex min-w-0 flex-1 items-center gap-2 hover:text-p1-text'>
                   <UserRound size={15} />
                   <span className='min-w-0 flex-1 truncate'>{player.name}</span>
+                  {inParty && !inParty(player.id) && <span className='shrink-0 text-[10px] uppercase text-p1-faint'>Resting</span>}
                   <ExternalLink size={12} />
                 </a>
               </div>
             ))}
             {players.length === 0 && <p className='px-2 py-3 text-xs text-p1-faint'>No PCs on the bench.</p>}
-          </div>
+          </div>}
         </>
       )}
       {(selectedEncounter || (!standalone && campaign)) && (
         <>
-          <RailLabel icon={<Skull size={14} />} label='Dead / Incapacitated' count={outCombatants.length} />
-          <div className={`mx-2 min-h-16 border px-1 pb-4 pt-1 transition-colors ${outActive ? 'border-p1-accent bg-p1-accent/[0.07]' : 'border-transparent'}`} onDragOver={(event) => { if (canManageRoster && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setOutActive(true); } }} onDragLeave={() => setOutActive(false)} onDrop={dropOnOut}>
+          <RailLabel icon={<Skull size={14} />} label='Dead / Incap' count={outCombatants.length} open={outOpen} onToggle={() => setOutOpen((value) => !value)} />
+          {outOpen && <div className={`mx-2 min-h-16 border px-1 pb-4 pt-1 transition-colors ${outActive ? 'border-p1-accent bg-p1-accent/[0.07]' : 'border-transparent'}`} onDragOver={(event) => { if (canManageRoster && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setOutActive(true); } }} onDragLeave={() => setOutActive(false)} onDrop={dropOnOut}>
             {outCombatants.map((combatant) => (
               <div
                 key={combatant._id}
-                className={`flex w-full items-center gap-2 px-2 py-2 text-sm hover:bg-p1-hover ${combatant._id === selectedId ? 'bg-p1-hover text-p1-text' : 'text-p1-muted hover:text-p1-text'}`}
+                className={`flex w-full items-center gap-2 px-2 py-2 text-xs hover:bg-p1-hover ${combatant._id === selectedId ? 'bg-p1-hover text-p1-text' : 'text-p1-muted hover:text-p1-text'}`}
                 onContextMenu={(event) => {
                   if (!isGm || rosterSaving) return;
                   event.preventDefault();
@@ -3915,8 +3929,8 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
                 </button>
               </div>
             ))}
-            {outCombatants.length === 0 && <p className='px-2 py-3 text-xs text-p1-faint'>No combatants out of the fight.</p>}
-          </div>
+            {outCombatants.length === 0 && <p className='px-2 py-3 text-xs text-p1-faint'>{selectedEncounter ? 'No combatants out of the fight.' : 'No player characters out of the fight.'}</p>}
+          </div>}
         </>
       )}
       {menu && (
@@ -3984,19 +3998,24 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
         <BenchContextMenu
           x={benchMenu.x}
           y={benchMenu.y}
-          showAdd={benchMenu.characterId != null}
-          addDisabled={!selectedEncounter}
-          addAllDisabled={players.length === 0 || !selectedEncounter}
+          showAdd={benchMenu.characterId != null && !(inParty?.(benchMenu.characterId) ?? true)}
+          showLeave={benchMenu.characterId != null && (inParty?.(benchMenu.characterId) ?? false)}
+          addAllDisabled={players.length === 0 || players.every((player) => inParty?.(player.id) ?? true)}
           showRemoveFromCampaign={benchMenu.characterId != null && Boolean(onRequestRemoveFromCampaign)}
           onClose={() => setBenchMenu(null)}
           onAdd={() => {
             const characterId = benchMenu.characterId;
             setBenchMenu(null);
-            if (characterId != null) onAddPlayer(characterId);
+            if (characterId != null) onAddToParty?.(characterId);
+          }}
+          onLeave={() => {
+            const characterId = benchMenu.characterId;
+            setBenchMenu(null);
+            if (characterId != null) onLeaveParty?.(characterId);
           }}
           onAddAll={() => {
             setBenchMenu(null);
-            onAddAllPlayers();
+            onAddAllToParty?.();
           }}
           onRemoveFromCampaign={() => {
             const characterId = benchMenu.characterId;
@@ -4081,12 +4100,12 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
   );
 }
 function RailLabel({ icon, label, count, open, onToggle, onContextMenu }: { icon: ReactNode; label: string; count?: number; open?: boolean; onToggle?: () => void; onContextMenu?: (event: ReactMouseEvent) => void }) {
-  const className = `flex w-full items-center gap-2 px-5 pb-2 pt-5 text-[10px] font-semibold uppercase text-p1-faint ${onToggle ? 'hover:text-p1-muted' : ''}`;
+  const className = `flex w-full items-center gap-2 px-5 pb-2 pt-5 text-sm text-p1-muted ${onToggle ? 'hover:text-p1-text' : ''}`;
   const content = (
     <>
       {icon}{label}
       {count != null && <span className='ml-auto'>{count}</span>}
-      {onToggle && (open ? <ChevronDown size={12} /> : <ChevronRight size={12} />)}
+      {onToggle && (open ? <ChevronDown size={12} className={count == null ? 'ml-auto' : ''} /> : <ChevronRight size={12} className={count == null ? 'ml-auto' : ''} />)}
     </>
   );
   if (onToggle) {
@@ -4112,7 +4131,7 @@ function PlayerContextMenu({ x, y, onClose, onRemove, onRemoveFromCampaign, onIn
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
       <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onIncapacitate}>
-          <Skull size={14} /> Move to incapacitated
+          <Skull size={14} /> Move to incap
         </button>
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onMarkDead}>
           <Skull size={14} /> Mark dead
@@ -4412,7 +4431,7 @@ function CombatantContextMenu({ x, y, onClose, onClone, onIncapacitate, onMarkDe
         )}
         {onIncapacitate && (
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onIncapacitate}>
-          <Skull size={14} /> Move to incapacitated
+          <Skull size={14} /> Move to incap
         </button>
         )}
         {onMarkDead && (
@@ -4457,7 +4476,7 @@ function OutContextMenu({ x, y, showRemoveFromCampaign, onClose, onReturn, onRem
   );
 }
 
-function BenchContextMenu({ x, y, showAdd, addDisabled, addAllDisabled, showRemoveFromCampaign, onClose, onAdd, onAddAll, onRemoveFromCampaign }: { x: number; y: number; showAdd: boolean; addDisabled?: boolean; addAllDisabled: boolean; showRemoveFromCampaign?: boolean; onClose: () => void; onAdd: () => void; onAddAll: () => void; onRemoveFromCampaign?: () => void }) {
+function BenchContextMenu({ x, y, showAdd, showLeave, addAllDisabled, showRemoveFromCampaign, onClose, onAdd, onLeave, onAddAll, onRemoveFromCampaign }: { x: number; y: number; showAdd: boolean; showLeave?: boolean; addAllDisabled: boolean; showRemoveFromCampaign?: boolean; onClose: () => void; onAdd: () => void; onLeave?: () => void; onAddAll: () => void; onRemoveFromCampaign?: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -4472,12 +4491,17 @@ function BenchContextMenu({ x, y, showAdd, addDisabled, addAllDisabled, showRemo
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
       <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
         {showAdd && (
-          <button type='button' role='menuitem' disabled={addDisabled} title={addDisabled ? 'Select an encounter first' : undefined} className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint disabled:hover:bg-transparent' onClick={onAdd}>
-            <Plus size={14} /> Add to combat
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onAdd}>
+            <Plus size={14} /> Add to party
+          </button>
+        )}
+        {showLeave && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onLeave}>
+            <UserMinus size={14} /> Leave party
           </button>
         )}
         <button type='button' role='menuitem' disabled={addAllDisabled} className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover disabled:cursor-not-allowed disabled:text-p1-faint disabled:hover:bg-transparent' onClick={onAddAll}>
-          <Plus size={14} /> Add all
+          <Plus size={14} /> Add all to party
         </button>
         {showRemoveFromCampaign && (
           <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-danger-soft hover:bg-p1-hover' onClick={onRemoveFromCampaign}>

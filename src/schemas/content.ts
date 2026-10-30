@@ -934,6 +934,7 @@ export const CampaignSchema = z.object({
           show_hazards_button: z.boolean().optional(),
         })
         .optional(),
+      party_ids: z.array(z.number()).optional(),
       image_url: z.string().optional(),
               image_focus_y: z.union([z.number(), z.string()]).optional(),
       row_color: z.string().optional(),
