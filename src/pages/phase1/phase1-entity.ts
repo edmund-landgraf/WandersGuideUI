@@ -45,6 +45,23 @@ export async function preparePhase1Entity(combatant: Phase1EntityCombatant): Pro
   return enqueuePrepare(() => preparePhase1EntityNow(combatant));
 }
 
+/** Hold the shared character store until `work` finishes. Nested sheet prepares deadlock on this. */
+export function withPhase1Store<T>(work: () => Promise<T>): Promise<T> {
+  return enqueuePrepare(work);
+}
+
+/** Maximum hit points from the same character-sheet prepare the sheet displays. */
+export async function characterSheetMaxHp(character: Character): Promise<number> {
+  const prepared = await preparePhase1EntityNow({
+    _id: `sheet-hp-${character.id}`,
+    type: 'CHARACTER',
+    ally: true,
+    character: character.id,
+    data: character,
+  });
+  return getFinalHealthValue(prepared.storeId);
+}
+
 export async function computePhase1BuilderChoiceCounts(character: Character): Promise<ChoiceCounts> {
   return enqueuePrepare(async () => {
     const sources = uniq([COMMON_CORE_ID, ...(character.content_sources?.enabled ?? [])]);

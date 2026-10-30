@@ -20,6 +20,7 @@ import { isContentStackOpen, useContentLinks } from './phase1-content-links';
 import { encounterDisplayName, encounterNamesMatch } from './phase1-encounter-title';
 import { ProseMarkdown } from './phase1-markdown';
 import { ContentLinkHoverCard } from './phase1-content-stack';
+import { characterSheetMaxHp, withPhase1Store } from './phase1-entity';
 import { Phase1StatBlockCardsPacked } from './phase1-stat-block-cards-packed';
 
 export type CampaignHomeNote = {
@@ -454,9 +455,10 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
   }
 
   function addFolder() {
-    const name = folderDraft?.name.trim();
-    if (!name || !onFoldersChange) return;
-    const parentId = folderDraft.parentId || null;
+    const draft = folderDraft;
+    const name = draft?.name.trim();
+    if (!draft || !name || !onFoldersChange) return;
+    const parentId = draft.parentId || null;
     const sort = folders.reduce((max, folder) => Math.max(max, folder.sort), 0) + 1;
     onFoldersChange([...folders, { id: crypto.randomUUID(), name, parent_id: parentId, sort }]);
     setFolderDraft(null);
@@ -510,7 +512,16 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
   const statQueries = useQueries({
     queries: players.map((player) => ({
       queryKey: ['phase1-party-row', player.id],
-      queryFn: () => getJsonV4Content(player),
+      queryFn: () => withPhase1Store(async () => {
+        const content = await getJsonV4Content(player);
+        try {
+          const maxHp = await characterSheetMaxHp(player);
+          if (maxHp > 0) return { ...content, max_hp: maxHp };
+        } catch {
+          // The sheet prepare needs the full character row. Keep the export figure if it is missing.
+        }
+        return content;
+      }),
       staleTime: 30_000,
     })),
   });
