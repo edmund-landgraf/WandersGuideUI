@@ -2,19 +2,24 @@ import { parseIconValue } from '@common/IconDisplay';
 import { Icon } from '@common/Icon';
 import { compiledConditions } from '@conditions/condition-handler';
 import { getJsonV4Content } from '@export/json/json-v4';
-import type { Character, Combatant, Encounter, EncounterFolder, LivingEntity } from '@schemas/content';
+import { isItemWeapon } from '@items/inv-utils';
+import { parseOtherDamage } from '@items/weapon-handler';
+import type { AbilityBlock, Character, Combatant, Encounter, EncounterFolder, LivingEntity } from '@schemas/content';
 import { sign } from '@utils/numbers';
+import { toLabel } from '@utils/strings';
 import { useQueries, useQuery } from '@tanstack/react-query';
+import { flatten } from 'lodash-es';
 import { ChevronDown, ChevronRight, UserRound, X } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { gmEncounterShownToPlayers, phase1Request } from './phase1-api';
 import { combatantDisplayName } from './phase1-initiative';
-import { lookupMonsterArt } from './phase1-monster-image';
-import { isContentStackOpen } from './phase1-content-links';
+import { creatureStatBlockText } from './phase1-creature-defenses';
+import { isContentStackOpen, useContentLinks } from './phase1-content-links';
 import { encounterDisplayName, encounterNamesMatch } from './phase1-encounter-title';
 import { ProseMarkdown } from './phase1-markdown';
+import { ContentLinkHoverCard } from './phase1-content-stack';
 import { Phase1StatBlockCardsPacked } from './phase1-stat-block-cards-packed';
 
 export type CampaignHomeNote = {
@@ -86,6 +91,175 @@ function abilityMod(data: StatBlockContent | undefined, key: string) {
   return sign(match[1].value);
 }
 
+function abilityValue(data: StatBlockContent | undefined, key: string) {
+  const match = data ? Object.entries(data.attributes).find(([name]) => name.includes(key)) : undefined;
+  return match ? Number(match[1].value) : null;
+}
+
+type PartySort = { key: string; dir: 'asc' | 'desc' } | null;
+
+function cyclePartySort(current: PartySort, key: string): PartySort {
+  if (!current || current.key !== key) return { key, dir: 'asc' };
+  if (current.dir === 'asc') return { key, dir: 'desc' };
+  return null;
+}
+
+function partyStatNumber(value: string | number | null | undefined) {
+  if (value == null || value === '' || value === '—' || value === '…') return null;
+  const parsed = Number(String(value).replace(/[^\d.+-]/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function hpBarColor(ratio: number) {
+  const tint = (color: string, amount: string) => `color-mix(in srgb, ${color} ${amount}, var(--p1-bg-raised))`;
+  if (ratio >= 1) return tint('#6d8a64', '46%');
+  if (ratio >= 0.8) return tint('#8aa382', '34%');
+  if (ratio >= 0.6) return tint('#b6a15a', '36%');
+  if (ratio >= 0.4) return tint('#b07848', '34%');
+  if (ratio >= 0.2) return tint('#a86a62', '34%');
+  return tint('#8f4540', '42%');
+}
+
+type DetailPart = { text: string; href?: string };
+
+function contentHref(type: string, id?: number) {
+  if (!id || `${id}`.length >= 10) return undefined;
+  return `link_${type}_${id}`;
+}
+
+function uniqueParts(parts: DetailPart[]) {
+  const seen = new Set<string>();
+  return parts.filter((part) => {
+    const text = part.text.trim();
+    const key = `${part.href ?? ''}|${text}`;
+    if (!text || seen.has(key)) return false;
+    seen.add(key);
+    part.text = text;
+    return true;
+  });
+}
+
+function blockPart(block: AbilityBlock): DetailPart {
+  return { text: block.name, href: contentHref(block.type, block.id) };
+}
+
+function partyDetailRows(data: StatBlockContent) {
+  const blocks = flatten(Object.values(data.feats_features)) as AbilityBlock[];
+  const feats = blocks.filter((block) => block.type === 'feat').map(blockPart);
+  const features = blocks
+    .filter((block) => (block.type === 'class-feature' || block.type === 'heritage' || block.type === 'physical-feature' || block.type === 'mode') && !block.actions)
+    .map(blockPart);
+  const abilities = blocks.filter((block) => block.type === 'action' || (Boolean(block.actions) && block.type !== 'feat')).map(blockPart);
+
+  const attacks = (data.weapons ?? [])
+    .filter((weapon) => isItemWeapon(weapon.item))
+    .map((weapon) => {
+      const bonus = weapon.stats.damage.bonus.total > 0 ? `+${weapon.stats.damage.bonus.total}` : '';
+      const extra = weapon.stats.damage.extra ? ` +${weapon.stats.damage.extra}` : '';
+      const other = parseOtherDamage(weapon.stats.damage.other).join('');
+      return {
+        text: `${weapon.item.name} ${sign(weapon.stats.attack_bonus.total[0])} (${weapon.stats.damage.dice}${weapon.stats.damage.die}${bonus} ${weapon.stats.damage.damageType}${other}${extra})`,
+        href: contentHref('item', weapon.item.id),
+      };
+    });
+
+  const skills = Object.keys(data.proficiencies)
+    .filter((name) => name.startsWith('SKILL_') && name !== 'SKILL_LORE____' && Number(data.proficiencies[name].parts?.profValue ?? 0) > 0)
+    .map((name) => ({ text: `${toLabel(name).replace(/^Skill /, '')} ${data.proficiencies[name].total}` }))
+    .sort((a, b) => a.text.localeCompare(b.text));
+
+  const spells = [
+    ...data.spells.cantrips,
+    ...data.focus_spells,
+    ...data.spells.normal,
+    ...data.spells.rituals,
+  ].map((spell) => ({ text: spell.name, href: contentHref('spell', spell.id) }));
+  const innate = data.innate_spells.map((entry) => ({ text: entry.spell.name, href: contentHref('spell', entry.spell.id) }));
+
+  const gear = data.inventory_flat
+    .filter((entry) => entry.is_equipped && entry.item.meta_data?.unselectable !== true && !isItemWeapon(entry.item))
+    .map((entry) => ({ text: entry.item.name, href: contentHref('item', entry.item.id) }))
+    .sort((a, b) => a.text.localeCompare(b.text));
+
+  const senses = [
+    ...data.senses.precise.map((sense) => ({
+      text: `${sense.senseName}${sense.range.trim() ? ` ${sense.range}` : ''}`,
+      href: contentHref('sense', sense.sense?.id),
+    })),
+    ...data.senses.imprecise.map((sense) => ({
+      text: `${sense.senseName}${sense.range.trim() ? ` ${sense.range}` : ''} (imprecise)`,
+      href: contentHref('sense', sense.sense?.id),
+    })),
+    ...data.languages.map((lang) => ({ text: toLabel(lang) })),
+  ];
+
+  const defenses = [
+    ...data.resist_weaks.immunes.map((item) => ({ text: `immune ${item}` })),
+    ...data.resist_weaks.resists.map((item) => ({ text: `resist ${item}` })),
+    ...data.resist_weaks.weaks.map((item) => ({ text: `weak ${item}` })),
+  ];
+
+  return [
+    { label: 'Attacks', parts: uniqueParts(attacks) },
+    { label: 'Skills', parts: uniqueParts(skills) },
+    { label: 'Feats', parts: uniqueParts(feats) },
+    { label: 'Abilities', parts: uniqueParts(abilities) },
+    { label: 'Features', parts: uniqueParts(features) },
+    { label: 'Spells', parts: uniqueParts([...spells, ...innate]) },
+    { label: 'Gear', parts: uniqueParts(gear) },
+    { label: 'Senses', parts: uniqueParts(senses) },
+    { label: 'Defenses', parts: uniqueParts(defenses) },
+  ].filter((row) => row.parts.length > 0);
+}
+
+function ContentHover({ href, children }: { href?: string; children: string }) {
+  const { open } = useContentLinks();
+  const timer = useRef<number | null>(null);
+  const [card, setCard] = useState<{ left: number; top: number } | null>(null);
+  useEffect(() => () => {
+    if (timer.current != null) window.clearTimeout(timer.current);
+  }, []);
+  function clearTimer() {
+    if (timer.current != null) window.clearTimeout(timer.current);
+    timer.current = null;
+  }
+  function hideSoon() {
+    clearTimer();
+    timer.current = window.setTimeout(() => setCard(null), 160);
+  }
+  if (!href) return <span>{children}</span>;
+  return (
+    <>
+      <button
+        type='button'
+        className='pf2e-content-link'
+        onMouseEnter={(event) => {
+          clearTimer();
+          const rect = event.currentTarget.getBoundingClientRect();
+          timer.current = window.setTimeout(() => setCard({ left: rect.left, top: rect.bottom + 6 }), 2000);
+        }}
+        onMouseLeave={hideSoon}
+        onClick={() => {
+          clearTimer();
+          setCard(null);
+          open(href);
+        }}
+      >
+        {children}
+      </button>
+      {card ? (
+        <ContentLinkHoverCard
+          href={href}
+          left={card.left}
+          top={card.top}
+          onEnter={clearTimer}
+          onLeave={hideSoon}
+        />
+      ) : null}
+    </>
+  );
+}
+
 function Portrait({ character }: { character: Character }) {
   const stored = parseIconValue(character.details?.image_url?.trim() ?? '');
   const src = stored.type === 'image' ? stored.value.trim() : '';
@@ -121,31 +295,114 @@ function encounterCounts(encounter: Encounter) {
   return { total: list.length, allies, enemies: list.length - allies };
 }
 
-function readCollapsedFolders(key: string) {
-  try {
-    const raw = localStorage.getItem(key);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return new Set<string>(Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : []);
-  } catch {
-    return new Set<string>();
-  }
+function FolderMoveMenu({ x, y, folders, ids, onClose, onMove }: { x: number; y: number; folders: EncounterFolder[]; ids: number[]; onClose: () => void; onMove: (folderId: string | null) => void }) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+  const left = Math.min(x, window.innerWidth - 200);
+  const top = Math.min(y, window.innerHeight - 48);
+  return createPortal(
+    <>
+      <div className='fixed inset-0 z-[109]' onMouseDown={onClose} onContextMenu={(event) => { event.preventDefault(); onClose(); }} />
+      <div role='menu' aria-label={`Move ${ids.length} encounter${ids.length === 1 ? '' : 's'}`} className='fixed z-[110] min-w-44 border border-p1-border bg-p1-surface py-1 text-xs text-p1-text shadow-2xl' style={{ left, top }}>
+        <button type='button' role='menuitem' className='block w-full px-3 py-1.5 text-left hover:bg-p1-hover' onClick={() => onMove(null)}>Ungrouped</button>
+        <FolderMoveItems folders={folders} parentId={null} onMove={onMove} />
+      </div>
+    </>,
+    document.body,
+  );
+}
+
+function FolderMoveItems({ folders, parentId, onMove }: { folders: EncounterFolder[]; parentId: string | null; onMove: (folderId: string | null) => void }) {
+  const items = folderChildren(folders, parentId);
+  if (items.length === 0) return null;
+  return (
+    <>
+      {items.map((folder) => {
+        const children = folderChildren(folders, folder.id);
+        return (
+          <div key={folder.id} className='group relative'>
+            <button type='button' role='menuitem' className='flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left hover:bg-p1-hover' onClick={() => onMove(folder.id)}>
+              <span className='truncate'>{folder.name}</span>
+              {children.length > 0 ? <ChevronRight size={12} className='shrink-0 text-p1-faint' /> : null}
+            </button>
+            {children.length > 0 ? (
+              <div role='menu' className='absolute left-full top-0 z-[1] hidden min-w-44 border border-p1-border bg-p1-surface py-1 shadow-2xl group-hover:block'>
+                <FolderMoveItems folders={folders} parentId={folder.id} onMove={onMove} />
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function FolderContextMenu({ x, y, name, onClose, onNew, onRename, onUngroupAll, onDelete }: { x: number; y: number; name: string; onClose: () => void; onNew: () => void; onRename: () => void; onUngroupAll: () => void; onDelete: () => void }) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+  const left = Math.min(x, window.innerWidth - 180);
+  const top = Math.min(y, window.innerHeight - 120);
+  return createPortal(
+    <>
+      <div className='fixed inset-0 z-[109]' onMouseDown={onClose} onContextMenu={(event) => { event.preventDefault(); onClose(); }} />
+      <div role='menu' aria-label={name} className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 text-xs text-p1-text shadow-2xl' style={{ left, top }}>
+        <button type='button' role='menuitem' className='block w-full px-3 py-1.5 text-left hover:bg-p1-hover' onClick={onNew}>New folder</button>
+        <button type='button' role='menuitem' className='block w-full px-3 py-1.5 text-left hover:bg-p1-hover' onClick={onRename}>Rename</button>
+        <button type='button' role='menuitem' className='block w-full px-3 py-1.5 text-left hover:bg-p1-hover' onClick={onUngroupAll}>Ungroup all</button>
+        <button type='button' role='menuitem' className='block w-full px-3 py-1.5 text-left text-p1-danger-soft hover:bg-p1-hover' onClick={onDelete}>Delete</button>
+      </div>
+    </>,
+    document.body,
+  );
 }
 
 function folderChildren(folders: EncounterFolder[], parentId: string | null) {
   return folders.filter((folder) => (folder.parent_id ?? null) === parentId).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name));
 }
 
+function folderDescendantIds(folders: EncounterFolder[], id: string) {
+  const doomed = new Set<string>([id]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const folder of folders) {
+      if (folder.parent_id && doomed.has(folder.parent_id) && !doomed.has(folder.id)) {
+        doomed.add(folder.id);
+        grew = true;
+      }
+    }
+  }
+  return doomed;
+}
+
 export function Phase1CampaignHome({ campaignId, players, encounters, notes = [], wide = false, isGm = false, folders = [], onFoldersChange, onMoveEncounter, onTogglePlayerVisible }: { campaignId: number; players: Character[]; encounters: Encounter[]; notes?: CampaignHomeNote[]; wide?: boolean; isGm?: boolean; folders?: EncounterFolder[]; onFoldersChange?: (folders: EncounterFolder[]) => void; onMoveEncounter?: (encounter: Encounter, folderId: string | null) => void; onTogglePlayerVisible?: (encounter: Encounter, shown: boolean) => void }) {
-  const navigate = useNavigate();
   const [windows, setWindows] = useState<PcWindow[]>([]);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [dropFolderId, setDropFolderId] = useState<string | null>(null);
+  const [moveMenu, setMoveMenu] = useState<{ x: number; y: number; ids: number[] } | null>(null);
+  const [folderMenu, setFolderMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+  const selectionAnchor = useRef<number | null>(null);
+  const [openPartyIds, setOpenPartyIds] = useState<number[]>([]);
+  const [partyMenu, setPartyMenu] = useState<{ x: number; y: number; id: number } | null>(null);
+  const [partySort, setPartySort] = useState<PartySort>(null);
   const [noteWindows, setNoteWindows] = useState<NoteWindow[]>([]);
   const [noteHover, setNoteHover] = useState<NoteHover | null>(null);
   const [rosterHover, setRosterHover] = useState<RosterHover | null>(null);
   const [rosterWindows, setRosterWindows] = useState<RosterWindow[]>([]);
   const hoverTimer = useRef<number | null>(null);
   const rosterTimer = useRef<number | null>(null);
-  const collapseKey = `p1-encounter-folders-collapsed:${campaignId}`;
-  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => readCollapsedFolders(collapseKey));
+  const openKey = `p1-encounter-folder-open:${campaignId}`;
+  const [openFolderId, setOpenFolderId] = useState<string | null>(() => localStorage.getItem(openKey));
   const [folderDraft, setFolderDraft] = useState<{ name: string; parentId: string } | null>(null);
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -157,26 +414,43 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
   });
 
   useEffect(() => {
-    setCollapsedFolders(readCollapsedFolders(collapseKey));
-  }, [collapseKey]);
+    setOpenFolderId(localStorage.getItem(openKey));
+  }, [openKey]);
 
-  function toggleFolder(id: string) {
-    setCollapsedFolders((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      localStorage.setItem(collapseKey, JSON.stringify([...next]));
+  function selectFolder(id: string) {
+    setOpenFolderId((current) => {
+      const next = current === id ? null : id;
+      if (next) localStorage.setItem(openKey, next);
+      else localStorage.removeItem(openKey);
       return next;
     });
+  }
+
+  function ancestorIds(id: string | null) {
+    const ids = new Set<string>();
+    let cursor = id ? folders.find((folder) => folder.id === id) : undefined;
+    const guard = new Set<string>();
+    while (cursor?.parent_id && !guard.has(cursor.parent_id)) {
+      guard.add(cursor.parent_id);
+      ids.add(cursor.parent_id);
+      cursor = folders.find((folder) => folder.id === cursor?.parent_id);
+    }
+    return ids;
   }
 
   function encountersIn(folderId: string) {
     return encounters.filter((encounter) => encounter.meta_data?.folder_id === folderId);
   }
 
-  function folderCount(folderId: string) {
-    const direct = encountersIn(folderId).length;
-    return folderChildren(folders, folderId).reduce((sum, child) => sum + encountersIn(child.id).length, direct);
+  function folderCount(folderId: string): number {
+    return encountersIn(folderId).length + folderChildren(folders, folderId).reduce((sum, child) => sum + folderCount(child.id), 0);
+  }
+
+  function folderOptions(parentId: string | null, depth: number): { id: string; label: string }[] {
+    return folderChildren(folders, parentId).flatMap((folder) => [
+      { id: folder.id, label: `${'· '.repeat(depth)}${folder.name}` },
+      ...folderOptions(folder.id, depth + 1),
+    ]);
   }
 
   function addFolder() {
@@ -195,10 +469,19 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
     setRenamingFolderId(null);
   }
 
+  function ungroupAll(id: string) {
+    const doomed = folderDescendantIds(folders, id);
+    for (const encounter of encounters) {
+      const folderId = encounter.meta_data?.folder_id;
+      if (folderId && doomed.has(folderId)) onMoveEncounter?.(encounter, null);
+    }
+  }
+
   function deleteFolder(id: string) {
     if (!onFoldersChange) return;
-    const doomed = new Set([id, ...folders.filter((folder) => folder.parent_id === id).map((folder) => folder.id)]);
+    const doomed = folderDescendantIds(folders, id);
     onFoldersChange(folders.filter((folder) => !doomed.has(folder.id)));
+    if (openFolderId && doomed.has(openFolderId)) selectFolder(openFolderId);
     for (const encounter of encounters) {
       const folderId = encounter.meta_data?.folder_id;
       if (folderId && doomed.has(folderId)) onMoveEncounter?.(encounter, null);
@@ -234,7 +517,7 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || isContentStackOpen()) return;
+      if (event.key !== 'Escape' || isContentStackOpen() || partyMenu) return;
       const topNote = noteWindows.reduce<NoteWindow | null>((best, item) => (!best || item.z > best.z ? item : best), null);
       const topRoster = rosterWindows.reduce<RosterWindow | null>((best, item) => (!best || item.z > best.z ? item : best), null);
       const topPc = windows.reduce<PcWindow | null>((best, item) => (!best || item.z > best.z ? item : best), null);
@@ -252,7 +535,7 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [windows, noteWindows, rosterWindows]);
+  }, [windows, noteWindows, rosterWindows, partyMenu]);
 
   function notesFor(encounter: Encounter) {
     return notes.filter((note) => encounterNamesMatch(note.name, encounter.name));
@@ -279,42 +562,81 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
     });
   }
 
+  function movingIds(encounterId: number) {
+    return selectedIds.includes(encounterId) && selectedIds.length > 0 ? selectedIds : [encounterId];
+  }
+
+  function dropEncounters(folderId: string | null, raw: string) {
+    let ids: number[] = [];
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) ids = parsed.filter((id) => typeof id === 'number');
+    } catch {
+      ids = [];
+    }
+    for (const id of ids) {
+      const encounter = encounters.find((item) => item.id === id);
+      if (encounter) onMoveEncounter?.(encounter, folderId);
+    }
+    setSelectedIds((current) => current.filter((id) => !ids.includes(id)));
+    setDropFolderId(null);
+  }
+
   function renderEncounterRow(encounter: Encounter, depth: number) {
     const counts = encounterCounts(encounter);
     const matched = notesFor(encounter);
-    const folderId = encounter.meta_data?.folder_id;
+    const selected = selectedIds.includes(encounter.id);
     return (
       <tr
         key={encounter.id}
-        className='cursor-pointer border-b border-p1-border bg-p1-page/88 hover:bg-p1-page/94'
-        onClick={() => navigate(`/phase1/campaign/${campaignId}/encounters/${encounter.id}`)}
+        draggable={isGm}
+        aria-selected={selected}
+        className={`cursor-pointer border-b border-p1-border select-none ${selected ? 'bg-p1-accent/25 hover:bg-p1-accent/25' : 'bg-p1-page/88 hover:bg-p1-page/94'}`}
+        onMouseDown={(event) => {
+          if (event.shiftKey) event.preventDefault();
+        }}
+        onClick={(event) => {
+          const ids = listedEncounters.map((item) => item.id);
+          const index = ids.indexOf(encounter.id);
+          if (event.shiftKey && selectionAnchor.current != null) {
+            const anchor = ids.indexOf(selectionAnchor.current);
+            if (anchor >= 0 && index >= 0) {
+              const [start, end] = anchor < index ? [anchor, index] : [index, anchor];
+              const range = ids.slice(start, end + 1);
+              setSelectedIds(event.ctrlKey || event.metaKey ? [...new Set([...selectedIds, ...range])] : range);
+              return;
+            }
+          }
+          if (event.ctrlKey || event.metaKey) {
+            setSelectedIds((current) => (current.includes(encounter.id) ? current.filter((id) => id !== encounter.id) : [...current, encounter.id]));
+          } else {
+            setSelectedIds([encounter.id]);
+          }
+          selectionAnchor.current = encounter.id;
+        }}
+        onDoubleClick={() => {
+          window.open(`/phase1/campaign/${campaignId}/encounters/${encounter.id}`, '_blank', 'noopener,noreferrer');
+        }}
+        onDragStart={(event) => {
+          const ids = movingIds(encounter.id);
+          const payload = JSON.stringify(ids);
+          event.dataTransfer.setData('application/x-encounter-ids', payload);
+          event.dataTransfer.setData('text/plain', payload);
+          event.dataTransfer.effectAllowed = 'move';
+        }}
+        onContextMenu={(event) => {
+          if (!isGm) return;
+          event.preventDefault();
+          const ids = selectedIds.includes(encounter.id) ? selectedIds : [encounter.id];
+          if (!selectedIds.includes(encounter.id)) {
+            setSelectedIds(ids);
+            selectionAnchor.current = encounter.id;
+          }
+          setMoveMenu({ x: event.clientX, y: event.clientY, ids });
+        }}
       >
         <td className={`py-1 pr-2 font-semibold ${depth === 0 ? 'pl-2' : depth === 1 ? 'pl-8' : 'pl-14'}`}>
-          <span className='flex items-center gap-2'>
-            <span className='min-w-0 truncate'>{encounter.name}</span>
-            {isGm && folders.length > 0 ? (
-              <select
-                aria-label={`Move ${encounter.name}`}
-                className='max-w-40 shrink-0 border border-p1-border bg-p1-raised px-1 py-0.5 text-[10px] font-normal text-p1-muted'
-                value={folderId && knownFolderIds.has(folderId) ? folderId : ''}
-                onClick={(event) => event.stopPropagation()}
-                onChange={(event) => {
-                  event.stopPropagation();
-                  onMoveEncounter?.(encounter, event.target.value || null);
-                }}
-              >
-                <option value=''>Ungrouped</option>
-                {rootFolders.map((root) => (
-                  <optgroup key={root.id} label={root.name}>
-                    <option value={root.id}>{root.name}</option>
-                    {folderChildren(folders, root.id).map((child) => (
-                      <option key={child.id} value={child.id}>{`${root.name} / ${child.name}`}</option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-            ) : null}
-          </span>
+          <span className='block truncate'>{encounter.name}</span>
         </td>
         {isGm ? (
           <td className='px-2 py-1' onClick={(event) => event.stopPropagation()}>
@@ -385,68 +707,85 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
     );
   }
 
-  function renderFolder(folder: EncounterFolder, depth: number) {
-    const expanded = !collapsedFolders.has(folder.id);
-    const Chevron = expanded ? ChevronDown : ChevronRight;
+  const openAncestors = ancestorIds(openFolderId);
+
+  function renderTreeFolder(folder: EncounterFolder, depth: number) {
+    if (!isGm && folderCount(folder.id) === 0) return null;
+    const open = openFolderId === folder.id;
+    const showChildren = open || openAncestors.has(folder.id);
+    const children = folderChildren(folders, folder.id);
     const renaming = renamingFolderId === folder.id;
+    const nested = children.length > 0;
     return (
-      <Fragment key={folder.id}>
-        <tr className='border-b border-p1-border bg-p1-header/70'>
-          <td colSpan={isGm ? 6 : 5} className={`py-1 pr-2 ${depth === 0 ? 'pl-2' : 'pl-8'}`}>
-            <span className='flex items-center gap-2'>
-              <button type='button' className='grid h-5 w-5 shrink-0 place-items-center text-p1-muted' aria-expanded={expanded} aria-label={`${expanded ? 'Collapse' : 'Expand'} ${folder.name}`} onClick={() => toggleFolder(folder.id)}>
-                <Chevron size={14} />
-              </button>
-              {renaming ? (
-                <>
-                  <input
-                    autoFocus
-                    aria-label={`Rename ${folder.name}`}
-                    className='min-w-0 flex-1 border border-p1-border bg-p1-raised px-1.5 py-0.5 font-semibold'
-                    value={renameDraft}
-                    onChange={(event) => setRenameDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') renameFolder(folder.id);
-                      if (event.key === 'Escape') setRenamingFolderId(null);
-                    }}
-                  />
-                  <button type='button' className='text-[10px] uppercase tracking-wide text-p1-muted hover:text-p1-text' onClick={() => renameFolder(folder.id)}>
-                    Save
-                  </button>
-                </>
-              ) : (
-                <button type='button' className='min-w-0 truncate text-left font-semibold' onClick={() => toggleFolder(folder.id)}>
-                  {folder.name}
-                </button>
-              )}
-              <span className='text-p1-faint'>{folderCount(folder.id)}</span>
-              {isGm && !renaming ? (
-                <button
-                  type='button'
-                  className='text-[10px] uppercase tracking-wide text-p1-muted hover:text-p1-text'
-                  onClick={() => {
-                    setRenamingFolderId(folder.id);
-                    setRenameDraft(folder.name);
-                  }}
-                >
-                  Rename
-                </button>
-              ) : null}
-              {isGm ? (
-                <button type='button' className='text-[10px] uppercase tracking-wide text-p1-muted hover:text-p1-text' onClick={() => deleteFolder(folder.id)}>
-                  Delete
-                </button>
-              ) : null}
-            </span>
-          </td>
-        </tr>
-        {expanded ? encountersIn(folder.id).map((encounter) => renderEncounterRow(encounter, depth + 1)) : null}
-        {expanded && depth === 0 ? folderChildren(folders, folder.id).map((child) => renderFolder(child, 1)) : null}
-      </Fragment>
+      <li key={folder.id}>
+        <div
+          className={`flex items-center gap-1 py-0.5 pr-1 ${dropFolderId === folder.id ? 'bg-p1-accent/30 hover:bg-p1-accent/30' : open ? 'bg-p1-raised hover:bg-p1-raised' : 'hover:bg-p1-page/94'}`}
+          style={{ paddingLeft: 8 + depth * 14 }}
+          onDragOver={(event) => {
+            if (!isGm) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            if (dropFolderId !== folder.id) setDropFolderId(folder.id);
+          }}
+          onDragLeave={() => {
+            if (dropFolderId === folder.id) setDropFolderId(null);
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            dropEncounters(folder.id, event.dataTransfer.getData('application/x-encounter-ids'));
+          }}
+          onContextMenu={(event) => {
+            if (!isGm) return;
+            event.preventDefault();
+            setFolderMenu({ x: event.clientX, y: event.clientY, id: folder.id });
+          }}
+        >
+          {nested ? (
+            <button type='button' className='grid h-5 w-5 shrink-0 place-items-center font-mono text-sm leading-none text-p1-muted hover:text-p1-text' aria-expanded={showChildren} aria-label={`${showChildren ? 'Collapse' : 'Expand'} ${folder.name}`} onClick={() => selectFolder(folder.id)}>
+              {showChildren ? '−' : '+'}
+            </button>
+          ) : (
+            <span className='h-5 w-5 shrink-0' />
+          )}
+          {renaming ? (
+            <input
+              autoFocus
+              aria-label={`Rename ${folder.name}`}
+              className='min-w-0 flex-1 border-0 border-b border-p1-border bg-transparent px-0 py-0.5 text-xs font-semibold text-p1-text outline-none focus:border-p1-accent'
+              value={renameDraft}
+              onChange={(event) => setRenameDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') renameFolder(folder.id);
+                if (event.key === 'Escape') setRenamingFolderId(null);
+              }}
+            />
+          ) : (
+            <button type='button' className='min-w-0 flex-1 truncate text-left text-xs font-semibold' aria-current={open ? 'true' : undefined} onClick={() => selectFolder(folder.id)}>
+              {folder.name} <span className='font-normal text-p1-faint'>({folderCount(folder.id)})</span>
+            </button>
+          )}
+        </div>
+        {showChildren && children.length > 0 ? (
+          <ul>{children.map((child) => renderTreeFolder(child, depth + 1))}</ul>
+        ) : null}
+      </li>
     );
   }
 
-  function openPlayer(player: Character) {
+  const openFolder = openFolderId ? folders.find((folder) => folder.id === openFolderId) : undefined;
+  const listedEncounters = openFolder ? encountersIn(openFolder.id) : ungrouped;
+
+  useEffect(() => {
+    setSelectedIds([]);
+    selectionAnchor.current = null;
+  }, [openFolderId]);
+
+  function toggleParty(id: number) {
+    setOpenPartyIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  }
+
+  function openStatCard(player: Character) {
+    setPartyMenu(null);
     setWindows((current) => {
       const existing = current.find((item) => item.id === player.id);
       const z = current.reduce((max, item) => Math.max(max, item.z), 30) + 1;
@@ -459,25 +798,108 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
   return (
     <div className={wide ? 'flex h-full min-h-0 w-full flex-col' : 'mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col px-6'}>
       <section className={wide ? 'min-h-0 w-full flex-1 overflow-auto py-2 pl-3 pr-10' : 'min-h-0 flex-1 overflow-auto py-2'}>
-        <table className='w-full border-collapse text-xs'>
-          <thead className='sticky top-0 z-[1] border-b border-p1-border bg-p1-header/92 text-[10px] uppercase text-p1-faint'>
+        <table className='w-full border-collapse text-[13px]'>
+          <thead className='sticky top-0 z-[1] border-b border-p1-border bg-p1-header/92 text-[11px] uppercase text-p1-faint'>
             <tr>
-              {['Name', 'Ancestry', 'Class', 'Lvl', 'HP', 'AC', 'Fort', 'Ref', 'Will', 'Per', 'Spd', ...(wide ? ['Str', 'Dex', 'Con', 'Int', 'Wis', 'Cha', 'Conditions'] : [])].map((label) => (
-                <th key={label} className='whitespace-nowrap px-2 py-1.5 text-left font-medium'>{label}</th>
-              ))}
+              {(['Name', 'Ancestry', 'Class', 'Lvl', 'HP', 'AC', 'Fort', 'Ref', 'Will', 'Per', 'Spd', ...(wide ? ['Str', 'Dex', 'Con', 'Int', 'Wis', 'Cha', 'Conditions'] : [])] as const).map((label) => {
+                const active = partySort?.key === label;
+                const mark = !active ? '' : partySort.dir === 'asc' ? ' ↑' : ' ↓';
+                return (
+                  <th key={label} className='whitespace-nowrap px-2 py-1.5 text-left font-medium' aria-sort={active ? (partySort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+                    <button
+                      type='button'
+                      className='uppercase hover:text-p1-text'
+                      title={active && partySort.dir === 'desc' ? 'Original order' : active ? 'Sort descending' : 'Sort ascending'}
+                      onClick={() => setPartySort((current) => cyclePartySort(current, label))}
+                    >
+                      {label}{mark}
+                    </button>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
-            {players.map((player, index) => {
-              const data = statQueries[index]?.data;
-              const loading = statQueries[index]?.isLoading;
+            {players.map((player, index) => ({ player, index, data: statQueries[index]?.data, loading: statQueries[index]?.isLoading })).sort((a, b) => {
+              if (!partySort) return a.index - b.index;
+              const dir = partySort.dir === 'asc' ? 1 : -1;
+              const valueOf = (row: typeof a) => {
+                const data = row.data;
+                const conditions = compiledConditions(row.player.details?.conditions ?? []);
+                const conditionText = conditions.map((item) => (item.value ? `${item.name} ${item.value}` : item.name)).join(', ');
+                if (partySort.key === 'Name') return row.player.name;
+                if (partySort.key === 'Ancestry') return row.player.details?.ancestry?.name ?? '';
+                if (partySort.key === 'Class') return row.player.details?.class?.name ?? '';
+                if (partySort.key === 'Lvl') return partyStatNumber(row.player.level);
+                if (partySort.key === 'HP') return partyStatNumber(row.player.hp_current ?? data?.max_hp);
+                if (partySort.key === 'AC') return partyStatNumber(data?.ac);
+                if (partySort.key === 'Fort') return partyStatNumber(data?.proficiencies.SAVE_FORT?.total);
+                if (partySort.key === 'Ref') return partyStatNumber(data?.proficiencies.SAVE_REFLEX?.total);
+                if (partySort.key === 'Will') return partyStatNumber(data?.proficiencies.SAVE_WILL?.total);
+                if (partySort.key === 'Per') return partyStatNumber(data?.proficiencies.PERCEPTION?.total);
+                if (partySort.key === 'Spd') return partyStatNumber(speedText(data).split(',')[0]);
+                if (partySort.key === 'Conditions') return conditionText;
+                const ability = ABILITY_KEYS.find((key) => key === partySort.key.toUpperCase());
+                if (ability) return abilityValue(data, ability);
+                return '';
+              };
+              const av = valueOf(a);
+              const bv = valueOf(b);
+              if (typeof av === 'number' || typeof bv === 'number' || av == null || bv == null) {
+                const an = typeof av === 'number' ? av : null;
+                const bn = typeof bv === 'number' ? bv : null;
+                if (an == null && bn == null) return a.index - b.index;
+                if (an == null) return 1;
+                if (bn == null) return -1;
+                const delta = (an - bn) * dir;
+                return delta === 0 ? a.index - b.index : delta;
+              }
+              const delta = String(av).localeCompare(String(bv), undefined, { sensitivity: 'base' }) * dir;
+              return delta === 0 ? a.index - b.index : delta;
+            }).map(({ player, data, loading }) => {
               const conditions = compiledConditions(player.details?.conditions ?? []);
               const currentHp = player.hp_current ?? data?.max_hp;
+              const maxHp = partyStatNumber(data?.max_hp);
+              const hpValue = partyStatNumber(currentHp);
+              const hpRatio = maxHp != null && maxHp > 0 && hpValue != null ? Math.min(1, Math.max(0, hpValue / maxHp)) : null;
+              const open = openPartyIds.includes(player.id);
+              const details = data ? partyDetailRows(data) : [];
+              const colSpan = wide ? 18 : 11;
               return (
-                <tr key={player.id} className='cursor-pointer border-b border-p1-border bg-p1-page/88 hover:bg-p1-page/94' onClick={() => openPlayer(player)}>
+                <Fragment key={player.id}>
+                <tr
+                  className='cursor-pointer border-b border-p1-border bg-p1-page/88 hover:bg-p1-page/94'
+                  onClick={() => toggleParty(player.id)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setPartyMenu({ x: event.clientX, y: event.clientY, id: player.id });
+                  }}
+                >
                   <td className='px-2 py-1'>
                     <span className='flex items-center gap-2'>
-                      <Portrait character={player} />
+                      <button
+                        type='button'
+                        aria-expanded={open}
+                        aria-label={open ? `Hide ${player.name} details` : `Show ${player.name} details`}
+                        className='grid h-4 w-4 shrink-0 place-items-center border border-p1-border text-[13px] leading-none text-p1-muted hover:border-p1-accent hover:text-p1-text'
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggleParty(player.id);
+                        }}
+                      >
+                        {open ? '−' : '+'}
+                      </button>
+                      <button
+                        type='button'
+                        aria-label={open ? `Hide ${player.name} details` : `Show ${player.name} details`}
+                        className='shrink-0'
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggleParty(player.id);
+                        }}
+                      >
+                        <Portrait character={player} />
+                      </button>
                       <span className='truncate font-semibold'>{player.name}</span>
                     </span>
                   </td>
@@ -485,8 +907,11 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
                   <td className='whitespace-nowrap px-2 py-1 text-p1-muted'>{player.details?.class?.name ?? '—'}</td>
                   <td className='px-2 py-1'>{player.level ?? '—'}</td>
                   <td className='px-2 py-1'>
-                    <span className='inline-flex min-w-14 items-center justify-center border border-p1-border bg-p1-raised px-1.5 py-0.5'>
-                      {currentHp == null && !data ? '—' : `${currentHp ?? '—'}/${data?.max_hp ?? '—'}`}
+                    <span className='relative inline-flex min-w-14 items-center justify-center overflow-hidden border border-p1-border bg-p1-raised px-1.5 py-0.5'>
+                      {hpRatio != null ? (
+                        <span aria-hidden className='absolute inset-y-0 left-0' style={{ width: `${hpRatio * 100}%`, backgroundColor: hpBarColor(hpRatio) }} />
+                      ) : null}
+                      <span className='relative'>{currentHp == null && !data ? '—' : `${currentHp ?? '—'}/${data?.max_hp ?? '—'}`}</span>
                     </span>
                   </td>
                   <td className='px-2 py-1'>{loading && data == null ? '…' : data?.ac ?? '—'}</td>
@@ -504,6 +929,34 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
                     </td>
                   )}
                 </tr>
+                {open
+                  ? details.length > 0
+                    ? details.map((row) => (
+                        <tr key={`${player.id}-${row.label}`} className='border-b border-p1-border/70 bg-p1-inset/40'>
+                          <td colSpan={colSpan} className='py-0.5 pl-10 pr-3 text-xs leading-5 text-p1-muted'>
+                            <div className='flex items-start gap-2'>
+                              <span className='w-[4.5rem] shrink-0 text-[11px] uppercase tracking-wide text-p1-faint'>{row.label}</span>
+                              <span className='min-w-0'>
+                                {row.parts.map((part, partIndex) => (
+                                  <Fragment key={`${part.href ?? part.text}-${partIndex}`}>
+                                    {partIndex > 0 ? ', ' : null}
+                                    <ContentHover href={part.href}>{part.text}</ContentHover>
+                                  </Fragment>
+                                ))}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    : (
+                        <tr className='border-b border-p1-border/70 bg-p1-inset/40'>
+                          <td colSpan={colSpan} className='py-0.5 pl-10 pr-3 text-xs text-p1-faint'>
+                            {loading ? 'Loading…' : 'Nothing listed.'}
+                          </td>
+                        </tr>
+                      )
+                  : null}
+                </Fragment>
               );
             })}
             {players.length === 0 ? (
@@ -515,70 +968,150 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
         </table>
       </section>
       <div className='h-px shrink-0 bg-p1-border' />
-      <section className={wide ? 'min-h-0 flex-1 overflow-auto py-2 pl-3 pr-10' : 'min-h-0 flex-1 overflow-auto py-2'}>
-        {isGm ? (
-          <div className='mb-2 flex flex-wrap items-center gap-2 px-2'>
-            {folderDraft ? (
-              <>
-                <input
-                  autoFocus
-                  aria-label='Folder name'
-                  placeholder='Folder name'
-                  className='min-w-40 border border-p1-border bg-p1-raised px-1.5 py-1 text-xs'
-                  value={folderDraft.name}
-                  onChange={(event) => setFolderDraft({ ...folderDraft, name: event.target.value })}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') addFolder();
-                    if (event.key === 'Escape') setFolderDraft(null);
-                  }}
-                />
-                <select
-                  aria-label='Parent folder'
-                  className='border border-p1-border bg-p1-raised px-1.5 py-1 text-xs'
-                  value={folderDraft.parentId}
-                  onChange={(event) => setFolderDraft({ ...folderDraft, parentId: event.target.value })}
-                >
-                  <option value=''>Top level</option>
-                  {rootFolders.map((folder) => (
-                    <option key={folder.id} value={folder.id}>{folder.name}</option>
-                  ))}
-                </select>
-                <button type='button' className='border border-p1-border bg-p1-raised px-2 py-1 text-[10px] uppercase tracking-wide hover:border-p1-accent' onClick={addFolder}>
-                  Save
+      <section className={wide ? 'flex min-h-0 flex-1 py-2 pl-3 pr-10' : 'flex min-h-0 flex-1 py-2'}>
+        <aside className='flex w-1/3 min-w-0 shrink-0 flex-col overflow-auto border-r border-p1-border pr-2'>
+          <button
+            type='button'
+            aria-current={openFolder ? undefined : 'true'}
+            className={`mb-2 flex items-center gap-2 px-2 py-0.5 text-left text-xs font-semibold ${dropFolderId === '' ? 'bg-p1-accent/30 hover:bg-p1-accent/30' : openFolder ? 'hover:bg-p1-page/94' : 'bg-p1-raised hover:bg-p1-raised'}`}
+            onClick={() => {
+              if (openFolderId) selectFolder(openFolderId);
+            }}
+            onDragOver={(event) => {
+              if (!isGm) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'move';
+              if (dropFolderId !== '') setDropFolderId('');
+            }}
+            onDragLeave={() => {
+              if (dropFolderId === '') setDropFolderId(null);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              dropEncounters(null, event.dataTransfer.getData('application/x-encounter-ids') || event.dataTransfer.getData('text/plain'));
+            }}
+          >
+            <span className='min-w-0 flex-1 truncate'>Ungrouped <span className='font-normal text-p1-faint'>({ungrouped.length})</span></span>
+          </button>
+          {isGm ? (
+            <div className='mb-2 flex flex-col gap-1.5 px-2'>
+              {folderDraft ? (
+                <>
+                  <input
+                    autoFocus
+                    aria-label='Folder name'
+                    placeholder='Folder name'
+                    className='w-full border-0 border-b border-p1-border bg-transparent px-0 py-1 text-xs text-p1-text outline-none placeholder:text-p1-faint focus:border-p1-accent'
+                    value={folderDraft.name}
+                    onChange={(event) => setFolderDraft({ ...folderDraft, name: event.target.value })}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') addFolder();
+                      if (event.key === 'Escape') setFolderDraft(null);
+                    }}
+                  />
+                  <select
+                    aria-label='Parent folder'
+                    className='w-full appearance-none border-0 border-b border-p1-border bg-transparent px-0 py-1 text-xs text-p1-muted outline-none focus:border-p1-accent'
+                    value={folderDraft.parentId}
+                    onChange={(event) => setFolderDraft({ ...folderDraft, parentId: event.target.value })}
+                  >
+                    <option value=''>Top level</option>
+                    {folderOptions(null, 0).map((folder) => (
+                      <option key={folder.id} value={folder.id}>{folder.label}</option>
+                    ))}
+                  </select>
+                  <span className='flex items-center gap-3'>
+                    <button type='button' className='text-[10px] uppercase tracking-wide text-p1-accent hover:text-p1-text' onClick={addFolder}>
+                      Save
+                    </button>
+                    <button type='button' className='text-[10px] uppercase tracking-wide text-p1-muted hover:text-p1-text' onClick={() => setFolderDraft(null)}>
+                      Cancel
+                    </button>
+                  </span>
+                </>
+              ) : (
+                <button type='button' className='self-start text-[10px] uppercase tracking-wide text-p1-muted hover:text-p1-accent' onClick={() => setFolderDraft({ name: '', parentId: openFolder?.id ?? '' })}>
+                  New folder
                 </button>
-                <button type='button' className='px-2 py-1 text-[10px] uppercase tracking-wide text-p1-muted' onClick={() => setFolderDraft(null)}>
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button type='button' className='border border-p1-border bg-p1-raised px-2 py-1 text-[10px] uppercase tracking-wide hover:border-p1-accent' onClick={() => setFolderDraft({ name: '', parentId: '' })}>
-                New folder
-              </button>
-            )}
-          </div>
-        ) : null}
-        <table className='w-full border-collapse text-xs'>
-          <thead className='sticky top-0 border-b border-p1-border bg-p1-header/92 text-[10px] uppercase text-p1-faint'>
-            <tr>
-              <th className='px-2 py-1.5 text-left font-medium'>Encounter</th>
-              {isGm ? <th className='w-20 px-2 py-1.5 text-left font-medium'>Players</th> : null}
-              <th className='px-2 py-1.5 text-left font-medium'>Notes</th>
-              <th className='w-24 px-2 py-1.5 text-left font-medium'>Combatants</th>
-              <th className='w-24 px-2 py-1.5 text-left font-medium'>Allies</th>
-              <th className='w-24 px-2 py-1.5 text-left font-medium'>Enemies</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ungrouped.map((encounter) => renderEncounterRow(encounter, 0))}
-            {rootFolders.map((folder) => renderFolder(folder, 0))}
-            {encounters.length === 0 ? (
+              )}
+            </div>
+          ) : null}
+          <ul aria-label='Encounter folders'>
+            {rootFolders.map((folder) => renderTreeFolder(folder, 0))}
+          </ul>
+          {folders.length === 0 ? <p className='px-2 py-4 text-xs text-p1-faint'>No folders.</p> : null}
+        </aside>
+        <div className='min-w-0 flex-1 overflow-auto pl-2'>
+          <table className='w-full border-collapse text-xs'>
+            <thead className='sticky top-0 border-b border-p1-border bg-p1-header/92 text-[10px] uppercase text-p1-faint'>
               <tr>
-                <td colSpan={isGm ? 6 : 5} className='px-3 py-8 text-center text-sm text-p1-faint'>No encounters.</td>
+                <th className='px-2 py-1.5 text-left font-medium'>Encounter</th>
+                {isGm ? <th className='w-20 px-2 py-1.5 text-left font-medium'>Players</th> : null}
+                <th className='px-2 py-1.5 text-left font-medium'>Notes</th>
+                <th className='w-24 px-2 py-1.5 text-left font-medium'>Combatants</th>
+                <th className='w-24 px-2 py-1.5 text-left font-medium'>Allies</th>
+                <th className='w-24 px-2 py-1.5 text-left font-medium'>Enemies</th>
               </tr>
-            ) : null}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {listedEncounters.map((encounter) => renderEncounterRow(encounter, 0))}
+              {listedEncounters.length === 0 ? (
+                <tr>
+                  <td colSpan={isGm ? 6 : 5} className='px-3 py-8 text-center text-sm text-p1-faint'>
+                    {openFolder ? 'This folder is empty.' : 'No encounters.'}
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
       </section>
+      {folderMenu ? (
+        <FolderContextMenu
+          x={folderMenu.x}
+          y={folderMenu.y}
+          name={folders.find((folder) => folder.id === folderMenu.id)?.name ?? 'Folder'}
+          onClose={() => setFolderMenu(null)}
+          onNew={() => {
+            const parentId = folderMenu.id;
+            const visible = openFolderId === parentId || ancestorIds(openFolderId).has(parentId);
+            if (!visible) selectFolder(parentId);
+            setFolderDraft({ name: '', parentId });
+            setFolderMenu(null);
+          }}
+          onRename={() => {
+            const folder = folders.find((item) => item.id === folderMenu.id);
+            if (!folder) return;
+            setRenamingFolderId(folder.id);
+            setRenameDraft(folder.name);
+            setFolderMenu(null);
+          }}
+          onUngroupAll={() => {
+            ungroupAll(folderMenu.id);
+            setFolderMenu(null);
+          }}
+          onDelete={() => {
+            deleteFolder(folderMenu.id);
+            setFolderMenu(null);
+          }}
+        />
+      ) : null}
+      {moveMenu ? (
+        <FolderMoveMenu
+          x={moveMenu.x}
+          y={moveMenu.y}
+          folders={folders}
+          ids={moveMenu.ids}
+          onClose={() => setMoveMenu(null)}
+          onMove={(folderId) => {
+            for (const id of moveMenu.ids) {
+              const encounter = encounters.find((item) => item.id === id);
+              if (encounter) onMoveEncounter?.(encounter, folderId);
+            }
+            setMoveMenu(null);
+          }}
+        />
+      ) : null}
       {rosterHover && !rosterWindows.some((item) => item.encounterId === rosterHover.encounterId && item.kind === rosterHover.kind) && (
         <RosterPreview
           hover={rosterHover}
@@ -619,6 +1152,22 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
           onMove={(x, y) => setNoteWindows((current) => current.map((entry) => (entry.encounterId === item.encounterId && entry.index === item.index ? { ...entry, x, y } : entry)))}
         />
       ))}
+      {partyMenu ? (
+        <PartyStatMenu
+          x={partyMenu.x}
+          y={partyMenu.y}
+          name={players.find((player) => player.id === partyMenu.id)?.name ?? 'Character'}
+          onClose={() => setPartyMenu(null)}
+          onOpen={() => {
+            const player = players.find((item) => item.id === partyMenu.id);
+            if (player) openStatCard(player);
+          }}
+          onOpenSheet={() => {
+            setPartyMenu(null);
+            window.open(`/sheet/${partyMenu.id}`, '_blank', 'noopener,noreferrer');
+          }}
+        />
+      ) : null}
       {windows.map((item) => (
         <PcStatWindow
           key={item.id}
@@ -632,6 +1181,28 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
         />
       ))}
     </div>
+  );
+}
+
+function PartyStatMenu({ x, y, name, onClose, onOpen, onOpenSheet }: { x: number; y: number; name: string; onClose: () => void; onOpen: () => void; onOpenSheet: () => void }) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+  const left = Math.min(x, window.innerWidth - 180);
+  const top = Math.min(y, window.innerHeight - 72);
+  return createPortal(
+    <>
+      <div className='fixed inset-0 z-[109]' onMouseDown={onClose} onContextMenu={(event) => { event.preventDefault(); onClose(); }} />
+      <div role='menu' aria-label={name} className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 text-xs text-p1-text shadow-2xl' style={{ left, top }}>
+        <button type='button' role='menuitem' className='block w-full px-3 py-1.5 text-left hover:bg-p1-hover' onClick={onOpen}>Open stat card</button>
+        <button type='button' role='menuitem' className='block w-full px-3 py-1.5 text-left hover:bg-p1-hover' onClick={onOpenSheet}>Open sheet</button>
+      </div>
+    </>,
+    document.body,
   );
 }
 
@@ -719,55 +1290,59 @@ function allyRows(encounter: Encounter | undefined, players: Character[]) {
 function referenceUrl(text: string | undefined) {
   if (!text) return undefined;
   const urls = [...text.matchAll(/https?:\/\/[^\s)\]>'"]+/gi)].map((match) => match[0].replace(/[.,;]+$/, ''));
-  return urls.find((url) => /aonprd\.com|demiplane\.com/i.test(url));
+  return urls.find((url) => /demiplane\.com|aonprd\.com/i.test(url));
 }
 
-function enemyLink(combatant: Combatant, name: string) {
+function storedImageUrl(text: string | undefined) {
+  if (!text) return undefined;
+  const markdown = text.match(/!\[[^\]]*]\((https?:\/\/[^)\s]+)\)/i)?.[1];
+  if (markdown) return markdown;
+  return text.match(/<img[^>]+src=["'](https?:\/\/[^"']+)["']/i)?.[1];
+}
+
+function enemySource(combatant: Combatant) {
+  const creature = combatant.creature;
+  const text = creature ? creatureStatBlockText(creature) : '';
   const hazardUrl = combatant.hazard?.meta_data && typeof combatant.hazard.meta_data === 'object'
     ? (combatant.hazard.meta_data as { source?: { url?: string } }).source?.url
     : undefined;
-  const stored = referenceUrl(combatant.creature?.details?.description)
-    ?? referenceUrl(hazardUrl)
-    ?? referenceUrl(combatant.hazard?.details ? JSON.stringify(combatant.hazard.details) : undefined);
-  if (stored) return stored;
-  const query = name.trim();
-  if (!query) return undefined;
-  return `https://2e.aonprd.com/Search.aspx?q=${encodeURIComponent(query)}`;
+  const href = referenceUrl(text) ?? referenceUrl(hazardUrl);
+  const imageUrl = creature?.details?.image_url
+    ?? creature?.details?.background_image_url
+    ?? combatant.data?.details?.image_url
+    ?? combatant.data?.details?.background_image_url
+    ?? storedImageUrl(text);
+  return { href, imageUrl };
 }
 
 function enemyRows(encounter: Encounter | undefined) {
   return (encounter?.combatants?.list ?? []).filter((combatant) => !combatant.ally).map((combatant) => {
     const name = combatantDisplayName(combatant);
+    const source = enemySource(combatant);
     return {
       id: combatant._id,
       name,
       level: combatant.hazard?.level ?? combatant.creature?.level ?? combatant.data?.level,
-      artName: combatant.creature?.name ?? combatant.data?.name ?? name,
-      imageUrl: combatant.creature?.details?.image_url ?? combatant.data?.details?.image_url ?? combatant.creature?.details?.background_image_url,
-      creature: combatant.type === 'CREATURE',
-      href: enemyLink(combatant, combatant.creature?.name ?? combatant.data?.name ?? name),
+      imageUrl: source.imageUrl,
+      href: source.href,
     };
   });
 }
 
-function RosterArt({ name, imageUrl, creature }: { name: string; imageUrl?: string; creature: boolean }) {
+function RosterArt({ imageUrl }: { imageUrl?: string }) {
+  const [failed, setFailed] = useState(false);
   const stored = parseIconValue(imageUrl?.trim() ?? '');
   const portrait = stored.type === 'image' ? stored.value.trim() : '';
-  const art = useQuery({
-    queryKey: ['phase1-roster-art', name, portrait],
-    queryFn: () => lookupMonsterArt(name, portrait || undefined, 'thumb'),
-    enabled: creature && !portrait && Boolean(name.trim()),
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-  const src = portrait || (creature ? art.data?.thumbSrc : undefined);
-  if (stored.type === 'icon' && stored.value && !src) {
+  if (stored.type === 'icon' && stored.value && !portrait) {
     return (
       <span className='grid h-8 w-8 place-items-center border border-p1-border bg-p1-inset' style={{ color: stored.color || undefined }}>
         <Icon name={stored.value} size={16} />
       </span>
     );
   }
-  if (src) return <img src={src} alt='' className='h-8 w-8 border border-p1-border bg-p1-inset object-cover' />;
+  if (portrait && !failed) {
+    return <img src={portrait} alt='' className='h-8 w-8 border border-p1-border bg-p1-inset object-cover' onError={() => setFailed(true)} />;
+  }
   return <span className='grid h-8 w-8 place-items-center border border-p1-border bg-p1-inset text-p1-faint'>—</span>;
 }
 
@@ -805,7 +1380,7 @@ function RosterTable({ kind, encounter, players }: { kind: RosterHover['kind']; 
         ))}
         {kind === 'enemies' && enemies.map((row) => (
           <tr key={row.id} className='border-t border-p1-border'>
-            <td className='px-2 py-1'><RosterArt name={row.artName} imageUrl={row.imageUrl} creature={row.creature} /></td>
+            <td className='px-2 py-1'><RosterArt imageUrl={row.imageUrl} /></td>
             <td className='px-2 py-1 font-semibold'>
               {row.href ? (
                 <a href={row.href} target='_blank' rel='noreferrer' className='hover:text-p1-accent hover:underline' onClick={(event) => event.stopPropagation()}>

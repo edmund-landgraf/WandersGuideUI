@@ -6544,20 +6544,20 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
         setError('Image must be 3 MB or smaller.');
         return;
       }
-      const blobUrl = URL.createObjectURL(stored);
-      setOpen(false);
-      onFrame(blobUrl);
       const url = await uploadImage(stored, 'backgrounds');
-      if (!url) throw new Error('Upload failed.');
-      rememberTempArt(url, stored);
+      if (!url) throw new Error('Could not save campaign art.');
       await phase1Request('create-campaign', {
         ...campaign,
         meta_data: { ...campaign.meta_data, image_url: url },
       });
+      setOpen(false);
       onUploaded(url);
+      onFrame(url);
       onSaved();
     } catch (cause) {
-      onFrameError(cause instanceof Error ? cause.message : 'Could not save campaign art.');
+      const message = cause instanceof Error ? cause.message : 'Could not save campaign art.';
+      setError(message);
+      onFrameError(message);
     } finally {
       setBusy(false);
     }
@@ -6613,34 +6613,15 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
           }
         }
         if (stored.size <= 3 * 1024 * 1024) {
-          try {
-            await writeTempArt(url, stored);
-            rememberTempArt(url, stored);
-          } catch {
-            // The band can still use the in-memory copy for this session.
-          }
-          const blobUrl = tempArtUrls.get(url) ?? URL.createObjectURL(stored);
-          setOpen(false);
-          onFrame(blobUrl);
-          try {
-            const hosted = await uploadImage(stored, 'backgrounds');
-            if (!hosted) throw new Error('Upload failed.');
-            await phase1Request('create-campaign', {
-              ...campaign,
-              meta_data: { ...campaign.meta_data, image_url: hosted },
-            });
-            onUploaded(hosted);
-            onSaved();
-            await forgetTempArt(url).catch(() => undefined);
-            return;
-          } catch {
-            // Keep the temp file and the original link. The picture stays on the local copy.
-          }
+          const hosted = await uploadImage(stored, 'backgrounds');
+          if (!hosted) throw new Error('Could not save campaign art.');
           await phase1Request('create-campaign', {
             ...campaign,
-            meta_data: { ...campaign.meta_data, image_url: url },
+            meta_data: { ...campaign.meta_data, image_url: hosted },
           });
-          onUploaded(url);
+          setOpen(false);
+          onUploaded(hosted);
+          onFrame(hosted);
           onSaved();
           return;
         }
@@ -6844,20 +6825,6 @@ async function readTempArt(sourceUrl: string): Promise<Blob | null> {
   });
   db.close();
   return blob;
-}
-
-async function forgetTempArt(sourceUrl: string) {
-  const current = tempArtUrls.get(sourceUrl);
-  if (current) URL.revokeObjectURL(current);
-  tempArtUrls.delete(sourceUrl);
-  const db = await openTempArtDb();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(TEMP_ART_STORE, 'readwrite');
-    tx.objectStore(TEMP_ART_STORE).delete(sourceUrl);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-  db.close();
 }
 
 function rememberTempArt(sourceUrl: string, blob: Blob) {

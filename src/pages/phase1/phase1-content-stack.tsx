@@ -13,6 +13,7 @@ import { priceToString } from '@items/currency-handler';
 import { determineItemMetaType, labelizeBulk } from '@items/inv-utils';
 import type { AbilityBlock, ContentSource, Creature, Item, Language, Spell, Trait } from '@schemas/content';
 import type { Operation } from '@schemas/operations';
+import { getContentDataFromHref } from '@common/rich_text_input/ContentLinkExtension';
 import { knownTraitHref } from '@utils/foundry-text';
 import { Phase1OperationsModal } from './phase1-operations-modal';
 import { abilityNameAndCost, proseCastTime } from '@utils/actions';
@@ -28,6 +29,51 @@ export function CloseStackOnNavigate() {
     close();
   }, [pathname, close]);
   return null;
+}
+
+export function ContentLinkHoverCard({ href, left, top, onEnter, onLeave }: { href: string; left: number; top: number; onEnter: () => void; onLeave: () => void }) {
+  const entry = getContentDataFromHref(href);
+  const content = useQuery({
+    queryKey: ['phase1-content-link', entry?.type, entry?.id],
+    enabled: Boolean(entry),
+    queryFn: () => loadCatalogContent(entry!),
+  });
+  const loaded = content.data;
+  const x = Math.min(left, window.innerWidth - 380);
+  const y = Math.min(top, window.innerHeight - 280);
+  return createPortal(
+    <div
+      className='fixed z-[90] max-h-72 w-[min(360px,92vw)] overflow-auto border border-p1-border bg-p1-page p-3 text-p1-text shadow-2xl'
+      style={{ left: x, top: y }}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+    >
+      {content.isLoading ? <p className='text-xs text-p1-muted'>Loading…</p> : null}
+      {content.isError ? <p className='text-xs text-p1-danger-soft'>Couldn't open this link.</p> : null}
+      {!content.isLoading && !loaded ? <p className='text-xs text-p1-muted'>Content not found.</p> : null}
+      {loaded ? (
+        <>
+          <div className='flex items-center gap-2'>
+            {loaded.actions != null ? <ActionSymbol cost={loaded.actions} size={14} /> : null}
+            <h3 className='text-sm font-semibold leading-tight'>{loaded.title}</h3>
+          </div>
+          {loaded.subtitle ? <p className='mt-0.5 text-[11px] text-p1-muted'>{loaded.subtitle}</p> : null}
+          {loaded.tags.length > 0 ? <p className='mt-1 text-[10px] uppercase tracking-wide text-p1-faint'>{loaded.tags.join(' · ')}</p> : null}
+          {loaded.facts.some((fact) => fact.value) ? (
+            <div className='mt-2 space-y-0.5 text-[11px] leading-4 text-p1-muted'>
+              {loaded.facts.filter((fact) => fact.value).map((fact) => (
+                <p key={fact.label}><span className='text-p1-faint'>{fact.label}</span> {fact.value}</p>
+              ))}
+            </div>
+          ) : null}
+          <div className='mt-2 text-xs leading-5'>
+            <ProseMarkdown>{loaded.description || 'No description given.'}</ProseMarkdown>
+          </div>
+        </>
+      ) : null}
+    </div>,
+    document.body,
+  );
 }
 
 export function ContentStackModal() {
