@@ -2422,7 +2422,7 @@ export function Phase1CampaignPage() {
       if (next) await updateEncounter.mutateAsync(next);
     }
   }
-  if (viewingNotes && !isGm) {
+  if (viewingNotes && !isGm && !selectedNote) {
     if (visible[0]) return <Navigate replace to={`/phase1/campaign/${campaignId}/encounters/${visible[0].id}`} />;
     return <Navigate replace to={`/phase1/campaign/${campaignId}`} />;
   }
@@ -3778,6 +3778,7 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
   const [benchActive, setBenchActive] = useState(false);
   const [outActive, setOutActive] = useState(false);
   const [notesOpen, setNotesOpen] = useState(selectedNoteIndex != null);
+  const [encountersOpen, setEncountersOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(viewingSettings);
   const [benchOpen, setBenchOpen] = useState(true);
   const [outOpen, setOutOpen] = useState(true);
@@ -3950,23 +3951,40 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
           </div>}
         </>
       )}
-      {!standalone && isGm && campaign && (
+      <RailLabel icon={<Swords size={14} />} label='Encounters' count={encounters.length} open={encountersOpen} onToggle={() => setEncountersOpen((value) => !value)} onContextMenu={isGm ? (event) => openSectionMenu(event, 'encounter') : undefined} />
+      {encountersOpen && (
+        <nav className='px-2 pb-4' onContextMenu={isGm ? (event) => openSectionMenu(event, 'encounter') : undefined}>
+          {encounters.map((encounter) => (
+            <Link
+              key={encounter.id}
+              to={phase1EncounterPath(encounter.id, campaign?.id)}
+              onContextMenu={isGm ? (event) => openRailMenu(event, { kind: 'encounter', id: encounter.id, name: encounterDisplayName(encounter.name) }) : undefined}
+              className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedEncounter?.id === encounter.id ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
+            >
+              <span className='block truncate'>{encounterDisplayName(encounter.name)}</span>
+              {isGm && <span className='mt-0.5 block text-[11px] text-p1-faint'>{encounter.combatants.list.length} combatants</span>}
+            </Link>
+          ))}
+          {encounters.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>{standalone ? 'No standalone encounters yet.' : isGm ? 'No encounters in this campaign yet.' : 'None of your characters are in an encounter yet.'}</p>}
+        </nav>
+      )}
+      {!standalone && campaign && (
         <>
-          <RailLabel icon={<BookOpen size={14} />} label='Notes' count={notePages.length} open={notesOpen} onToggle={() => setNotesOpen((value) => !value)} onContextMenu={(event) => openSectionMenu(event, 'note')} />
+          <RailLabel icon={<BookOpen size={14} />} label='Notes' count={notePages.length} open={notesOpen} onToggle={() => setNotesOpen((value) => !value)} onContextMenu={isGm ? (event) => openSectionMenu(event, 'note') : undefined} />
           {notesOpen && (
-            <nav className='px-2 pb-4' onContextMenu={(event) => openSectionMenu(event, 'note')}>
+            <nav className='px-2 pb-4' onContextMenu={isGm ? (event) => openSectionMenu(event, 'note') : undefined}>
               {notePages.map(({ page, index }) => (
                 <Link
                   key={`${page.name}-${index}`}
                   to={`/phase1/campaign/${campaign.id}/notes/${index}`}
-                  onContextMenu={(event) => openRailMenu(event, { kind: 'note', id: index, name: encounterDisplayName(page.name) })}
+                  onContextMenu={isGm ? (event) => openRailMenu(event, { kind: 'note', id: index, name: encounterDisplayName(page.name) }) : undefined}
                   className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedNoteIndex === index ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
                 >
                   <span className='block truncate'>{encounterDisplayName(page.name)}</span>
-                  <span className='mt-0.5 block text-[11px] text-p1-faint'>{page.shared ? 'Shared with party' : 'GM only'}</span>
+                  {isGm && <span className='mt-0.5 block text-[11px] text-p1-faint'>{page.shared ? 'Shared with party' : 'GM only'}</span>}
                 </Link>
               ))}
-              {notePages.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>No campaign notes yet.</p>}
+              {notePages.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>{isGm ? 'No campaign notes yet.' : 'No shared campaign notes.'}</p>}
             </nav>
           )}
         </>
@@ -4000,6 +4018,7 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
             const kind = sectionMenu.kind;
             setSectionMenu(null);
             if (kind === 'note') setNotesOpen(true);
+            else setEncountersOpen(true);
             setCreateKind(kind);
           }}
           onAddAllPcs={sectionMenu.kind === 'encounter' && onAddAllPcsToEncounters ? () => {
@@ -7605,8 +7624,9 @@ function isCampaignLimitError(error: unknown) {
 }
 
 function visibleNotePages(campaign: Campaign, isGm: boolean): IndexedNotePage[] {
-  if (!isGm) return [];
-  return (campaign.notes?.pages ?? []).map((page, index) => ({ page, index }));
+  return (campaign.notes?.pages ?? [])
+    .map((page, index) => ({ page, index }))
+    .filter((item) => isGm || item.page.shared);
 }
 function clamp(value: number, min: number, max: number) { return Math.min(max, Math.max(min, value)); }
 function readDetailWidth() {

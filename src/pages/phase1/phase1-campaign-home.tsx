@@ -1,3 +1,4 @@
+import { useAuthSession } from '@auth/useAuthSession';
 import { parseIconValue } from '@common/IconDisplay';
 import { Icon } from '@common/Icon';
 import { compiledConditions } from '@conditions/condition-handler';
@@ -14,7 +15,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { ConfirmDialog } from './phase1-campaign-settings';
-import { gmEncounterShownToPlayers, phase1Request } from './phase1-api';
+import { gmEncounterShownToPlayers, loadPhase1SheetCharacter } from './phase1-api';
 import { combatantDisplayName } from './phase1-initiative';
 import { creatureStatBlockText } from './phase1-creature-defenses';
 import { isContentStackOpen, useContentLinks } from './phase1-content-links';
@@ -67,11 +68,6 @@ type RosterHover = {
 };
 
 type RosterWindow = RosterHover & { z: number };
-
-function firstRecord<T>(value: T | T[] | null | undefined): T | null {
-  if (Array.isArray(value)) return value[0] ?? null;
-  return value ?? null;
-}
 
 function speedText(data: StatBlockContent | undefined) {
   if (!data) return '—';
@@ -1277,16 +1273,12 @@ function PartyStatMenu({ x, y, name, onClose, onOpen, onOpenSheet }: { x: number
 }
 
 function PcStatWindow({ window: frame, onFocus, onClose, onMove }: { window: PcWindow; onFocus: () => void; onClose: () => void; onMove: (x: number, y: number) => void }) {
+  const session = useAuthSession();
   const query = useQuery({
-    queryKey: ['phase1-stat-block', 'character', String(frame.id)],
+    queryKey: ['phase1-stat-block', 'character', String(frame.id), session?.user.id ?? null],
+    enabled: session !== undefined,
     retry: false,
-    queryFn: async (): Promise<LivingEntity | null> => {
-      try {
-        return firstRecord(await phase1Request<Character | Character[]>('find-character', { id: frame.id }));
-      } catch {
-        return null;
-      }
-    },
+    queryFn: (): Promise<LivingEntity | null> => loadPhase1SheetCharacter(frame.id, session?.user.id, session?.access_token),
   });
   const entity = query.data ?? null;
   const contentQuery = useQuery({
