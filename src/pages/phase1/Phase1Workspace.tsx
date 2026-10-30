@@ -3392,6 +3392,9 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               players={partyPlayers}
               encounters={encounters}
               isGm={isGm}
+              folders={campaign.meta_data?.encounter_folders ?? []}
+              onFoldersChange={(encounterFolders) => onUpdateCampaign({ ...campaign, meta_data: { ...campaign.meta_data, encounter_folders: encounterFolders } })}
+              onMoveEncounter={(encounter, folderId) => onUpdateEncounter({ ...encounter, meta_data: { ...encounter.meta_data, folder_id: folderId } })}
               onTogglePlayerVisible={(encounter, shown) => onUpdateEncounter({ ...encounter, meta_data: { ...encounter.meta_data, player_visible: shown } })}
               notes={notePages.map(({ page, index }) => ({ index, name: page.name, shared: page.shared, markdown: noteContentsToMarkdown(page.contents) }))}
             />

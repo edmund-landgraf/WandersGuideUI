@@ -913,6 +913,14 @@ export type Character = z.infer<typeof CharacterSchema>;
 
 // ─── Campaign ─────────────────────────────────────────────────────────────────
 
+export const EncounterFolderSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  parent_id: z.string().nullable(),
+  sort: z.number(),
+});
+export type EncounterFolder = z.infer<typeof EncounterFolderSchema>;
+
 export const CampaignSchema = z.object({
   id: z.number(),
   created_at: z.string(),
@@ -940,6 +948,7 @@ export const CampaignSchema = z.object({
       row_color: z.string().optional(),
       dice: DicePresetsSchema.optional(),
       roll_history: RollHistorySchema.optional(),
+      encounter_folders: z.array(EncounterFolderSchema).optional(),
     })
     .nullable(),
 });
@@ -1170,6 +1179,8 @@ export const EncounterSchema = z.object({
       amba: EncounterAmbaMetaSchema.optional(),
       /** GM switch: true shows the encounter to every player, false hides it. Omitted keeps the older rule (visible to a player whose character is in it). */
       player_visible: z.boolean().optional(),
+      /** Campaign encounter folder this row belongs to. Null or omitted leaves it ungrouped. */
+      folder_id: z.string().nullable().optional(),
     })
     .passthrough(),
 });

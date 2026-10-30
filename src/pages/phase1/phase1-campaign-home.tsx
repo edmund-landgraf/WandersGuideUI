@@ -2,11 +2,11 @@ import { parseIconValue } from '@common/IconDisplay';
 import { Icon } from '@common/Icon';
 import { compiledConditions } from '@conditions/condition-handler';
 import { getJsonV4Content } from '@export/json/json-v4';
-import type { Character, Combatant, Encounter, LivingEntity } from '@schemas/content';
+import type { Character, Combatant, Encounter, EncounterFolder, LivingEntity } from '@schemas/content';
 import { sign } from '@utils/numbers';
 import { useQueries, useQuery } from '@tanstack/react-query';
-import { UserRound, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronRight, UserRound, X } from 'lucide-react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { gmEncounterShownToPlayers, phase1Request } from './phase1-api';
@@ -121,7 +121,21 @@ function encounterCounts(encounter: Encounter) {
   return { total: list.length, allies, enemies: list.length - allies };
 }
 
-export function Phase1CampaignHome({ campaignId, players, encounters, notes = [], wide = false, isGm = false, onTogglePlayerVisible }: { campaignId: number; players: Character[]; encounters: Encounter[]; notes?: CampaignHomeNote[]; wide?: boolean; isGm?: boolean; onTogglePlayerVisible?: (encounter: Encounter, shown: boolean) => void }) {
+function readCollapsedFolders(key: string) {
+  try {
+    const raw = localStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return new Set<string>(Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : []);
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function folderChildren(folders: EncounterFolder[], parentId: string | null) {
+  return folders.filter((folder) => (folder.parent_id ?? null) === parentId).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name));
+}
+
+export function Phase1CampaignHome({ campaignId, players, encounters, notes = [], wide = false, isGm = false, folders = [], onFoldersChange, onMoveEncounter, onTogglePlayerVisible }: { campaignId: number; players: Character[]; encounters: Encounter[]; notes?: CampaignHomeNote[]; wide?: boolean; isGm?: boolean; folders?: EncounterFolder[]; onFoldersChange?: (folders: EncounterFolder[]) => void; onMoveEncounter?: (encounter: Encounter, folderId: string | null) => void; onTogglePlayerVisible?: (encounter: Encounter, shown: boolean) => void }) {
   const navigate = useNavigate();
   const [windows, setWindows] = useState<PcWindow[]>([]);
   const [noteWindows, setNoteWindows] = useState<NoteWindow[]>([]);
@@ -130,6 +144,66 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
   const [rosterWindows, setRosterWindows] = useState<RosterWindow[]>([]);
   const hoverTimer = useRef<number | null>(null);
   const rosterTimer = useRef<number | null>(null);
+  const collapseKey = `p1-encounter-folders-collapsed:${campaignId}`;
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => readCollapsedFolders(collapseKey));
+  const [folderDraft, setFolderDraft] = useState<{ name: string; parentId: string } | null>(null);
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const knownFolderIds = new Set(folders.map((folder) => folder.id));
+  const rootFolders = folderChildren(folders, null);
+  const ungrouped = encounters.filter((encounter) => {
+    const folderId = encounter.meta_data?.folder_id;
+    return !folderId || !knownFolderIds.has(folderId);
+  });
+
+  useEffect(() => {
+    setCollapsedFolders(readCollapsedFolders(collapseKey));
+  }, [collapseKey]);
+
+  function toggleFolder(id: string) {
+    setCollapsedFolders((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      localStorage.setItem(collapseKey, JSON.stringify([...next]));
+      return next;
+    });
+  }
+
+  function encountersIn(folderId: string) {
+    return encounters.filter((encounter) => encounter.meta_data?.folder_id === folderId);
+  }
+
+  function folderCount(folderId: string) {
+    const direct = encountersIn(folderId).length;
+    return folderChildren(folders, folderId).reduce((sum, child) => sum + encountersIn(child.id).length, direct);
+  }
+
+  function addFolder() {
+    const name = folderDraft?.name.trim();
+    if (!name || !onFoldersChange) return;
+    const parentId = folderDraft.parentId || null;
+    const sort = folders.reduce((max, folder) => Math.max(max, folder.sort), 0) + 1;
+    onFoldersChange([...folders, { id: crypto.randomUUID(), name, parent_id: parentId, sort }]);
+    setFolderDraft(null);
+  }
+
+  function renameFolder(id: string) {
+    const name = renameDraft.trim();
+    if (!name || !onFoldersChange) return;
+    onFoldersChange(folders.map((folder) => (folder.id === id ? { ...folder, name } : folder)));
+    setRenamingFolderId(null);
+  }
+
+  function deleteFolder(id: string) {
+    if (!onFoldersChange) return;
+    const doomed = new Set([id, ...folders.filter((folder) => folder.parent_id === id).map((folder) => folder.id)]);
+    onFoldersChange(folders.filter((folder) => !doomed.has(folder.id)));
+    for (const encounter of encounters) {
+      const folderId = encounter.meta_data?.folder_id;
+      if (folderId && doomed.has(folderId)) onMoveEncounter?.(encounter, null);
+    }
+  }
 
   function showNoteHover(next: NoteHover) {
     if (hoverTimer.current != null) window.clearTimeout(hoverTimer.current);
@@ -205,6 +279,173 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
     });
   }
 
+  function renderEncounterRow(encounter: Encounter, depth: number) {
+    const counts = encounterCounts(encounter);
+    const matched = notesFor(encounter);
+    const folderId = encounter.meta_data?.folder_id;
+    return (
+      <tr
+        key={encounter.id}
+        className='cursor-pointer border-b border-p1-border bg-p1-page/88 hover:bg-p1-page/94'
+        onClick={() => navigate(`/phase1/campaign/${campaignId}/encounters/${encounter.id}`)}
+      >
+        <td className={`py-1 pr-2 font-semibold ${depth === 0 ? 'pl-2' : depth === 1 ? 'pl-8' : 'pl-14'}`}>
+          <span className='flex items-center gap-2'>
+            <span className='min-w-0 truncate'>{encounter.name}</span>
+            {isGm && folders.length > 0 ? (
+              <select
+                aria-label={`Move ${encounter.name}`}
+                className='max-w-40 shrink-0 border border-p1-border bg-p1-raised px-1 py-0.5 text-[10px] font-normal text-p1-muted'
+                value={folderId && knownFolderIds.has(folderId) ? folderId : ''}
+                onClick={(event) => event.stopPropagation()}
+                onChange={(event) => {
+                  event.stopPropagation();
+                  onMoveEncounter?.(encounter, event.target.value || null);
+                }}
+              >
+                <option value=''>Ungrouped</option>
+                {rootFolders.map((root) => (
+                  <optgroup key={root.id} label={root.name}>
+                    <option value={root.id}>{root.name}</option>
+                    {folderChildren(folders, root.id).map((child) => (
+                      <option key={child.id} value={child.id}>{`${root.name} / ${child.name}`}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            ) : null}
+          </span>
+        </td>
+        {isGm ? (
+          <td className='px-2 py-1' onClick={(event) => event.stopPropagation()}>
+            <PlayerVisibleToggle
+              shown={gmEncounterShownToPlayers(encounter)}
+              name={encounter.name}
+              onChange={(shown) => onTogglePlayerVisible?.(encounter, shown)}
+            />
+          </td>
+        ) : null}
+        <td className='px-2 py-1'>
+          {matched.length === 0 ? <span className='text-p1-faint'>—</span> : (
+            <span className='flex flex-wrap gap-1'>
+              {matched.map((note) => (
+                <button
+                  key={note.index}
+                  type='button'
+                  className='max-w-56 truncate border border-p1-border bg-p1-raised px-1.5 py-0.5 text-left text-p1-text hover:border-p1-accent'
+                  onMouseEnter={(event) => {
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    showNoteHover({ note, encounterId: encounter.id, encounterName: encounter.name, x: rect.left, y: rect.bottom + 6 });
+                  }}
+                  onMouseLeave={hideNoteHover}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    lockNote(note, encounter, Math.min(rect.left, window.innerWidth - 560), rect.bottom + 8);
+                  }}
+                >
+                  {encounterDisplayName(note.name)}
+                </button>
+              ))}
+            </span>
+          )}
+        </td>
+        <td className='px-2 py-1'>{counts.total}</td>
+        <td
+          className='px-2 py-1'
+          onMouseEnter={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            showRosterHover({ kind: 'allies', encounterId: encounter.id, x: rect.left, y: rect.bottom + 6 });
+          }}
+          onMouseLeave={hideRosterHover}
+          onClick={(event) => {
+            event.stopPropagation();
+            const rect = event.currentTarget.getBoundingClientRect();
+            lockRoster('allies', encounter, Math.min(rect.left, window.innerWidth - 420), rect.bottom + 8);
+          }}
+        >
+          {counts.allies}
+        </td>
+        <td
+          className='px-2 py-1'
+          onMouseEnter={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            showRosterHover({ kind: 'enemies', encounterId: encounter.id, x: rect.left, y: rect.bottom + 6 });
+          }}
+          onMouseLeave={hideRosterHover}
+          onClick={(event) => {
+            event.stopPropagation();
+            const rect = event.currentTarget.getBoundingClientRect();
+            lockRoster('enemies', encounter, Math.min(rect.left, window.innerWidth - 420), rect.bottom + 8);
+          }}
+        >
+          {counts.enemies}
+        </td>
+      </tr>
+    );
+  }
+
+  function renderFolder(folder: EncounterFolder, depth: number) {
+    const expanded = !collapsedFolders.has(folder.id);
+    const Chevron = expanded ? ChevronDown : ChevronRight;
+    const renaming = renamingFolderId === folder.id;
+    return (
+      <Fragment key={folder.id}>
+        <tr className='border-b border-p1-border bg-p1-header/70'>
+          <td colSpan={isGm ? 6 : 5} className={`py-1 pr-2 ${depth === 0 ? 'pl-2' : 'pl-8'}`}>
+            <span className='flex items-center gap-2'>
+              <button type='button' className='grid h-5 w-5 shrink-0 place-items-center text-p1-muted' aria-expanded={expanded} aria-label={`${expanded ? 'Collapse' : 'Expand'} ${folder.name}`} onClick={() => toggleFolder(folder.id)}>
+                <Chevron size={14} />
+              </button>
+              {renaming ? (
+                <>
+                  <input
+                    autoFocus
+                    aria-label={`Rename ${folder.name}`}
+                    className='min-w-0 flex-1 border border-p1-border bg-p1-raised px-1.5 py-0.5 font-semibold'
+                    value={renameDraft}
+                    onChange={(event) => setRenameDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') renameFolder(folder.id);
+                      if (event.key === 'Escape') setRenamingFolderId(null);
+                    }}
+                  />
+                  <button type='button' className='text-[10px] uppercase tracking-wide text-p1-muted hover:text-p1-text' onClick={() => renameFolder(folder.id)}>
+                    Save
+                  </button>
+                </>
+              ) : (
+                <button type='button' className='min-w-0 truncate text-left font-semibold' onClick={() => toggleFolder(folder.id)}>
+                  {folder.name}
+                </button>
+              )}
+              <span className='text-p1-faint'>{folderCount(folder.id)}</span>
+              {isGm && !renaming ? (
+                <button
+                  type='button'
+                  className='text-[10px] uppercase tracking-wide text-p1-muted hover:text-p1-text'
+                  onClick={() => {
+                    setRenamingFolderId(folder.id);
+                    setRenameDraft(folder.name);
+                  }}
+                >
+                  Rename
+                </button>
+              ) : null}
+              {isGm ? (
+                <button type='button' className='text-[10px] uppercase tracking-wide text-p1-muted hover:text-p1-text' onClick={() => deleteFolder(folder.id)}>
+                  Delete
+                </button>
+              ) : null}
+            </span>
+          </td>
+        </tr>
+        {expanded ? encountersIn(folder.id).map((encounter) => renderEncounterRow(encounter, depth + 1)) : null}
+        {expanded && depth === 0 ? folderChildren(folders, folder.id).map((child) => renderFolder(child, 1)) : null}
+      </Fragment>
+    );
+  }
+
   function openPlayer(player: Character) {
     setWindows((current) => {
       const existing = current.find((item) => item.id === player.id);
@@ -275,6 +516,47 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
       </section>
       <div className='h-px shrink-0 bg-p1-border' />
       <section className={wide ? 'min-h-0 flex-1 overflow-auto py-2 pl-3 pr-10' : 'min-h-0 flex-1 overflow-auto py-2'}>
+        {isGm ? (
+          <div className='mb-2 flex flex-wrap items-center gap-2 px-2'>
+            {folderDraft ? (
+              <>
+                <input
+                  autoFocus
+                  aria-label='Folder name'
+                  placeholder='Folder name'
+                  className='min-w-40 border border-p1-border bg-p1-raised px-1.5 py-1 text-xs'
+                  value={folderDraft.name}
+                  onChange={(event) => setFolderDraft({ ...folderDraft, name: event.target.value })}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') addFolder();
+                    if (event.key === 'Escape') setFolderDraft(null);
+                  }}
+                />
+                <select
+                  aria-label='Parent folder'
+                  className='border border-p1-border bg-p1-raised px-1.5 py-1 text-xs'
+                  value={folderDraft.parentId}
+                  onChange={(event) => setFolderDraft({ ...folderDraft, parentId: event.target.value })}
+                >
+                  <option value=''>Top level</option>
+                  {rootFolders.map((folder) => (
+                    <option key={folder.id} value={folder.id}>{folder.name}</option>
+                  ))}
+                </select>
+                <button type='button' className='border border-p1-border bg-p1-raised px-2 py-1 text-[10px] uppercase tracking-wide hover:border-p1-accent' onClick={addFolder}>
+                  Save
+                </button>
+                <button type='button' className='px-2 py-1 text-[10px] uppercase tracking-wide text-p1-muted' onClick={() => setFolderDraft(null)}>
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button type='button' className='border border-p1-border bg-p1-raised px-2 py-1 text-[10px] uppercase tracking-wide hover:border-p1-accent' onClick={() => setFolderDraft({ name: '', parentId: '' })}>
+                New folder
+              </button>
+            )}
+          </div>
+        ) : null}
         <table className='w-full border-collapse text-xs'>
           <thead className='sticky top-0 border-b border-p1-border bg-p1-header/92 text-[10px] uppercase text-p1-faint'>
             <tr>
@@ -287,84 +569,8 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
             </tr>
           </thead>
           <tbody>
-            {encounters.map((encounter) => {
-              const counts = encounterCounts(encounter);
-              const matched = notesFor(encounter);
-              return (
-                <tr
-                  key={encounter.id}
-                  className='cursor-pointer border-b border-p1-border bg-p1-page/88 hover:bg-p1-page/94'
-                  onClick={() => navigate(`/phase1/campaign/${campaignId}/encounters/${encounter.id}`)}
-                >
-                  <td className='px-2 py-1 font-semibold'>{encounter.name}</td>
-                  {isGm ? (
-                    <td className='px-2 py-1' onClick={(event) => event.stopPropagation()}>
-                      <PlayerVisibleToggle
-                        shown={gmEncounterShownToPlayers(encounter)}
-                        name={encounter.name}
-                        onChange={(shown) => onTogglePlayerVisible?.(encounter, shown)}
-                      />
-                    </td>
-                  ) : null}
-                  <td className='px-2 py-1'>
-                    {matched.length === 0 ? <span className='text-p1-faint'>—</span> : (
-                      <span className='flex flex-wrap gap-1'>
-                        {matched.map((note) => (
-                          <button
-                            key={note.index}
-                            type='button'
-                            className='max-w-56 truncate border border-p1-border bg-p1-raised px-1.5 py-0.5 text-left text-p1-text hover:border-p1-accent'
-                            onMouseEnter={(event) => {
-                              const rect = event.currentTarget.getBoundingClientRect();
-                              showNoteHover({ note, encounterId: encounter.id, encounterName: encounter.name, x: rect.left, y: rect.bottom + 6 });
-                            }}
-                            onMouseLeave={hideNoteHover}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              const rect = event.currentTarget.getBoundingClientRect();
-                              lockNote(note, encounter, Math.min(rect.left, window.innerWidth - 560), rect.bottom + 8);
-                            }}
-                          >
-                            {encounterDisplayName(note.name)}
-                          </button>
-                        ))}
-                      </span>
-                    )}
-                  </td>
-                  <td className='px-2 py-1'>{counts.total}</td>
-                  <td
-                    className='px-2 py-1'
-                    onMouseEnter={(event) => {
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      showRosterHover({ kind: 'allies', encounterId: encounter.id, x: rect.left, y: rect.bottom + 6 });
-                    }}
-                    onMouseLeave={hideRosterHover}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      lockRoster('allies', encounter, Math.min(rect.left, window.innerWidth - 420), rect.bottom + 8);
-                    }}
-                  >
-                    {counts.allies}
-                  </td>
-                  <td
-                    className='px-2 py-1'
-                    onMouseEnter={(event) => {
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      showRosterHover({ kind: 'enemies', encounterId: encounter.id, x: rect.left, y: rect.bottom + 6 });
-                    }}
-                    onMouseLeave={hideRosterHover}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      lockRoster('enemies', encounter, Math.min(rect.left, window.innerWidth - 420), rect.bottom + 8);
-                    }}
-                  >
-                    {counts.enemies}
-                  </td>
-                </tr>
-              );
-            })}
+            {ungrouped.map((encounter) => renderEncounterRow(encounter, 0))}
+            {rootFolders.map((folder) => renderFolder(folder, 0))}
             {encounters.length === 0 ? (
               <tr>
                 <td colSpan={isGm ? 6 : 5} className='px-3 py-8 text-center text-sm text-p1-faint'>No encounters.</td>
