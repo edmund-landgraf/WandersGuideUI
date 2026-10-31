@@ -61,6 +61,23 @@ type PcWindow = {
 
 const ABILITY_KEYS = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'] as const;
 
+const PARTY_COLUMN_TITLE: Record<string, string> = {
+  Lvl: 'Level',
+  HP: 'Hit Points',
+  AC: 'Armor Class',
+  Fort: 'Fortitude',
+  Ref: 'Reflex',
+  Will: 'Will',
+  Per: 'Perception',
+  Spd: 'Speed',
+  Str: 'Strength',
+  Dex: 'Dexterity',
+  Con: 'Constitution',
+  Int: 'Intelligence',
+  Wis: 'Wisdom',
+  Cha: 'Charisma',
+};
+
 type NoteWindow = CampaignHomeNote & {
   encounterId: number;
   encounterName: string;
@@ -425,7 +442,7 @@ function folderDescendantIds(folders: EncounterFolder[], id: string) {
   return doomed;
 }
 
-export function Phase1CampaignHome({ campaignId, players, encounters, notes = [], wide = false, isGm = false, folders = [], onFoldersChange, onMoveEncounter, onTogglePlayerVisible, onToggleMaskCombatants, onAddEncounterNote, onDeleteNote, inParty, onAddToParty, onLeaveParty, partyError }: { campaignId: number; players: Character[]; encounters: Encounter[]; notes?: CampaignHomeNote[]; wide?: boolean; isGm?: boolean; folders?: EncounterFolder[]; onFoldersChange?: (folders: EncounterFolder[]) => void; onMoveEncounter?: (encounter: Encounter, folderId: string | null) => void; onTogglePlayerVisible?: (encounter: Encounter, shown: boolean) => void; onToggleMaskCombatants?: (encounter: Encounter, masked: boolean) => void; onAddEncounterNote?: (encounter: Encounter) => void; onDeleteNote?: (index: number) => void; inParty?: (characterId: number) => boolean; onAddToParty?: (characterId: number) => void; onLeaveParty?: (characterId: number) => void; partyError?: string | null }) {
+export function Phase1CampaignHome({ campaignId, players, encounters, notes = [], wide = false, isGm = false, folders = [], onFoldersChange, onMoveEncounter, onTogglePlayerVisible, onToggleMaskCombatants, onAddEncounterNote, onDeleteNote, inParty, canEditParty = false, onAddToParty, onLeaveParty, partyError }: { campaignId: number; players: Character[]; encounters: Encounter[]; notes?: CampaignHomeNote[]; wide?: boolean; isGm?: boolean; folders?: EncounterFolder[]; onFoldersChange?: (folders: EncounterFolder[]) => void; onMoveEncounter?: (encounter: Encounter, folderId: string | null) => void; onTogglePlayerVisible?: (encounter: Encounter, shown: boolean) => void; onToggleMaskCombatants?: (encounter: Encounter, masked: boolean) => void; onAddEncounterNote?: (encounter: Encounter) => void; onDeleteNote?: (index: number) => void; inParty?: (characterId: number) => boolean; canEditParty?: boolean; onAddToParty?: (characterId: number) => void; onLeaveParty?: (characterId: number) => void; partyError?: string | null }) {
   const navigate = useNavigate();
   const session = useAuthSession();
   const [windows, setWindows] = useState<PcWindow[]>([]);
@@ -436,7 +453,7 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
   const [folderMenu, setFolderMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const selectionAnchor = useRef<number | null>(null);
   const [openPartyIds, setOpenPartyIds] = useState<number[]>([]);
-  const [partyMenu, setPartyMenu] = useState<{ x: number; y: number; id: number } | null>(null);
+  const [partyMenu, setPartyMenu] = useState<{ x: number; y: number; id: number; away: boolean } | null>(null);
   const [partySort, setPartySort] = useState<PartySort>(null);
   const [noteWindows, setNoteWindows] = useState<NoteWindow[]>([]);
   const [noteHover, setNoteHover] = useState<NoteHover | null>(null);
@@ -916,7 +933,7 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
                     <button
                       type='button'
                       className='uppercase hover:text-p1-text'
-                      title={active && partySort.dir === 'desc' ? 'Original order' : active ? 'Sort descending' : 'Sort ascending'}
+                      title={PARTY_COLUMN_TITLE[label]}
                       onClick={() => setPartySort((current) => cyclePartySort(current, label))}
                     >
                       {label}{mark}
@@ -979,7 +996,7 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
                   onClick={() => toggleParty(player.id)}
                   onContextMenu={(event) => {
                     event.preventDefault();
-                    setPartyMenu({ x: event.clientX, y: event.clientY, id: player.id });
+                    setPartyMenu({ x: event.clientX, y: event.clientY, id: player.id, away: Boolean(inParty && !inParty(player.id)) });
                   }}
                 >
                   <td className='px-2 py-1'>
@@ -1077,7 +1094,15 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
           <ul className='mt-2 flex flex-wrap gap-2'>
             {players.filter((player) => !inParty(player.id)).map((player) => (
               <li key={player.id}>
-                <button type='button' className='border border-p1-border bg-p1-inset px-2 py-1 text-xs text-p1-muted hover:bg-p1-hover hover:text-p1-text' onClick={() => onAddToParty(player.id)}>
+                <button
+                  type='button'
+                  className='border border-p1-border bg-p1-inset px-2 py-1 text-xs text-p1-muted hover:bg-p1-hover hover:text-p1-text'
+                  onClick={() => onAddToParty(player.id)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setPartyMenu({ x: event.clientX, y: event.clientY, id: player.id, away: true });
+                  }}
+                >
                   {player.name} · Get back in there
                 </button>
               </li>
@@ -1359,8 +1384,8 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
           x={partyMenu.x}
           y={partyMenu.y}
           name={players.find((player) => player.id === partyMenu.id)?.name ?? 'Character'}
-          canRest={Boolean(onLeaveParty) && !(inParty && !inParty(partyMenu.id))}
-          canReturn={Boolean(onAddToParty) && Boolean(inParty && !inParty(partyMenu.id))}
+          canRest={canEditParty && !partyMenu.away}
+          canReturn={canEditParty && partyMenu.away}
           onClose={() => setPartyMenu(null)}
           onOpen={() => {
             const player = players.find((item) => item.id === partyMenu.id);

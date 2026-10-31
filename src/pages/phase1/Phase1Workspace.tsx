@@ -3533,6 +3533,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               campaignId={campaign.id}
               players={players}
               inParty={inParty}
+              canEditParty={canEditParty}
               onAddToParty={canEditParty ? addToParty : undefined}
               encounters={encounters}
               isGm={isGm}
@@ -3925,13 +3926,16 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
   const [benchActive, setBenchActive] = useState(false);
   const [outActive, setOutActive] = useState(false);
   const [notesOpen, setNotesOpen] = useState(selectedNoteIndex != null);
-  const [encountersOpen, setEncountersOpen] = useState(isGm);
+  const [encountersOpen, setEncountersOpen] = useState(selectedEncounter != null || (campaign == null && isGm));
   const [settingsOpen, setSettingsOpen] = useState(viewingSettings);
   const [benchOpen, setBenchOpen] = useState(true);
   const [outOpen, setOutOpen] = useState(true);
   useEffect(() => {
     if (viewingSettings) setSettingsOpen(true);
   }, [viewingSettings]);
+  useEffect(() => {
+    if (selectedEncounter) setEncountersOpen(true);
+  }, [selectedEncounter?.id]);
   const [menu, setMenu] = useState<RailContextTarget | null>(null);
   const [sectionMenu, setSectionMenu] = useState<{ kind: 'note' | 'encounter'; x: number; y: number } | null>(null);
   const [createKind, setCreateKind] = useState<'note' | 'encounter' | null>(null);
@@ -4017,23 +4021,6 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
           </>
         ) : null}
       </div>
-      <RailLabel icon={<Swords size={14} />} label='Encounters' count={encounters.length} open={encountersOpen} onToggle={() => setEncountersOpen((value) => !value)} onContextMenu={isGm ? (event) => openSectionMenu(event, 'encounter') : undefined} />
-      {encountersOpen && (
-        <nav className='px-2 pb-4' onContextMenu={isGm ? (event) => openSectionMenu(event, 'encounter') : undefined}>
-          {encounters.map((encounter) => (
-            <Link
-              key={encounter.id}
-              to={phase1EncounterPath(encounter.id, campaign?.id)}
-              onContextMenu={isGm ? (event) => openRailMenu(event, { kind: 'encounter', id: encounter.id, name: encounterDisplayName(encounter.name) }) : undefined}
-              className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedEncounter?.id === encounter.id ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
-            >
-              <span className='block truncate'>{encounterDisplayName(encounter.name)}</span>
-              {isGm && <span className='mt-0.5 block text-[11px] text-p1-faint'>{encounter.combatants.list.length} combatants</span>}
-            </Link>
-          ))}
-          {encounters.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>{standalone ? 'No standalone encounters yet.' : isGm ? 'No encounters in this campaign yet.' : 'None of your characters are in an encounter yet.'}</p>}
-        </nav>
-      )}
       {!standalone && isGm && campaign && (
         <>
           <RailLabel icon={<Settings size={14} />} label='Settings' open={settingsOpen} onToggle={() => setSettingsOpen((value) => !value)} />
@@ -4133,6 +4120,23 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
             {outCombatants.length === 0 && <p className='px-2 py-3 text-xs text-p1-faint'>{selectedEncounter ? 'No combatants out of the fight.' : 'No player characters out of the fight.'}</p>}
           </div>}
         </>
+      )}
+      <RailLabel icon={<Swords size={14} />} label='Encounters' count={encounters.length} open={encountersOpen} onToggle={() => setEncountersOpen((value) => !value)} onContextMenu={isGm ? (event) => openSectionMenu(event, 'encounter') : undefined} />
+      {encountersOpen && (
+        <nav className='px-2 pb-4' onContextMenu={isGm ? (event) => openSectionMenu(event, 'encounter') : undefined}>
+          {encounters.map((encounter) => (
+            <Link
+              key={encounter.id}
+              to={phase1EncounterPath(encounter.id, campaign?.id)}
+              onContextMenu={isGm ? (event) => openRailMenu(event, { kind: 'encounter', id: encounter.id, name: encounterDisplayName(encounter.name) }) : undefined}
+              className={`mb-1 block border-l-2 px-3 py-2.5 text-sm ${selectedEncounter?.id === encounter.id ? 'border-p1-accent bg-p1-hover text-p1-text' : 'border-transparent text-p1-muted hover:bg-p1-hover hover:text-p1-text'}`}
+            >
+              <span className='block truncate'>{encounterDisplayName(encounter.name)}</span>
+              {isGm && <span className='mt-0.5 block text-[11px] text-p1-faint'>{encounter.combatants.list.length} combatants</span>}
+            </Link>
+          ))}
+          {encounters.length === 0 && <p className='px-3 py-4 text-xs leading-5 text-p1-faint'>{standalone ? 'No standalone encounters yet.' : isGm ? 'No encounters in this campaign yet.' : 'None of your characters are in an encounter yet.'}</p>}
+        </nav>
       )}
       {!standalone && campaign && (
         <>
