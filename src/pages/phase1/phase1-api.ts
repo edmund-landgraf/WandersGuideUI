@@ -1,24 +1,44 @@
 import type { Campaign, Character, Encounter } from '@schemas/content';
-import type { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase, supabaseInvokeHeaders } from '../../supabase-client';
 
 type ApiEnvelope<T> = { status: 'success' | 'fail' | 'error'; data?: T; message?: string };
+
+function messageFromPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const record = payload as { message?: unknown; msg?: unknown; error?: unknown; data?: { message?: unknown } };
+  for (const value of [record.message, record.data?.message, record.msg, record.error]) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+/** supabase-js hides the function body behind a generic message. Read JSON, then text. */
+async function edgeErrorDetail(error: { message?: string; context?: unknown }): Promise<string> {
+  const fallback = error.message || 'Request failed';
+  const direct = messageFromPayload(error.context);
+  if (direct) return direct;
+  const response = error.context as { clone?: () => Response; json?: () => Promise<unknown>; text?: () => Promise<string> } | null;
+  if (!response || (typeof response.json !== 'function' && typeof response.clone !== 'function')) return fallback;
+  const read = () => (typeof response.clone === 'function' ? response.clone() : response);
+  try {
+    const fromJson = messageFromPayload(await read().json());
+    if (fromJson) return fromJson;
+  } catch {
+    try {
+      const text = (await read().text()).trim();
+      if (text) return text.slice(0, 300);
+    } catch {
+      // Keep the SDK message when the body cannot be read.
+    }
+  }
+  return fallback;
+}
 
 export async function phase1Request<T>(functionName: string, body: Record<string, unknown>, accessToken?: string): Promise<T> {
   const headers = await supabaseInvokeHeaders(accessToken);
   const { data, error } = await supabase.functions.invoke(functionName, { body, headers });
   if (error) {
-    let detail = error.message || 'Request to ' + functionName + ' failed';
-    const context = (error as FunctionsHttpError).context;
-    if (context) {
-      try {
-        const payload = await context.clone().json();
-        detail = payload?.message || payload?.data?.message || detail;
-      } catch {
-        // Preserve the SDK message when the response body is not JSON.
-      }
-    }
-    throw new Error(functionName + ': ' + detail);
+    throw new Error(functionName + ': ' + (await edgeErrorDetail(error)));
   }
   const envelope = data as ApiEnvelope<T> | null;
   if (!envelope) throw new Error(functionName + ': empty response');

@@ -399,63 +399,66 @@ export function Phase1SheetPage() {
               ))
             : 'Ancestry, background, and class load with calculated details.'}
         </p>
-        <div className='mt-1.5 flex flex-wrap items-center gap-1.5'>
-          {canEdit && <button type='button' className='toolbar-button' onClick={() => setRestOpen(true)}><RotateCcw size={14} /> Rest</button>}
-          <div className='toolbar-button'>
-            <Star size={14} />
-            Hero
-            {canEdit ? (
-              <span className='ml-2 flex items-center gap-1'>
-                <button type='button' onClick={() => patchCharacter((current) => ({ ...current, hero_points: Math.max(0, (current.hero_points ?? 0) - 1) }))}>-</button>
-                <strong>{character.hero_points ?? 0}</strong>
-                <button type='button' onClick={() => patchCharacter((current) => ({ ...current, hero_points: Math.min(3, (current.hero_points ?? 0) + 1) }))}>+</button>
-              </span>
-            ) : <strong className='ml-2'>{character.hero_points ?? 0}</strong>}
-          </div>
-          {view === 'builder' ? (
-            <button type='button' className='toolbar-button' onClick={() => setSearchParams({}, { replace: true })} title='Character sheet'>
-              <User size={14} /> Sheet
-            </button>
-          ) : isOwner ? (
-            <button type='button' className='toolbar-button' onClick={() => setSearchParams({ view: 'builder', step: 'builder' }, { replace: true })} title='Character builder'>
-              <Hammer size={14} /> Builder
-            </button>
-          ) : null}
-          <Phase1CharacterMenu
-            character={character}
-            canEdit={canEdit}
-            xpDraft={xpDraft}
-            onXpDraftChange={setXpDraft}
-            onXpCommit={() => {
-              const value = Number.parseInt(xpDraft, 10);
-              if (Number.isFinite(value)) patchCharacter((current) => ({ ...current, experience: Math.max(0, value) }));
-            }}
-          />
-          {showBuilderReminder && (
-            <button
-              type='button'
-              className='toolbar-button border-p1-accent/50 text-p1-accent-soft'
-              onClick={() =>
-                setSearchParams(
-                  remainingChoices > 0 ? { view: 'builder', step: 'builder' } : { view: 'builder' },
-                  { replace: true }
-                )
-              }
-            >
-              <Hammer size={14} />
-              {remainingChoices > 0
-                ? `${remainingChoices} ${remainingChoices === 1 ? 'choice' : 'choices'} remaining`
-                : 'Finish setup'}
-              {choiceCounts && remainingChoices > 0 && (
-                <span className='text-p1-faint'>
-                  {choiceCounts.current}/{choiceCounts.max}
-                </span>
-              )}
-            </button>
-          )}
-        </div>
       </div>
     </section>
+  );
+
+  const sheetActions = (
+    <>
+      {canEdit && <button type='button' className='toolbar-button' onClick={() => setRestOpen(true)}><RotateCcw size={14} /> Rest</button>}
+      <div className='toolbar-button'>
+        <Star size={14} />
+        Hero
+        {canEdit ? (
+          <span className='ml-2 flex items-center gap-1'>
+            <button type='button' onClick={() => patchCharacter((current) => ({ ...current, hero_points: Math.max(0, (current.hero_points ?? 0) - 1) }))}>-</button>
+            <strong>{character.hero_points ?? 0}</strong>
+            <button type='button' onClick={() => patchCharacter((current) => ({ ...current, hero_points: Math.min(3, (current.hero_points ?? 0) + 1) }))}>+</button>
+          </span>
+        ) : <strong className='ml-2'>{character.hero_points ?? 0}</strong>}
+      </div>
+      {view === 'builder' ? (
+        <button type='button' className='toolbar-button' onClick={() => setSearchParams({}, { replace: true })} title='Character sheet'>
+          <User size={14} /> Sheet
+        </button>
+      ) : isOwner ? (
+        <button type='button' className='toolbar-button' onClick={() => setSearchParams({ view: 'builder', step: 'builder' }, { replace: true })} title='Character builder'>
+          <Hammer size={14} /> Builder
+        </button>
+      ) : null}
+      <Phase1CharacterMenu
+        character={character}
+        canEdit={canEdit}
+        xpDraft={xpDraft}
+        onXpDraftChange={setXpDraft}
+        onXpCommit={() => {
+          const value = Number.parseInt(xpDraft, 10);
+          if (Number.isFinite(value)) patchCharacter((current) => ({ ...current, experience: Math.max(0, value) }));
+        }}
+      />
+      {showBuilderReminder && (
+        <button
+          type='button'
+          className='toolbar-button border-p1-accent/50 text-p1-accent-soft'
+          onClick={() =>
+            setSearchParams(
+              remainingChoices > 0 ? { view: 'builder', step: 'builder' } : { view: 'builder' },
+              { replace: true }
+            )
+          }
+        >
+          <Hammer size={14} />
+          {remainingChoices > 0
+            ? `${remainingChoices} ${remainingChoices === 1 ? 'choice' : 'choices'} remaining`
+            : 'Finish setup'}
+          {choiceCounts && remainingChoices > 0 && (
+            <span className='text-p1-faint'>
+              {choiceCounts.current}/{choiceCounts.max}
+            </span>
+          )}
+        </button>
+      )}
+    </>
   );
 
   return (
@@ -486,7 +489,10 @@ export function Phase1SheetPage() {
       <main className={`relative z-10 mx-auto min-h-0 w-full flex-1 overflow-y-scroll px-4 py-3 pb-28 sm:pb-10 ${view === 'builder' ? 'max-w-6xl' : 'max-w-5xl'}`}>
         {view === 'builder' ? (
           <>
-            <div className='mb-2'>{identityCard}</div>
+            <div className='mb-2 flex flex-wrap items-center gap-2'>
+              <div className='min-w-0 flex-1'>{identityCard}</div>
+              <div className='flex flex-nowrap items-center gap-1.5'>{sheetActions}</div>
+            </div>
             <Phase1BuilderWorkspace characterId={character.id} embedded seed={character} />
           </>
         ) : (
@@ -516,6 +522,7 @@ export function Phase1SheetPage() {
         <HealthStatusPanel
           layout='sheet'
           identity={identityCard}
+          actions={sheetActions}
           combatant={combatant}
           calculatedStatus={statusQuery.data ?? null}
           calculating={statusQuery.isLoading}

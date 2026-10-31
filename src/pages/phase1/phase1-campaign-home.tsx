@@ -15,7 +15,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { ConfirmDialog } from './phase1-campaign-settings';
-import { encounterMasksCombatants, gmEncounterShownToPlayers, loadPhase1SheetCharacter, phase1Request, sameUserId } from './phase1-api';
+import { encounterMasksCombatants, gmEncounterShownToPlayers, loadPhase1SheetCharacter, phase1Request } from './phase1-api';
 import { combatantDisplayName } from './phase1-initiative';
 import { creatureStatBlockText } from './phase1-creature-defenses';
 import { isContentStackOpen, useContentLinks } from './phase1-content-links';
@@ -425,7 +425,7 @@ function folderDescendantIds(folders: EncounterFolder[], id: string) {
   return doomed;
 }
 
-export function Phase1CampaignHome({ campaignId, players, encounters, notes = [], wide = false, isGm = false, folders = [], onFoldersChange, onMoveEncounter, onTogglePlayerVisible, onToggleMaskCombatants, onAddEncounterNote, onDeleteNote, onLeaveParty }: { campaignId: number; players: Character[]; encounters: Encounter[]; notes?: CampaignHomeNote[]; wide?: boolean; isGm?: boolean; folders?: EncounterFolder[]; onFoldersChange?: (folders: EncounterFolder[]) => void; onMoveEncounter?: (encounter: Encounter, folderId: string | null) => void; onTogglePlayerVisible?: (encounter: Encounter, shown: boolean) => void; onToggleMaskCombatants?: (encounter: Encounter, masked: boolean) => void; onAddEncounterNote?: (encounter: Encounter) => void; onDeleteNote?: (index: number) => void; onLeaveParty?: (characterId: number) => void }) {
+export function Phase1CampaignHome({ campaignId, players, encounters, notes = [], wide = false, isGm = false, folders = [], onFoldersChange, onMoveEncounter, onTogglePlayerVisible, onToggleMaskCombatants, onAddEncounterNote, onDeleteNote, inParty, onAddToParty, onLeaveParty, partyError }: { campaignId: number; players: Character[]; encounters: Encounter[]; notes?: CampaignHomeNote[]; wide?: boolean; isGm?: boolean; folders?: EncounterFolder[]; onFoldersChange?: (folders: EncounterFolder[]) => void; onMoveEncounter?: (encounter: Encounter, folderId: string | null) => void; onTogglePlayerVisible?: (encounter: Encounter, shown: boolean) => void; onToggleMaskCombatants?: (encounter: Encounter, masked: boolean) => void; onAddEncounterNote?: (encounter: Encounter) => void; onDeleteNote?: (index: number) => void; inParty?: (characterId: number) => boolean; onAddToParty?: (characterId: number) => void; onLeaveParty?: (characterId: number) => void; partyError?: string | null }) {
   const navigate = useNavigate();
   const session = useAuthSession();
   const [windows, setWindows] = useState<PcWindow[]>([]);
@@ -904,6 +904,7 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
   return (
     <div className={wide ? 'flex h-full min-h-0 w-full flex-col' : 'mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col px-6'}>
       <section className={wide ? 'min-h-0 w-full flex-1 overflow-auto py-2 pl-3 pr-10' : 'min-h-0 flex-1 overflow-auto py-2'}>
+        {partyError ? <p className='mb-2 border border-p1-danger/40 bg-p1-danger/10 px-3 py-2 text-xs text-p1-danger-soft'>Party update failed: {partyError}</p> : null}
         <table className='w-full border-collapse text-[13px]'>
           <thead className='sticky top-0 z-[1] border-b border-p1-border bg-p1-header/92 text-[11px] uppercase text-p1-faint'>
             <tr>
@@ -962,7 +963,7 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
               }
               const delta = String(av).localeCompare(String(bv), undefined, { sensitivity: 'base' }) * dir;
               return delta === 0 ? a.index - b.index : delta;
-            }).map(({ player, data, loading }) => {
+            }).filter(({ player }) => !(inParty && !inParty(player.id))).map(({ player, data, loading }) => {
               const conditions = compiledConditions(player.details?.conditions ?? []);
               const currentHp = player.hp_current ?? data?.max_hp;
               const maxHp = partyStatNumber(data?.max_hp);
@@ -1065,13 +1066,24 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
                 </Fragment>
               );
             })}
-            {players.length === 0 ? (
+            {players.filter((player) => !(inParty && !inParty(player.id))).length === 0 ? (
               <tr>
                 <td colSpan={wide ? 18 : 11} className='px-3 py-8 text-center text-sm text-p1-faint'>No one is in the party.</td>
               </tr>
             ) : null}
           </tbody>
         </table>
+        {inParty && onAddToParty ? (
+          <ul className='mt-2 flex flex-wrap gap-2'>
+            {players.filter((player) => !inParty(player.id)).map((player) => (
+              <li key={player.id}>
+                <button type='button' className='border border-p1-border bg-p1-inset px-2 py-1 text-xs text-p1-muted hover:bg-p1-hover hover:text-p1-text' onClick={() => onAddToParty(player.id)}>
+                  {player.name} · Get back in there
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </section>
       <div className='h-px shrink-0 bg-p1-border' />
       <section ref={splitRef} className={wide ? 'mb-3 flex min-h-0 flex-1 bg-p1-page py-2 pl-3 pr-10' : 'mb-3 flex min-h-0 flex-1 bg-p1-page py-2'}>
@@ -1347,7 +1359,8 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
           x={partyMenu.x}
           y={partyMenu.y}
           name={players.find((player) => player.id === partyMenu.id)?.name ?? 'Character'}
-          canRest={Boolean(onLeaveParty) && (isGm || sameUserId(players.find((player) => player.id === partyMenu.id)?.user_id, session?.user.id))}
+          canRest={Boolean(onLeaveParty) && !(inParty && !inParty(partyMenu.id))}
+          canReturn={Boolean(onAddToParty) && Boolean(inParty && !inParty(partyMenu.id))}
           onClose={() => setPartyMenu(null)}
           onOpen={() => {
             const player = players.find((item) => item.id === partyMenu.id);
@@ -1361,6 +1374,11 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
             const player = players.find((item) => item.id === partyMenu.id);
             setPartyMenu(null);
             if (player) onLeaveParty?.(player.id);
+          }}
+          onReturn={() => {
+            const player = players.find((item) => item.id === partyMenu.id);
+            setPartyMenu(null);
+            if (player) onAddToParty?.(player.id);
           }}
         />
       ) : null}
@@ -1380,7 +1398,7 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
   );
 }
 
-function PartyStatMenu({ x, y, name, canRest, onClose, onOpen, onOpenSheet, onRest }: { x: number; y: number; name: string; canRest: boolean; onClose: () => void; onOpen: () => void; onOpenSheet: () => void; onRest: () => void }) {
+function PartyStatMenu({ x, y, name, canRest, canReturn, onClose, onOpen, onOpenSheet, onRest, onReturn }: { x: number; y: number; name: string; canRest: boolean; canReturn: boolean; onClose: () => void; onOpen: () => void; onOpenSheet: () => void; onRest: () => void; onReturn: () => void }) {
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -1389,18 +1407,23 @@ function PartyStatMenu({ x, y, name, canRest, onClose, onOpen, onOpenSheet, onRe
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [onClose]);
   const left = Math.min(x, window.innerWidth - 180);
-  const top = Math.min(y, window.innerHeight - (canRest ? 104 : 72));
+  const top = Math.min(y, window.innerHeight - (canRest || canReturn ? 132 : 72));
   return createPortal(
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} onContextMenu={(event) => { event.preventDefault(); onClose(); }} />
       <div role='menu' aria-label={name} className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 text-xs text-p1-text shadow-2xl' style={{ left, top }}>
         <button type='button' role='menuitem' className='block w-full px-3 py-1.5 text-left hover:bg-p1-hover' onClick={onOpen}>Open stat card</button>
         <button type='button' role='menuitem' className='block w-full px-3 py-1.5 text-left hover:bg-p1-hover' onClick={onOpenSheet}>Open sheet</button>
+        {canReturn ? <button type='button' role='menuitem' className='block w-full whitespace-nowrap px-3 py-1.5 text-left hover:bg-p1-hover' onClick={onReturn}>Get back in there</button> : null}
         {canRest ? <button type='button' role='menuitem' className='block w-full whitespace-nowrap px-3 py-1.5 text-left hover:bg-p1-hover' onClick={onRest}>Take a rest</button> : null}
       </div>
     </>,
     document.body,
   );
+}
+
+export function Phase1PcStatWindow({ id, name, x, y, z, onFocus, onClose, onMove }: PcWindow & { onFocus: () => void; onClose: () => void; onMove: (x: number, y: number) => void }) {
+  return <PcStatWindow window={{ id, name, x, y, z }} onFocus={onFocus} onClose={onClose} onMove={onMove} />;
 }
 
 function PcStatWindow({ window: frame, onFocus, onClose, onMove }: { window: PcWindow; onFocus: () => void; onClose: () => void; onMove: (x: number, y: number) => void }) {

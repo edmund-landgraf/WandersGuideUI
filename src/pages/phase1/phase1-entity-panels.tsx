@@ -1599,7 +1599,7 @@ function abilityGroupLabel(source: Phase1Ability['source']) {
   if (source === 'Feat') return 'Feats';
   return `${source} Abilities`;
 }
-export function HealthStatusPanel({ combatant, calculatedStatus, calculating, onChangeConditions, onPersistHpCurrent, onPersistTempHp, layout = 'stack', identity }: { combatant: PopulatedCombatant; calculatedStatus?: Phase1CreatureStatus | null; calculating: boolean; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void; layout?: 'sheet' | 'stack'; identity?: ReactNode }) {
+export function HealthStatusPanel({ combatant, calculatedStatus, calculating, onChangeConditions, onPersistHpCurrent, onPersistTempHp, layout = 'stack', identity, actions }: { combatant: PopulatedCombatant; calculatedStatus?: Phase1CreatureStatus | null; calculating: boolean; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void; layout?: 'sheet' | 'stack'; identity?: ReactNode; actions?: ReactNode }) {
   const entity = combatant.data;
   const status = calculatedStatus ?? fallbackStatus(entity);  const resistanceSummary = status.resistances.length + status.weaknesses.length + status.immunities.length;
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1681,7 +1681,7 @@ export function HealthStatusPanel({ combatant, calculatedStatus, calculating, on
           </button>
         )}
       </div>
-      <div className='mt-1 flex max-h-[70px] min-h-6 flex-wrap items-start justify-center gap-1 overflow-y-auto'>
+      <div className={`mt-1 flex flex-wrap items-start justify-center gap-1 overflow-y-auto ${actions ? 'min-h-6' : 'max-h-[70px] min-h-6'}`}>
         {conditions.length === 0 && <span className='text-[10px] italic text-p1-faint'>None active</span>}
         {conditions.map((condition) => (
           <button
@@ -1701,6 +1701,11 @@ export function HealthStatusPanel({ combatant, calculatedStatus, calculating, on
           </button>
         ))}
       </div>
+      {actions ? (
+        <div className='mt-2 flex flex-nowrap items-center justify-center gap-1.5 overflow-x-auto'>
+          {actions}
+        </div>
+      ) : null}
     </section>
   );
 

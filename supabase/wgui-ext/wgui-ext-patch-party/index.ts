@@ -2,7 +2,7 @@
 import { serve } from 'std/server';
 import { connect, createServiceClient, fetchData } from '../_shared/helpers.ts';
 import { HttpError } from '../_shared/http-errors.ts';
-import { authorizeCampaign, sameNumericId } from '../_wgui-ext/shared.ts';
+import { authorizeCampaign, sameNumericId, toId } from '../_wgui-ext/shared.ts';
 
 interface PatchPartyBody {
   campaign_id?: number;
@@ -28,7 +28,8 @@ serve(async (req: Request) => {
     if (campaign_id === undefined || campaign_id === null) {
       throw new HttpError(400, 'A campaign_id is required.', 'CAMPAIGN_ID_REQUIRED');
     }
-    if (!Array.isArray(party_ids) || party_ids.some((id) => !Number.isInteger(id))) {
+    const requested = Array.isArray(party_ids) ? party_ids.map((id) => toId(id)) : null;
+    if (!requested || requested.some((id) => id == null)) {
       throw new HttpError(400, 'party_ids must be an array of character ids.', 'PARTY_IDS_REQUIRED');
     }
 
@@ -45,10 +46,10 @@ serve(async (req: Request) => {
     const memberIds = new Set(
       members
         .filter((character) => sameNumericId(character.campaign_id, campaign_id))
-        .map((character) => character.id)
-        .filter((id) => Number.isInteger(id)),
+        .map((character) => toId(character.id))
+        .filter((id): id is number => id != null),
     );
-    const nextIds = [...new Set(party_ids)];
+    const nextIds = [...new Set(requested.filter((id): id is number => id != null))];
     if (nextIds.some((id) => !memberIds.has(id))) {
       throw new HttpError(400, 'Every party id must be a character in this campaign.', 'PARTY_ID_UNKNOWN');
     }
@@ -56,7 +57,7 @@ serve(async (req: Request) => {
     const previous = meta && typeof meta === 'object' ? meta as Record<string, unknown> : {};
     const meta_data = { ...previous, party_ids: nextIds };
     const { error } = await admin.from('campaign').update({ meta_data }).eq('id', campaign_id);
-    if (error) throw error;
+    if (error) throw new HttpError(500, error.message || 'Could not save the party.', 'PARTY_SAVE_FAILED');
 
     return {
       status: 'success',

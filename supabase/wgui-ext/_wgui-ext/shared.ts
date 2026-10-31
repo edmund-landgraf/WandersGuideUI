@@ -46,7 +46,7 @@ export interface CampaignAccess {
   characterIds: Set<number>;
 }
 
-function toId(value: unknown): number | null {
+export function toId(value: unknown): number | null {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   if (typeof value === 'string' && value.trim() !== '') {
     const parsed = Number(value);
