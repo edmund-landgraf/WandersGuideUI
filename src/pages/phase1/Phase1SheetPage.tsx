@@ -64,6 +64,12 @@ import { SelectCompanionModal } from './phase1-creatures';
 const SHEET_TABS = ['Skills', 'Inventory', 'Spells', 'Feats', 'Companions', 'Details', 'Notes', 'Extras'] as const;
 type SheetTab = (typeof SHEET_TABS)[number];
 
+function campaignArtFocusY(value?: number | string | null) {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed)) return 30;
+  return Math.min(100, Math.max(0, parsed));
+}
+
 export function Phase1SheetPage() {
   const session = useAuthSession();
   const navigate = useNavigate();
@@ -224,7 +230,9 @@ export function Phase1SheetPage() {
     isOwner &&
     view === 'sheet' &&
     (remainingChoices > 0 || (choiceCountsQuery.isSuccess && !isPlayable(character)));
-  const sheetArtUrl = character.details?.background_image_url;
+  const campaignArtUrl = campaignQuery.data?.meta_data?.image_url?.trim() ?? '';
+  const campaignArtFocus = campaignArtFocusY(campaignQuery.data?.meta_data?.image_focus_y);
+  const sheetArtUrl = campaignArtUrl || character.details?.background_image_url;
 
   function persistHp(raw: string) {
     patchCharacter((current) => (confirmHealth(raw, maxHp, current)?.entity as Character) ?? current);
@@ -459,7 +467,7 @@ export function Phase1SheetPage() {
   return (
     <div className={`relative flex h-dvh min-h-0 flex-col overflow-hidden bg-p1-page text-p1-text${sheetArtUrl ? ` p1-sheet-has-art p1-sheet-art-${artTone}` : ''}`}>
       {sheetArtUrl && (
-        <div className='p1-sheet-art-layer' style={{ backgroundImage: `url(${sheetArtUrl})` }} aria-hidden>
+        <div className='p1-sheet-art-layer' style={{ backgroundImage: `url(${sheetArtUrl})`, backgroundPosition: campaignArtUrl ? `center ${campaignArtFocus}%` : undefined }} aria-hidden>
           <div className='p1-sheet-art-veil' />
         </div>
       )}
@@ -575,20 +583,21 @@ export function Phase1SheetPage() {
           onClose={() => setBackgroundOpen(false)}
         />
       )}
-      {artworkPreviewOpen && character.details?.background_image_url && (
+      {artworkPreviewOpen && sheetArtUrl && (
         <Phase1ArtworkPreview
           option={
-            getAllBackgroundImages().find((image) => image.url === character.details?.background_image_url) ?? {
-              name: 'Custom',
-              url: character.details.background_image_url,
+            getAllBackgroundImages().find((image) => image.url === sheetArtUrl) ?? {
+              name: campaignArtUrl ? (campaignQuery.data?.name ?? 'Campaign art') : 'Custom',
+              url: sheetArtUrl,
             }
           }
           onBack={() => setArtworkPreviewOpen(false)}
         />
       )}
       <Phase1ArtworkOverlay
-        url={character.details?.background_image_url}
-        canEdit={canEdit}
+        url={sheetArtUrl}
+        label={campaignArtUrl ? (campaignQuery.data?.name ?? 'Campaign art') : undefined}
+        canEdit={canEdit && !campaignArtUrl}
         artTone={artTone}
         onArtTone={(tone) => {
           setArtTone(tone);
