@@ -363,7 +363,7 @@ export function Phase1SheetPage() {
   }
 
   const identityCard = (
-    <section className='relative z-30 flex h-full flex-wrap items-start gap-2 border border-p1-border bg-p1-surface p-2'>
+    <section className='relative z-30 flex flex-wrap items-start gap-2 border border-p1-border bg-p1-surface p-2'>
       <button
         type='button'
         className='grid h-12 w-12 shrink-0 place-items-center overflow-hidden border border-p1-border bg-p1-inset text-p1-faint hover:border-p1-accent/60 disabled:hover:border-p1-border'
@@ -1020,7 +1020,7 @@ function Phase1CharacterMenu({
         <Menu size={14} /> {label} <ChevronDown size={14} />
       </button>
       {open && (
-        <div role='menu' className='absolute right-0 z-20 mt-1 min-w-52 border border-p1-border bg-p1-surface py-1 shadow-2xl'>
+        <div role='menu' className='absolute left-0 z-50 mt-1 min-w-52 border border-p1-border bg-p1-surface py-1 shadow-2xl'>
           {character.campaign_id ? (
             <Link role='menuitem' className={characterMenuItemClass} to={`/phase1/campaign/${character.campaign_id}`} onClick={() => setOpen(false)}>
               <Flag size={14} /> Campaign

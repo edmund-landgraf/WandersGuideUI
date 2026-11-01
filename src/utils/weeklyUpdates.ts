@@ -66,6 +66,16 @@ export type UpdateGroup = {
   items: string[];
 };
 
+export const UPDATE_TOPICS = [
+  'Art and maps',
+  'Encounters and combat',
+  'Accounts',
+  'Campaigns',
+  'Characters',
+  'Help and docs',
+  'Also',
+] as const;
+
 const UPDATE_GROUPS: { title: string; test: RegExp }[] = [
   { title: 'Art and maps', test: /\bart\b|image|map\b|owlbear|lightbox/i },
   { title: 'Encounters and combat', test: /encounter|combat|dice|initiative|tactics|creature|hazard|xp\b/i },

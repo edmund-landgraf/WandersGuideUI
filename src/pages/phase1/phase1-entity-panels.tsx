@@ -1599,7 +1599,7 @@ function abilityGroupLabel(source: Phase1Ability['source']) {
   if (source === 'Feat') return 'Feats';
   return `${source} Abilities`;
 }
-export function HealthStatusPanel({ combatant, calculatedStatus, calculating, onChangeConditions, onPersistHpCurrent, onPersistTempHp, layout = 'stack', identity, actions }: { combatant: PopulatedCombatant; calculatedStatus?: Phase1CreatureStatus | null; calculating: boolean; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void; layout?: 'sheet' | 'stack'; identity?: ReactNode; actions?: ReactNode }) {
+export function HealthStatusPanel({ combatant, calculatedStatus, calculating, onChangeConditions, onPersistHpCurrent, onPersistTempHp, layout = 'stack', identity, actions }: { combatant: PopulatedCombatant; calculatedStatus?: Phase1CreatureStatus | null; calculating: boolean; onChangeConditions?: (conditions: Condition[], note?: string | null) => void; onPersistHpCurrent?: (raw: string, note: string | null) => void; onPersistTempHp?: (raw: string, note: string | null) => void; layout?: 'sheet' | 'sheet-legacy' | 'stack'; identity?: ReactNode; actions?: ReactNode }) {
   const entity = combatant.data;
   const status = calculatedStatus ?? fallbackStatus(entity);  const resistanceSummary = status.resistances.length + status.weaknesses.length + status.immunities.length;
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1616,11 +1616,10 @@ export function HealthStatusPanel({ combatant, calculatedStatus, calculating, on
   const shield = getBestShield('CHARACTER', entity.inventory ?? undefined);
   const shieldHealth = shield ? getItemHealth(shield.item) : null;
   const currentHp = entity.hp_current ?? status.maxHp;
-  const speedDetail = status.otherSpeeds.join(', ');
 
   const hitPoints = (
     <section className='border border-p1-border bg-p1-surface'>
-      <div className='grid grid-cols-2 px-2 py-1.5 text-center'>
+      <div className='grid grid-cols-2 divide-x divide-p1-border px-2 py-1.5 text-center'>
         {canEditHp ? (
           <EditableValueWithNote
             label='Hit points'
@@ -1681,7 +1680,7 @@ export function HealthStatusPanel({ combatant, calculatedStatus, calculating, on
           </button>
         )}
       </div>
-      <div className={`mt-1 flex flex-wrap items-start justify-center gap-1 overflow-y-auto ${actions ? 'min-h-6' : 'max-h-[70px] min-h-6'}`}>
+      <div className='mt-1 flex max-h-[70px] min-h-6 flex-wrap items-start justify-center gap-1 overflow-y-auto'>
         {conditions.length === 0 && <span className='text-[10px] italic text-p1-faint'>None active</span>}
         {conditions.map((condition) => (
           <button
@@ -1701,17 +1700,12 @@ export function HealthStatusPanel({ combatant, calculatedStatus, calculating, on
           </button>
         ))}
       </div>
-      {actions ? (
-        <div className='mt-2 flex flex-nowrap items-center justify-center gap-1.5 overflow-x-auto'>
-          {actions}
-        </div>
-      ) : null}
     </section>
   );
 
   const attributes = (
-    <section className='grid grid-cols-2 content-start gap-x-1.5 gap-y-0.5 border border-p1-border bg-p1-surface p-1.5'>
-      {ATTRIBUTE_LABELS.map(([key, label]) => <AttributePill key={key} label={label} value={status.attributes[key]} onClick={() => openStatDetail?.(key)} disabled={!openStatDetail} />)}
+    <section className={layout === 'sheet' ? 'flex h-full flex-col gap-1 border border-p1-border bg-p1-surface p-1.5' : 'grid grid-cols-2 content-start gap-x-1.5 gap-y-0.5 border border-p1-border bg-p1-surface p-1.5'}>
+      {(layout === 'sheet' ? SHEET_ATTRIBUTE_LABELS : ATTRIBUTE_LABELS).map(([key, label]) => <AttributePill key={key} label={label} value={status.attributes[key]} tall={layout === 'sheet'} onClick={() => openStatDetail?.(key)} disabled={!openStatDetail} />)}
     </section>
   );
 
@@ -1740,11 +1734,22 @@ export function HealthStatusPanel({ combatant, calculatedStatus, calculating, on
     </section>
   );
 
-  const senses = (
-    <section className='grid grid-cols-3 divide-x divide-p1-border border border-p1-border bg-p1-surface'>
+  const senseRows = (
+    <>
       <IconMetric icon={<Eye size={14} />} label='Perception' value={signed(status.perception)} detail={status.vision} onClick={() => openStatDetail?.('perception')} disabled={!openStatDetail} />
-      <IconMetric icon={<Footprints size={14} />} label='Speed' value={status.speed ? `${status.speed} ft.` : '-'} detail={speedDetail} onClick={() => openStatDetail?.('speed')} disabled={!openStatDetail} />
+      <IconMetric icon={<Footprints size={14} />} label='Speed' value={status.speed ? `${status.speed} ft.` : '-'} detail={layout === 'sheet' ? undefined : status.otherSpeeds.join(', ')} extra={layout === 'sheet' ? status.otherSpeeds : undefined} onClick={() => openStatDetail?.('speed')} disabled={!openStatDetail} />
       <IconMetric icon={null} label='Class DC' value={status.classDc} onClick={() => openStatDetail?.('classDc')} disabled={!openStatDetail} />
+    </>
+  );
+  const senses = layout === 'sheet' ? (
+    <section className='flex h-full flex-col divide-y divide-p1-border border border-p1-border bg-p1-surface'>
+      <SheetSenseRow icon={<Eye size={14} />} label='Perception' value={signed(status.perception)} detail={status.vision} onClick={() => openStatDetail?.('perception')} disabled={!openStatDetail} />
+      <SheetSenseRow icon={<Footprints size={14} />} label='Speed' value={status.speed ? `${status.speed} ft.` : '-'} extra={status.otherSpeeds} onClick={() => openStatDetail?.('speed')} disabled={!openStatDetail} />
+      <SheetSenseRow label='Class DC' value={status.classDc} onClick={() => openStatDetail?.('classDc')} disabled={!openStatDetail} className='mt-auto' />
+    </section>
+  ) : (
+    <section className='grid grid-cols-3 divide-x divide-p1-border border border-p1-border bg-p1-surface'>
+      {senseRows}
     </section>
   );
 
@@ -1754,19 +1759,55 @@ export function HealthStatusPanel({ combatant, calculatedStatus, calculating, on
     </section>
   ) : null;
 
-  return (
-    <>
-    <div className={layout === 'sheet' ? 'grid grid-cols-1 gap-2 sm:grid-cols-3' : 'space-y-1.5'}>
-      {layout === 'sheet' ? identity : null}
+  const legacySheet = (
+    <div className='grid grid-cols-1 gap-2 sm:grid-cols-3'>
+      <div className='flex flex-col gap-2'>
+        {identity}
+        {actions ? <div className='relative z-40 flex flex-wrap items-center gap-1.5'>{actions}</div> : null}
+      </div>
       {hitPoints}
       {conditionCell}
+      <div className='sm:col-span-3'>{senses}</div>
       {attributes}
       {armor}
-      {senses}
+      {recall}
+    </div>
+  );
+
+  return (
+    <>
+    {layout === 'sheet-legacy' ? legacySheet : (
+    <div className={layout === 'sheet' ? 'space-y-2' : 'space-y-1.5'}>
+      {layout === 'sheet' ? (
+        <section className='relative z-30 flex flex-wrap items-center gap-3 border border-p1-border bg-p1-surface p-2'>
+          <div className='min-w-0 flex-1 [&_section]:border-0 [&_section]:bg-transparent [&_section]:p-0'>{identity}</div>
+          {actions ? <div className='relative z-40 flex flex-wrap items-center justify-end gap-1.5'>{actions}</div> : null}
+        </section>
+      ) : null}
+      {layout === 'sheet' ? (
+        <div className='grid grid-cols-1 items-stretch gap-2 lg:grid-cols-[minmax(11rem,0.85fr)_minmax(0,1.35fr)_minmax(12rem,1fr)]'>
+          {attributes}
+          <div className='space-y-2'>
+            {hitPoints}
+            {conditionCell}
+            {armor}
+          </div>
+          {senses}
+        </div>
+      ) : (
+        <>
+          {hitPoints}
+          {conditionCell}
+          {attributes}
+          {armor}
+          {senses}
+        </>
+      )}
       {recall}
       {calculating && !calculatedStatus && <p className={`text-center text-[10px] text-p1-faint ${layout === 'sheet' ? 'sm:col-span-3' : ''}`}>Calculating combatant statistics...</p>}
       {calculatedStatus === null && <p className={`text-center text-[10px] text-p1-danger-soft ${layout === 'sheet' ? 'sm:col-span-3' : ''}`}>Using stored values; calculated statistics were unavailable.</p>}
     </div>
+    )}
       {pickerOpen && (
         <SelectConditionModal
           current={compiledConditions(rawConditions)}
@@ -1810,6 +1851,14 @@ const ATTRIBUTE_LABELS: Array<[keyof Phase1CreatureStatus['attributes'], string]
   ['dexterity', 'Dexterity'], ['wisdom', 'Wisdom'],
   ['constitution', 'Constitution'], ['charisma', 'Charisma'],
 ];
+const SHEET_ATTRIBUTE_LABELS: Array<[keyof Phase1CreatureStatus['attributes'], string]> = [
+  ['strength', 'Strength'],
+  ['dexterity', 'Dexterity'],
+  ['constitution', 'Constitution'],
+  ['intelligence', 'Intelligence'],
+  ['wisdom', 'Wisdom'],
+  ['charisma', 'Charisma'],
+];
 
 function Metric({ label, value }: { label: string; value: ReactNode }) {
   return <div><div className='text-[11px] text-p1-muted'>{label}</div><div className='text-base font-semibold leading-tight'>{value}</div></div>;
@@ -1817,14 +1866,43 @@ function Metric({ label, value }: { label: string; value: ReactNode }) {
 function MetricButton({ label, value, onClick, disabled }: { label: string; value: ReactNode; onClick: () => void; disabled?: boolean }) {
   return <button type='button' disabled={disabled} className='w-full hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-transparent' onClick={onClick}><Metric label={label} value={value} /></button>;
 }
-function IconMetric({ icon, label, value, detail, onClick, disabled }: { icon: ReactNode; label: string; value: ReactNode; detail?: string; onClick?: () => void; disabled?: boolean }) {
-  return <button type='button' disabled={disabled} className='min-w-0 px-1.5 py-1.5 text-center hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-transparent' title={detail} onClick={onClick}><div className='flex items-center justify-center gap-1 text-[11px] text-p1-muted'>{icon}{label}</div><div className='mt-0.5 truncate text-sm font-semibold'>{value}{detail ? <span className='ml-1 text-[10px] font-normal text-p1-faint'>{detail}</span> : null}</div></button>;
+function IconMetric({ icon, label, value, detail, extra, onClick, disabled }: { icon: ReactNode; label: string; value: ReactNode; detail?: string; extra?: string[]; onClick?: () => void; disabled?: boolean }) {
+  return (
+    <button type='button' disabled={disabled} className='block w-full min-w-0 px-2 py-1.5 text-left hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-transparent' title={detail} onClick={onClick}>
+      <div className='flex items-center gap-1 text-[11px] text-p1-muted'>{icon}{label}</div>
+      <div className='mt-0.5 text-sm font-semibold leading-5'>
+        {value}
+        {detail ? <span className='ml-1 text-[10px] font-normal text-p1-faint'>{detail}</span> : null}
+      </div>
+      {extra && extra.length > 0 ? (
+        <div className='mt-0.5 text-[11px] font-normal leading-4 text-p1-faint'>
+          {extra.map((line) => <div key={line}>{line}</div>)}
+        </div>
+      ) : null}
+    </button>
+  );
 }
 function DefenseRow({ label, value, onClick, disabled }: { label: string; value: number; onClick?: () => void; disabled?: boolean }) {
   return <button type='button' disabled={disabled} className='flex w-full items-center py-1 text-left text-xs hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-transparent' onClick={onClick}><span className='text-p1-muted'>{label}</span><strong className='ml-auto'>{signed(value)}</strong></button>;
 }
-function AttributePill({ label, value, onClick, disabled }: { label: string; value: number; onClick?: () => void; disabled?: boolean }) {
-  return <button type='button' disabled={disabled} className='flex h-6 items-center bg-p1-hover px-2 text-left text-[11px] hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-p1-hover' onClick={onClick}><span className='truncate text-p1-muted'>{label}</span><strong className='ml-auto pl-2'>{signed(value)}</strong></button>;
+function AttributePill({ label, value, tall, onClick, disabled }: { label: string; value: number; tall?: boolean; onClick?: () => void; disabled?: boolean }) {
+  return <button type='button' disabled={disabled} className={`flex items-center bg-p1-hover px-2 text-left hover:brightness-110 disabled:cursor-default disabled:hover:brightness-100 ${tall ? 'min-h-9 flex-1 text-sm' : 'h-6 text-[11px]'}`} onClick={onClick}><span className='truncate text-p1-muted'>{label}</span><strong className='ml-auto pl-2'>{signed(value)}</strong></button>;
+}
+function SheetSenseRow({ icon, label, value, detail, extra, onClick, disabled, className }: { icon?: ReactNode; label: string; value: ReactNode; detail?: string; extra?: string[]; onClick?: () => void; disabled?: boolean; className?: string }) {
+  return (
+    <button type='button' disabled={disabled} className={`flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-transparent ${className ?? ''}`} onClick={onClick}>
+      <div className='min-w-0 flex-1'>
+        <div className='flex items-center gap-1 text-xs text-p1-muted'>{icon}{label}</div>
+        {detail ? <div className='mt-0.5 text-[11px] text-p1-faint'>{detail}</div> : null}
+        {extra && extra.length > 0 ? (
+          <div className='mt-1 text-[11px] leading-4 text-p1-muted'>
+            {extra.map((line) => <div key={line}>{line}</div>)}
+          </div>
+        ) : null}
+      </div>
+      <strong className='text-lg leading-5'>{value}</strong>
+    </button>
+  );
 }
 function StatusLine({ label, values }: { label: string; values: string[] }) {
   if (!values.length) return null;

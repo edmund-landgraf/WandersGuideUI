@@ -1451,6 +1451,60 @@ export function Phase1PcStatWindow({ id, name, x, y, z, onFocus, onClose, onMove
   return <PcStatWindow window={{ id, name, x, y, z }} onFocus={onFocus} onClose={onClose} onMove={onMove} />;
 }
 
+export function Phase1CreatureStatWindow({ entity, name, x, y, z, onFocus, onClose, onMove }: {
+  entity: LivingEntity;
+  name: string;
+  x: number;
+  y: number;
+  z: number;
+  onFocus: () => void;
+  onClose: () => void;
+  onMove: (x: number, y: number) => void;
+}) {
+  const contentQuery = useQuery({
+    queryKey: ['phase1-stat-block-content', 'creature', entity.id, entity.name, entity.hp_current ?? null],
+    queryFn: () => getJsonV4Content(entity),
+  });
+
+  function startDrag(event: React.PointerEvent<HTMLElement>) {
+    if ((event.target as HTMLElement).closest('button')) return;
+    event.preventDefault();
+    onFocus();
+    const originX = x;
+    const originY = y;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const move = (ev: PointerEvent) => onMove(originX + ev.clientX - startX, originY + ev.clientY - startY);
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+
+  return createPortal(
+    <div
+      className='fixed flex max-h-[70vh] w-[min(920px,92vw)] flex-col border border-p1-border bg-p1-page text-p1-text shadow-2xl'
+      style={{ left: x, top: y, zIndex: z }}
+      onPointerDown={onFocus}
+    >
+      <header className='flex cursor-grab items-center justify-between gap-2 border-b border-p1-border bg-p1-header px-2 py-1' onPointerDown={startDrag}>
+        <h2 className='truncate text-sm font-semibold'>{name}</h2>
+        <button type='button' className='icon-button' title={`Close ${name}`} onClick={onClose}>
+          <X size={14} />
+        </button>
+      </header>
+      <div className='min-h-0 flex-1 overflow-auto p-2'>
+        {contentQuery.isLoading ? <p className='text-xs italic text-p1-muted'>Loading…</p> : null}
+        {!contentQuery.isLoading && !contentQuery.data ? <p className='text-xs italic text-p1-muted'>Failed to load creature stats</p> : null}
+        {contentQuery.data ? <Phase1StatBlockCardsPacked entity={entity} data={contentQuery.data} /> : null}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function PcStatWindow({ window: frame, onFocus, onClose, onMove }: { window: PcWindow; onFocus: () => void; onClose: () => void; onMove: (x: number, y: number) => void }) {
   const session = useAuthSession();
   const query = useQuery({

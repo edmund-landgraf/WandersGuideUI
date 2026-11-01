@@ -65,7 +65,7 @@ import { maxCombatantStats, maxEntityStats, resetCombatant, resetEntityCombatSta
 import { CombatantChangeLogFooter, EditableValueWithNote, GridHpEditPopover, RoundNoteField } from './phase1-change-log-ui';
 import { PhaseViewSwitch } from '../phase-switch/PhaseViewSwitch';
 import { ConfirmDialog, SettingsSurface } from './phase1-campaign-settings';
-import { Phase1CampaignHome, Phase1PcStatWindow } from './phase1-campaign-home';
+import { Phase1CampaignHome, Phase1CreatureStatWindow, Phase1PcStatWindow } from './phase1-campaign-home';
 import { Phase1PcStatBlocksModal } from './phase1-pc-stat-blocks';
 import { CAMPAIGN_SLOT_CAP, CHARACTER_SLOT_CAP, GUIDE_BLUE } from '@constants/data';
 import { PATREON_URL } from '@constants/urls';
@@ -4700,7 +4700,7 @@ function DiceCombatantContextMenu({ x, y, combatant, canCheck, challenges, canCh
   );
 }
 
-function CombatantContextMenu({ x, y, onClose, onClone, onIncapacitate, onMarkDead, onDelete }: { x: number; y: number; onClose: () => void; onClone?: () => void; onIncapacitate?: () => void; onMarkDead?: () => void; onDelete: () => void }) {
+function CombatantContextMenu({ x, y, onClose, onOpenStatCard, onClone, onIncapacitate, onMarkDead, onDelete }: { x: number; y: number; onClose: () => void; onOpenStatCard?: () => void; onClone?: () => void; onIncapacitate?: () => void; onMarkDead?: () => void; onDelete: () => void }) {
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -4714,6 +4714,11 @@ function CombatantContextMenu({ x, y, onClose, onClone, onIncapacitate, onMarkDe
     <>
       <div className='fixed inset-0 z-[109]' onMouseDown={onClose} />
       <div role='menu' className='fixed z-[110] min-w-40 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ left, top }}>
+        {onOpenStatCard && (
+          <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onOpenStatCard}>
+            Open stat card
+          </button>
+        )}
         {onClone && (
         <button type='button' role='menuitem' className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={onClone}>
           <Copy size={14} /> Clone
@@ -5549,6 +5554,7 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
   ));
   const [menu, setMenu] = useState<{ id: string; type: Combatant['type']; x: number; y: number } | null>(null);
   const [statWindows, setStatWindows] = useState<Array<{ id: number; name: string; x: number; y: number; z: number }>>([]);
+  const [creatureWindows, setCreatureWindows] = useState<Array<{ id: string; name: string; x: number; y: number; z: number }>>([]);
   const [hpEditor, setHpEditor] = useState<{ combatantId: string; name: string; currentHp: number; maxHp: number; rect: DOMRect } | null>(null);
   const [checkMods, setCheckMods] = useState<Record<string, number | null>>({});
   const [checkModsLoading, setCheckModsLoading] = useState(false);
@@ -5606,6 +5612,25 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
     setMenu(null);
     window.open(`/sheet/${id}`, '_blank', 'noopener,noreferrer');
   }
+  function openCreatureStatCard(id: string, name: string) {
+    setMenu(null);
+    setCreatureWindows((current) => {
+      const existing = current.find((item) => item.id === id);
+      const z = current.reduce((max, item) => Math.max(max, item.z), 30) + 1;
+      if (existing) return current.map((item) => (item.id === id ? { ...item, name, z } : item));
+      const offset = current.length * 28;
+      return [...current, { id, name, x: 72 + offset, y: 64 + offset, z }];
+    });
+  }
+  function openStatCardFor(combatant: PopulatedCombatant, name: string) {
+    if (combatant.type === 'CHARACTER' && combatant.character != null) {
+      openCharacterStatCard(combatant.character, name);
+      return;
+    }
+    if (combatant.type === 'CREATURE' && combatant.data) {
+      openCreatureStatCard(combatant._id, name);
+    }
+  }
   function dropOnEncounter(event: ReactDragEvent<HTMLDivElement>) {
     const payload = readCombatantDrag(event);
     setEncounterActive(false);
@@ -5642,7 +5667,11 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
             const currentHazardHp = getHazardCurrentHp(combatant);
             const hazardMaxHp = combatant.hazard?.details.defenses?.hp;
             return (
-              <tr key={combatant._id} onClick={(event) => { if (!canOpen) return; if ((event.target as HTMLElement).closest('button, input, textarea, a, [draggable="true"]')) return; openCombatant(combatant, onSelect); }} onContextMenu={(event) => {
+              <tr key={combatant._id} onClick={(event) => { if (!canOpen) return; if ((event.target as HTMLElement).closest('button, input, textarea, a, [draggable="true"]')) return; openCombatant(combatant, onSelect); }} onDoubleClick={(event) => {
+                if ((event.target as HTMLElement).closest('input, textarea, a')) return;
+                event.preventDefault();
+                openStatCardFor(combatant, displayName);
+              }} onContextMenu={(event) => {
                 const canDiceMenu = Boolean(dice && (combatant.type === 'CREATURE' || combatant.type === 'CHARACTER') && (playerView || onSingleCheck || onSingleChallenge));
                 if (canDiceMenu) {
                   event.preventDefault();
@@ -5668,7 +5697,11 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
                         <GripVertical size={14} />
                       </span>
                     )}
-                    <button type='button' className='flex min-w-0 flex-1 items-center gap-3 text-left' onClick={() => { if (canOpen) openCombatant(combatant, onSelect); }} onContextMenu={(event) => {
+                    <button type='button' className='flex min-w-0 flex-1 items-center gap-3 text-left' onClick={() => { if (canOpen) openCombatant(combatant, onSelect); }} onDoubleClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      openStatCardFor(combatant, displayName);
+                    }} onContextMenu={(event) => {
                       const canDiceMenu = Boolean(dice && (combatant.type === 'CREATURE' || combatant.type === 'CHARACTER') && (playerView || onSingleCheck || onSingleChallenge));
                       if (!canDiceMenu) return;
                       event.preventDefault();
@@ -5805,7 +5838,11 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
             setMenu(null);
             if (characterId != null) onLeaveParty?.(characterId);
           } : undefined}
-          onOpenStatCard={menuCombatant.type === 'CHARACTER' && menuCombatant.character != null ? () => openCharacterStatCard(menuCombatant.character!, combatantDisplayName(menuCombatant)) : undefined}
+          onOpenStatCard={menuCombatant.type === 'CHARACTER' && menuCombatant.character != null
+            ? () => openCharacterStatCard(menuCombatant.character!, combatantDisplayName(menuCombatant))
+            : menuCombatant.type === 'CREATURE' && menuCombatant.data
+              ? () => openCreatureStatCard(menuCombatant._id, playerView && isEnemyCreature(menuCombatant) ? playerEnemyLabel(combatantDisplayName(menuCombatant)) : combatantDisplayName(menuCombatant))
+              : undefined}
           onOpenSheet={menuCombatant.type === 'CHARACTER' && menuCombatant.character != null ? () => openCharacterSheet(menuCombatant.character!) : undefined}
           onRemoveFromCampaign={!playerView && menuCombatant.type === 'CHARACTER' && menuCombatant.character != null && onRequestRemoveFromCampaign ? () => {
             const characterId = menuCombatant.character;
@@ -5840,6 +5877,12 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
+          onOpenStatCard={() => {
+            const combatant = combatants.find((item) => item._id === menu.id);
+            if (!combatant) return;
+            const name = playerView && isEnemyCreature(combatant) ? playerEnemyLabel(combatantDisplayName(combatant)) : combatantDisplayName(combatant);
+            openCreatureStatCard(menu.id, name);
+          }}
           onClone={() => { setMenu(null); onCloneCreature(menu.id); }}
           onIncapacitate={() => { setMenu(null); onMarkOut(menu.id, 'incapacitated'); }}
           onMarkDead={() => { setMenu(null); onMarkOut(menu.id, 'dead'); }}
@@ -5905,6 +5948,27 @@ function CombatantGrid({ combatants, encounterId, initiativeRollNonce, selectedI
           onMove={(x, y) => setStatWindows((current) => current.map((entry) => (entry.id === item.id ? { ...entry, x, y } : entry)))}
         />
       ))}
+      {creatureWindows.map((item) => {
+        const combatant = combatants.find((entry) => entry._id === item.id);
+        const entity = combatant?.type === 'CREATURE' ? combatant.data : undefined;
+        if (!entity) return null;
+        return (
+          <Phase1CreatureStatWindow
+            key={item.id}
+            entity={entity}
+            name={item.name}
+            x={item.x}
+            y={item.y}
+            z={item.z}
+            onFocus={() => setCreatureWindows((current) => {
+              const z = current.reduce((max, entry) => Math.max(max, entry.z), 30) + 1;
+              return current.map((entry) => (entry.id === item.id ? { ...entry, z } : entry));
+            })}
+            onClose={() => setCreatureWindows((current) => current.filter((entry) => entry.id !== item.id))}
+            onMove={(x, y) => setCreatureWindows((current) => current.map((entry) => (entry.id === item.id ? { ...entry, x, y } : entry)))}
+          />
+        );
+      })}
       {hpEditor && (
         <GridHpEditPopover
           combatantName={hpEditor.name}
@@ -6178,7 +6242,7 @@ function Inspector({ combatant, width, fill, activeTab, onTab, onCollapse, hasMa
         </div>
       ) : (
         <div className='flex h-full min-w-0 flex-col'>
-<div className='flex items-start gap-3 border-b border-p1-border px-4 py-3.5'><div className='min-w-0 flex-1'><Eyebrow>{combatant.type === 'CREATURE' ? (combatant.ally ? 'NPC / Creature' : 'Creature') : 'Player character'}</Eyebrow><h2 className='mt-1 truncate text-lg font-semibold leading-tight'>{combatant.data?.name}</h2><p className='mt-1 text-xs text-p1-faint'>Level {combatant.data?.level} | {canManageSpells ? 'Spell tracking' : 'Read only'}</p></div>{combatant.type === 'CHARACTER' && combatant.data?.id && <a className='icon-button shrink-0' href={`/sheet/${combatant.data.id}`} target='_blank' rel='noreferrer' title='Open full character sheet'><ExternalLink size={16} /></a>}<InspectorCollapseButton onCollapse={onCollapse} /></div>
+<div className='flex items-start gap-3 border-b border-p1-border px-4 py-3.5'><EntityIcon expandable type={combatant.type} name={combatant.data?.name} imageUrl={combatant.data?.details?.image_url} /><div className='min-w-0 flex-1'><Eyebrow>{combatant.type === 'CREATURE' ? (combatant.ally ? 'NPC / Creature' : 'Creature') : 'Player character'}</Eyebrow><h2 className='mt-1 truncate text-lg font-semibold leading-tight'>{combatant.data?.name}</h2><p className='mt-1 text-xs text-p1-faint'>Level {combatant.data?.level} | {canManageSpells ? 'Spell tracking' : 'Read only'}</p></div>{combatant.type === 'CHARACTER' && combatant.data?.id && <a className='icon-button shrink-0' href={`/sheet/${combatant.data.id}`} target='_blank' rel='noreferrer' title='Open full character sheet'><ExternalLink size={16} /></a>}<InspectorCollapseButton onCollapse={onCollapse} /></div>
           <div className='grid grid-cols-4 border-b border-p1-border bg-p1-inset'>
             {DETAIL_TABS.map((tab) => <button key={tab} className={`border-b-2 px-2 py-2.5 text-[11px] ${activeTab === tab ? 'border-p1-accent text-p1-accent-soft' : 'border-transparent text-p1-faint hover:text-p1-text'}`} onClick={() => onTab(tab)}>{tab}</button>)}
           </div>
@@ -6316,16 +6380,24 @@ function CampaignMemberToken({ member, onContextMenu }: { member: Character; onC
   );
 }
 
-function EntityIcon({ type, name, imageUrl }: { type: Combatant['type']; name?: string; imageUrl?: string }) {
+function EntityIcon({ type, name, imageUrl, expandable }: { type: Combatant['type']; name?: string; imageUrl?: string; expandable?: boolean }) {
   const stored = parseIconValue(imageUrl?.trim() ?? '');
   const portrait = stored.type === 'image' ? stored.value.trim() : '';
+  const [preview, setPreview] = useState(false);
   const art = useQuery({
     queryKey: ['phase1-creature-picker-art', name, portrait],
     queryFn: () => lookupMonsterArt(name ?? '', portrait || undefined, 'thumb'),
     enabled: type === 'CREATURE' && Boolean(name?.trim() || portrait),
     staleTime: Number.POSITIVE_INFINITY,
   });
+  const full = useQuery({
+    queryKey: ['phase1-creature-picker-art', name, portrait, 'full'],
+    queryFn: () => lookupMonsterArt(name ?? '', portrait || undefined, 'full'),
+    enabled: preview && type === 'CREATURE' && Boolean(name?.trim() || portrait),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
   const src = type === 'CREATURE' ? art.data?.thumbSrc : portrait || undefined;
+  const fullSrc = type === 'CREATURE' ? (full.data?.fullSrc || art.data?.fullSrc || src) : portrait || undefined;
   const [failed, setFailed] = useState(false);
   useEffect(() => { setFailed(false); }, [src]);
   if (type !== 'CREATURE' && stored.type === 'icon' && stored.value) {
@@ -6336,7 +6408,7 @@ function EntityIcon({ type, name, imageUrl }: { type: Combatant['type']; name?: 
     );
   }
   if (src && !failed) {
-    return (
+    const image = (
       <img
         key={src}
         src={src}
@@ -6344,6 +6416,15 @@ function EntityIcon({ type, name, imageUrl }: { type: Combatant['type']; name?: 
         className={`h-9 w-9 shrink-0 border border-p1-border bg-p1-inset ${type === 'CHARACTER' ? 'object-cover' : 'object-contain'}`}
         onError={() => setFailed(true)}
       />
+    );
+    if (!expandable || !fullSrc) return image;
+    return (
+      <>
+        <button type='button' className='shrink-0' title='View full image' aria-label={`View full image of ${name || 'combatant'}`} onClick={() => setPreview(true)}>
+          {image}
+        </button>
+        {preview && <CampaignArtPreviewModal url={fullSrc} name={name || 'Combatant'} onClose={() => setPreview(false)} />}
+      </>
     );
   }
   return <span className={`grid h-9 w-9 shrink-0 place-items-center border ${type === 'HAZARD' ? 'border-amber-400/50 text-amber-300' : type === 'CREATURE' ? 'border-p1-creature/50 text-p1-creature' : 'border-p1-pc/50 text-p1-pc'}`}>{type === 'HAZARD' ? <TriangleAlert size={16} /> : type === 'CREATURE' ? <Swords size={16} /> : <UserRound size={16} />}</span>;

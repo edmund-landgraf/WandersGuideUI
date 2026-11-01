@@ -12,9 +12,11 @@ import { toLabel } from '@utils/strings';
 import { isCharacter, isCreature, isTruthy } from '@utils/type-fixing';
 import { compactLabels } from '@variables/variable-utils';
 import { flatten, groupBy } from 'lodash-es';
+import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Eyebrow } from './phase1-entity-panels';
 import { useContentLinks } from './phase1-content-links';
+import { lookupMonsterArt } from './phase1-monster-image';
 import { recallKnowledgeText, TraitRow } from './phase1-stat-block';
 
 type StatBlockContent = Awaited<ReturnType<typeof getJsonV4Content>>;
@@ -70,7 +72,14 @@ export function Phase1StatBlockCardsPacked({ entity, data }: { entity: LivingEnt
   const actions = abilities.filter((ab) => ab.actions && ab.actions !== 'FREE-ACTION' && ab.actions !== 'REACTION');
   const passives = abilities.filter((ab) => !ab.actions);
   const icon = parseIconValue(entity.details?.image_url ?? '');
-  const imageUrl = icon.type === 'image' && icon.value ? icon.value : '';
+  const storedImageUrl = icon.type === 'image' && icon.value ? icon.value : '';
+  const creatureArt = useQuery({
+    queryKey: ['phase1-creature-picker-art', entity.name, storedImageUrl],
+    queryFn: () => lookupMonsterArt(entity.name, storedImageUrl || undefined, 'thumb'),
+    enabled: isCreature(entity) && Boolean(entity.name?.trim() || storedImageUrl),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const imageUrl = isCreature(entity) ? (creatureArt.data?.thumbSrc || storedImageUrl) : storedImageUrl;
   const sizeLabel = toLabel(convertToSize(data.size));
   const speeds = data.speeds.filter((s) => s.value.total !== 0 && s.value.value !== 0);
   const speedText = speeds
@@ -150,7 +159,7 @@ export function Phase1StatBlockCardsPacked({ entity, data }: { entity: LivingEnt
             </span>
           </div>
         </div>
-        {imageUrl ? <img src={imageUrl} alt='' className='m-1 h-10 w-10 shrink-0 object-contain' /> : null}
+        {imageUrl ? <img src={imageUrl} alt='' className='m-1 h-16 w-16 shrink-0 object-contain' /> : null}
       </header>
 
       <div className='grid grid-cols-3 items-start gap-1'>
@@ -316,7 +325,7 @@ export function Phase1StatBlockCardsPacked({ entity, data }: { entity: LivingEnt
         </Card>
       ) : null}
 
-      {isCreature(entity) && entity.details.description.trim() ? (
+      {isCreature(entity) && entity.details.description?.trim() ? (
         <Card title='Description'>
           <p className='whitespace-pre-wrap text-p1-muted'>{entity.details.description}</p>
         </Card>
