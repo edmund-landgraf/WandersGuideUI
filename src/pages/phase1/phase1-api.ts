@@ -21,11 +21,15 @@ async function edgeErrorDetail(error: { message?: string; context?: unknown }): 
   if (!response || (typeof response.json !== 'function' && typeof response.clone !== 'function')) return fallback;
   const read = () => (typeof response.clone === 'function' ? response.clone() : response);
   try {
-    const fromJson = messageFromPayload(await read().json());
+    const body = read();
+    if (typeof body.json !== 'function') throw new Error('no json');
+    const fromJson = messageFromPayload(await body.json());
     if (fromJson) return fromJson;
   } catch {
     try {
-      const text = (await read().text()).trim();
+      const body = read();
+      if (typeof body.text !== 'function') throw new Error('no text');
+      const text = (await body.text()).trim();
       if (text) return text.slice(0, 300);
     } catch {
       // Keep the SDK message when the body cannot be read.
