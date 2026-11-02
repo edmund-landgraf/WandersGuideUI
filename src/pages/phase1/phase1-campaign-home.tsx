@@ -7,6 +7,7 @@ import { isItemWeapon } from '@items/inv-utils';
 import { parseOtherDamage } from '@items/weapon-handler';
 import type { AbilityBlock, Character, Combatant, Encounter, EncounterFolder, LivingEntity } from '@schemas/content';
 import { sign } from '@utils/numbers';
+import { resolveAonHref } from '@utils/foundry-text';
 import { toLabel } from '@utils/strings';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { flatten } from 'lodash-es';
@@ -18,7 +19,7 @@ import { clearCombatantDrag, hasCombatantDrag, readCombatantDrag, writeCombatant
 import { ConfirmDialog } from './phase1-campaign-settings';
 import { encounterMasksCombatants, gmEncounterShownToPlayers, loadPhase1SheetCharacter, phase1Request } from './phase1-api';
 import { combatantDisplayName } from './phase1-initiative';
-import { creatureStatBlockText } from './phase1-creature-defenses';
+import { catalogCreatureName, creatureStatBlockText } from './phase1-creature-defenses';
 import { isContentStackOpen, useContentLinks } from './phase1-content-links';
 import { encounterDisplayName, encounterNamesMatch } from './phase1-encounter-title';
 import { ProseMarkdown } from './phase1-markdown';
@@ -463,6 +464,7 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
   const [noteHover, setNoteHover] = useState<NoteHover | null>(null);
   const [rosterHover, setRosterHover] = useState<RosterHover | null>(null);
   const [rosterWindows, setRosterWindows] = useState<RosterWindow[]>([]);
+  const [artPreview, setArtPreview] = useState<{ name: string; url: string } | null>(null);
   const hoverTimer = useRef<number | null>(null);
   const rosterTimer = useRef<number | null>(null);
   const openKey = `p1-encounter-folder-open:${campaignId}`;
@@ -1398,6 +1400,7 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
           onEnter={() => { if (rosterTimer.current != null) window.clearTimeout(rosterTimer.current); }}
           onLeave={hideRosterHover}
           onLock={() => lockRoster(rosterHover.kind, encounters.find((item) => item.id === rosterHover.encounterId)!, rosterHover.x, rosterHover.y)}
+          onOpenArt={(name, url) => setArtPreview({ name, url })}
         />
       )}
       {rosterWindows.map((item) => (
@@ -1413,8 +1416,10 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
           })}
           onClose={() => setRosterWindows((current) => current.filter((entry) => !(entry.encounterId === item.encounterId && entry.kind === item.kind)))}
           onMove={(x, y) => setRosterWindows((current) => current.map((entry) => (entry.encounterId === item.encounterId && entry.kind === item.kind ? { ...entry, x, y } : entry)))}
+          onOpenArt={(name, url) => setArtPreview({ name, url })}
         />
       ))}
+      {artPreview ? <RosterArtModal name={artPreview.name} url={artPreview.url} onClose={() => setArtPreview(null)} /> : null}
       {noteHover && !noteWindows.some((item) => item.index === noteHover.note.index && item.encounterId === noteHover.encounterId) && (
         <NotePreview hover={noteHover} campaignId={campaignId} onLock={() => lockNote(noteHover.note, encounters.find((item) => item.id === noteHover.encounterId)!, noteHover.x, noteHover.y)} onEnter={() => { if (hoverTimer.current != null) window.clearTimeout(hoverTimer.current); }} onLeave={hideNoteHover} />
       )}
@@ -1637,7 +1642,19 @@ function allyRows(encounter: Encounter | undefined, players: Character[]) {
 function referenceUrl(text: string | undefined) {
   if (!text) return undefined;
   const urls = [...text.matchAll(/https?:\/\/[^\s)\]>'"]+/gi)].map((match) => match[0].replace(/[.,;]+$/, ''));
-  return urls.find((url) => /demiplane\.com|aonprd\.com/i.test(url));
+  const stored = urls.find((url) => /demiplane\.com|aonprd\.com|pathfinder2e\.com|(?:^|\/\/)pf2e\.com/i.test(url));
+  if (stored) return stored;
+  for (const match of text.matchAll(/\]\(([^)\s]+)\)/g)) {
+    const resolved = resolveAonHref(match[1]);
+    if (resolved && /aonprd\.com/i.test(resolved)) return resolved;
+  }
+  return undefined;
+}
+
+function archivesSearchUrl(name: string) {
+  const catalog = catalogCreatureName(name);
+  if (!catalog) return undefined;
+  return `https://2e.aonprd.com/Search.aspx?q=${encodeURIComponent(catalog)}`;
 }
 
 function storedImageUrl(text: string | undefined) {
@@ -1653,7 +1670,7 @@ function enemySource(combatant: Combatant) {
   const hazardUrl = combatant.hazard?.meta_data && typeof combatant.hazard.meta_data === 'object'
     ? (combatant.hazard.meta_data as { source?: { url?: string } }).source?.url
     : undefined;
-  const href = referenceUrl(text) ?? referenceUrl(hazardUrl);
+  const href = referenceUrl(text) ?? referenceUrl(hazardUrl) ?? archivesSearchUrl(combatantDisplayName(combatant));
   const imageUrl = creature?.details?.image_url
     ?? creature?.details?.background_image_url
     ?? combatant.data?.details?.image_url
@@ -1691,7 +1708,7 @@ function rosterArtSrc(url: string): string {
   }
 }
 
-function RosterArt({ name, imageUrl }: { name: string; imageUrl?: string }) {
+function RosterArt({ name, imageUrl, onOpen }: { name: string; imageUrl?: string; onOpen: (name: string, url: string) => void }) {
   const [failed, setFailed] = useState(false);
   const stored = parseIconValue(imageUrl?.trim() ?? '');
   const portrait = stored.type === 'image' ? stored.value.trim() : '';
@@ -1705,7 +1722,25 @@ function RosterArt({ name, imageUrl }: { name: string; imageUrl?: string }) {
   const src = rosterArtSrc(portrait || art.data?.thumbSrc || '');
   useEffect(() => { setFailed(false); }, [src]);
   if (src && !failed) {
-    return <img src={src} alt='' referrerPolicy='no-referrer' className='h-8 w-8 border border-p1-border bg-p1-inset object-contain' onError={() => setFailed(true)} />;
+    return (
+      <button
+        type='button'
+        className='block'
+        title='View full image'
+        aria-label={`View full image of ${name}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          const full = rosterArtSrc(portrait || art.data?.fullSrc || src);
+          onOpen(name, full);
+          void lookupMonsterArt(name, portrait || undefined, 'full').then((result) => {
+            const next = rosterArtSrc(portrait || result?.fullSrc || '');
+            if (next) onOpen(name, next);
+          });
+        }}
+      >
+        <img src={src} alt='' referrerPolicy='no-referrer' className='h-8 w-8 border border-p1-border bg-p1-inset object-contain' onError={() => setFailed(true)} />
+      </button>
+    );
   }
   if (stored.type === 'icon' && stored.value) {
     return (
@@ -1717,7 +1752,37 @@ function RosterArt({ name, imageUrl }: { name: string; imageUrl?: string }) {
   return <span className='grid h-8 w-8 place-items-center border border-p1-border bg-p1-inset text-p1-faint'>—</span>;
 }
 
-function RosterTable({ kind, encounter, players, mask }: { kind: RosterHover['kind']; encounter: Encounter | undefined; players: Character[]; mask: boolean }) {
+function RosterArtModal({ name, url, onClose }: { name: string; url: string; onClose: () => void }) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      className='fixed inset-0 z-[120] grid place-items-center bg-black/75 p-5 backdrop-blur-[2px]'
+      role='presentation'
+      onMouseDown={(event) => {
+        event.stopPropagation();
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section role='dialog' aria-modal='true' aria-label={name} className='flex max-h-[min(92vh,960px)] w-full max-w-[min(94vw,1100px)] flex-col border border-p1-border bg-p1-surface p-4 shadow-2xl' onClick={(event) => event.stopPropagation()}>
+        <h2 className='mb-3 truncate text-lg font-semibold'>{name}</h2>
+        <img src={url} alt={`${name} art`} className='min-h-0 w-full flex-1 object-contain' referrerPolicy='no-referrer' />
+        <div className='mt-4 flex justify-end'>
+          <button type='button' className='toolbar-button' onClick={onClose}>OK</button>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+function RosterTable({ kind, encounter, players, mask, onOpenArt }: { kind: RosterHover['kind']; encounter: Encounter | undefined; players: Character[]; mask: boolean; onOpenArt: (name: string, url: string) => void }) {
   const allies = kind === 'allies' ? allyRows(encounter, players) : [];
   const enemies = kind === 'enemies' ? enemyRows(encounter, mask) : [];
   return (
@@ -1751,10 +1816,10 @@ function RosterTable({ kind, encounter, players, mask }: { kind: RosterHover['ki
         ))}
         {kind === 'enemies' && enemies.map((row) => (
           <tr key={row.id} className='border-t border-p1-border'>
-            <td className='px-2 py-1'><RosterArt name={row.artName} imageUrl={row.imageUrl} /></td>
+            <td className='px-2 py-1'><RosterArt name={row.artName} imageUrl={row.imageUrl} onOpen={onOpenArt} /></td>
             <td className='px-2 py-1 font-semibold'>
               {row.href ? (
-                <a href={row.href} target='_blank' rel='noreferrer' className='hover:text-p1-accent hover:underline' onClick={(event) => event.stopPropagation()}>
+                <a href={row.href} target='_blank' rel='noreferrer' className='text-p1-accent underline decoration-p1-accent/40 underline-offset-2 hover:decoration-p1-accent' onClick={(event) => event.stopPropagation()}>
                   {row.name}
                 </a>
               ) : row.name}
@@ -1777,7 +1842,7 @@ function rosterMasksNames(encounter: Encounter | undefined, isGm: boolean) {
   return encounter ? encounterMasksCombatants(encounter) : true;
 }
 
-function RosterPreview({ hover, encounter, players, isGm, onEnter, onLeave, onLock }: { hover: RosterHover; encounter: Encounter | undefined; players: Character[]; isGm: boolean; onEnter: () => void; onLeave: () => void; onLock: () => void }) {
+function RosterPreview({ hover, encounter, players, isGm, onEnter, onLeave, onLock, onOpenArt }: { hover: RosterHover; encounter: Encounter | undefined; players: Character[]; isGm: boolean; onEnter: () => void; onLeave: () => void; onLock: () => void; onOpenArt: (name: string, url: string) => void }) {
   const left = Math.min(Math.max(8, hover.x), window.innerWidth - 420);
   const top = Math.min(hover.y, window.innerHeight - 240);
   return createPortal(
@@ -1788,13 +1853,13 @@ function RosterPreview({ hover, encounter, players, isGm, onEnter, onLeave, onLo
       onMouseLeave={onLeave}
       onClick={(event) => { event.stopPropagation(); onLock(); }}
     >
-      <RosterTable kind={hover.kind} encounter={encounter} players={players} mask={rosterMasksNames(encounter, isGm)} />
+      <RosterTable kind={hover.kind} encounter={encounter} players={players} mask={rosterMasksNames(encounter, isGm)} onOpenArt={onOpenArt} />
     </div>,
     document.body,
   );
 }
 
-function RosterLockWindow({ frame, encounter, players, isGm, onFocus, onClose, onMove }: { frame: RosterWindow; encounter: Encounter | undefined; players: Character[]; isGm: boolean; onFocus: () => void; onClose: () => void; onMove: (x: number, y: number) => void }) {
+function RosterLockWindow({ frame, encounter, players, isGm, onFocus, onClose, onMove, onOpenArt }: { frame: RosterWindow; encounter: Encounter | undefined; players: Character[]; isGm: boolean; onFocus: () => void; onClose: () => void; onMove: (x: number, y: number) => void; onOpenArt: (name: string, url: string) => void }) {
   function startDrag(event: React.PointerEvent<HTMLElement>) {
     if ((event.target as HTMLElement).closest('button, a')) return;
     event.preventDefault();
@@ -1823,7 +1888,7 @@ function RosterLockWindow({ frame, encounter, players, isGm, onFocus, onClose, o
         <button type='button' className='icon-button' title='Close' onClick={onClose}><X size={14} /></button>
       </header>
       <div className='min-h-0 flex-1 overflow-auto p-2'>
-        <RosterTable kind={frame.kind} encounter={encounter} players={players} mask={rosterMasksNames(encounter, isGm)} />
+        <RosterTable kind={frame.kind} encounter={encounter} players={players} mask={rosterMasksNames(encounter, isGm)} onOpenArt={onOpenArt} />
       </div>
     </div>,
     document.body,

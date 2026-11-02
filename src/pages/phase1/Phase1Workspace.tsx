@@ -2149,12 +2149,6 @@ export function Phase1CampaignPage() {
   const viewingSettings = location.pathname.endsWith('/settings');
   const noteIndex = viewingNotes && Number.isFinite(Number(rawNoteIndex)) ? Number(rawNoteIndex) : null;
   const enabled = Boolean(session && Number.isFinite(campaignId));
-  const publicUser = useQuery({
-    queryKey: ['phase1-public-user'],
-    enabled: Boolean(session),
-    queryFn: () => getPublicUser(),
-    staleTime: 60_000,
-  });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const encounterSaveChain = useRef(Promise.resolve<void>(undefined));
@@ -2423,10 +2417,7 @@ export function Phase1CampaignPage() {
   const campaignData = campaign.data;
   const isGm = sameUserId(campaignData.user_id, session.user.id);
   const ownIds = ownCharacterIds(players.data ?? [], session.user.id);
-  if (!isGm && ownIds.size === 0) {
-    if (publicUser.isLoading) return <LoadingScreen label='Loading campaign workspace' />;
-    if (!publicUser.data?.is_admin) return <NoCharacterOnCampaign name={campaignData.name} />;
-  }
+  if (!isGm && ownIds.size === 0) return <NoCharacterOnCampaign name={campaignData.name} />;
   const visible = visibleCampaignEncounters(encounters.data ?? [], campaignId, isGm, ownIds);
   const notePages = visibleNotePages(campaignData, isGm);
   const selectedNote = noteIndex == null ? null : notePages.find((item) => item.index === noteIndex) ?? null;
@@ -2514,7 +2505,6 @@ export function Phase1CampaignPage() {
       viewingNotes={viewingNotes}
       viewingSettings={viewingSettings}
       isGm={isGm}
-      isAdmin={publicUser.data?.is_admin === true}
       sessionUserId={session.user.id}
       onUpdateEncounter={(encounter) => updateEncounter.mutate(encounter)}
       onAddAllPcsToEncounters={addAllPcsToAllEncounters}
@@ -2547,8 +2537,8 @@ function partyMemberId(value: unknown): number | null {
   return Number.isInteger(id) ? id : null;
 }
 
-function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, viewingSettings, isGm, isAdmin = false, sessionUserId, onUpdateEncounter, onAddAllPcsToEncounters, onPatchEncounterDice, onUpdateCharacter, onUpdateCampaign, onPatchParty, onResetJoinKey, onKickPlayer, onDeleteCampaign, onDeleteNote, onDeleteAllNotes, onDeleteEncounter, onDeleteAllEncounters, onCreateNote, onAddEncounterNote, onCreateEncounter, rosterSaving, campaignSaving, rosterError, campaignError, partyError }: {
-  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; isAdmin?: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onPatchEncounterDice?: (patch: { encounterId: number; campaignId: number; dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] }) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onPatchParty?: (partyIds: number[]) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteAllNotes?: () => void; onDeleteEncounter: (id: number) => void; onDeleteAllEncounters?: () => Promise<void> | void; onCreateNote: (name: string) => void; onAddEncounterNote?: (encounter: Encounter) => void; onCreateEncounter: (name: string) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; campaignError: Error | null; partyError?: Error | null;
+function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, viewingSettings, isGm, sessionUserId, onUpdateEncounter, onAddAllPcsToEncounters, onPatchEncounterDice, onUpdateCharacter, onUpdateCampaign, onPatchParty, onResetJoinKey, onKickPlayer, onDeleteCampaign, onDeleteNote, onDeleteAllNotes, onDeleteEncounter, onDeleteAllEncounters, onCreateNote, onAddEncounterNote, onCreateEncounter, rosterSaving, campaignSaving, rosterError, campaignError, partyError }: {
+  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onPatchEncounterDice?: (patch: { encounterId: number; campaignId: number; dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] }) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onPatchParty?: (partyIds: number[]) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteAllNotes?: () => void; onDeleteEncounter: (id: number) => void; onDeleteAllEncounters?: () => Promise<void> | void; onCreateNote: (name: string) => void; onAddEncounterNote?: (encounter: Encounter) => void; onCreateEncounter: (name: string) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; campaignError: Error | null; partyError?: Error | null;
 }) {
   const standalone = campaign == null;
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -2758,7 +2748,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
 
   const playersCanManageParty = campaign?.meta_data?.settings?.players_manage_party !== false;
   const hasCharacterOnCampaign = ownCharacterIds(players, sessionUserId).size > 0;
-  const canEditParty = isGm || isAdmin || (playersCanManageParty && hasCharacterOnCampaign);
+  const canEditParty = isGm || (playersCanManageParty && hasCharacterOnCampaign);
 
   function writeParty(ids: number[]) {
     if (!campaign || !canEditParty) return;
@@ -3511,7 +3501,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
 
   return (
     <div className={`relative flex h-dvh min-h-0 flex-col overflow-hidden bg-p1-page text-p1-text md:h-screen md:min-h-[680px]${campaignArtUrl && !artHidden ? ` p1-encounter-has-art p1-sheet-art-${artTone}` : ''}`}>
-      <WorkspaceHeader section={standalone ? 'encounters' : undefined} label={campaign?.name ?? encounterDisplayName(selectedEncounter?.name ?? 'Encounter')} campaignId={campaign?.id ?? null} encounterId={selectedEncounter?.id ?? null} noteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} railOpen={railOpen} onToggleRail={() => setRailOpen((open) => !open)} />
+      <WorkspaceHeader section={standalone ? 'encounters' : undefined} label={campaign?.name ?? encounterDisplayName(selectedEncounter?.name ?? 'Encounter')} campaignId={campaign?.id ?? null} encounterId={selectedEncounter?.id ?? null} noteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} railOpen={railOpen} onToggleRail={() => setRailOpen((open) => !open)} />
       <div className={`p1-encounter-body grid min-h-0 flex-1 ${encounterGrid}`}>
         {railDrawer ? railOpen && createPortal(
           <>
@@ -3884,7 +3874,7 @@ function useCombatantStatuses(encounterId: number | null, combatants: PopulatedC
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
-export function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, viewingSettings, railOpen, onToggleRail }: { label?: string; section?: 'campaigns' | 'characters' | 'encounters' | 'homebrew'; campaignId?: number | null; encounterId?: number | null; noteIndex?: number | null; viewingSettings?: boolean; railOpen?: boolean; onToggleRail?: () => void }) {
+export function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, viewingSettings, isGm = false, railOpen, onToggleRail }: { label?: string; section?: 'campaigns' | 'characters' | 'encounters' | 'homebrew'; campaignId?: number | null; encounterId?: number | null; noteIndex?: number | null; viewingSettings?: boolean; isGm?: boolean; railOpen?: boolean; onToggleRail?: () => void }) {
   const navClass = (active: boolean) => `text-sm ${active ? 'text-p1-text' : 'text-p1-muted hover:text-p1-text'}`;
   const user = useQuery({
     queryKey: ['phase1-public-user'],
@@ -3905,7 +3895,7 @@ export function WorkspaceHeader({ label, section, campaignId, encounterId, noteI
             <a href='/' className='whitespace-nowrap font-semibold leading-tight'>Wanderer's Guide</a>
             {user.data && campaignId != null && (
               <span className='mt-0.5 text-[11px] tracking-[0.12em] text-p1-muted [font-variant-caps:all-small-caps]'>
-                {user.data.is_admin ? 'Admin view' : 'Player view'}
+                {isGm ? 'GM view' : 'Player view'}
               </span>
             )}
           </div>

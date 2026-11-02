@@ -167,19 +167,6 @@ export async function authorizeCampaign(
   return { userId, campaign, isGm, characterIds };
 }
 
-/** Site admin (`public_user.is_admin`), which is separate from owning the campaign. */
-export async function callerIsSiteAdmin(
-  client: SupabaseClient<any, 'public', any>,
-  admin: SupabaseClient<any, 'public', any>,
-  token: string,
-): Promise<boolean> {
-  const userId = await requireCallerId(client, token);
-  const rows = await fetchData<{ is_admin?: boolean }>(admin, 'public_user', [
-    { column: 'user_id', value: userId },
-  ]);
-  return rows.some((row) => row.is_admin === true);
-}
-
 /** The character id a combatant refers to, from either the id field or the sheet snapshot. */
 export function combatantCharacterId(combatant: CombatantLike): number | null {
   if (combatant.type && combatant.type !== 'CHARACTER') return null;
