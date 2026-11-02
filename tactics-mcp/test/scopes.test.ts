@@ -254,7 +254,7 @@ describe("tactics scopes", { concurrency: 1 }, () => {
 
       const missing = await fetch(`${base}/mcp`);
       assert.equal(missing.status, 401);
-      assert.match(missing.headers.get("www-authenticate") ?? "", /scope="read"/);
+      assert.match(missing.headers.get("www-authenticate") ?? "", /scope="read write"/);
 
       const unknownScope = await fetch(authorizeQuery("read admin"));
       assert.equal(unknownScope.status, 400);
@@ -310,7 +310,7 @@ describe("tactics scopes", { concurrency: 1 }, () => {
       }
 
       const implicit = await exchange();
-      assert.equal(implicit.scope, "read");
+      assert.equal(implicit.scope, "read write");
       const asked = await exchange("write read");
       assert.equal(asked.scope, "read write");
       const bad = await fetch(`${base}/oauth/mcp/authorize`, {
