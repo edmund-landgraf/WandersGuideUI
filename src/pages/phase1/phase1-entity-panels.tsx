@@ -1779,9 +1779,9 @@ export function HealthStatusPanel({ combatant, calculatedStatus, calculating, on
     {layout === 'sheet-legacy' ? legacySheet : (
     <div className={layout === 'sheet' ? 'space-y-2' : 'space-y-1.5'}>
       {layout === 'sheet' ? (
-        <section className='relative z-30 flex flex-wrap items-center gap-3 border border-p1-border bg-p1-surface p-2'>
+        <section className='relative z-30 flex flex-nowrap items-center gap-2 border border-p1-border bg-p1-surface px-2 py-1.5'>
           <div className='min-w-0 flex-1 [&_section]:border-0 [&_section]:bg-transparent [&_section]:p-0'>{identity}</div>
-          {actions ? <div className='relative z-40 flex flex-wrap items-center justify-end gap-1.5'>{actions}</div> : null}
+          {actions ? <div className='relative z-40 flex shrink-0 flex-nowrap items-center justify-end gap-1'>{actions}</div> : null}
         </section>
       ) : null}
       {layout === 'sheet' ? (

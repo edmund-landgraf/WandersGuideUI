@@ -2,7 +2,7 @@
 import { serve } from 'std/server';
 import { connect, createServiceClient, fetchData } from '../_shared/helpers.ts';
 import { HttpError } from '../_shared/http-errors.ts';
-import { authorizeCampaign, sameNumericId, toId } from '../_wgui-ext/shared.ts';
+import { authorizeCampaign, callerIsSiteAdmin, sameNumericId, toId } from '../_wgui-ext/shared.ts';
 
 interface PatchPartyBody {
   campaign_id?: number;
@@ -34,9 +34,21 @@ serve(async (req: Request) => {
     }
 
     const admin = createServiceClient();
-    const access = await authorizeCampaign(client, admin, token, campaign_id);
+    const siteAdmin = await callerIsSiteAdmin(client, admin, token);
+    let access: Awaited<ReturnType<typeof authorizeCampaign>>;
+    try {
+      access = await authorizeCampaign(client, admin, token, campaign_id);
+    } catch (error) {
+      if (!siteAdmin) throw error;
+      const campaigns = await fetchData<{ id: number; meta_data?: unknown }>(admin, 'campaign', [
+        { column: 'id', value: campaign_id },
+      ]);
+      const campaign = campaigns[0];
+      if (!campaign) throw error;
+      access = { userId: '', campaign: campaign as Awaited<ReturnType<typeof authorizeCampaign>>['campaign'], isGm: false, characterIds: new Set() };
+    }
     const meta = (access.campaign as { meta_data?: unknown }).meta_data;
-    if (!access.isGm && !playersMayManageParty(meta)) {
+    if (!access.isGm && !siteAdmin && !playersMayManageParty(meta)) {
       throw new HttpError(403, 'Only the game master can change the party.', 'PARTY_FORBIDDEN');
     }
 

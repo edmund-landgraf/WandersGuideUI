@@ -229,8 +229,10 @@ async function usableAccessToken(accessToken?: string): Promise<string | undefin
 
 export async function loadPhase1Campaigns(userId: string, accessToken?: string): Promise<Campaign[]> {
   const token = await usableAccessToken(accessToken);
-  const owned = asRecordList(await phase1Request<Campaign | Campaign[]>('find-campaign', { user_id: userId }, token));
-  const characters = asRecordList(await phase1Request<Character | Character[]>('find-character', { user_id: userId }, token));
+  const owned = asRecordList(await phase1Request<Campaign | Campaign[]>('find-campaign', { user_id: userId }, token))
+    .filter((campaign) => sameUserId(campaign.user_id, userId));
+  const characters = asRecordList(await phase1Request<Character | Character[]>('find-character', { user_id: userId }, token))
+    .filter((character) => sameUserId(character.user_id, userId));
   const joinedIds = [...new Set(characters.map(campaignIdOf).filter((id): id is number => id !== null))];
   const joined = (
     await Promise.all(

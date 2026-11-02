@@ -10,6 +10,7 @@ import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
 import { phase1Request, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, encounterMasksCombatants, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
 import { isEnemyCreature, playerAllyRoundLog, playerEnemyLabel, playerVisibleCombatants } from './phase1-player-combat';
+import { clearCombatantDrag, hasCombatantDrag, readCombatantDrag, writeCombatantDrag } from './combatant-drag';
 import { TacticsPublisher } from './tactics/TacticsPublisher';
 import { loadEntityAbilities, type Phase1Ability } from './phase1-abilities';
 import { readStoredDefenses } from './phase1-creature-defenses';
@@ -2148,6 +2149,12 @@ export function Phase1CampaignPage() {
   const viewingSettings = location.pathname.endsWith('/settings');
   const noteIndex = viewingNotes && Number.isFinite(Number(rawNoteIndex)) ? Number(rawNoteIndex) : null;
   const enabled = Boolean(session && Number.isFinite(campaignId));
+  const publicUser = useQuery({
+    queryKey: ['phase1-public-user'],
+    enabled: Boolean(session),
+    queryFn: () => getPublicUser(),
+    staleTime: 60_000,
+  });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const encounterSaveChain = useRef(Promise.resolve<void>(undefined));
@@ -2416,6 +2423,10 @@ export function Phase1CampaignPage() {
   const campaignData = campaign.data;
   const isGm = sameUserId(campaignData.user_id, session.user.id);
   const ownIds = ownCharacterIds(players.data ?? [], session.user.id);
+  if (!isGm && ownIds.size === 0) {
+    if (publicUser.isLoading) return <LoadingScreen label='Loading campaign workspace' />;
+    if (!publicUser.data?.is_admin) return <NoCharacterOnCampaign name={campaignData.name} />;
+  }
   const visible = visibleCampaignEncounters(encounters.data ?? [], campaignId, isGm, ownIds);
   const notePages = visibleNotePages(campaignData, isGm);
   const selectedNote = noteIndex == null ? null : notePages.find((item) => item.index === noteIndex) ?? null;
@@ -2503,6 +2514,7 @@ export function Phase1CampaignPage() {
       viewingNotes={viewingNotes}
       viewingSettings={viewingSettings}
       isGm={isGm}
+      isAdmin={publicUser.data?.is_admin === true}
       sessionUserId={session.user.id}
       onUpdateEncounter={(encounter) => updateEncounter.mutate(encounter)}
       onAddAllPcsToEncounters={addAllPcsToAllEncounters}
@@ -2535,8 +2547,8 @@ function partyMemberId(value: unknown): number | null {
   return Number.isInteger(id) ? id : null;
 }
 
-function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, viewingSettings, isGm, sessionUserId, onUpdateEncounter, onAddAllPcsToEncounters, onPatchEncounterDice, onUpdateCharacter, onUpdateCampaign, onPatchParty, onResetJoinKey, onKickPlayer, onDeleteCampaign, onDeleteNote, onDeleteAllNotes, onDeleteEncounter, onDeleteAllEncounters, onCreateNote, onAddEncounterNote, onCreateEncounter, rosterSaving, campaignSaving, rosterError, campaignError, partyError }: {
-  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onPatchEncounterDice?: (patch: { encounterId: number; campaignId: number; dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] }) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onPatchParty?: (partyIds: number[]) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteAllNotes?: () => void; onDeleteEncounter: (id: number) => void; onDeleteAllEncounters?: () => Promise<void> | void; onCreateNote: (name: string) => void; onAddEncounterNote?: (encounter: Encounter) => void; onCreateEncounter: (name: string) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; campaignError: Error | null; partyError?: Error | null;
+function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, viewingSettings, isGm, isAdmin = false, sessionUserId, onUpdateEncounter, onAddAllPcsToEncounters, onPatchEncounterDice, onUpdateCharacter, onUpdateCampaign, onPatchParty, onResetJoinKey, onKickPlayer, onDeleteCampaign, onDeleteNote, onDeleteAllNotes, onDeleteEncounter, onDeleteAllEncounters, onCreateNote, onAddEncounterNote, onCreateEncounter, rosterSaving, campaignSaving, rosterError, campaignError, partyError }: {
+  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; isAdmin?: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onPatchEncounterDice?: (patch: { encounterId: number; campaignId: number; dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] }) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onPatchParty?: (partyIds: number[]) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteAllNotes?: () => void; onDeleteEncounter: (id: number) => void; onDeleteAllEncounters?: () => Promise<void> | void; onCreateNote: (name: string) => void; onAddEncounterNote?: (encounter: Encounter) => void; onCreateEncounter: (name: string) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; campaignError: Error | null; partyError?: Error | null;
 }) {
   const standalone = campaign == null;
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -2745,7 +2757,8 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   }
 
   const playersCanManageParty = campaign?.meta_data?.settings?.players_manage_party !== false;
-  const canEditParty = isGm || playersCanManageParty;
+  const hasCharacterOnCampaign = ownCharacterIds(players, sessionUserId).size > 0;
+  const canEditParty = isGm || isAdmin || (playersCanManageParty && hasCharacterOnCampaign);
 
   function writeParty(ids: number[]) {
     if (!campaign || !canEditParty) return;
@@ -3535,6 +3548,9 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               inParty={inParty}
               canEditParty={canEditParty}
               onAddToParty={canEditParty ? addToParty : undefined}
+              onLeaveParty={canEditParty ? leaveParty : undefined}
+              onReorderParty={canEditParty ? writeParty : undefined}
+              partyOrder={storedPartyIds?.map(partyMemberId).filter((id): id is number => id != null)}
               encounters={encounters}
               isGm={isGm}
               folders={campaign.meta_data?.encounter_folders ?? []}
@@ -3545,7 +3561,6 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
               notes={notePages.map(({ page, index }) => ({ index, name: page.name, shared: page.shared, markdown: noteContentsToMarkdown(page.contents) }))}
               onAddEncounterNote={onAddEncounterNote}
               onDeleteNote={isGm ? onDeleteNote : undefined}
-              onLeaveParty={canEditParty ? leaveParty : undefined}
               partyError={partyError?.message ?? null}
             />
           ) : (
@@ -3958,6 +3973,11 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
   function dropOnBench(event: ReactDragEvent<HTMLDivElement>) {
     const payload = readCombatantDrag(event);
     setBenchActive(false);
+    if (payload?.source === 'party' && payload.characterId != null && canEditParty) {
+      event.preventDefault();
+      onLeaveParty?.(payload.characterId);
+      return;
+    }
     if (!canManageRoster || payload?.source !== 'encounter' || !payload.combatantId || payload.characterId == null) return;
     event.preventDefault();
     onRemovePlayer(payload.combatantId);
@@ -4040,29 +4060,33 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
       {!standalone && campaign && (
         <>
           <RailLabel icon={<UsersRound size={14} />} label='Party bench' count={players.length} open={benchOpen} onToggle={() => setBenchOpen((value) => !value)} onContextMenu={openBenchMenu} />
-          {benchOpen && <div className={`mx-2 min-h-16 border px-1 pb-4 pt-1 transition-colors ${benchActive ? 'border-p1-accent bg-p1-accent/[0.07]' : 'border-transparent'}`} onContextMenu={openBenchMenu} onDragOver={(event) => { if (canManageRoster && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setBenchActive(true); } }} onDragLeave={() => setBenchActive(false)} onDrop={dropOnBench}>
+          {benchOpen && <div className={`mx-2 min-h-16 border px-1 pb-4 pt-1 transition-colors ${benchActive ? 'border-p1-accent bg-p1-accent/[0.07]' : 'border-transparent'}`} onContextMenu={openBenchMenu} onDragOver={(event) => { if ((canManageRoster || canEditParty) && hasCombatantDrag(event)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setBenchActive(true); } }} onDragLeave={() => setBenchActive(false)} onDrop={dropOnBench}>
             {players.map((player) => (
               <div
                 key={player.id}
-                className='flex items-center gap-2 px-2 py-2 text-xs text-p1-muted hover:bg-p1-hover hover:text-p1-text'
+                className={`flex items-center gap-2 px-2 py-2 text-xs text-p1-muted hover:bg-p1-hover hover:text-p1-text ${(canManageRoster || canEditParty) ? 'cursor-grab' : ''}`}
                 onContextMenu={(event) => openBenchMenu(event, player.id, player.name)}
-                draggable={canManageRoster}
-                onDragStart={(event) => writeCombatantDrag(event, { source: 'bench', characterId: player.id })}
+                draggable={canManageRoster || canEditParty}
+                onDragStart={(event) => {
+                  if ((event.target as HTMLElement).closest('a')) {
+                    event.preventDefault();
+                    return;
+                  }
+                  writeCombatantDrag(event, { source: 'bench', characterId: player.id });
+                }}
                 onDragEnd={() => { clearCombatantDrag(); setBenchActive(false); }}
               >
-                {canManageRoster && (
-                  <span
-                    className='shrink-0 cursor-grab text-p1-faint'
-                    title='Drag to encounter'
-                    aria-hidden
-                  >
+                {(canManageRoster || canEditParty) && (
+                  <span className='shrink-0 text-p1-faint' aria-hidden>
                     <GripVertical size={14} />
                   </span>
                 )}
-                <a href={`/sheet/${player.id}`} target='_blank' rel='noreferrer' draggable={false} className='flex min-w-0 flex-1 items-center gap-2 hover:text-p1-text'>
+                <span className='flex min-w-0 flex-1 items-center gap-2'>
                   <UserRound size={15} />
                   <span className='min-w-0 flex-1 truncate'>{player.name}</span>
                   {inParty && !inParty(player.id) && <span className='shrink-0 text-[10px] uppercase text-p1-faint'>Resting</span>}
+                </span>
+                <a href={`/sheet/${player.id}`} target='_blank' rel='noreferrer' draggable={false} className='shrink-0 hover:text-p1-text' aria-label={`Open ${player.name} sheet`}>
                   <ExternalLink size={12} />
                 </a>
               </div>
@@ -5202,32 +5226,6 @@ function RenameDialog({ title, initialName, onCancel, onConfirm }: { title: stri
   );
 }
 
-const COMBATANT_DRAG_TYPE = 'application/x-wanderers-guide-player';
-type CombatantDragPayload = { source: 'bench' | 'encounter' | 'out'; combatantId?: string; characterId?: number };
-let activeCombatantDrag: CombatantDragPayload | null = null;
-
-function writeCombatantDrag(event: ReactDragEvent, payload: CombatantDragPayload) {
-  activeCombatantDrag = payload;
-  event.dataTransfer.effectAllowed = 'move';
-  const serialized = JSON.stringify(payload);
-  event.dataTransfer.setData(COMBATANT_DRAG_TYPE, serialized);
-  event.dataTransfer.setData('text/plain', serialized);
-}
-function clearCombatantDrag() {
-  activeCombatantDrag = null;
-}
-function readCombatantDrag(event: ReactDragEvent): CombatantDragPayload | null {
-  if (activeCombatantDrag) return activeCombatantDrag;
-  try {
-    const value = event.dataTransfer.getData(COMBATANT_DRAG_TYPE) || event.dataTransfer.getData('text/plain');
-    return value ? JSON.parse(value) as CombatantDragPayload : null;
-  } catch {
-    return null;
-  }
-}
-function hasCombatantDrag(_event?: ReactDragEvent) {
-  return activeCombatantDrag != null;
-}
 function EncounterDifficultyModal({ difficulty, onClose }: { difficulty: EncounterDifficulty; onClose: () => void }) {
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -6517,6 +6515,21 @@ function Eyebrow({ children }: { children: ReactNode }) { return <div className=
 function EmptyState({ children }: { children: ReactNode }) { return <div className='border border-p1-border p-8 text-center text-sm text-p1-muted'>{children}</div>; }
 function ErrorState({ error }: { error: Error }) { return <div className='border border-p1-danger/40 bg-p1-danger/10 p-4 text-sm text-p1-danger-soft'>{error.message}</div>; }
 function PageError({ error }: { error: Error }) { return <div className='min-h-screen bg-p1-page p-8 text-p1-text'><Link to='/phase1' className='text-sm text-p1-accent'>Back to campaigns</Link><div className='mt-6 max-w-xl'><ErrorState error={error} /></div></div>; }
+
+function NoCharacterOnCampaign({ name }: { name: string }) {
+  return (
+    <div className='min-h-screen bg-p1-page p-8 text-p1-text'>
+      <Link to='/phase1' className='text-sm text-p1-accent'>Back to campaigns</Link>
+      <div className='mt-6 max-w-md'>
+        <h1 className='text-xl font-semibold'>{name}</h1>
+        <p className='mt-2 text-sm text-p1-muted'>You don't have a character on this campaign.</p>
+        <button type='button' className='toolbar-button mt-4' disabled title='Not available yet'>
+          Send a note to the GM
+        </button>
+      </div>
+    </div>
+  );
+}
 function LoadingScreen({ label }: { label: string }) { return <div className='grid min-h-screen place-items-center bg-p1-page text-sm text-p1-muted'>{label}...</div>; }
 
 function hazardLivingStub(hazard: Hazard): LivingEntity {

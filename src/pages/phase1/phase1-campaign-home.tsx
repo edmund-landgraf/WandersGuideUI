@@ -11,9 +11,10 @@ import { toLabel } from '@utils/strings';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { flatten } from 'lodash-es';
 import { ChevronDown, ChevronRight, UserRound, X } from 'lucide-react';
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, type DragEvent as ReactDragEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
+import { clearCombatantDrag, hasCombatantDrag, readCombatantDrag, writeCombatantDrag } from './combatant-drag';
 import { ConfirmDialog } from './phase1-campaign-settings';
 import { encounterMasksCombatants, gmEncounterShownToPlayers, loadPhase1SheetCharacter, phase1Request } from './phase1-api';
 import { combatantDisplayName } from './phase1-initiative';
@@ -442,7 +443,7 @@ function folderDescendantIds(folders: EncounterFolder[], id: string) {
   return doomed;
 }
 
-export function Phase1CampaignHome({ campaignId, players, encounters, notes = [], wide = false, isGm = false, folders = [], onFoldersChange, onMoveEncounter, onTogglePlayerVisible, onToggleMaskCombatants, onAddEncounterNote, onDeleteNote, inParty, canEditParty = false, onAddToParty, onLeaveParty, partyError }: { campaignId: number; players: Character[]; encounters: Encounter[]; notes?: CampaignHomeNote[]; wide?: boolean; isGm?: boolean; folders?: EncounterFolder[]; onFoldersChange?: (folders: EncounterFolder[]) => void; onMoveEncounter?: (encounter: Encounter, folderId: string | null) => void; onTogglePlayerVisible?: (encounter: Encounter, shown: boolean) => void; onToggleMaskCombatants?: (encounter: Encounter, masked: boolean) => void; onAddEncounterNote?: (encounter: Encounter) => void; onDeleteNote?: (index: number) => void; inParty?: (characterId: number) => boolean; canEditParty?: boolean; onAddToParty?: (characterId: number) => void; onLeaveParty?: (characterId: number) => void; partyError?: string | null }) {
+export function Phase1CampaignHome({ campaignId, players, encounters, notes = [], wide = false, isGm = false, folders = [], onFoldersChange, onMoveEncounter, onTogglePlayerVisible, onToggleMaskCombatants, onAddEncounterNote, onDeleteNote, inParty, canEditParty = false, onAddToParty, onLeaveParty, onReorderParty, partyOrder, partyError }: { campaignId: number; players: Character[]; encounters: Encounter[]; notes?: CampaignHomeNote[]; wide?: boolean; isGm?: boolean; folders?: EncounterFolder[]; onFoldersChange?: (folders: EncounterFolder[]) => void; onMoveEncounter?: (encounter: Encounter, folderId: string | null) => void; onTogglePlayerVisible?: (encounter: Encounter, shown: boolean) => void; onToggleMaskCombatants?: (encounter: Encounter, masked: boolean) => void; onAddEncounterNote?: (encounter: Encounter) => void; onDeleteNote?: (index: number) => void; inParty?: (characterId: number) => boolean; canEditParty?: boolean; onAddToParty?: (characterId: number) => void; onLeaveParty?: (characterId: number) => void; onReorderParty?: (ids: number[]) => void; partyOrder?: number[]; partyError?: string | null }) {
   const navigate = useNavigate();
   const session = useAuthSession();
   const [windows, setWindows] = useState<PcWindow[]>([]);
@@ -455,6 +456,9 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
   const [openPartyIds, setOpenPartyIds] = useState<number[]>([]);
   const [partyMenu, setPartyMenu] = useState<{ x: number; y: number; id: number; away: boolean } | null>(null);
   const [partySort, setPartySort] = useState<PartySort>(null);
+  const [partyDropActive, setPartyDropActive] = useState(false);
+  const [reorderOverId, setReorderOverId] = useState<number | null>(null);
+  const partyRowIds = useRef<number[]>([]);
   const [noteWindows, setNoteWindows] = useState<NoteWindow[]>([]);
   const [noteHover, setNoteHover] = useState<NoteHover | null>(null);
   const [rosterHover, setRosterHover] = useState<RosterHover | null>(null);
@@ -903,6 +907,15 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
     selectionAnchor.current = null;
   }, [openFolderId]);
 
+  function dropOnParty(event: ReactDragEvent) {
+    const payload = readCombatantDrag(event);
+    setPartyDropActive(false);
+    if (!canEditParty || payload?.source !== 'bench' || payload.characterId == null) return;
+    if (inParty?.(payload.characterId)) return;
+    event.preventDefault();
+    onAddToParty?.(payload.characterId);
+  }
+
   function toggleParty(id: number) {
     setOpenPartyIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
   }
@@ -920,7 +933,20 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
 
   return (
     <div className={wide ? 'flex h-full min-h-0 w-full flex-col' : 'mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col px-6'}>
-      <section className={wide ? 'min-h-0 w-full flex-1 overflow-auto py-2 pl-3 pr-10' : 'min-h-0 flex-1 overflow-auto py-2'}>
+      <section
+        className={`${wide ? 'min-h-0 w-full flex-1 overflow-auto py-2 pl-3 pr-10' : 'min-h-0 flex-1 overflow-auto py-2'} ${partyDropActive ? 'bg-p1-accent/[0.07]' : ''}`}
+        onDragOver={(event) => {
+          if (!canEditParty || !hasCombatantDrag(event)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'move';
+          if (!partyDropActive) setPartyDropActive(true);
+        }}
+        onDragLeave={(event) => {
+          if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+          setPartyDropActive(false);
+        }}
+        onDrop={dropOnParty}
+      >
         {partyError ? <p className='mb-2 border border-p1-danger/40 bg-p1-danger/10 px-3 py-2 text-xs text-p1-danger-soft'>Party update failed: {partyError}</p> : null}
         <table className='w-full border-collapse text-[13px]'>
           <thead className='sticky top-0 z-[1] border-b border-p1-border bg-p1-header/92 text-[11px] uppercase text-p1-faint'>
@@ -945,7 +971,14 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
           </thead>
           <tbody>
             {players.map((player, index) => ({ player, index, data: statQueries[index]?.data, loading: statQueries[index]?.isLoading })).sort((a, b) => {
-              if (!partySort) return a.index - b.index;
+              if (!partySort) {
+                if (!partyOrder?.length) return a.index - b.index;
+                const rank = (row: typeof a) => {
+                  const at = partyOrder.indexOf(row.player.id);
+                  return at < 0 ? row.index + partyOrder.length : at;
+                };
+                return rank(a) - rank(b);
+              }
               const dir = partySort.dir === 'asc' ? 1 : -1;
               const valueOf = (row: typeof a) => {
                 const data = row.data;
@@ -980,7 +1013,8 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
               }
               const delta = String(av).localeCompare(String(bv), undefined, { sensitivity: 'base' }) * dir;
               return delta === 0 ? a.index - b.index : delta;
-            }).filter(({ player }) => !(inParty && !inParty(player.id))).map(({ player, data, loading }) => {
+            }).filter(({ player }) => !(inParty && !inParty(player.id))).map(({ player, data, loading }, _index, shown) => {
+              partyRowIds.current = shown.map((row) => row.player.id);
               const conditions = compiledConditions(player.details?.conditions ?? []);
               const currentHp = player.hp_current ?? data?.max_hp;
               const maxHp = partyStatNumber(data?.max_hp);
@@ -989,17 +1023,54 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
               const open = openPartyIds.includes(player.id);
               const details = data ? partyDetailRows(data) : [];
               const colSpan = wide ? 18 : 11;
+              const dragCell = canEditParty ? {
+                draggable: true,
+                onDragStart: (event: ReactDragEvent<HTMLTableCellElement>) => {
+                  const target = event.target as HTMLElement;
+                  if (target.closest('button')) {
+                    event.preventDefault();
+                    return;
+                  }
+                  writeCombatantDrag(event, { source: 'party', characterId: player.id });
+                },
+                onDragEnd: () => clearCombatantDrag(),
+              } : {};
               return (
                 <Fragment key={player.id}>
                 <tr
-                  className='cursor-pointer border-b border-p1-border bg-p1-page/88 hover:bg-p1-page/94'
-                  onClick={() => toggleParty(player.id)}
+                  className={`border-b border-p1-border hover:bg-p1-page/94 ${reorderOverId === player.id ? 'bg-p1-accent/25' : 'bg-p1-page/88'} ${canEditParty ? 'cursor-grab' : ''}`}
+                  onDragOver={(event) => {
+                    if (!canEditParty) return;
+                    const payload = readCombatantDrag(event);
+                    if (payload?.source !== 'party' || payload.characterId == null || payload.characterId === player.id) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.dataTransfer.dropEffect = 'move';
+                    if (reorderOverId !== player.id) setReorderOverId(player.id);
+                  }}
+                  onDragLeave={() => {
+                    if (reorderOverId === player.id) setReorderOverId(null);
+                  }}
+                  onDrop={(event) => {
+                    const payload = readCombatantDrag(event);
+                    setReorderOverId(null);
+                    setPartyDropActive(false);
+                    if (!canEditParty || payload?.source !== 'party' || payload.characterId == null || payload.characterId === player.id) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const order = partyRowIds.current.filter((id) => id !== payload.characterId);
+                    const at = order.indexOf(player.id);
+                    if (at < 0) return;
+                    order.splice(at, 0, payload.characterId);
+                    setPartySort(null);
+                    onReorderParty?.(order);
+                  }}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     setPartyMenu({ x: event.clientX, y: event.clientY, id: player.id, away: Boolean(inParty && !inParty(player.id)) });
                   }}
                 >
-                  <td className='px-2 py-1'>
+                  <td {...dragCell} className='px-2 py-1'>
                     <span className='flex items-center gap-2'>
                       <button
                         type='button'
@@ -1027,10 +1098,10 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
                       <span className='truncate font-semibold'>{player.name}</span>
                     </span>
                   </td>
-                  <td className='whitespace-nowrap px-2 py-1 text-p1-muted'>{player.details?.ancestry?.name ?? '—'}</td>
-                  <td className='whitespace-nowrap px-2 py-1 text-p1-muted'>{player.details?.class?.name ?? '—'}</td>
-                  <td className='px-2 py-1'>{player.level ?? '—'}</td>
-                  <td className='px-2 py-1'>
+                  <td {...dragCell} className='whitespace-nowrap px-2 py-1 text-p1-muted'>{player.details?.ancestry?.name ?? '—'}</td>
+                  <td {...dragCell} className='whitespace-nowrap px-2 py-1 text-p1-muted'>{player.details?.class?.name ?? '—'}</td>
+                  <td {...dragCell} className='px-2 py-1'>{player.level ?? '—'}</td>
+                  <td {...dragCell} className='px-2 py-1'>
                     <span className='relative inline-flex min-w-14 items-center justify-center overflow-hidden border border-p1-border bg-p1-raised px-1.5 py-0.5'>
                       {hpRatio != null ? (
                         <span aria-hidden className='absolute inset-y-0 left-0' style={{ width: `${hpRatio * 100}%`, backgroundColor: hpBarColor(hpRatio) }} />
@@ -1038,17 +1109,17 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
                       <span className='relative'>{currentHp == null && !data ? '—' : `${currentHp ?? '—'}/${data?.max_hp ?? '—'}`}</span>
                     </span>
                   </td>
-                  <td className='px-2 py-1'>{loading && data == null ? '…' : data?.ac ?? '—'}</td>
-                  <td className='px-2 py-1'>{prof(data, 'SAVE_FORT')}</td>
-                  <td className='px-2 py-1'>{prof(data, 'SAVE_REFLEX')}</td>
-                  <td className='px-2 py-1'>{prof(data, 'SAVE_WILL')}</td>
-                  <td className='px-2 py-1'>{prof(data, 'PERCEPTION')}</td>
-                  <td className='whitespace-nowrap px-2 py-1'>{loading && data == null ? '…' : speedText(data)}</td>
+                  <td {...dragCell} className='px-2 py-1'>{loading && data == null ? '…' : data?.ac ?? '—'}</td>
+                  <td {...dragCell} className='px-2 py-1'>{prof(data, 'SAVE_FORT')}</td>
+                  <td {...dragCell} className='px-2 py-1'>{prof(data, 'SAVE_REFLEX')}</td>
+                  <td {...dragCell} className='px-2 py-1'>{prof(data, 'SAVE_WILL')}</td>
+                  <td {...dragCell} className='px-2 py-1'>{prof(data, 'PERCEPTION')}</td>
+                  <td {...dragCell} className='whitespace-nowrap px-2 py-1'>{loading && data == null ? '…' : speedText(data)}</td>
                   {wide && ABILITY_KEYS.map((key) => (
-                    <td key={key} className='px-2 py-1 font-mono'>{abilityMod(data, key)}</td>
+                    <td {...dragCell} key={key} className='px-2 py-1 font-mono'>{abilityMod(data, key)}</td>
                   ))}
                   {wide && (
-                    <td className='max-w-48 truncate px-2 py-1 text-p1-muted'>
+                    <td {...dragCell} className='max-w-48 truncate px-2 py-1 text-p1-muted'>
                       {conditions.length === 0 ? '—' : conditions.map((item) => (item.value ? `${item.name} ${item.value}` : item.name)).join(', ')}
                     </td>
                   )}
@@ -1090,25 +1161,6 @@ export function Phase1CampaignHome({ campaignId, players, encounters, notes = []
             ) : null}
           </tbody>
         </table>
-        {inParty && onAddToParty ? (
-          <ul className='mt-2 flex flex-wrap gap-2'>
-            {players.filter((player) => !inParty(player.id)).map((player) => (
-              <li key={player.id}>
-                <button
-                  type='button'
-                  className='border border-p1-border bg-p1-inset px-2 py-1 text-xs text-p1-muted hover:bg-p1-hover hover:text-p1-text'
-                  onClick={() => onAddToParty(player.id)}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    setPartyMenu({ x: event.clientX, y: event.clientY, id: player.id, away: true });
-                  }}
-                >
-                  {player.name} · Get back in there
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
       </section>
       <div className='h-px shrink-0 bg-p1-border' />
       <section ref={splitRef} className={wide ? 'mb-3 flex min-h-0 flex-1 bg-p1-page py-2 pl-3 pr-10' : 'mb-3 flex min-h-0 flex-1 bg-p1-page py-2'}>

@@ -366,7 +366,7 @@ export function Phase1SheetPage() {
     <section className='relative z-30 flex flex-wrap items-start gap-2 border border-p1-border bg-p1-surface p-2'>
       <button
         type='button'
-        className='grid h-12 w-12 shrink-0 place-items-center overflow-hidden border border-p1-border bg-p1-inset text-p1-faint hover:border-p1-accent/60 disabled:hover:border-p1-border'
+        className='grid h-10 w-10 shrink-0 place-items-center overflow-hidden border border-p1-border bg-p1-inset text-p1-faint hover:border-p1-accent/60 disabled:hover:border-p1-border'
         title={canEdit ? 'Change portrait' : character.details?.image_url ? character.name : undefined}
         disabled={!canEdit}
         onClick={() => {
@@ -405,25 +405,25 @@ export function Phase1SheetPage() {
 
   const sheetActions = (
     <>
-      {canEdit && <button type='button' className='toolbar-button' onClick={() => setRestOpen(true)}><RotateCcw size={14} /> Rest</button>}
-      <div className='toolbar-button'>
-        <Star size={14} />
+      {canEdit && <button type='button' className='toolbar-button toolbar-button-compact' onClick={() => setRestOpen(true)}><RotateCcw size={13} /> Rest</button>}
+      <div className='toolbar-button toolbar-button-compact'>
+        <Star size={13} />
         Hero
         {canEdit ? (
-          <span className='ml-2 flex items-center gap-1'>
-            <button type='button' onClick={() => patchCharacter((current) => ({ ...current, hero_points: Math.max(0, (current.hero_points ?? 0) - 1) }))}>-</button>
-            <strong>{character.hero_points ?? 0}</strong>
-            <button type='button' onClick={() => patchCharacter((current) => ({ ...current, hero_points: Math.min(3, (current.hero_points ?? 0) + 1) }))}>+</button>
+          <span className='flex items-center gap-0.5'>
+            <button type='button' className='grid h-5 w-4 place-items-center text-p1-text' onClick={() => patchCharacter((current) => ({ ...current, hero_points: Math.max(0, (current.hero_points ?? 0) - 1) }))}>-</button>
+            <strong className='min-w-[0.6rem] text-center'>{character.hero_points ?? 0}</strong>
+            <button type='button' className='grid h-5 w-4 place-items-center text-p1-text' onClick={() => patchCharacter((current) => ({ ...current, hero_points: Math.min(3, (current.hero_points ?? 0) + 1) }))}>+</button>
           </span>
-        ) : <strong className='ml-2'>{character.hero_points ?? 0}</strong>}
+        ) : <strong>{character.hero_points ?? 0}</strong>}
       </div>
       {view === 'builder' ? (
-        <button type='button' className='toolbar-button' onClick={() => setSearchParams({}, { replace: true })} title='Character sheet'>
-          <User size={14} /> Sheet
+        <button type='button' className='toolbar-button toolbar-button-compact' onClick={() => setSearchParams({}, { replace: true })} title='Character sheet'>
+          <User size={13} /> Sheet
         </button>
       ) : isOwner ? (
-        <button type='button' className='toolbar-button' onClick={() => setSearchParams({ view: 'builder', step: 'builder' }, { replace: true })} title='Character builder'>
-          <Hammer size={14} /> Builder
+        <button type='button' className='toolbar-button toolbar-button-compact' onClick={() => setSearchParams({ view: 'builder', step: 'builder' }, { replace: true })} title='Character builder'>
+          <Hammer size={13} /> Builder
         </button>
       ) : null}
       <Phase1CharacterMenu
@@ -439,7 +439,7 @@ export function Phase1SheetPage() {
       {showBuilderReminder && (
         <button
           type='button'
-          className='toolbar-button border-p1-accent/50 text-p1-accent-soft'
+          className='toolbar-button toolbar-button-compact border-p1-accent/50 text-p1-accent-soft'
           onClick={() =>
             setSearchParams(
               remainingChoices > 0 ? { view: 'builder', step: 'builder' } : { view: 'builder' },
@@ -447,15 +447,10 @@ export function Phase1SheetPage() {
             )
           }
         >
-          <Hammer size={14} />
+          <Hammer size={13} />
           {remainingChoices > 0
-            ? `${remainingChoices} ${remainingChoices === 1 ? 'choice' : 'choices'} remaining`
+            ? `${remainingChoices} ${remainingChoices === 1 ? 'choice' : 'choices'}`
             : 'Finish setup'}
-          {choiceCounts && remainingChoices > 0 && (
-            <span className='text-p1-faint'>
-              {choiceCounts.current}/{choiceCounts.max}
-            </span>
-          )}
         </button>
       )}
     </>
@@ -489,9 +484,9 @@ export function Phase1SheetPage() {
       <main className={`relative z-10 mx-auto min-h-0 w-full flex-1 overflow-y-scroll px-4 py-3 pb-28 sm:pb-10 ${view === 'builder' ? 'max-w-6xl' : 'max-w-5xl'}`}>
         {view === 'builder' ? (
           <>
-            <div className='mb-2 flex flex-wrap items-center gap-2'>
+            <div className='mb-2 flex flex-nowrap items-center gap-2'>
               <div className='min-w-0 flex-1'>{identityCard}</div>
-              <div className='flex flex-nowrap items-center gap-1.5'>{sheetActions}</div>
+              <div className='flex shrink-0 flex-nowrap items-center gap-1'>{sheetActions}</div>
             </div>
             <Phase1BuilderWorkspace characterId={character.id} embedded seed={character} />
           </>
@@ -1011,13 +1006,13 @@ function Phase1CharacterMenu({
     <div ref={menuRef} className='relative'>
       <button
         type='button'
-        className='toolbar-button'
+        className='toolbar-button toolbar-button-compact'
         disabled={Boolean(exporting)}
         aria-haspopup='menu'
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <Menu size={14} /> {label} <ChevronDown size={14} />
+        <Menu size={13} /> {label} <ChevronDown size={13} />
       </button>
       {open && (
         <div role='menu' className='absolute left-0 z-50 mt-1 min-w-52 border border-p1-border bg-p1-surface py-1 shadow-2xl'>
