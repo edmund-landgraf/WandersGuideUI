@@ -18,7 +18,7 @@ import { mintToken, normalizeScopes, resetTokens, resolveBearer } from "../src/t
 
 const WRITE_TOOLS = ["ensure_public_user", "join_campaign", "patch_encounter_dice", "set_campaign_art"];
 const CHARACTER_READS = ["export_character", "get_campaign", "get_character_notes", "get_character_row", "list_open_choices", "list_options", "list_spell_options"];
-const CHARACTER_WRITES = ["add_inventory_item", "add_spell", "choose", "create_character", "delete_character", "remove_inventory_item", "remove_spell", "set_books", "set_character_art", "set_character_notes", "set_identity", "set_inventory_item", "set_spells"];
+const CHARACTER_WRITES = ["add_inventory_item", "add_spell", "choose", "create_character", "delete_character", "remove_inventory_item", "remove_spell", "set_books", "set_character_art", "set_character_notes", "set_identity", "set_inventory_item", "set_spells", "upload_image"];
 const HOMEBREW_WRITES = [
   "wgui_ext_hb_create_content_source",
   "wgui_ext_hb_create_trait",
@@ -54,6 +54,7 @@ function characterArguments(name: string) {
   if (name === "set_character_notes") return { characterId: 1, mode: "append", text: "note" };
   if (name === "get_campaign") return { campaignId: 1 };
   if (name === "set_campaign_art") return { campaignId: 1, imageUrl: "https://example.com/a.png" };
+  if (name === "upload_image") return { category: "portraits", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" };
   return {};
 }
 
@@ -140,7 +141,7 @@ describe("tactics scopes", { concurrency: 1 }, () => {
       assert.equal(info?.description, TACTICS_MCP_DESCRIPTION);
 
       const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
-      assert.equal(names.length, 73);
+      assert.equal(names.length, 74);
       for (const name of [...CHARACTER_READS, ...CHARACTER_WRITES]) assert.ok(names.includes(name), name);
       assert.deepEqual(CHARACTER_READS.map(scopeForTool), CHARACTER_READS.map(() => "read"));
       assert.deepEqual(CHARACTER_WRITES.map(scopeForTool), CHARACTER_WRITES.map(() => "write"));

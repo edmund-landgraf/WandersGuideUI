@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { asRow, invokeFunction } from "./character-client.js";
 import { fail, loadRow, ownerGuard, saveRow, textResult } from "./character-catalog.js";
+import { decodeImageData, fetchImageUrl, uploadImageBytes, type ImageCategory } from "./image-upload.js";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const writes = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
@@ -114,6 +115,19 @@ function clampFocus(value: number) {
   return Math.min(100, Math.max(0, value));
 }
 
+async function bytesFromInput(data: string | undefined, sourceUrl: string | undefined) {
+  if (data !== undefined && sourceUrl !== undefined) return { ok: false as const, message: "Pass image data or a source URL, not both." };
+  if (data !== undefined) return decodeImageData(data);
+  if (sourceUrl !== undefined) return fetchImageUrl(sourceUrl);
+  return { ok: false as const, message: "Pass image data or a source URL." };
+}
+
+async function uploadInput(userId: string, data: string | undefined, sourceUrl: string | undefined, category: ImageCategory) {
+  const bytes = await bytesFromInput(data, sourceUrl);
+  if (!bytes.ok) return { ok: false as const, code: "VALIDATION_ERROR", message: bytes.message };
+  return uploadImageBytes(userId, bytes.bytes, category);
+}
+
 async function loadCampaign(userId: string, campaignId: number) {
   const found = await invokeFunction(userId, "find-campaign", { id: campaignId });
   if (!found.ok) return found;
@@ -137,20 +151,47 @@ function campaignArt(row: Record<string, unknown>, userId: string) {
 
 export function registerCharacterSheet(server: McpServer, userId: () => string) {
   server.registerTool(
+    "upload_image",
+    {
+      title: "Upload a public image",
+      description: "Uploads a PNG, JPEG, or WebP through upload-public-file, the same call as src/process/upload/image-upload.ts. data is base64 with no data: prefix (a data: URL prefix is stripped). sourceUrl is fetched first. category is portraits or backgrounds, the only buckets that function accepts. The file is stored at <user id>/<id>.<type> in that bucket and the public URL is returned. Images must be 2 MB or smaller. SVG and other types are rejected from the file bytes. The function also requires Patreon tier 1 and returns \"User does not have access\" otherwise.",
+      annotations: writes,
+      inputSchema: {
+        data: z.string().optional(),
+        sourceUrl: z.string().optional(),
+        category: z.enum(["portraits", "backgrounds"]),
+      },
+    },
+    async (args) => {
+      const uploaded = await uploadInput(userId(), args.data, args.sourceUrl, args.category);
+      if (!uploaded.ok) return fail(uploaded);
+      return textResult("Image uploaded", { url: uploaded.url, category: uploaded.category, type: uploaded.type });
+    },
+  );
+
+  server.registerTool(
     "set_character_art",
     {
       title: "Character portrait and background",
-      description: "Sets the portrait and sheet background the character art pickers store. portraitUrl writes details.image_url. backgroundUrl writes details.background_image_url. Pass an http(s) URL, or null or \"\" to clear that field the way the sheet drops it. Other details keys are kept. There is no file upload. Only the character owner can write. Saves with expected_updated_at.",
+      description: "Sets the portrait and sheet background the character art pickers store. portraitUrl writes details.image_url. backgroundUrl writes details.background_image_url. Pass an http(s) URL, or null or \"\" to clear that field the way the sheet drops it. portraitData or backgroundData is base64 (no data: prefix) and is uploaded with upload-public-file, portraits or backgrounds, then the returned URL is stored. source URLs belong on upload_image. Other details keys are kept. Only the character owner can write. Saves with expected_updated_at.",
       annotations: writes,
       inputSchema: {
         characterId: z.number().int(),
         portraitUrl: z.string().nullable().optional(),
         backgroundUrl: z.string().nullable().optional(),
+        portraitData: z.string().optional(),
+        backgroundData: z.string().optional(),
       },
     },
     async (args) => {
-      if (args.portraitUrl === undefined && args.backgroundUrl === undefined) {
-        return textResult("Pass portraitUrl and/or backgroundUrl.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      if (args.portraitUrl === undefined && args.backgroundUrl === undefined && args.portraitData === undefined && args.backgroundData === undefined) {
+        return textResult("Pass portraitUrl, backgroundUrl, portraitData, and/or backgroundData.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      }
+      if (args.portraitUrl !== undefined && args.portraitData !== undefined) {
+        return textResult("Pass portraitUrl or portraitData, not both.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      }
+      if (args.backgroundUrl !== undefined && args.backgroundData !== undefined) {
+        return textResult("Pass backgroundUrl or backgroundData, not both.", { code: "VALIDATION_ERROR", retryable: false }, true);
       }
       const portrait = args.portraitUrl === undefined ? null : imageUrl(args.portraitUrl);
       const background = args.backgroundUrl === undefined ? null : imageUrl(args.backgroundUrl);
@@ -161,9 +202,21 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
       if (!loaded.ok) return fail(loaded);
       const forbidden = ownerGuard(loaded.data, userId());
       if (forbidden) return fail(forbidden);
+      let portraitUrl = portrait?.ok ? portrait.url : undefined;
+      let backgroundUrl = background?.ok ? background.url : undefined;
+      if (args.portraitData !== undefined) {
+        const uploaded = await uploadInput(userId(), args.portraitData, undefined, "portraits");
+        if (!uploaded.ok) return fail(uploaded);
+        portraitUrl = uploaded.url;
+      }
+      if (args.backgroundData !== undefined) {
+        const uploaded = await uploadInput(userId(), args.backgroundData, undefined, "backgrounds");
+        if (!uploaded.ok) return fail(uploaded);
+        backgroundUrl = uploaded.url;
+      }
       const details = detailsOf(loaded.data);
-      if (args.portraitUrl !== undefined && portrait?.ok) assignUrl(details, "image_url", portrait.url);
-      if (args.backgroundUrl !== undefined && background?.ok) assignUrl(details, "background_image_url", background.url);
+      if (args.portraitUrl !== undefined || args.portraitData !== undefined) assignUrl(details, "image_url", portraitUrl);
+      if (args.backgroundUrl !== undefined || args.backgroundData !== undefined) assignUrl(details, "background_image_url", backgroundUrl);
       const saved = await saveRow(userId(), loaded.data, { details });
       if (!saved.ok) return fail(saved);
       const next = detailsOf(saved.data);
@@ -279,17 +332,21 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
     "set_campaign_art",
     {
       title: "Campaign art",
-      description: "Sets the campaign image the campaign UI stores. imageUrl writes meta_data.image_url (http(s), or null or \"\" to clear). focusY writes meta_data.image_focus_y, clamped to 0–100 the way the sheet's focus slider does. There is no separate background field. Other meta_data keys are kept. Only the campaign owner (the GM, campaign.user_id) can write. Saves with create-campaign and the existing campaign id, the same call the campaign art picker uses.",
+      description: "Sets the campaign image the campaign UI stores. imageUrl writes meta_data.image_url (http(s), or null or \"\" to clear). imageData is base64 and is uploaded with upload-public-file in the backgrounds bucket, the same category the campaign art picker uses, then that URL is stored. focusY writes meta_data.image_focus_y, clamped to 0–100 the way the sheet's focus slider does. There is no separate background field. Other meta_data keys are kept. Only the campaign owner (the GM, campaign.user_id) can write. Saves with create-campaign and the existing campaign id, the same call the campaign art picker uses.",
       annotations: writes,
       inputSchema: {
         campaignId: z.number().int(),
         imageUrl: z.string().nullable().optional(),
+        imageData: z.string().optional(),
         focusY: z.number().optional(),
       },
     },
     async (args) => {
-      if (args.imageUrl === undefined && args.focusY === undefined) {
-        return textResult("Pass imageUrl and/or focusY.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      if (args.imageUrl === undefined && args.imageData === undefined && args.focusY === undefined) {
+        return textResult("Pass imageUrl, imageData, and/or focusY.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      }
+      if (args.imageUrl !== undefined && args.imageData !== undefined) {
+        return textResult("Pass imageUrl or imageData, not both.", { code: "VALIDATION_ERROR", retryable: false }, true);
       }
       const image = args.imageUrl === undefined ? null : imageUrl(args.imageUrl);
       if (args.imageUrl !== undefined && image && !image.ok) {
@@ -300,10 +357,16 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
       if (!sameUser(loaded.data.user_id, userId())) {
         return textResult("Only the campaign owner can write campaign art.", { code: "CAMPAIGN_FORBIDDEN", retryable: false }, true);
       }
+      let imageUrlValue = image?.ok ? image.url : undefined;
+      if (args.imageData !== undefined) {
+        const uploaded = await uploadInput(userId(), args.imageData, undefined, "backgrounds");
+        if (!uploaded.ok) return fail(uploaded);
+        imageUrlValue = uploaded.url;
+      }
       const meta = (loaded.data.meta_data && typeof loaded.data.meta_data === "object" && !Array.isArray(loaded.data.meta_data)
         ? structuredClone(loaded.data.meta_data)
         : {}) as Record<string, unknown>;
-      if (args.imageUrl !== undefined && image?.ok) meta.image_url = image.url ?? "";
+      if (args.imageUrl !== undefined || args.imageData !== undefined) meta.image_url = imageUrlValue ?? "";
       if (args.focusY !== undefined) meta.image_focus_y = clampFocus(args.focusY);
       // Stock WG has no update-campaign. The campaign UI upserts by posting the row to create-campaign.
       const saved = await invokeFunction(userId(), "create-campaign", { ...loaded.data, id: args.campaignId, meta_data: meta });

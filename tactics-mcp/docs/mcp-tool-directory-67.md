@@ -1,8 +1,8 @@
-# WGUI MCP tool directory (73 tools)
+# WGUI MCP tool directory (74 tools)
 
 Generated Nov 3, 2026 from the live `wgui` MCP server tool list, with scopes checked against `READ_TOOLS` / `WRITE_TOOLS` in `src/server.ts`.
 
-**73 tools: 41 require `read`, 32 require `write`.** `tools/list` returns every tool for any token; scope is enforced at call time. The 16 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (24), character (19), homebrew `wgui_ext_hb_*` (30). Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
+**74 tools: 41 require `read`, 33 require `write`.** `tools/list` returns every tool for any token; scope is enforced at call time. The 16 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (24), character (20), homebrew `wgui_ext_hb_*` (30). Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
 
 Common encounter params: `campaignId`, `encounterId`, and for per-combatant tools `combatantId`.
 
@@ -16,7 +16,7 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `get_campaign_owner_contacts` | read | Email/display name of owners the caller shares a campaign with (max 24 ids) | `userIds` |
 | `list_campaign_characters` | read | Campaign PC roster: id, name, level, ancestry, class | `campaignId` |
 | `get_campaign` | read | Campaign art: `meta_data.image_url` and `meta_data.image_focus_y` (no separate background; join key omitted) | `campaignId` |
-| `set_campaign_art` | write | Sets `meta_data.image_url` and/or `meta_data.image_focus_y`. Owner/GM only | `campaignId` (+ `imageUrl` or `focusY`) |
+| `set_campaign_art` | write | Sets `meta_data.image_url` and/or `meta_data.image_focus_y`. `imageData` uploads via `upload-public-file` (`backgrounds`) first. Owner/GM only | `campaignId` (+ `imageUrl`, `imageData`, or `focusY`) |
 | `list_encounters` | read · GM | Encounters: id, name, combatant count | `view`, `campaignId` |
 | `get_encounter` | read · GM | Name, round, difficulty, XP | `view`, `campaignId`, `encounterId` |
 | `list_pcs` | read · GM | PCs fighting, benched, or down, with current HP | `view`, `campaignId`, `encounterId` |
@@ -35,7 +35,7 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `get_character` | read · GM | PC inventory, notes, details, log | `view`, ids, `combatantId` |
 | `get_monster` | read · GM | Creature inventory, notes, details, log | `view`, ids, `combatantId` |
 
-## Character (19: 6 read, 13 write)
+## Character (20: 6 read, 14 write)
 
 | Tool | Scope | What it does / returns | Required params |
 | --- | --- | --- | --- |
@@ -45,7 +45,8 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `get_character_row` | read | Reads a character via find-character (`full` returns row). Summary includes `image_url` and `background_image_url` | none (`id`, `user_id`, `campaignId`) |
 | `get_character_notes` | read | `notes.pages` (name, icon, color, shared, contents, text) for the owner | `characterId` |
 | `set_character_notes` | write | Append or replace one `notes.pages` entry. Owner only | `characterId`, `mode` (`append`/`replace`), `text` |
-| `set_character_art` | write | Sets `details.image_url` (portrait) and/or `details.background_image_url`. Owner only | `characterId` (+ `portraitUrl` or `backgroundUrl`) |
+| `upload_image` | write | PNG/JPEG/WebP through `upload-public-file`. Returns `{ url }`. Category `portraits` or `backgrounds` | `category` (+ `data` or `sourceUrl`) |
+| `set_character_art` | write | Sets `details.image_url` (portrait) and/or `details.background_image_url`. `portraitData` / `backgroundData` upload first. Owner only | `characterId` (+ a URL or image data) |
 | `list_options` | read | One catalog read by `kind` (class, ancestry, spell, item, …) | `kind` |
 | `list_open_choices` | read | Unfilled builder selects with legal options | `characterId` |
 | `list_spell_options` | read | Legal spells for one casting source | `characterId` |

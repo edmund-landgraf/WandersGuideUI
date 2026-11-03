@@ -65,6 +65,7 @@ const WRITE_TOOLS = new Set([
   "add_inventory_item",
   "remove_inventory_item",
   "set_inventory_item",
+  "upload_image",
   "set_character_art",
   "set_character_notes",
   "set_campaign_art",
