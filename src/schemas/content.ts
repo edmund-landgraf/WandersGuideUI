@@ -1055,12 +1055,24 @@ export const InitiativeRoundLogEntrySchema = z.object({
 });
 export type InitiativeRoundLogEntry = z.infer<typeof InitiativeRoundLogEntrySchema>;
 
-export const InitiativeRoundLogSchema = z.object({
-  id: z.string().optional(),
-  round: z.number(),
-  entries: z.array(InitiativeRoundLogEntrySchema),
-});
+export const InitiativeRoundLogSchema = z
+  .object({
+    id: z.string().optional(),
+    /** Older logs. This counts initiative rolls, not combat rounds. */
+    round: z.number().optional(),
+    roll_batch: z.number().optional(),
+    entries: z.array(InitiativeRoundLogEntrySchema),
+  })
+  .refine((entry) => typeof entry.roll_batch === 'number' || typeof entry.round === 'number', {
+    message: 'An initiative log needs roll_batch or round.',
+  });
 export type InitiativeRoundLog = z.infer<typeof InitiativeRoundLogSchema>;
+
+/** Initiative-roll counter stored on a log row. New rows use roll_batch; older rows used round. */
+export function initiativeRollBatch(entry: { roll_batch?: number | null; round?: number | null } | null | undefined): number | null {
+  const value = entry?.roll_batch ?? entry?.round;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
 
 export const DiceRollOutcomeSchema = z.enum(['critical-success', 'success', 'failure', 'critical-failure']);
 export type DiceRollOutcome = z.infer<typeof DiceRollOutcomeSchema>;

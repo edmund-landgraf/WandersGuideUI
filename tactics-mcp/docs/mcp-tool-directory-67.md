@@ -23,10 +23,10 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `get_round_log` | read · GM | Round log lines | `view`, `campaignId`, `encounterId` |
 | `get_dice_log` | read · GM | Dice tray state and saved dice log | `view`, `campaignId`, `encounterId` |
 | `patch_encounter_dice` | write | Writes only dice tray (`diceRollState`) and/or dice log (`diceRollLog`) | `campaignId`, `encounterId` (+ one field) |
-| `add_encounter_combatant` | write · GM | GM adds one joined PC (`wgui-ext-add-encounter-character`) or one catalog/homebrew creature (`wgui-ext-add-encounter-creature`). `ally` is for creatures | `view`, `campaignId`, `encounterId`, and one id |
+| `add_encounter_combatant` | write · GM | GM adds one joined PC (`wgui-ext-add-encounter-character`) or one catalog/homebrew creature (`wgui-ext-add-encounter-creature`). The reply includes that character or creature name. `ally` is for creatures | `view`, `campaignId`, `encounterId`, and one id |
 | `remove_encounter_combatant` | write · GM | GM removes one PC, creature, or hazard via `wgui-ext-remove-encounter-combatant`. Does not delete the character or catalog row | `view`, `campaignId`, `encounterId`, `combatantId` |
 | `patch_encounter_combatant` | write · GM | GM sets initiative, current HP, temp HP, and/or conditions via `wgui-ext-patch-encounter-combatant` | `view`, ids, `combatantId`, and one field |
-| `roll_initiative` | write · GM | GM rolls d20 + bonus via `wgui-ext-roll-initiative`. `scope` `empty` fills blanks; `all` rerolls. A repeated `clientRequestId` does not roll again | `view`, `campaignId`, `encounterId` |
+| `roll_initiative` | write · GM | GM rolls d20 + bonus via `wgui-ext-roll-initiative`. Reply names use the character or creature name. `rollBatch` counts initiative logs (older logs stored this as `round`). `scope` `empty` fills blanks; `all` rerolls. A repeated `clientRequestId` does not roll again | `view`, `campaignId`, `encounterId` |
 | `get_stat_block` | read · GM | Current HP, defenses, senses, speeds, ability mods | `view`, ids, `combatantId` |
 | `list_ability_groups` | read · GM | Action groups with counts | `view`, ids, `combatantId` |
 | `get_abilities` | read · GM | One action group: name, cost, traits, description | `view`, ids, `combatantId`, `group` |

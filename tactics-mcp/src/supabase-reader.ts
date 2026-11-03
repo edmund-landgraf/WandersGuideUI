@@ -937,24 +937,40 @@ function storedPatch(patch: EncounterCombatantPatch): Json {
   return stored;
 }
 
+function rollBatchOf(entry: Json): number | null {
+  if (typeof entry.roll_batch === "number") return entry.roll_batch;
+  if (typeof entry.round === "number") return entry.round;
+  return null;
+}
+
 function rollResult(data: Json): InitiativeRollResult {
   const rolled = Array.isArray(data.rolled) ? data.rolled as Json[] : [];
   const entry = data.initiative_log_entry && typeof data.initiative_log_entry === "object" ? data.initiative_log_entry as Json : {};
+  const loggedNames = new Map<string, string>();
+  if (Array.isArray(entry.entries)) {
+    for (const row of entry.entries as Json[]) {
+      if (typeof row?.combatant_id === "string" && typeof row.name === "string" && row.name.trim() !== "") {
+        loggedNames.set(row.combatant_id, row.name);
+      }
+    }
+  }
   return {
     rolled: rolled.map((combatant) => {
       const roll = combatant.initiative_roll && typeof combatant.initiative_roll === "object" ? combatant.initiative_roll as Json : {};
       const entity = (combatant.creature ?? combatant.data ?? combatant.hazard) as Json | undefined;
-      const name = typeof entity?.name === "string" ? entity.name : "Combatant";
+      const id = typeof combatant._id === "string" ? combatant._id : "";
+      const logged = loggedNames.get(id);
+      const name = typeof entity?.name === "string" && entity.name.trim() !== "" ? entity.name : logged;
       return {
-        combatantId: typeof combatant._id === "string" ? combatant._id : "",
-        name,
+        combatantId: id,
+        name: typeof name === "string" && name.trim() !== "" ? name : "Combatant",
         initiative: typeof combatant.initiative === "number" ? combatant.initiative : null,
         die: typeof roll.die === "number" ? roll.die : null,
         bonus: typeof roll.bonus === "number" ? roll.bonus : null,
         source: typeof roll.source === "string" ? roll.source : null,
       };
     }),
-    round: typeof entry.round === "number" ? entry.round : null,
+    rollBatch: rollBatchOf(entry),
     encounterRevision: revisionFrom(data),
     idempotent: data.idempotent === true,
   };
@@ -1119,7 +1135,13 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
       if (!called.ok) return called;
       const combatant = called.data.combatant as Json | undefined;
       if (!combatant || typeof combatant !== "object") return fail("INTERNAL_ERROR", "The encounter function did not return a combatant.");
-      return { ok: true, data: combatantResult(combatant, revisionFrom(called.data)) };
+      const result = combatantResult(combatant, revisionFrom(called.data));
+      if (result.kind === "character" && !result.name && input.characterId != null) {
+        const rows = await rest(`character?id=eq.${input.characterId}&select=id,name`);
+        const name = rows[0]?.name;
+        if (typeof name === "string" && name.trim() !== "") result.name = name;
+      }
+      return { ok: true, data: result };
     },
     async removeEncounterCombatant(userId, campaignId, encounterId, combatantId, encounterRevisionInput) {
       const loaded = await gmEncounter(userId, campaignId, encounterId);

@@ -500,10 +500,10 @@ It never changes initiative, HP, conditions or the roster. Those are C6.
 ### C6. Roster and initiative (GM only, `view: "gm"`, `write` scope)
 
 1. `get_encounter` returns `encounterRevision`. Pass it on the next roster write when someone else might be editing the same fight. Omit it to use the revision at call time. A stale value returns `ENCOUNTER_REVISION_CONFLICT`; read again and retry.
-2. `add_encounter_combatant` with `characterId` (a PC from `list_campaign_characters` that is already in the campaign; calls `wgui-ext-add-encounter-character`) or `creatureId` (from `wgui_ext_hb_find_creature`; calls `wgui-ext-add-encounter-creature`). `ally` applies to creatures and defaults to false.
+2. `add_encounter_combatant` with `characterId` (a PC from `list_campaign_characters` that is already in the campaign; calls `wgui-ext-add-encounter-character`) or `creatureId` (from `wgui_ext_hb_find_creature`; calls `wgui-ext-add-encounter-creature`). The reply `name` is the character or creature name. `ally` applies to creatures and defaults to false.
 3. `list_combatants`, then `remove_encounter_combatant` with that combatant id (`wgui-ext-remove-encounter-combatant`). This drops the row from the fight. It does not delete the character or the catalog creature.
 4. `patch_encounter_combatant` (`wgui-ext-patch-encounter-combatant`) sets `initiative`, `hpCurrent`, `hpTemp`, and/or `conditions` on the encounter row. It does not edit the character sheet. A PC that was only linked by id has no encounter HP to edit until a snapshot exists; initiative still updates.
-5. `roll_initiative` (`wgui-ext-roll-initiative`) rolls a server d20 plus `bonus` (pass Perception). `scope` `empty` fills blanks; `all` rerolls the combatants you list. Omit `rolls` to roll every combatant at +0. Send `clientRequestId` if a retry must not roll a second time.
+5. `roll_initiative` (`wgui-ext-roll-initiative`) rolls a server d20 plus `bonus` (pass Perception). `scope` `empty` fills blanks; `all` rerolls the combatants you list. Omit `rolls` to roll every combatant at +0. Each rolled row uses the character or creature name. `rollBatch` counts how many times initiative has been logged; it is not the combat round. Older `initiative_log` rows stored that same counter as `round` and still read. Send `clientRequestId` if a retry must not roll a second time.
 
 > *Prompt:* "Add creature 501 as an enemy in encounter 7, roll initiative for everyone who doesn't have one, using Perception +5 for the new creature, then set it to 12 HP."
 

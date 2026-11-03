@@ -76,7 +76,8 @@ export type EncounterCombatantPatch = {
 
 export type InitiativeRollResult = {
   rolled: { combatantId: string; name: string; initiative: number | null; die: number | null; bonus: number | null; source: string | null }[];
-  round: number | null;
+  /** How many times initiative has been logged for this encounter. Not the combat round. */
+  rollBatch: number | null;
   encounterRevision: number;
   idempotent: boolean;
 };

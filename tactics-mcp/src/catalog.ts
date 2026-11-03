@@ -253,7 +253,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
 
   registerGmWrite(server, "roll_initiative", {
     title: "Roll initiative",
-    description: "GM rolls initiative via wgui-ext-roll-initiative. Each roll is a server d20 plus bonus (use the combatant's perception modifier; combatantIds and the roll-everyone shorthand use +0). scope empty fills combatants with no initiative; scope all rerolls the ones you list. A repeated clientRequestId returns the earlier log row and does not roll again. To set a number without rolling, use patch_encounter_combatant. Only the campaign GM.",
+    description: "GM rolls initiative via wgui-ext-roll-initiative. Each roll is a server d20 plus bonus (use the combatant's perception modifier; combatantIds and the roll-everyone shorthand use +0). scope empty fills combatants with no initiative; scope all rerolls the ones you list. The reply names each combatant and returns rollBatch, which counts initiative logs and is not the combat round. A repeated clientRequestId returns the earlier log row and does not roll again. To set a number without rolling, use patch_encounter_combatant. Only the campaign GM.",
     inputSchema: {
       ...ids,
       scope: z.enum(["empty", "all"]).optional().describe("empty (default) fills missing initiative. all rerolls the listed combatants."),

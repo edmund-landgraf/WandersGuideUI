@@ -1,6 +1,6 @@
 import { getHazardInitiativeModifier, isHazardCombatant } from '@utils/encounter-hazard';
 import { GiDiceTwentyFacesTwenty } from '@common/game-icons-inline';
-import type { Character, Combatant, Encounter, InitiativeRoundLog, InitiativeRoundLogEntry, LivingEntity } from '@schemas/content';
+import { initiativeRollBatch, type Character, type Combatant, type Encounter, type InitiativeRoundLog, type InitiativeRoundLogEntry, type LivingEntity } from '@schemas/content';
 import { sign } from '@utils/numbers';
 import { toLabel } from '@utils/strings';
 import { isCharacter, isCreature, isTruthy } from '@utils/type-fixing';
@@ -51,14 +51,14 @@ export function buildInitiativeRoundLog(
       combatant_id: combatant._id,
     };
   });
-  return { id: crypto.randomUUID(), round, entries };
+  return { id: crypto.randomUUID(), roll_batch: round, entries };
 }
 
 export function nextInitiativeRoundNumber(log: InitiativeRoundLog[] | undefined) {
   if (!log?.length) return 1;
-  const rounds = log.map((entry) => entry.round).filter((round) => Number.isFinite(round));
-  if (rounds.length === 0) return 1;
-  return Math.max(...rounds) + 1;
+  const batches = log.map((entry) => initiativeRollBatch(entry)).filter((batch): batch is number => batch !== null);
+  if (batches.length === 0) return 1;
+  return Math.max(...batches) + 1;
 }
 
 export function overlayInitiativeLogs(encounters: Encounter[], logs: ReadonlyMap<number, InitiativeRoundLog[]>): Encounter[] {
@@ -84,7 +84,7 @@ export function roundLogEntryMatchesCombatant(
 
 function sameRoundLog(a: InitiativeRoundLog, b: InitiativeRoundLog) {
   if (a.id && b.id) return a.id === b.id;
-  return a.round === b.round;
+  return initiativeRollBatch(a) === initiativeRollBatch(b);
 }
 
 function sameRoundLogEntry(a: InitiativeRoundLogEntry, b: InitiativeRoundLogEntry) {

@@ -87,6 +87,7 @@ test("encounter writes post the edge-function body and do not patch the encounte
     calls.push({ url, method, body, authorization: headers.get("authorization") ?? undefined });
     const json = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
     if (url.includes("/rest/v1/campaign")) return json([{ id: 1, user_id: "gm-1" }]);
+    if (url.includes("/rest/v1/character?id=eq.9")) return json([{ id: 9, name: "Valeros" }]);
     if (url.includes("/rest/v1/character?campaign_id")) return json(url.includes("user_id=eq.player-1") ? [{ id: 3 }] : []);
     if (url.includes("/rest/v1/encounter") && method === "GET") return json([encounter]);
     if (url.includes("/rest/v1/encounter") && method !== "GET") return json({ error: "encounter row must not be written here" }, 500);
@@ -104,11 +105,21 @@ test("encounter writes post the edge-function body and do not patch the encounte
     }
     if (url.endsWith("/functions/v1/wgui-ext-roll-initiative")) {
       const rolls = body?.rolls as { combatant_id: string; bonus: number }[];
+      const legacy = body?.client_request_id === "old-log";
       return json({
         status: "success",
         data: {
-          rolled: rolls.map((roll) => ({ _id: roll.combatant_id, initiative: 11 + roll.bonus, initiative_roll: { die: 11, bonus: roll.bonus, source: "Perception" }, creature: { name: "Goblin" } })),
-          initiative_log_entry: { id: "log-1", round: 2, entries: [] },
+          rolled: rolls.map((roll) => ({
+            _id: roll.combatant_id,
+            type: roll.combatant_id === "pc-1" ? "CHARACTER" : "CREATURE",
+            character: roll.combatant_id === "pc-1" ? 9 : undefined,
+            initiative: 11 + roll.bonus,
+            initiative_roll: { die: 11, bonus: roll.bonus, source: "Perception" },
+            ...(roll.combatant_id === "pc-1" ? {} : { creature: { name: "Goblin" } }),
+          })),
+          initiative_log_entry: legacy
+            ? { id: "log-old", round: 4, entries: [{ combatant_id: "pc-1", name: "Valeros" }] }
+            : { id: "log-1", roll_batch: 2, entries: [{ combatant_id: "pc-1", name: "Valeros" }] },
           encounter_revision: 5,
           idempotent: false,
         },
@@ -149,6 +160,7 @@ test("encounter writes post the edge-function body and do not patch the encounte
   if (!pc.ok) return;
   assert.equal(pc.data.kind, "character");
   assert.equal(pc.data.combatantId, "pc-2");
+  assert.equal(pc.data.name, "Valeros");
   const characterCall = calls.find((call) => call.url.endsWith("/functions/v1/wgui-ext-add-encounter-character"));
   assert.deepEqual(characterCall?.body, { campaign_id: 1, encounter_id: 2, character_id: 9, encounter_revision: 4 });
 
@@ -179,7 +191,13 @@ test("encounter writes post the edge-function body and do not patch the encounte
   assert.equal(rolled.ok, true);
   if (!rolled.ok) return;
   assert.equal(rolled.data.rolled[0].initiative, 11);
-  assert.equal(rolled.data.round, 2);
+  assert.equal(rolled.data.rolled[0].name, "Goblin");
+  assert.equal(rolled.data.rollBatch, 2);
+  const pcRoll = await reader.rollInitiative("gm-1", 1, 2, { scope: "all", rolls: [{ combatantId: "pc-1", bonus: 3, source: "Perception" }], clientRequestId: "old-log" });
+  assert.equal(pcRoll.ok, true);
+  if (!pcRoll.ok) return;
+  assert.equal(pcRoll.data.rolled[0].name, "Valeros");
+  assert.equal(pcRoll.data.rollBatch, 4);
   const rollCall = calls.find((call) => call.url.endsWith("/functions/v1/wgui-ext-roll-initiative"));
   assert.deepEqual(rollCall?.body, {
     campaign_id: 1,

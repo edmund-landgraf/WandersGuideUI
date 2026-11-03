@@ -3,7 +3,7 @@ import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Chec
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
-import type { AmbaChallengeTable, Campaign, Character, Combatant, Condition, Creature, DiceCheckResult, DiceRollLog, DiceRollLogEntry, DiceRollSide, DiceRollState, Encounter, Hazard, InitiativeRoundLog, InitiativeRoundLogEntry, LivingEntity } from '@schemas/content';
+import { initiativeRollBatch, type AmbaChallengeTable, type Campaign, type Character, type Combatant, type Condition, type Creature, type DiceCheckResult, type DiceRollLog, type DiceRollLogEntry, type DiceRollSide, type DiceRollState, type Encounter, type Hazard, type InitiativeRoundLog, type InitiativeRoundLogEntry, type LivingEntity } from '@schemas/content';
 import { CampaignSignIn } from '@auth/CampaignSignIn';
 import { signOut } from '@auth/campaign-auth';
 import { useAuthSession } from '@auth/useAuthSession';
@@ -6115,8 +6115,8 @@ function InitiativeRoundLogPanel({ log, canEdit, canClear, onClear, onUpdateNote
         />
       )}
       {open && rounds.map((round, index) => (
-        <div key={round.id ?? `${round.round}-${index}`} className='border-b border-p1-border px-4 py-3 last:border-0'>
-          <h3 className='mb-2 text-[10px] font-semibold uppercase tracking-wide text-p1-accent'>Round {round.round}</h3>
+        <div key={round.id ?? `${initiativeRollBatch(round) ?? index}-${index}`} className='border-b border-p1-border px-4 py-3 last:border-0'>
+          <h3 className='mb-2 text-[10px] font-semibold uppercase tracking-wide text-p1-accent'>Roll {initiativeRollBatch(round) ?? '?'}</h3>
           <div className='overflow-x-auto'>
             <table className='w-full min-w-[820px] border-collapse text-xs'>
               <thead className='text-[10px] uppercase text-p1-faint'>
@@ -6130,7 +6130,7 @@ function InitiativeRoundLogPanel({ log, canEdit, canClear, onClear, onUpdateNote
               </thead>
               <tbody>
                 {sortRoundLogEntries(round.entries).map((entry, entryIndex) => (
-                  <tr key={`${round.id ?? round.round}-${entry.combatant_id ?? entry.name}-${entryIndex}`} className='border-b border-p1-border last:border-0'>
+                  <tr key={`${round.id ?? initiativeRollBatch(round) ?? index}-${entry.combatant_id ?? entry.name}-${entryIndex}`} className='border-b border-p1-border last:border-0'>
                     <td className='px-2 py-2 font-medium text-p1-text'>{entry.name}</td>
                     <td className='px-2 py-2 text-p1-muted'>{entry.ally ? 'Ally' : 'Enemy'}</td>
                     <td className='px-2 py-2 text-p1-text'>{entry.initiative ?? ''}</td>

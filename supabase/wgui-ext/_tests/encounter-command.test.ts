@@ -217,6 +217,10 @@ Deno.test({
       assertEquals(rolled.body.data.rolled[0].initiative, rolled.body.data.rolled[0].initiative_roll.die + 4);
       assertEquals(rolled.body.data.encounter_revision, 1);
       assertEquals(rolled.body.data.initiative_log_entry.entries.length, 3);
+      assertEquals(rolled.body.data.initiative_log_entry.roll_batch, 1);
+      assertEquals(rolled.body.data.initiative_log_entry.round, undefined);
+      const pcEntry = rolled.body.data.initiative_log_entry.entries.find((entry: { calculation?: string }) => entry.calculation === 'Skipped');
+      assertEquals(pcEntry?.name, 'wgui-command-character');
 
       const retry = await call('wgui-ext-roll-initiative', {
         campaign_id: camp.id,
