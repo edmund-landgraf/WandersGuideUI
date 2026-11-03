@@ -47,17 +47,46 @@ function withoutJoinKey(row: CharacterRow) {
   return rest;
 }
 
-function campaignSummary(row: CharacterRow) {
+function focusStored(value: unknown): number | string | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) return value;
+  return null;
+}
+
+function campaignSummary(row: CharacterRow, userId: string) {
   const meta = asRecord(row.meta_data);
+  const image = typeof meta?.image_url === "string" && meta.image_url.trim() ? meta.image_url : null;
   return {
-    id: row.id,
-    name: row.name ?? null,
+    id: Number(row.id),
+    name: typeof row.name === "string" ? row.name : null,
+    image_url: image,
+    image_focus_y: focusStored(meta?.image_focus_y),
+    isOwner: sameUser(row.user_id, userId),
     description: row.description ?? null,
     notes: row.notes ?? null,
     meta_data: row.meta_data ?? null,
-    image_url: meta?.image_url ?? null,
-    image_focus_y: meta?.image_focus_y ?? null,
     created_at: row.created_at ?? null,
+  };
+}
+
+const TEXT_STRING_CAP = 120;
+
+function capStrings(value: unknown, max = TEXT_STRING_CAP): unknown {
+  if (typeof value === "string") return value.length > max ? `${value.slice(0, max)}…` : value;
+  if (Array.isArray(value)) return value.map((item) => capStrings(item, max));
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) out[key] = capStrings(item, max);
+    return out;
+  }
+  return value;
+}
+
+function listed(text: string, structuredContent: Record<string, unknown>) {
+  const visible = `${text}\n${JSON.stringify(capStrings(structuredContent))}`;
+  return {
+    content: [{ type: "text" as const, text: visible }],
+    structuredContent,
   };
 }
 
@@ -134,9 +163,9 @@ export function registerCampaignWrites(server: McpServer, userId: () => string) 
       try {
         const found = await invokeFunction(userId(), "find-campaign", { user_id: userId() });
         if (!found.ok) return fail(found);
-        const campaigns = rowsOf(found.data).filter((row) => sameUser(row.user_id, userId())).map((row) => campaignSummary(withoutJoinKey(row)));
+        const campaigns = rowsOf(found.data).filter((row) => sameUser(row.user_id, userId())).map((row) => campaignSummary(withoutJoinKey(row), userId()));
         const lines = campaigns.map((row) => `${row.id}\t${row.name ?? ""}`);
-        return textResult(lines.length ? `Campaigns.\n${lines.join("\n")}` : "No campaigns.", { campaigns });
+        return listed(lines.length ? `Campaigns.\n${lines.join("\n")}` : "No campaigns.", { campaigns });
       } catch (error) {
         return thrown(error);
       }
@@ -147,16 +176,18 @@ export function registerCampaignWrites(server: McpServer, userId: () => string) 
     "get_campaign",
     {
       title: "Get campaign",
-      description: "One campaign this account owns, via find-campaign({ id }). Join keys are omitted. Refuses campaigns owned by someone else.",
+      description: "One campaign find-campaign returns to the caller. Same art fields as the campaign art tool (image_url, image_focus_y, isOwner) plus description, notes, and meta_data. A blank image_url is null. A missing image_focus_y is null (the sheet displays that as 30). Join keys are omitted. A campaign the caller cannot see is NOT_FOUND. Writes still require ownership.",
       annotations: readOnly,
       inputSchema: { campaignId: z.number().int() },
     },
     async (args) => {
       try {
-        const loaded = await loadCampaign(userId(), Number(args.campaignId));
-        if (!loaded.ok) return fail(loaded);
-        const campaign = campaignSummary(withoutJoinKey(loaded.data as CharacterRow));
-        return textResult(String(campaign.name ?? "Campaign"), { campaign });
+        const found = await invokeFunction(userId(), "find-campaign", { id: Number(args.campaignId) });
+        if (!found.ok) return fail(found);
+        const row = firstRow(found.data);
+        if (!row || Number(row.id) !== Number(args.campaignId)) return textResult("Campaign not found.", { code: "NOT_FOUND", retryable: false }, true);
+        const campaign = campaignSummary(withoutJoinKey(row), userId());
+        return textResult(campaign.name ?? "Campaign", campaign);
       } catch (error) {
         return thrown(error);
       }
@@ -192,7 +223,7 @@ export function registerCampaignWrites(server: McpServer, userId: () => string) 
         if (!created.ok) return fail(created);
         const row = firstRow(created.data);
         if (!row) return textResult("create-campaign did not return a campaign.", { code: "INTERNAL_ERROR", retryable: false }, true);
-        return textResult(String(row.name ?? "Campaign"), { campaign: campaignSummary(withoutJoinKey(row)) });
+        return textResult(String(row.name ?? "Campaign"), { campaign: campaignSummary(withoutJoinKey(row), userId()) });
       } catch (error) {
         return thrown(error);
       }
@@ -225,7 +256,7 @@ export function registerCampaignWrites(server: McpServer, userId: () => string) 
         if (args.meta_data !== undefined) next.meta_data = mergeObject(current.meta_data, args.meta_data);
         const saved = await saveCampaign(userId(), next);
         if (!saved.ok) return fail(saved);
-        return textResult("Campaign updated.", { campaign: campaignSummary(withoutJoinKey(saved.data)) });
+        return textResult("Campaign updated.", { campaign: campaignSummary(withoutJoinKey(saved.data), userId()) });
       } catch (error) {
         return thrown(error);
       }
@@ -278,7 +309,7 @@ export function registerCampaignWrites(server: McpServer, userId: () => string) 
     "update_encounter",
     {
       title: "Update encounter",
-      description: "Updates name, description, and/or meta_data on an encounter this account owns. meta_data is merged so dice logs and other keys stay unless you send a replacement. Posts the existing row to create-encounter. Does not change campaign_id; use set_encounter_campaign to attach or detach.",
+      description: "Updates name, description, and/or meta_data on an encounter this account owns. Description is stored on meta_data.description. The encounter table has no notes column, so there is no notes argument. meta_data is merged so dice logs and other keys stay unless you send a replacement. Posts the existing row to create-encounter. Does not change campaign_id; use set_encounter_campaign to attach or detach. An encounter the caller cannot see is NOT_FOUND because find-encounter hides it.",
       annotations: writes,
       inputSchema: {
         encounterId: z.number().int(),

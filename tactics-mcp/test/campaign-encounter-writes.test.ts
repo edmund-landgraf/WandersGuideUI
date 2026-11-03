@@ -96,18 +96,32 @@ test("campaign and encounter tools create, merge meta_data, attach, detach, and 
 
   const { client, server } = await connectedClient();
 
+  const longArt = `https://example.test/${"a".repeat(400)}.png`;
+  campaign.meta_data = { ...(campaign.meta_data as object), image_url: longArt };
   const listed = await client.callTool({ name: "list_campaigns", arguments: {} });
   assert.equal(listed.isError, undefined);
   assert.match(JSON.stringify(listed.structuredContent), /My Campaign/);
+  assert.equal((listed.structuredContent?.campaigns as { image_url?: string }[])[0].image_url, longArt);
+  const listedText = String((listed.content?.[0] as { text?: string } | undefined)?.text ?? "");
+  assert.equal(listedText.includes(longArt), false);
+  assert.match(listedText, /https:\/\/example\.test\/a+…/);
   assert.equal(JSON.stringify(listed.structuredContent).includes("secret-key"), false);
+  campaign.meta_data = { image_url: "https://example.test/art.png", settings: { players_manage_party: true } };
 
   const got = await client.callTool({ name: "get_campaign", arguments: { campaignId: 10 } });
   assert.equal(got.isError, undefined);
   assert.equal(JSON.stringify(got.structuredContent).includes("secret-key"), false);
 
-  const forbiddenCampaign = await client.callTool({ name: "get_campaign", arguments: { campaignId: 99 } });
-  assert.equal(forbiddenCampaign.isError, true);
-  assert.equal(forbiddenCampaign.structuredContent?.code, "CAMPAIGN_FORBIDDEN");
+  const otherVisible = await client.callTool({ name: "get_campaign", arguments: { campaignId: 99 } });
+  assert.equal(otherVisible.isError, undefined);
+  assert.equal(otherVisible.structuredContent?.isOwner, false);
+  assert.equal(otherVisible.structuredContent?.image_url, "https://example.test/art.png");
+  assert.equal(otherVisible.structuredContent?.image_focus_y, null);
+  assert.equal(JSON.stringify(otherVisible.structuredContent).includes("nope"), false);
+
+  const missing = await client.callTool({ name: "get_campaign", arguments: { campaignId: 404 } });
+  assert.equal(missing.isError, true);
+  assert.equal(missing.structuredContent?.code, "NOT_FOUND");
 
   const createdCampaign = await client.callTool({
     name: "create_campaign",
@@ -171,6 +185,10 @@ test("campaign and encounter tools create, merge meta_data, attach, detach, and 
   assert.equal(detached.isError, undefined);
   const detachCall = calls.filter((item) => item.url.endsWith("/create-encounter") && item.body.id === 20).at(-1);
   assert.equal(detachCall?.body.campaign_id, null);
+
+  const hiddenEncounter = await client.callTool({ name: "update_encounter", arguments: { encounterId: 404, name: "Missing" } });
+  assert.equal(hiddenEncounter.isError, true);
+  assert.equal(hiddenEncounter.structuredContent?.code, "NOT_FOUND");
 
   const forbiddenEncounter = await client.callTool({ name: "update_encounter", arguments: { encounterId: 21, name: "Stolen" } });
   assert.equal(forbiddenEncounter.isError, true);
