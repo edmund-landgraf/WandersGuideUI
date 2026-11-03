@@ -1,6 +1,6 @@
 # Controlling Wanderer's Guide from an MCP client
 
-*A guide to the `wgui` (tactics-mcp) server: self-hosting it beside your own Wanderer's Guide stack, connecting clients, and using the 67 tools safely.*
+*A guide to the `wgui` (tactics-mcp) server: self-hosting it beside your own Wanderer's Guide stack, connecting clients, and using the 71 tools safely.*
 
 Written Nov 3, 2026. Every step comes from the repo on DAEDALUS (`D:\repos\WanderersGuideUI\tactics-mcp`, `D:\repos\WanderersGuideUI`, `D:\repos\wanderers-guide`) or from the live production server. Anything that isn't specific to this repo is labelled **general MCP client config**. The last section lists what couldn't be verified.
 
@@ -23,7 +23,7 @@ WGUI campaign UI (vite app, PM2 "wgui")   +   WG character builder/sheet
 - **What it is:** `tactics-mcp` is the MCP server inside the WanderersGuideUI repo (package name `tactics-mcp`, server name `wgui-tactics`). It describes itself as "Encounter and character data for the GM. Mostly read-only, with scoped writes."
 - **It's separate from AMBA.** Don't point WG clients at AMBA's bridge.
 - **Production:** `https://wgui.wandersguide.site/mcp`. PM2 runs it as `wgui-mcp` from the `tactics-mcp` folder on port 3104. The campaign UI itself runs as the PM2 process `wgui`.
-- **Tools:** there are 67: 39 need the `read` scope and 28 need `write`. 16 of them are encounter tools that require `view: "gm"`. The full list is in the Appendix and in `docs/mcp-tool-directory-67.md`.
+- **Tools:** there are 71: 39 need the `read` scope and 32 need `write`. 20 of them are encounter tools that require `view: "gm"`. The full list is in the Appendix and in `docs/mcp-tool-directory-67.md`.
 - **Two transports:**
   - Streamable HTTP at `/mcp`, from `src/http.ts`.
   - stdio, with two entry points: `src/grokbotBridge.ts` (stdio to a remote HTTP server) and `src/localStdio.ts` (an in-process stdio server for local testing).
@@ -379,7 +379,7 @@ On prod, Apache 2.4 terminates TLS with a Let's Encrypt (certbot) certificate. P
 1. `curl http://127.0.0.1:3104/health` on the server (publicly, `/health` is only reachable if you proxy it; see A7)
 2. `curl https://your-host/.well-known/oauth-authorization-server`. Expect `scopes_supported` to be `["read","write"]`.
 3. `curl -i -X POST https://your-host/mcp`. Expect a 401 with the `WWW-Authenticate` header.
-4. With a token, send `tools/list` and expect **67 tools**. `tools/list` shows every tool to any token; scope is only checked when a tool is called.
+4. With a token, send `tools/list` and expect **71 tools**. `tools/list` shows every tool to any token; scope is only checked when a tool is called.
 5. Call `get_profile`, which should return your Supabase user id. Then try a read such as `list_campaign_characters`.
 6. Check that a read-only token gets `AUTH_REQUIRED` ("MCP token missing scope write for …") on a write tool.
 7. Run `npm run smoke` locally for the full scripted check.
@@ -486,16 +486,26 @@ Run `join_campaign` with `characterId` and the GM's `joinKey`. **Never echo the 
 4. `wgui_ext_hb_delete_content` (`id`, `type: "creature"`) removes it. This is destructive, so confirm first.
 5. Use `wgui_ext_hb_create_content_update` to propose a change to existing content. It creates a PENDING proposal.
 
-These creatures go into the homebrew catalog. **They can't be added to an encounter through MCP** (see section 4).
+These creatures go into the homebrew catalog. To put one in a fight, call `add_encounter_combatant` with that creature's numeric `id` as `creatureId` (see C6).
 
 ### C5. Dice log
 
 1. `get_dice_log` to read the tray and log.
 2. `patch_encounter_dice` with the **full** `diceRollLog` you want to keep and/or `diceRollState`. A GM's write replaces whatever fields are sent. Players may only add, edit or drop rows they started.
 
-It never changes initiative, HP, conditions or the roster.
+It never changes initiative, HP, conditions or the roster. Those are C6.
 
 > *Prompt:* "Read the dice log for encounter 7, then add a row 'Perception vs DC 20' with Valeros 1d20+7 = 22, keeping all existing rows."
+
+### C6. Roster and initiative (GM only, `view: "gm"`, `write` scope)
+
+1. `get_encounter` returns `encounterRevision`. Pass it on the next roster write when someone else might be editing the same fight. Omit it to use the revision at call time. A stale value returns `ENCOUNTER_REVISION_CONFLICT`; read again and retry.
+2. `add_encounter_combatant` with `characterId` (a PC from `list_campaign_characters` that is already in the campaign; calls `wgui-ext-add-encounter-character`) or `creatureId` (from `wgui_ext_hb_find_creature`; calls `wgui-ext-add-encounter-creature`). `ally` applies to creatures and defaults to false.
+3. `list_combatants`, then `remove_encounter_combatant` with that combatant id (`wgui-ext-remove-encounter-combatant`). This drops the row from the fight. It does not delete the character or the catalog creature.
+4. `patch_encounter_combatant` (`wgui-ext-patch-encounter-combatant`) sets `initiative`, `hpCurrent`, `hpTemp`, and/or `conditions` on the encounter row. It does not edit the character sheet. A PC that was only linked by id has no encounter HP to edit until a snapshot exists; initiative still updates.
+5. `roll_initiative` (`wgui-ext-roll-initiative`) rolls a server d20 plus `bonus` (pass Perception). `scope` `empty` fills blanks; `all` rerolls the combatants you list. Omit `rolls` to roll every combatant at +0. Send `clientRequestId` if a retry must not roll a second time.
+
+> *Prompt:* "Add creature 501 as an enemy in encounter 7, roll initiative for everyone who doesn't have one, using Perception +5 for the new creature, then set it to 12 HP."
 
 ---
 
@@ -532,17 +542,16 @@ No tool exists today for:
 - **Character notes:** no standalone notes tool. `get_character` returns notes read-only, GM view.
 - **Companions:** `choose` can pick a companion feat, but nothing creates or edits the companion.
 - **Equip, invest or wield:** `add_inventory_item` has no equipped or invested flag.
-- **Creatures in an encounter:** nothing adds or removes combatants. The only encounter write is `patch_encounter_dice`.
-- **Initiative:** `list_combatants` reads it; nothing rolls it or writes it.
 
 Each of these would need a new server tool.
 
-## Appendix: tool reference (67)
+## Appendix: tool reference (71)
 
-**Campaign, encounter and combat (22).**
+**Campaign, encounter and combat (26).**
 - Read: `get_profile`, `get_campaign_owner_contacts`, `list_campaign_characters`.
 - Read, GM view: `list_encounters`, `get_encounter`, `list_pcs`, `list_combatants`, `list_roster_edges`, `get_round_log`, `get_dice_log`, `get_stat_block`, `list_ability_groups`, `get_abilities`, `get_feats`, `get_class_features`, `get_skills`, `get_spells`, `get_character`, `get_monster`.
 - Write: `ensure_public_user`, `join_campaign`, `patch_encounter_dice`.
+- Write, GM view: `add_encounter_combatant`, `remove_encounter_combatant`, `patch_encounter_combatant`, `roll_initiative`.
 
 **Character (15).**
 - Read: `export_character`, `get_character_row`, `list_options`, `list_open_choices`, `list_spell_options`.

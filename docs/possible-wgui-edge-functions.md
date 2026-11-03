@@ -111,8 +111,10 @@ No new function should modify stock find-encounter, find-character, create-encou
 The first Phase 2/3 command set now exists under supabase/wgui-ext/:
 
 - wgui-ext-patch-encounter-combatant patches one stored combatant by _id. It supports initiative and encounter-row HP, temp HP, and conditions for a GM. It does not write global character state.
-- wgui-ext-add-encounter-character adds a joined campaign character with a fresh combatant _id. It rejects characters outside the campaign and duplicate assignment.
+- wgui-ext-add-encounter-character adds a joined campaign character with a fresh combatant _id. It rejects characters outside the campaign and duplicate assignment. It does not add creatures.
+- wgui-ext-add-encounter-creature adds one catalog or homebrew creature row by id. It was added because no earlier function did this. The MCP `add_encounter_combatant` tool calls it. There is no campaign-UI caller yet.
 - wgui-ext-remove-encounter-character removes a CHARACTER combatant by _id. It rejects creature targets so the command cannot silently become a generic encounter delete.
+- wgui-ext-remove-encounter-combatant removes one CHARACTER, CREATURE, or HAZARD by `_id`. It was added because the character-only function rejects creatures. The MCP `remove_encounter_combatant` tool calls this one, not the character-only function.
 
 - wgui-ext-roll-initiative rolls d20 on the server for the GM. scope empty fills missing initiative only; scope all rerolls the listed combatants. It appends one initiative_log row and bumps encounter_revision. A repeated client_request_id returns the existing log row. Tie order stays a client sort. Player hiding of enemy results stays in React.
 

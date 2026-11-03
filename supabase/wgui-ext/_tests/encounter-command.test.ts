@@ -242,3 +242,95 @@ Deno.test({
     }
   },
 });
+
+Deno.test({
+  name: 'wgui-ext-add-encounter-creature and wgui-ext-remove-encounter-combatant are GM-only; the PC remove still rejects creatures',
+  ignore: skip,
+  async fn() {
+    const gm = await user();
+    const player = await user();
+    const camp = await campaign(gm.id);
+    const creatureCombatantId = crypto.randomUUID();
+    const source = await admin.from('content_source').select('id').limit(1).maybeSingle();
+    const creatureInsert = await admin.from('creature').insert({
+      name: 'Goblin',
+      level: -1,
+      hp_current: 0,
+      hp_temp: 0,
+      ...(source.data?.id ? { content_source_id: source.data.id } : {}),
+      operations: [{ data: { variable: 'MAX_HEALTH_BONUS', value: 16 } }],
+      details: { description: 'test', conditions: [] },
+    }).select('id').single();
+    if (creatureInsert.error || !creatureInsert.data) {
+      throw creatureInsert.error ?? new Error('creature seed failed');
+    }
+    const creatureRowId = creatureInsert.data.id as number;
+
+    const encounterResult = await admin.from('encounter').insert({
+      user_id: gm.id,
+      campaign_id: camp.id,
+      name: 'wgui-creature-encounter',
+      meta_data: { party_level: 1, party_size: 0 },
+      combatants: {
+        list: [{
+          _id: creatureCombatantId,
+          type: 'CREATURE',
+          ally: false,
+          creature: { id: creatureRowId, name: 'Goblin', hp_current: 10 },
+        }],
+      },
+    }).select().single();
+    if (encounterResult.error || !encounterResult.data) throw encounterResult.error ?? new Error('encounter seed failed');
+    const encounter = encounterResult.data;
+
+    try {
+      const stillCharacterOnly = await call('wgui-ext-remove-encounter-character', {
+        campaign_id: camp.id,
+        encounter_id: encounter.id,
+        combatant_id: creatureCombatantId,
+        encounter_revision: 0,
+      }, gm.jwt);
+      assertEquals(stillCharacterOnly.status, 400);
+      assertEquals(stillCharacterOnly.body.code, 'CHARACTER_COMBATANT_REQUIRED');
+
+      const playerRemove = await call('wgui-ext-remove-encounter-combatant', {
+        campaign_id: camp.id,
+        encounter_id: encounter.id,
+        combatant_id: creatureCombatantId,
+        encounter_revision: 0,
+      }, player.jwt);
+      assertEquals(playerRemove.status, 403);
+      assertEquals(playerRemove.body.code, 'GM_REQUIRED');
+
+      const added = await call('wgui-ext-add-encounter-creature', {
+        campaign_id: camp.id,
+        encounter_id: encounter.id,
+        creature_id: creatureRowId,
+        ally: false,
+        encounter_revision: 0,
+      }, gm.jwt);
+      assertEquals(added.status, 200);
+      assertEquals(added.body.status, 'success');
+      assertEquals(added.body.data.combatant.type, 'CREATURE');
+      assertEquals(added.body.data.combatant.creature.name, 'Goblin (2)');
+      assertEquals(added.body.data.combatant.creature.hp_current, 16);
+      assertEquals(added.body.data.encounter_revision, 1);
+
+      const removed = await call('wgui-ext-remove-encounter-combatant', {
+        campaign_id: camp.id,
+        encounter_id: encounter.id,
+        combatant_id: added.body.data.combatant._id,
+        encounter_revision: 1,
+      }, gm.jwt);
+      assertEquals(removed.status, 200);
+      assertEquals(removed.body.data.removed_combatant_id, added.body.data.combatant._id);
+      assertEquals(removed.body.data.encounter_revision, 2);
+    } finally {
+      await admin.from('encounter').delete().eq('id', encounter.id);
+      await admin.from('creature').delete().eq('id', creatureRowId);
+      await admin.from('campaign').delete().eq('id', camp.id);
+      await admin.auth.admin.deleteUser(gm.id);
+      await admin.auth.admin.deleteUser(player.id);
+    }
+  },
+});
