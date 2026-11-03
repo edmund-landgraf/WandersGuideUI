@@ -36,7 +36,7 @@ test("campaign and encounter tools create, merge meta_data, attach, detach, and 
     notes: { pages: [] },
     meta_data: { image_url: "https://example.test/art.png", settings: { players_manage_party: true } },
   };
-  const otherCampaign = { ...campaign, id: 99, user_id: "someone-else", join_key: "nope" };
+  const otherCampaign = { ...campaign, id: 99, user_id: "someone-else", join_key: "nope", description: "SECRET-CAMPAIGN-BODY", name: "Not yours" };
   let encounter: Record<string, unknown> = {
     id: 20,
     user_id: "user-1",
@@ -113,11 +113,12 @@ test("campaign and encounter tools create, merge meta_data, attach, detach, and 
   assert.equal(JSON.stringify(got.structuredContent).includes("secret-key"), false);
 
   const otherVisible = await client.callTool({ name: "get_campaign", arguments: { campaignId: 99 } });
-  assert.equal(otherVisible.isError, undefined);
-  assert.equal(otherVisible.structuredContent?.isOwner, false);
-  assert.equal(otherVisible.structuredContent?.image_url, "https://example.test/art.png");
-  assert.equal(otherVisible.structuredContent?.image_focus_y, null);
-  assert.equal(JSON.stringify(otherVisible.structuredContent).includes("nope"), false);
+  assert.equal(otherVisible.isError, true);
+  assert.equal(otherVisible.structuredContent?.code, "CAMPAIGN_FORBIDDEN");
+  const otherText = JSON.stringify(otherVisible);
+  assert.equal(otherText.includes("SECRET-CAMPAIGN-BODY"), false);
+  assert.equal(otherText.includes("nope"), false);
+  assert.equal(otherText.includes("Not yours"), false);
 
   const missing = await client.callTool({ name: "get_campaign", arguments: { campaignId: 404 } });
   assert.equal(missing.isError, true);

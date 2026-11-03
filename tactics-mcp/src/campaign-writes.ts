@@ -176,17 +176,15 @@ export function registerCampaignWrites(server: McpServer, userId: () => string) 
     "get_campaign",
     {
       title: "Get campaign",
-      description: "One campaign find-campaign returns to the caller. Same art fields as the campaign art tool (image_url, image_focus_y, isOwner) plus description, notes, and meta_data. A blank image_url is null. A missing image_focus_y is null (the sheet displays that as 30). Join keys are omitted. A campaign the caller cannot see is NOT_FOUND. Writes still require ownership.",
+      description: "One campaign this account owns, via find-campaign({ id }). Same art fields as the campaign art tool (image_url, image_focus_y, isOwner) plus description, notes, and meta_data. A blank image_url is null. A missing image_focus_y is null (the sheet displays that as 30). Join keys are omitted. A missing campaign is NOT_FOUND. A campaign owned by someone else is CAMPAIGN_FORBIDDEN, including when find-campaign still returns the row. PR #20's get_campaign did not grant access to campaign members; this tool stays owner-only.",
       annotations: readOnly,
       inputSchema: { campaignId: z.number().int() },
     },
     async (args) => {
       try {
-        const found = await invokeFunction(userId(), "find-campaign", { id: Number(args.campaignId) });
-        if (!found.ok) return fail(found);
-        const row = firstRow(found.data);
-        if (!row || Number(row.id) !== Number(args.campaignId)) return textResult("Campaign not found.", { code: "NOT_FOUND", retryable: false }, true);
-        const campaign = campaignSummary(withoutJoinKey(row), userId());
+        const loaded = await loadCampaign(userId(), Number(args.campaignId));
+        if (!loaded.ok) return fail(loaded);
+        const campaign = campaignSummary(withoutJoinKey(loaded.data as CharacterRow), userId());
         return textResult(campaign.name ?? "Campaign", campaign);
       } catch (error) {
         return thrown(error);

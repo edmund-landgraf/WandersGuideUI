@@ -94,7 +94,9 @@ Create tools upsert: a `record` with `id` updates, omit `id` (or -1) to insert. 
 
 These tools call stock Wanderer's Guide functions (`find-campaign`, `create-campaign`, `find-encounter`, `create-encounter`). There is no `update-campaign` or `update-encounter`; updates POST the existing row to the matching `create-*` function. No new `wgui-ext-*` functions. No delete tools. Join keys are never returned.
 
-Stock `find-encounter` is owner-only, so another user's encounter comes back empty and these tools return `NOT_FOUND`. `ENCOUNTER_FORBIDDEN` is only used when a row is actually returned and `user_id` is not the caller. Campaign writes use `CAMPAIGN_FORBIDDEN` the same way. `get_campaign` returns any campaign `find-campaign` hands back, with `isOwner`.
+Stock `find-encounter` is owner-only, so another user's encounter comes back empty and these tools return `NOT_FOUND`. `ENCOUNTER_FORBIDDEN` is only used when a row is actually returned and `user_id` is not the caller. Campaign writes use `CAMPAIGN_FORBIDDEN` the same way.
+
+`get_campaign` is owner-only. Stock `find-campaign` can still return another user's campaign, and this tool answers `CAMPAIGN_FORBIDDEN` in that case (it does not return the row with `isOwner: false`). PR #20's `get_campaign` did not allow campaign members either; a character in the campaign is not enough. A missing campaign is `NOT_FOUND`. `isOwner` on a successful read is true.
 
 `get_campaign` is the same tool name as PR #20. This result is a superset of that art payload: `id`, `name`, `image_url` (null when blank), `image_focus_y` (null when unset), `isOwner`, plus `description`, `notes`, `meta_data`, and `created_at`. When merging #20, keep this registration and delete the `get_campaign` block in that branch's `character-sheet.ts`. Leave `set_campaign_art` there.
 
@@ -105,7 +107,7 @@ The encounter table has no `notes` column (`EncounterSchema` is name, icon, colo
 | Tool | Scope | What it does / returns | Required params |
 | --- | --- | --- | --- |
 | `list_campaigns` | read | Campaigns the caller owns (`find-campaign` `{ user_id }`) | none |
-| `get_campaign` | read | Campaign `find-campaign` returns, including art fields `image_url`, `image_focus_y`, `isOwner` | `campaignId` |
+| `get_campaign` | read | One campaign the caller owns, including art fields `image_url`, `image_focus_y`, `isOwner`. Another owner's row is `CAMPAIGN_FORBIDDEN` | `campaignId` |
 | `create_campaign` | write | Insert via `create-campaign`. Default name `My Campaign`, Phase 1 `meta_data.settings` | none (`name`, `description`, `notes`, `meta_data` optional) |
 | `update_campaign` | write | Merge name/description/notes/`meta_data` then `create-campaign`. Does not clobber existing `meta_data` keys such as `image_url` | `campaignId` |
 | `create_encounter` | write | Insert via `create-encounter`. Omit `campaignId` for standalone (`campaign_id: null`); pass it to file under an owned campaign | none (`name`, `description`, `campaignId`, `meta_data` optional) |
