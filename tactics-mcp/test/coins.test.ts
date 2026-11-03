@@ -151,3 +151,87 @@ test("give_money and take_money update inventory.coins and convert_coins stays l
   await client.close();
   setCharacterFetch(null);
 });
+
+test("give_money and take_money refuse another user's character with no write", async () => {
+  const purse = { cp: 4, sp: 0, gp: 0, pp: 1 };
+  const calls: string[] = [];
+  setCharacterFetch(async (input) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.endsWith("/find-character")) {
+      return jsonResponse({ status: "success", data: { id: 111, name: "Not mine", updated_at: "t0", user_id: "owner-a", inventory: { coins: purse, items: [{ id: "sword" }] } } });
+    }
+    if (url.endsWith("/update-character")) return jsonResponse({ status: "success", data: { id: 111 } });
+    return jsonResponse({ status: "error", message: "unexpected" }, 404);
+  });
+
+  const server = new McpServer({ name: "test", version: "0.0.0" });
+  registerCatalog(server, () => "test2");
+  const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "test", version: "0.0.0" });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+  for (const name of ["give_money", "take_money"] as const) {
+    const result = await client.callTool({ name, arguments: { characterId: 111, amount: { gp: 5 } } });
+    assert.equal(result.isError, true);
+    assert.equal((result.structuredContent as { code: string }).code, "CHARACTER_FORBIDDEN");
+  }
+  assert.deepEqual(calls.filter((url) => url.endsWith("/update-character")), []);
+  const owned = calls.length;
+  const sameOwner = await client.callTool({ name: "give_money", arguments: { characterId: 111, amount: { cp: 1 } } });
+  assert.equal(sameOwner.isError, true);
+  assert.equal(calls.length, owned + 1);
+
+  setCharacterFetch(async (input) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.endsWith("/find-character")) {
+      return jsonResponse({ status: "success", data: { id: 111, name: "Mine", updated_at: "t0", user_id: "Test2", inventory: { coins: purse, items: [] } } });
+    }
+    if (url.endsWith("/update-character")) return jsonResponse({ status: "success", data: { id: 111, updated_at: "t1", user_id: "Test2", inventory: purse } });
+    return jsonResponse({ status: "error", message: "unexpected" }, 404);
+  });
+  const allowed = await client.callTool({ name: "give_money", arguments: { characterId: 111, amount: { cp: 1 } } });
+  assert.equal(allowed.isError, undefined);
+  assert.ok(calls.some((url) => url.endsWith("/update-character")));
+  await client.close();
+  setCharacterFetch(null);
+});
+
+test("other character writes refuse a non-owner before update or delete", async () => {
+  const calls: string[] = [];
+  setCharacterFetch(async (input) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.endsWith("/find-character")) {
+      return jsonResponse({
+        status: "success",
+        data: {
+          id: 111, name: "Not mine", updated_at: "t0", user_id: "owner-a",
+          content_sources: { enabled: [1] }, details: {}, operation_data: { selections: {} },
+          spells: { list: [], slots: [] }, inventory: { coins: { cp: 0, sp: 0, gp: 0, pp: 0 }, items: [] },
+        },
+      });
+    }
+    if (url.endsWith("/find-item")) return jsonResponse({ status: "success", data: [{ id: 1, name: "Torch", meta_data: { hp_max: 1 } }] });
+    return jsonResponse({ status: "success", data: { id: 111 } });
+  });
+  const server = new McpServer({ name: "test", version: "0.0.0" });
+  registerCatalog(server, () => "test2");
+  const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "test", version: "0.0.0" });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+  const books = await client.callTool({ name: "set_books", arguments: { characterId: 111, add: [9] } });
+  const removed = await client.callTool({ name: "delete_character", arguments: { characterId: 111 } });
+  const item = await client.callTool({ name: "add_inventory_item", arguments: { characterId: 111, itemId: 1 } });
+  const spell = await client.callTool({ name: "remove_spell", arguments: { characterId: 111, spellId: 1 } });
+  for (const result of [books, removed, item]) {
+    assert.equal(result.isError, true);
+    assert.equal((result.structuredContent as { code: string }).code, "CHARACTER_FORBIDDEN");
+  }
+  assert.equal(spell.isError, true);
+  assert.deepEqual(calls.filter((url) => url.endsWith("/update-character") || url.endsWith("/delete-content")), []);
+  await client.close();
+  setCharacterFetch(null);
+});

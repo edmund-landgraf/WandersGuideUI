@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { fail, loadRow, saveRow, textResult } from "./character-catalog.js";
+import { fail, loadRow, ownerGuard, saveRow, textResult } from "./character-catalog.js";
 import type { CharacterRow } from "./character-client.js";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
@@ -193,6 +193,8 @@ export function registerCharacterCoins(server: McpServer, userId: () => string) 
       if (!parsed.ok) return textResult(parsed.message, { code: "VALIDATION_ERROR", retryable: false }, true);
       const loaded = await loadRow(userId(), args.characterId);
       if (!loaded.ok) return fail(loaded);
+      const forbidden = ownerGuard(loaded.data, userId());
+      if (forbidden) return fail(forbidden);
       const purse = readPurse(loaded.data);
       if (!purse.ok) return textResult(purse.message, { code: "VALIDATION_ERROR", retryable: false }, true);
       const normalize = Boolean(args.normalize);
@@ -221,6 +223,8 @@ export function registerCharacterCoins(server: McpServer, userId: () => string) 
       if (!parsed.ok) return textResult(parsed.message, { code: "VALIDATION_ERROR", retryable: false }, true);
       const loaded = await loadRow(userId(), args.characterId);
       if (!loaded.ok) return fail(loaded);
+      const forbidden = ownerGuard(loaded.data, userId());
+      if (forbidden) return fail(forbidden);
       const purse = readPurse(loaded.data);
       if (!purse.ok) return textResult(purse.message, { code: "VALIDATION_ERROR", retryable: false }, true);
       const taken = takeCoins(purse.coins, parsed.coins);
