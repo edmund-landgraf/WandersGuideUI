@@ -1,8 +1,8 @@
-# WGUI MCP tool directory (74 tools)
+# WGUI MCP tool directory (78 tools)
 
 Generated Nov 3, 2026 from the live `wgui` MCP server tool list, with scopes checked against `READ_TOOLS` / `WRITE_TOOLS` in `src/server.ts`.
 
-**74 tools: 41 require `read`, 33 require `write`.** `tools/list` returns every tool for any token; scope is enforced at call time. The 16 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (24), character (20), homebrew `wgui_ext_hb_*` (30). Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
+**78 tools: 41 require `read`, 37 require `write`.** `tools/list` returns every tool for any token; scope is enforced at call time. The 16 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (24), character (24), homebrew `wgui_ext_hb_*` (30). Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
 
 Common encounter params: `campaignId`, `encounterId`, and for per-combatant tools `combatantId`.
 
@@ -35,7 +35,7 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `get_character` | read · GM | PC inventory, notes, details, log | `view`, ids, `combatantId` |
 | `get_monster` | read · GM | Creature inventory, notes, details, log | `view`, ids, `combatantId` |
 
-## Character (20: 6 read, 14 write)
+## Character (24: 6 read, 18 write)
 
 | Tool | Scope | What it does / returns | Required params |
 | --- | --- | --- | --- |
@@ -45,6 +45,10 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `get_character_row` | read | Reads a character via find-character (`full` returns row). Summary includes `image_url` and `background_image_url` | none (`id`, `user_id`, `campaignId`) |
 | `get_character_notes` | read | `notes.pages` (name, icon, color, shared, contents, text) for the owner | `characterId` |
 | `set_character_notes` | write | Append or replace one `notes.pages` entry. Owner only | `characterId`, `mode` (`append`/`replace`), `text` |
+| `add_character_note` | write | Inserts one `{ name, icon, color, contents }` page. Owner only | `characterId`, `title`, `contents` (`position` optional) |
+| `edit_character_note` | write | Replaces one page's `contents` by `pageIndex` or stored `pageId`. Owner only | `characterId`, `contents`, `pageIndex` or `pageId` |
+| `rename_character_note` | write | Changes one page's `name`. Owner only | `characterId`, `title`, `pageIndex` or `pageId` |
+| `delete_character_note` | write | Removes one page. Other pages stay. Owner only | `characterId`, `pageIndex` or `pageId` |
 | `upload_image` | write | PNG/JPEG/WebP through `upload-public-file`. Returns `{ url }`. Category `portraits` or `backgrounds` | `category` (+ `data` or `sourceUrl`) |
 | `set_character_art` | write | Sets `details.image_url` (portrait) and/or `details.background_image_url`. `portraitData` / `backgroundData` upload first. Owner only | `characterId` (+ a URL or image data) |
 | `list_options` | read | One catalog read by `kind` (class, ancestry, spell, item, …) | `kind` |

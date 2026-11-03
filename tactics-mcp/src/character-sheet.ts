@@ -74,8 +74,10 @@ function notesBag(row: Record<string, unknown>) {
 }
 
 function pageView(page: NotePage, index: number) {
+  const id = typeof page.id === "string" || typeof page.id === "number" ? page.id : null;
   return {
     index,
+    id,
     name: typeof page.name === "string" ? page.name : "",
     icon: typeof page.icon === "string" ? page.icon : NOTE_ICON,
     color: typeof page.color === "string" ? page.color : NOTE_COLOR,
@@ -83,6 +85,31 @@ function pageView(page: NotePage, index: number) {
     text: plainNote(page.contents).trim(),
     contents: page.contents ?? null,
   };
+}
+
+function noteNotFound() {
+  return textResult("Note page not found.", { code: "NOTE_NOT_FOUND", retryable: false }, true);
+}
+
+function locatePage(pages: NotePage[], pageId: string | undefined, pageIndex: number | undefined): { index: number } | { error: "missing" | "empty" | "missing-page" | "mismatch" } {
+  if (pageId === undefined && pageIndex === undefined) return { error: "missing" as const };
+  if (pageId !== undefined) {
+    const id = pageId.trim();
+    if (!id) return { error: "empty" as const };
+    const index = pages.findIndex((page) => (typeof page.id === "string" || typeof page.id === "number") && String(page.id) === id);
+    if (index < 0) return { error: "missing-page" as const };
+    if (pageIndex !== undefined && pageIndex !== index) return { error: "mismatch" as const };
+    return { index };
+  }
+  if (pageIndex! >= pages.length) return { error: "missing-page" as const };
+  return { index: pageIndex! };
+}
+
+function pageTargetError(found: { error: "missing" | "empty" | "missing-page" | "mismatch" }) {
+  if (found.error === "missing") return textResult("Pass pageId or pageIndex.", { code: "VALIDATION_ERROR", retryable: false }, true);
+  if (found.error === "empty") return textResult("pageId is empty.", { code: "VALIDATION_ERROR", retryable: false }, true);
+  if (found.error === "mismatch") return textResult("pageId and pageIndex are different pages.", { code: "VALIDATION_ERROR", retryable: false }, true);
+  return noteNotFound();
 }
 
 function blankPage(name: string, contents: unknown): NotePage {
@@ -233,7 +260,7 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
     "get_character_notes",
     {
       title: "Character notes",
-      description: "Reads character.notes.pages for a character find-character returns to the caller. Each page is name, icon, color, shared, contents, and text. contents is the stored value (a markdown string on the Phase 1 sheet, or TipTap JSON from the older sheet). text is the plain reading of that page. This is the owner read. The encounter tool get_character returns a flattened notes string for the GM.",
+      description: "Reads character.notes.pages for a character find-character returns to the caller. Each page is index, id (null unless the stored page already has one; the sheet does not assign ids), name, icon, color, shared, contents, and text. contents is the stored value (a markdown string on the Phase 1 sheet, or TipTap JSON from the older sheet). text is the plain reading of that page. This is the owner read. The encounter tool get_character returns a flattened notes string for the GM.",
       annotations: readOnly,
       inputSchema: { characterId: z.number().int() },
     },
@@ -307,6 +334,143 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
         characterId: args.characterId,
         pageIndex: index,
         pages: savedPages.map(pageView),
+        updated_at: saved.data.updated_at ?? null,
+      });
+    },
+  );
+
+  server.registerTool(
+    "add_character_note",
+    {
+      title: "Add a character note page",
+      description: "Inserts one page into character.notes.pages, the same shape the Phase 1 sheet creates: { name, icon: \"notebook\", color: \"#359fdf\", contents }. title is stored as name. contents is stored as the string the editor writes. position is the 0-based index to insert at; omit it to append. Other pages and any other notes fields are left as stored. The sheet does not give a page an id. A title of GM Notes is refused, matching the sheet. Only the owner can write. Saves with update-character and expected_updated_at.",
+      annotations: writes,
+      inputSchema: {
+        characterId: z.number().int(),
+        title: z.string(),
+        contents: z.string(),
+        position: z.number().int().min(0).optional(),
+      },
+    },
+    async (args) => {
+      const title = args.title.trim();
+      if (!title) return textResult("title is empty.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      if (isGmNotes(title)) return textResult("The sheet does not create a page named GM Notes.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      const loaded = await loadRow(userId(), args.characterId);
+      if (!loaded.ok) return fail(loaded);
+      const forbidden = ownerGuard(loaded.data, userId());
+      if (forbidden) return fail(forbidden);
+      const notes = notesBag(loaded.data);
+      const index = args.position ?? notes.pages.length;
+      if (index > notes.pages.length) return textResult("position is past the end of notes.pages.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      notes.pages.splice(index, 0, blankPage(title, args.contents));
+      const saved = await saveRow(userId(), loaded.data, { notes });
+      if (!saved.ok) return fail(saved);
+      return textResult("Note page added", {
+        characterId: args.characterId,
+        pageIndex: index,
+        pages: notesBag(saved.data).pages.map(pageView),
+        updated_at: saved.data.updated_at ?? null,
+      });
+    },
+  );
+
+  server.registerTool(
+    "edit_character_note",
+    {
+      title: "Edit a character note page",
+      description: "Replaces the contents of one page in character.notes.pages. Pass pageIndex (0-based index in the stored array) or pageId (matches a stored page.id, which the sheet does not create). Only contents changes. name, icon, color, shared, and any other fields on that page and on every other page stay as stored. Only the owner can write. Saves with update-character and expected_updated_at. A missing page is NOTE_NOT_FOUND.",
+      annotations: writes,
+      inputSchema: {
+        characterId: z.number().int(),
+        contents: z.string(),
+        pageIndex: z.number().int().min(0).optional(),
+        pageId: z.string().optional(),
+      },
+    },
+    async (args) => {
+      const loaded = await loadRow(userId(), args.characterId);
+      if (!loaded.ok) return fail(loaded);
+      const forbidden = ownerGuard(loaded.data, userId());
+      if (forbidden) return fail(forbidden);
+      const notes = notesBag(loaded.data);
+      const found = locatePage(notes.pages, args.pageId, args.pageIndex);
+      if ("error" in found) return pageTargetError(found);
+      notes.pages[found.index].contents = args.contents;
+      const saved = await saveRow(userId(), loaded.data, { notes });
+      if (!saved.ok) return fail(saved);
+      return textResult("Note page edited", {
+        characterId: args.characterId,
+        pageIndex: found.index,
+        pages: notesBag(saved.data).pages.map(pageView),
+        updated_at: saved.data.updated_at ?? null,
+      });
+    },
+  );
+
+  server.registerTool(
+    "rename_character_note",
+    {
+      title: "Rename a character note page",
+      description: "Changes the name of one page in character.notes.pages. Pass pageIndex or pageId. title is stored as name, the field the sheet renames. contents and every other field on that page, and every other page, stay as stored. A title of GM Notes is refused, matching the sheet. Only the owner can write. Saves with update-character and expected_updated_at. A missing page is NOTE_NOT_FOUND.",
+      annotations: writes,
+      inputSchema: {
+        characterId: z.number().int(),
+        title: z.string(),
+        pageIndex: z.number().int().min(0).optional(),
+        pageId: z.string().optional(),
+      },
+    },
+    async (args) => {
+      const title = args.title.trim();
+      if (!title) return textResult("title is empty.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      if (isGmNotes(title)) return textResult("The sheet does not rename a page to GM Notes.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      const loaded = await loadRow(userId(), args.characterId);
+      if (!loaded.ok) return fail(loaded);
+      const forbidden = ownerGuard(loaded.data, userId());
+      if (forbidden) return fail(forbidden);
+      const notes = notesBag(loaded.data);
+      const found = locatePage(notes.pages, args.pageId, args.pageIndex);
+      if ("error" in found) return pageTargetError(found);
+      notes.pages[found.index].name = title;
+      const saved = await saveRow(userId(), loaded.data, { notes });
+      if (!saved.ok) return fail(saved);
+      return textResult("Note page renamed", {
+        characterId: args.characterId,
+        pageIndex: found.index,
+        pages: notesBag(saved.data).pages.map(pageView),
+        updated_at: saved.data.updated_at ?? null,
+      });
+    },
+  );
+
+  server.registerTool(
+    "delete_character_note",
+    {
+      title: "Delete a character note page",
+      description: "Removes one page from character.notes.pages. Pass pageIndex or pageId. Every other page, and any other fields on the notes object, stay as stored. Only the owner can write. Saves with update-character and expected_updated_at. A missing page is NOTE_NOT_FOUND.",
+      annotations: writes,
+      inputSchema: {
+        characterId: z.number().int(),
+        pageIndex: z.number().int().min(0).optional(),
+        pageId: z.string().optional(),
+      },
+    },
+    async (args) => {
+      const loaded = await loadRow(userId(), args.characterId);
+      if (!loaded.ok) return fail(loaded);
+      const forbidden = ownerGuard(loaded.data, userId());
+      if (forbidden) return fail(forbidden);
+      const notes = notesBag(loaded.data);
+      const found = locatePage(notes.pages, args.pageId, args.pageIndex);
+      if ("error" in found) return pageTargetError(found);
+      notes.pages.splice(found.index, 1);
+      const saved = await saveRow(userId(), loaded.data, { notes });
+      if (!saved.ok) return fail(saved);
+      return textResult("Note page deleted", {
+        characterId: args.characterId,
+        pageIndex: found.index,
+        pages: notesBag(saved.data).pages.map(pageView),
         updated_at: saved.data.updated_at ?? null,
       });
     },
