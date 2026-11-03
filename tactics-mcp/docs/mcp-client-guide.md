@@ -228,9 +228,109 @@ pm2 restart wgui-mcp --update-env
 
 `--update-env` reloads the env from the current shell, so export the same variables before restarting, or the saved values may be replaced.
 
-### A7. Reverse proxy and HTTPS (verified on prod)
+### A7. Reverse proxy and HTTPS: pick nginx or Apache
 
-On prod, Apache 2.4 terminates TLS with a Let's Encrypt (certbot) certificate. One hostname serves both apps: the OAuth/MCP paths go to tactics-mcp, and everything else goes to the campaign UI. Port 80 redirects to HTTPS. (An nginx port-80 site for the same hostname is enabled too, but HTTPS is handled by Apache.) The vhost from prod, with an example hostname:
+tactics-mcp and the WGUI UI both bind to loopback only (`127.0.0.1:3104` and `127.0.0.1:5194`). One public HTTPS hostname fronts both. The OAuth and MCP paths go to 3104 and everything else goes to 5194. Pick **one** proxy: don't run Apache and nginx on 80/443 at the same time. Stop and disable the other one, e.g. `sudo systemctl disable --now apache2`.
+
+Paths that must reach tactics-mcp (the same set prod proxies):
+
+| Path | Match |
+| --- | --- |
+| `/.well-known/oauth-protected-resource` | exact |
+| `/.well-known/oauth-authorization-server` | exact |
+| `/oauth/mcp/…` (authorize, callback, token) | prefix |
+| `/mcp` | prefix (Streamable HTTP, long-lived responses) |
+| everything else | → WGUI UI on 5194 |
+
+#### Option 1: nginx (recommended, the typical setup)
+
+This is equivalent to prod's Apache routing. `wgui.example.com` is an example hostname. I checked the syntax with `nginx -t` (nginx 1.28.3) on a throwaway copy with a dummy self-signed certificate. It hasn't been run against a live tactics-mcp.
+
+`/etc/nginx/sites-available/wgui.example.com`:
+
+```nginx
+server {
+    listen 80;
+    listen [::]:80;
+    server_name wgui.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name wgui.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/wgui.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/wgui.example.com/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+
+    # OAuth discovery (tactics-mcp)
+    location = /.well-known/oauth-protected-resource {
+        proxy_pass http://127.0.0.1:3104;
+    }
+    location = /.well-known/oauth-authorization-server {
+        proxy_pass http://127.0.0.1:3104;
+    }
+
+    # OAuth authorize / callback / token (tactics-mcp)
+    location ^~ /oauth/mcp/ {
+        proxy_pass http://127.0.0.1:3104;
+    }
+
+    # MCP Streamable HTTP (tactics-mcp)
+    location ^~ /mcp {
+        proxy_pass http://127.0.0.1:3104;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_buffering off;
+        proxy_cache off;
+        chunked_transfer_encoding on;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # Everything else: WGUI campaign UI
+    location / {
+        proxy_pass http://127.0.0.1:5194;
+        proxy_http_version 1.1;
+    }
+}
+```
+
+Get the certificate and enable the site:
+
+```bash
+sudo apt install nginx certbot python3-certbot-nginx
+# First run: start with only the port-80 server block (or the default site) so certbot can answer the challenge
+sudo certbot --nginx -d wgui.example.com        # creates /etc/letsencrypt/live/wgui.example.com/* and options-ssl-nginx.conf
+sudo ln -s /etc/nginx/sites-available/wgui.example.com /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Notes:
+
+- **`location ^~ /mcp`** matches `/mcp` and anything under it, the same as Apache's `ProxyPass /mcp`. The `=` and `^~` matches take precedence over `location /`, so order in the file doesn't matter.
+- **Streamable HTTP settings:** `/mcp` needs `proxy_http_version 1.1`, `Connection ""`, `proxy_buffering off`, `proxy_cache off`, chunked encoding and a long read timeout so streamed responses aren't cut off or buffered.
+- **Header inheritance:** `proxy_set_header` at server level is inherited only by locations that don't set their own. That's why `/mcp` repeats the headers.
+- **`http2 on;`** needs nginx 1.25.1 or later. On older nginx, use `listen 443 ssl http2;` instead.
+- **Optional extra paths:** to expose `/health`, `/icon.png` or `/api/mcp-tokens` publicly (prod doesn't), add `location = /health { proxy_pass http://127.0.0.1:3104; }` and the same for the others.
+
+#### Option 2: Apache (what prod uses, verified on vps-ahhh)
+
+On prod, Apache 2.4 terminates TLS with a Let's Encrypt (certbot) certificate. Port 80 redirects to HTTPS. (An nginx port-80 site for the same hostname is also enabled on prod, but Apache handles HTTPS.) The vhost from prod, with an example hostname:
 
 ```apache
 <VirtualHost *:80>
