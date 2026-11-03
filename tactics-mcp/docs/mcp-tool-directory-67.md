@@ -1,8 +1,8 @@
-# WGUI MCP tool directory (67 tools)
+# WGUI MCP tool directory (71 tools)
 
 Generated Nov 3, 2026 from the live `wgui` MCP server tool list, with scopes checked against `READ_TOOLS` / `WRITE_TOOLS` in `src/server.ts`.
 
-**67 tools: 39 require `read`, 28 require `write`.** `tools/list` returns every tool for any token; scope is enforced at call time. The 16 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (22), character (15), homebrew `wgui_ext_hb_*` (30). Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
+**71 tools: 40 require `read`, 31 require `write`.** `tools/list` returns every tool for any token; scope is enforced at call time. The 16 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (22), character (19), homebrew `wgui_ext_hb_*` (30). Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
 
 Common encounter params: `campaignId`, `encounterId`, and for per-combatant tools `combatantId`.
 
@@ -33,7 +33,7 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `get_character` | read · GM | PC inventory, notes, details, log | `view`, ids, `combatantId` |
 | `get_monster` | read · GM | Creature inventory, notes, details, log | `view`, ids, `combatantId` |
 
-## Character (15: 5 read, 10 write)
+## Character (19: 6 read, 13 write)
 
 | Tool | Scope | What it does / returns | Required params |
 | --- | --- | --- | --- |
@@ -52,6 +52,10 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `set_spells` | write | Replaces one source's spell list / prepared slots | `characterId` |
 | `add_inventory_item` | write | Adds a catalog item to inventory, formula book, or container | `characterId`, `itemId` |
 | `remove_inventory_item` | write | Removes one inventory entry (incl. inside containers) | `characterId`, `inventoryItemId` |
+| `list_companions` | read | `companions.list`: type, name, level, added abilities, open selects | `characterId` |
+| `add_companion` | write | Appends a catalog creature (companion type, or any creature that is not level -100) | `characterId`, `creatureId` |
+| `update_companion` | write | Sets type (`creatureId`), name, `abilities_added`, or one operation select. Same list for animal companions, familiars, and eidolons | `characterId`, `index` |
+| `remove_companion` | write | Removes `companions.list[index]` | `characterId`, `index` |
 
 ## Homebrew (30: 15 read, 15 write)
 
@@ -96,7 +100,7 @@ No tool exists today for:
 
 - **Character portrait / art / background image**: nothing sets them.
 - **Character notes**: no read or write of notes as a standalone tool (`get_character` returns notes read-only, GM view).
-- **Companions**: `choose` can pick a companion feat, but nothing creates or edits the companion (type, name, stats).
+- **Companion drawer extras**: current HP, temp HP, conditions, inventory, spells, and notes on a companion. `list_companions` / `add_companion` / `update_companion` / `remove_companion` write the Companions panel list (catalog creature, name, `abilities_added`, operation selects). Animal companions, familiars, and eidolons share that list; witch familiar spells stay on `spells`.
 - **Equip / invest / wield**: `add_inventory_item` has no equipped or invested flag.
 - **Creatures in an encounter**: nothing adds or removes combatants; the only encounter write is `patch_encounter_dice`.
 - **Initiative**: `list_combatants` reads it; nothing rolls or writes it.
