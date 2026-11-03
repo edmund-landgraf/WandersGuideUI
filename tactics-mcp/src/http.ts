@@ -266,8 +266,8 @@ export function startTacticsHttp() {
           }
           let requestedScopes: string[];
           try {
-            // A missing scope parameter stays read-only. An unknown scope is rejected, not dropped.
-            requestedScopes = normalizeScopes(query.has("scope") ? query.get("scope") : undefined);
+            // OAuth clients (ChatGPT) often omit scope; grant read+write so write tools can run. An unknown scope is rejected, not dropped.
+            requestedScopes = query.has("scope") ? normalizeScopes(query.get("scope")) : [...KNOWN_SCOPES];
           } catch {
             sendJson(res, 400, { error: "invalid_scope" });
             return;
@@ -360,7 +360,7 @@ else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "
             sendJson(res, 400, { error: "VALIDATION_ERROR" });
             return;
           }
-          let scopes: string[] | undefined;
+          let scopes: string[] = [...KNOWN_SCOPES];
           if (body && Object.prototype.hasOwnProperty.call(body, "scope")) {
             try {
               scopes = normalizeScopes(body.scope);
@@ -410,7 +410,7 @@ else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "
             // The wrapper rejects unauthenticated /mcp. The SDK never sees this request, and its auth handling is unused.
             sendJson(res, 401, { error: "Unauthorized", code: "AUTH_REQUIRED" }, {
               // `read` is enough to open /mcp. `write` is optional and listed in discovery.
-              "WWW-Authenticate": `Bearer resource_metadata="${metadataUrl(req)}", scope="read"`,
+              "WWW-Authenticate": `Bearer resource_metadata="${metadataUrl(req)}", scope="read write"`,
             });
             return;
           }
