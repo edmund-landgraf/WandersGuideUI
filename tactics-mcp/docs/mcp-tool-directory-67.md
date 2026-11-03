@@ -2,7 +2,7 @@
 
 Generated Nov 3, 2026 from the live `wgui` MCP server tool list, with scopes checked against `READ_TOOLS` / `WRITE_TOOLS` in `src/server.ts`.
 
-**67 tools: 39 require `read`, 28 require `write`.** `tools/list` returns every tool for any token; scope is enforced at call time. The 16 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (22), character (15), homebrew `wgui_ext_hb_*` (30). Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
+**67 tools: 39 require `read`, 28 require `write`.** Plus the 7 campaign/encounter create-update tools in the section below (2 read, 5 write), the live server now lists **74**. `tools/list` returns every tool for any token; scope is enforced at call time. The 16 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (22), character (15), homebrew `wgui_ext_hb_*` (30), plus campaign/encounter writes. Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
 
 Common encounter params: `campaignId`, `encounterId`, and for per-combatant tools `combatantId`.
 
@@ -89,6 +89,22 @@ Create tools upsert: a `record` with `id` updates, omit `id` (or -1) to insert. 
 | `wgui_ext_hb_create_spell` | write | Upsert spell | `record` |
 | `wgui_ext_hb_create_content_update` | write | Insert a PENDING change proposal (does not write the content row) | `type`, `action`, `data`, `content_source_id` |
 | `wgui_ext_hb_delete_content` | write | Delete a homebrew content row (character/campaign/encounter rejected) | `id`, `type` |
+
+## Campaign and encounter create / update (7: 2 read, 5 write)
+
+These tools call stock Wanderer's Guide functions (`find-campaign`, `create-campaign`, `find-encounter`, `create-encounter`). There is no `update-campaign` or `update-encounter`; updates POST the existing row to the matching `create-*` function. No new `wgui-ext-*` functions. No delete tools. Writes require the caller to own the campaign or encounter (`CAMPAIGN_FORBIDDEN` / `ENCOUNTER_FORBIDDEN`). Join keys are never returned.
+
+`get_campaign` also appears on PR #20 (art-focused). This copy returns name, description, notes, and merged `meta_data` (including `image_url`) and still omits `join_key`.
+
+| Tool | Scope | What it does / returns | Required params |
+| --- | --- | --- | --- |
+| `list_campaigns` | read | Campaigns the caller owns (`find-campaign` `{ user_id }`) | none |
+| `get_campaign` | read | One owned campaign (`find-campaign` `{ id }`) | `campaignId` |
+| `create_campaign` | write | Insert via `create-campaign`. Default name `My Campaign`, Phase 1 `meta_data.settings` | none (`name`, `description`, `notes`, `meta_data` optional) |
+| `update_campaign` | write | Merge name/description/notes/`meta_data` then `create-campaign`. Does not clobber existing `meta_data` keys such as `image_url` | `campaignId` |
+| `create_encounter` | write | Insert via `create-encounter`. Omit `campaignId` for standalone (`campaign_id: null`); pass it to file under an owned campaign | none (`name`, `description`, `campaignId`, `meta_data` optional) |
+| `update_encounter` | write | Merge name/description/`meta_data` then `create-encounter`. Does not change `campaign_id` | `encounterId` |
+| `set_encounter_campaign` | write | Attach an owned encounter to an owned campaign, or detach (`campaignId` null) | `encounterId`, `campaignId` (nullable) |
 
 ## Known write gaps
 

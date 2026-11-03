@@ -81,6 +81,13 @@ These eight tools are on the same `wgui-mcp` process. They post to the stock Wan
 | `patch_encounter_dice` | Writes `meta_data.dice_roll_state` and `meta_data.dice_roll_log` only. A GM replaces the fields they send. A player is limited to their own log rows and the tray fields title, DC, stat, and results. Same job as `wgui-ext-patch-encounter-dice`. |
 | `list_campaign_characters` | Characters in a campaign the caller belongs to. Same job as `wgui-ext-find-campaign-characters`. |
 | `export_character` | JSON v4 file from `wgui-export-character-slim` (default; no `all_spells` / `all_traits` catalog, about 0.12 MB instead of 4 MB). `detail: "full"` and PDF use `wgui-export-character`. Falls back to the full function when the slim one is not deployed. The caller must own the character or be that campaign's GM. |
+| `list_campaigns` | Stock `find-campaign` `{ user_id }`. Join key omitted. |
+| `get_campaign` | Stock `find-campaign` `{ id }`. Owner only (`CAMPAIGN_FORBIDDEN` otherwise). Join key omitted. Overlaps PR #20. |
+| `create_campaign` | Stock `create-campaign` insert (no `id`). |
+| `update_campaign` | Stock `find-campaign` then `create-campaign` with the existing row and merged `meta_data`. |
+| `create_encounter` | Stock `create-encounter` `{ id: -1, campaign_id: null \| campaignId, combatants: { list: [] }, … }`. Campaign must be owned when `campaignId` is set. |
+| `update_encounter` | Stock `find-encounter` `{ id }` then `create-encounter` with the existing row and merged `meta_data`. Owner only (`ENCOUNTER_FORBIDDEN`). |
+| `set_encounter_campaign` | Same as `update_encounter`, changing only `campaign_id` (null detaches). Destination campaign must be owned. |
 
 ## Errors
 

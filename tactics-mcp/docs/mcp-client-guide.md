@@ -469,6 +469,10 @@ Run `join_campaign` with `characterId` and the GM's `joinKey`. **Never echo the 
 
 > *Prompt:* "Join my character 1234 to the campaign. I'll paste the join key; don't repeat it back."
 
+### C2b. Create or edit a campaign / encounter
+
+`create_campaign` and `update_campaign` post to stock `create-campaign`. `update_campaign` merges `meta_data` so campaign art stays. `create_encounter` omits `campaignId` for a standalone fight, or takes a campaign this user owns. `set_encounter_campaign` attaches or detaches (`campaignId` null). There is no delete tool.
+
 ### C3. GM encounter reads (all need `view: "gm"` and GM access)
 
 1. `list_encounters`, then `get_encounter`.
@@ -543,6 +547,7 @@ Each of these would need a new server tool.
 - Read: `get_profile`, `get_campaign_owner_contacts`, `list_campaign_characters`.
 - Read, GM view: `list_encounters`, `get_encounter`, `list_pcs`, `list_combatants`, `list_roster_edges`, `get_round_log`, `get_dice_log`, `get_stat_block`, `list_ability_groups`, `get_abilities`, `get_feats`, `get_class_features`, `get_skills`, `get_spells`, `get_character`, `get_monster`.
 - Write: `ensure_public_user`, `join_campaign`, `patch_encounter_dice`.
+- Campaign/encounter rows: `list_campaigns`, `get_campaign`, `create_campaign`, `update_campaign`, `create_encounter`, `update_encounter`, `set_encounter_campaign`.
 
 **Character (15).**
 - Read: `export_character`, `get_character_row`, `list_options`, `list_open_choices`, `list_spell_options`.

@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import { registerCampaignWrites } from "./campaign-writes.js";
 import { registerCharacterCatalog } from "./character-catalog.js";
 import { registerCharacterInventory } from "./character-inventory.js";
 import { registerCharacterSpells } from "./character-spells.js";
@@ -445,6 +446,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     return textResult(found.row.name, { inventory: found.sheet.inventory ?? null, notes: found.sheet.notes ?? null, details: found.sheet.sourceDetails ?? null, log: found.sheet.log ?? null });
   }, userId);
 
+  registerCampaignWrites(server, userId);
   registerCharacterCatalog(server, userId);
   registerCharacterSpells(server, userId);
   registerCharacterInventory(server, userId);
