@@ -73,6 +73,10 @@ function named(value: unknown) {
   return typeof name === "string" ? name : null;
 }
 
+function storedUrl(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
 export function summary(row: CharacterRow) {
   const details = (row.details as Record<string, unknown> | undefined) ?? {};
   const sources = (row.content_sources as { enabled?: unknown } | undefined)?.enabled;
@@ -84,8 +88,18 @@ export function summary(row: CharacterRow) {
     ancestry: named(details.ancestry),
     background: named(details.background),
     className: named(details.class),
+    image_url: storedUrl(details.image_url),
+    background_image_url: storedUrl(details.background_image_url),
     updated_at: row.updated_at ?? null,
   };
+}
+
+// find-character is owner-scoped. When the row still carries another user_id, refuse the write.
+export function ownerGuard(row: CharacterRow, userId: string) {
+  const owner = row.user_id;
+  if (typeof owner !== "string" || !owner.trim()) return null;
+  if (owner.trim().toLowerCase() === userId.trim().toLowerCase()) return null;
+  return { ok: false as const, code: "CHARACTER_FORBIDDEN", message: "Only the character owner can write this character." };
 }
 
 export async function loadRow(userId: string, id: number) {

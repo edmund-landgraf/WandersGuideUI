@@ -16,9 +16,9 @@ import { getEncounterReader, setEncounterReader, type EncounterReader } from "..
 import { createTacticsMcpServer, scopeForTool, TACTICS_MCP_DESCRIPTION, TACTICS_MCP_NAME } from "../src/server.js";
 import { mintToken, normalizeScopes, resetTokens, resolveBearer } from "../src/tokens.js";
 
-const WRITE_TOOLS = ["ensure_public_user", "join_campaign", "patch_encounter_dice"];
-const CHARACTER_READS = ["export_character", "get_character_row", "list_open_choices", "list_options", "list_spell_options"];
-const CHARACTER_WRITES = ["add_inventory_item", "add_spell", "choose", "create_character", "delete_character", "remove_inventory_item", "remove_spell", "set_books", "set_identity", "set_spells"];
+const WRITE_TOOLS = ["ensure_public_user", "join_campaign", "patch_encounter_dice", "set_campaign_art"];
+const CHARACTER_READS = ["export_character", "get_campaign", "get_character_notes", "get_character_row", "list_open_choices", "list_options", "list_spell_options"];
+const CHARACTER_WRITES = ["add_inventory_item", "add_spell", "choose", "create_character", "delete_character", "remove_inventory_item", "remove_spell", "set_books", "set_character_art", "set_character_notes", "set_identity", "set_inventory_item", "set_spells"];
 const HOMEBREW_WRITES = [
   "wgui_ext_hb_create_content_source",
   "wgui_ext_hb_create_trait",
@@ -48,6 +48,12 @@ function characterArguments(name: string) {
   if (name === "set_spells") return { characterId: 1, list: [] };
   if (name === "add_inventory_item") return { characterId: 1, itemId: 1 };
   if (name === "remove_inventory_item") return { characterId: 1, inventoryItemId: "x" };
+  if (name === "set_inventory_item") return { characterId: 1, inventoryItemId: "x", equipped: true };
+  if (name === "set_character_art") return { characterId: 1, portraitUrl: "https://example.com/a.png" };
+  if (name === "get_character_notes") return { characterId: 1 };
+  if (name === "set_character_notes") return { characterId: 1, mode: "append", text: "note" };
+  if (name === "get_campaign") return { campaignId: 1 };
+  if (name === "set_campaign_art") return { campaignId: 1, imageUrl: "https://example.com/a.png" };
   return {};
 }
 
@@ -134,12 +140,12 @@ describe("tactics scopes", { concurrency: 1 }, () => {
       assert.equal(info?.description, TACTICS_MCP_DESCRIPTION);
 
       const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
-      assert.equal(names.length, 67);
+      assert.equal(names.length, 73);
       for (const name of [...CHARACTER_READS, ...CHARACTER_WRITES]) assert.ok(names.includes(name), name);
       assert.deepEqual(CHARACTER_READS.map(scopeForTool), CHARACTER_READS.map(() => "read"));
       assert.deepEqual(CHARACTER_WRITES.map(scopeForTool), CHARACTER_WRITES.map(() => "write"));
       assert.deepEqual(names.filter((name) => scopeForTool(name) === "write"), [...WRITE_TOOLS, ...CHARACTER_WRITES, ...HOMEBREW_WRITES].sort());
-      assert.equal(names.filter((name) => scopeForTool(name) === "read").length, 39);
+      assert.equal(names.filter((name) => scopeForTool(name) === "read").length, 41);
       assert.equal(scopeForTool("not_a_tool"), null);
 
       const profile = await client.callTool({ name: "get_profile", arguments: {} });
@@ -154,7 +160,9 @@ describe("tactics scopes", { concurrency: 1 }, () => {
             ? { characterId: 7, joinKey: "secret" }
             : name === "patch_encounter_dice"
               ? { campaignId: 1, encounterId: 2, diceRollState: { title: "t" } }
-              : {},
+              : name === "set_campaign_art"
+                ? { campaignId: 1, imageUrl: "https://example.com/a.png" }
+                : {},
         });
         assert.equal(denied.isError, true);
         assert.equal(textOf(denied), `MCP token missing scope write for ${name}.`);

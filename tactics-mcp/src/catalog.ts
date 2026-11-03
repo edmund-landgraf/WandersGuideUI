@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { registerCharacterCatalog } from "./character-catalog.js";
 import { registerCharacterInventory } from "./character-inventory.js";
+import { registerCharacterSheet } from "./character-sheet.js";
 import { registerCharacterSpells } from "./character-spells.js";
 import { getEncounterReader, type CharacterExport, type CombatantSheet, type EncounterRecord } from "./reader.js";
 
@@ -448,6 +449,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
   registerCharacterCatalog(server, userId);
   registerCharacterSpells(server, userId);
   registerCharacterInventory(server, userId);
+  registerCharacterSheet(server, userId);
 }
 
 function formatEncounter(record: EncounterRecord) {

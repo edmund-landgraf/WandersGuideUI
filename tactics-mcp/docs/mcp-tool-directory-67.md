@@ -1,12 +1,12 @@
-# WGUI MCP tool directory (67 tools)
+# WGUI MCP tool directory (73 tools)
 
 Generated Nov 3, 2026 from the live `wgui` MCP server tool list, with scopes checked against `READ_TOOLS` / `WRITE_TOOLS` in `src/server.ts`.
 
-**67 tools: 39 require `read`, 28 require `write`.** `tools/list` returns every tool for any token; scope is enforced at call time. The 16 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (22), character (15), homebrew `wgui_ext_hb_*` (30). Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
+**73 tools: 41 require `read`, 32 require `write`.** `tools/list` returns every tool for any token; scope is enforced at call time. The 16 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (24), character (19), homebrew `wgui_ext_hb_*` (30). Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
 
 Common encounter params: `campaignId`, `encounterId`, and for per-combatant tools `combatantId`.
 
-## Campaign, encounter, and combat (22: 19 read, 3 write)
+## Campaign, encounter, and combat (24: 20 read, 4 write)
 
 | Tool | Scope | What it does / returns | Required params |
 | --- | --- | --- | --- |
@@ -15,6 +15,8 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `join_campaign` | write | Attaches a character the caller owns to a campaign via join key | `characterId`, `joinKey` |
 | `get_campaign_owner_contacts` | read | Email/display name of owners the caller shares a campaign with (max 24 ids) | `userIds` |
 | `list_campaign_characters` | read | Campaign PC roster: id, name, level, ancestry, class | `campaignId` |
+| `get_campaign` | read | Campaign art: `meta_data.image_url` and `meta_data.image_focus_y` (no separate background; join key omitted) | `campaignId` |
+| `set_campaign_art` | write | Sets `meta_data.image_url` and/or `meta_data.image_focus_y`. Owner/GM only | `campaignId` (+ `imageUrl` or `focusY`) |
 | `list_encounters` | read · GM | Encounters: id, name, combatant count | `view`, `campaignId` |
 | `get_encounter` | read · GM | Name, round, difficulty, XP | `view`, `campaignId`, `encounterId` |
 | `list_pcs` | read · GM | PCs fighting, benched, or down, with current HP | `view`, `campaignId`, `encounterId` |
@@ -33,14 +35,17 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `get_character` | read · GM | PC inventory, notes, details, log | `view`, ids, `combatantId` |
 | `get_monster` | read · GM | Creature inventory, notes, details, log | `view`, ids, `combatantId` |
 
-## Character (15: 5 read, 10 write)
+## Character (19: 6 read, 13 write)
 
 | Tool | Scope | What it does / returns | Required params |
 | --- | --- | --- | --- |
 | `create_character` | write | Creates a character row; returns id, updated_at | none (`name`, `level` optional) |
 | `delete_character` | write | Deletes a character the caller can read | `characterId` |
 | `export_character` | read | Export as JSON (slim/full) or PDF; owner or campaign GM | `characterId` |
-| `get_character_row` | read | Reads a character via find-character (`full` returns row) | none (`id`, `user_id`, `campaignId`) |
+| `get_character_row` | read | Reads a character via find-character (`full` returns row). Summary includes `image_url` and `background_image_url` | none (`id`, `user_id`, `campaignId`) |
+| `get_character_notes` | read | `notes.pages` (name, icon, color, shared, contents, text) for the owner | `characterId` |
+| `set_character_notes` | write | Append or replace one `notes.pages` entry. Owner only | `characterId`, `mode` (`append`/`replace`), `text` |
+| `set_character_art` | write | Sets `details.image_url` (portrait) and/or `details.background_image_url`. Owner only | `characterId` (+ `portraitUrl` or `backgroundUrl`) |
 | `list_options` | read | One catalog read by `kind` (class, ancestry, spell, item, …) | `kind` |
 | `list_open_choices` | read | Unfilled builder selects with legal options | `characterId` |
 | `list_spell_options` | read | Legal spells for one casting source | `characterId` |
@@ -52,6 +57,7 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `set_spells` | write | Replaces one source's spell list / prepared slots | `characterId` |
 | `add_inventory_item` | write | Adds a catalog item to inventory, formula book, or container | `characterId`, `itemId` |
 | `remove_inventory_item` | write | Removes one inventory entry (incl. inside containers) | `characterId`, `inventoryItemId` |
+| `set_inventory_item` | write | Sets `is_equipped` and/or `is_invested` on an existing entry. Owner only. `item.hands` is returned, not written | `characterId`, `inventoryItemId` (+ `equipped` or `invested`) |
 
 ## Homebrew (30: 15 read, 15 write)
 
@@ -94,9 +100,6 @@ Create tools upsert: a `record` with `id` updates, omit `id` (or -1) to insert. 
 
 No tool exists today for:
 
-- **Character portrait / art / background image**: nothing sets them.
-- **Character notes**: no read or write of notes as a standalone tool (`get_character` returns notes read-only, GM view).
 - **Companions**: `choose` can pick a companion feat, but nothing creates or edits the companion (type, name, stats).
-- **Equip / invest / wield**: `add_inventory_item` has no equipped or invested flag.
 - **Creatures in an encounter**: nothing adds or removes combatants; the only encounter write is `patch_encounter_dice`.
 - **Initiative**: `list_combatants` reads it; nothing rolls or writes it.
