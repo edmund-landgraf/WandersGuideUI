@@ -1,6 +1,6 @@
 # Controlling Wanderer's Guide from an MCP client
 
-*A guide to the `wgui` (tactics-mcp) server: self-hosting it beside your own Wanderer's Guide stack, connecting clients, and using the 67 tools safely.*
+*A guide to the `wgui` (tactics-mcp) server: self-hosting it beside your own Wanderer's Guide stack, connecting clients, and using the 70 tools safely.*
 
 Written Nov 3, 2026. Every step comes from the repo on DAEDALUS (`D:\repos\WanderersGuideUI\tactics-mcp`, `D:\repos\WanderersGuideUI`, `D:\repos\wanderers-guide`) or from the live production server. Anything that isn't specific to this repo is labelled **general MCP client config**. The last section lists what couldn't be verified.
 
@@ -23,7 +23,7 @@ WGUI campaign UI (vite app, PM2 "wgui")   +   WG character builder/sheet
 - **What it is:** `tactics-mcp` is the MCP server inside the WanderersGuideUI repo (package name `tactics-mcp`, server name `wgui-tactics`). It describes itself as "Encounter and character data for the GM. Mostly read-only, with scoped writes."
 - **It's separate from AMBA.** Don't point WG clients at AMBA's bridge.
 - **Production:** `https://wgui.wandersguide.site/mcp`. PM2 runs it as `wgui-mcp` from the `tactics-mcp` folder on port 3104. The campaign UI itself runs as the PM2 process `wgui`.
-- **Tools:** there are 67: 39 need the `read` scope and 28 need `write`. 16 of them are encounter tools that require `view: "gm"`. The full list is in the Appendix and in `docs/mcp-tool-directory-67.md`.
+- **Tools:** there are 70: 40 need the `read` scope and 30 need `write`. 16 of them are encounter tools that require `view: "gm"`. The full list is in the Appendix and in `docs/mcp-tool-directory-67.md`.
 - **Two transports:**
   - Streamable HTTP at `/mcp`, from `src/http.ts`.
   - stdio, with two entry points: `src/grokbotBridge.ts` (stdio to a remote HTTP server) and `src/localStdio.ts` (an in-process stdio server for local testing).
@@ -379,7 +379,7 @@ On prod, Apache 2.4 terminates TLS with a Let's Encrypt (certbot) certificate. P
 1. `curl http://127.0.0.1:3104/health` on the server (publicly, `/health` is only reachable if you proxy it; see A7)
 2. `curl https://your-host/.well-known/oauth-authorization-server`. Expect `scopes_supported` to be `["read","write"]`.
 3. `curl -i -X POST https://your-host/mcp`. Expect a 401 with the `WWW-Authenticate` header.
-4. With a token, send `tools/list` and expect **67 tools**. `tools/list` shows every tool to any token; scope is only checked when a tool is called.
+4. With a token, send `tools/list` and expect **70 tools**. `tools/list` shows every tool to any token; scope is only checked when a tool is called.
 5. Call `get_profile`, which should return your Supabase user id. Then try a read such as `list_campaign_characters`.
 6. Check that a read-only token gets `AUTH_REQUIRED` ("MCP token missing scope write for …") on a write tool.
 7. Run `npm run smoke` locally for the full scripted check.
@@ -458,7 +458,7 @@ Start every session with `get_profile`. Treat returned ids as authoritative, and
 | 6 | `choose` (`choiceId`, `optionId`) | Repeat until no open choices remain. Illegal ids are rejected |
 | 7 | `list_spell_options` (`source`) | For casters |
 | 8 | `add_spell` (`spellId`, `rank`, `source`, `prepare`) or `set_spells` | |
-| 9 | `list_options kind=item`, then `add_inventory_item` (`itemId`, `quantity`) | Gear. `remove_inventory_item` undoes it |
+| 9 | `list_options kind=item`, then `add_inventory_item` (`itemId`, `quantity`) | Gear. `remove_inventory_item` undoes it. `give_money` / `take_money` edit `inventory.coins` |
 | 10 | `export_character` (json slim/full or pdf) | Check the result |
 
 > *Example prompt:* "Using the wgui tools, create a level 1 human fighter named Aragorn. Use the Core rules only. Say what you'll change before each write, fill every open choice with sensible options, add a longsword and adventurer's pack, then export the slim JSON."
@@ -537,16 +537,16 @@ No tool exists today for:
 
 Each of these would need a new server tool.
 
-## Appendix: tool reference (67)
+## Appendix: tool reference (70)
 
 **Campaign, encounter and combat (22).**
 - Read: `get_profile`, `get_campaign_owner_contacts`, `list_campaign_characters`.
 - Read, GM view: `list_encounters`, `get_encounter`, `list_pcs`, `list_combatants`, `list_roster_edges`, `get_round_log`, `get_dice_log`, `get_stat_block`, `list_ability_groups`, `get_abilities`, `get_feats`, `get_class_features`, `get_skills`, `get_spells`, `get_character`, `get_monster`.
 - Write: `ensure_public_user`, `join_campaign`, `patch_encounter_dice`.
 
-**Character (15).**
-- Read: `export_character`, `get_character_row`, `list_options`, `list_open_choices`, `list_spell_options`.
-- Write: `create_character`, `delete_character`, `choose`, `set_identity`, `set_books`, `add_spell`, `remove_spell`, `set_spells`, `add_inventory_item`, `remove_inventory_item`.
+**Character (18).**
+- Read: `export_character`, `get_character_row`, `list_options`, `list_open_choices`, `list_spell_options`, `convert_coins`.
+- Write: `create_character`, `delete_character`, `choose`, `set_identity`, `set_books`, `add_spell`, `remove_spell`, `set_spells`, `add_inventory_item`, `remove_inventory_item`, `give_money`, `take_money`.
 
 **Homebrew (30).**
 - Read: `wgui_ext_hb_find_*` for content_source, trait, ability_block, ancestry, background, class, archetype, versatile_heritage, class_archetype, item, language, creature, spell and content_update, plus `wgui_ext_hb_get_content_source_stats`.
