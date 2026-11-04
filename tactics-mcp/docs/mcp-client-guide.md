@@ -1,6 +1,6 @@
-# Controlling Wanderer's Guide from an MCP client
+﻿# Controlling Wanderer's Guide from an MCP client
 
-*A guide to the `wgui` (tactics-mcp) server: self-hosting it beside your own Wanderer's Guide stack, connecting clients, and using the 71 tools safely.*
+*A guide to the `wgui` (tactics-mcp) server: self-hosting it beside your own Wanderer's Guide stack, connecting clients, and using the 81 tools safely.*
 
 Written Nov 3, 2026. Every step comes from the repo on DAEDALUS (`D:\repos\WanderersGuideUI\tactics-mcp`, `D:\repos\WanderersGuideUI`, `D:\repos\wanderers-guide`) or from the live production server. Anything that isn't specific to this repo is labelled **general MCP client config**. The last section lists what couldn't be verified.
 
@@ -9,21 +9,21 @@ Written Nov 3, 2026. Every step comes from the repo on DAEDALUS (`D:\repos\Wande
 ## 1. Overview and architecture
 
 ```
-MCP client (ChatGPT, Grokbot, Claude, Cursor, Codex…)
-        │  Streamable HTTP + OAuth/Bearer        or   stdio (local process)
-        ▼
+MCP client (ChatGPT, Grokbot, Claude, Cursor, Codexâ€¦)
+        â”‚  Streamable HTTP + OAuth/Bearer        or   stdio (local process)
+        â–¼
 tactics-mcp  (Node, src/http.ts, default 127.0.0.1:3104, path /mcp)
-        │  Supabase REST/functions (anon + service-role keys)
-        ▼
+        â”‚  Supabase REST/functions (anon + service-role keys)
+        â–¼
 Wanderer's Guide Supabase stack (kong, auth/GoTrue, rest, functions, db)
-        ▲
+        â–²
 WGUI campaign UI (vite app, PM2 "wgui")   +   WG character builder/sheet
 ```
 
 - **What it is:** `tactics-mcp` is the MCP server inside the WanderersGuideUI repo (package name `tactics-mcp`, server name `wgui-tactics`). It describes itself as "Encounter and character data for the GM. Mostly read-only, with scoped writes."
 - **It's separate from AMBA.** Don't point WG clients at AMBA's bridge.
 - **Production:** `https://wgui.wandersguide.site/mcp`. PM2 runs it as `wgui-mcp` from the `tactics-mcp` folder on port 3104. The campaign UI itself runs as the PM2 process `wgui`.
-- **Tools:** there are 71: 39 need the `read` scope and 32 need `write`. 20 of them are encounter tools that require `view: "gm"`. The full list is in the Appendix and in `docs/mcp-tool-directory-67.md`.
+- **Tools:** there are 81: 42 need the `read` scope and 39 need `write`. 20 of them are encounter tools that require `view: "gm"`. The full list is in the Appendix and in `docs/mcp-tool-directory-67.md`.
 - **Two transports:**
   - Streamable HTTP at `/mcp`, from `src/http.ts`.
   - stdio, with two entry points: `src/grokbotBridge.ts` (stdio to a remote HTTP server) and `src/localStdio.ts` (an in-process stdio server for local testing).
@@ -63,7 +63,7 @@ WGUI campaign UI (vite app, PM2 "wgui")   +   WG character builder/sheet
 
 ```bash
 npm install
-cp .env.local.template .env.local   # VITE_SUPABASE_URL, VITE_SUPABASE_KEY, VITE_DDDICE_AUTH_KEY, VITE_ENV, …
+cp .env.local.template .env.local   # VITE_SUPABASE_URL, VITE_SUPABASE_KEY, VITE_DDDICE_AUTH_KEY, VITE_ENV, â€¦
 ```
 
 - **Helper services:** there are extra compose files in `docker/`: `wgui-ext.compose.yml`, `wgui-export.compose.yml` and `wgui-functions.compose.yml`.
@@ -180,7 +180,7 @@ Dependencies: `@modelcontextprotocol/sdk` ^1.29 and `zod` ^4. Dev dependencies: 
 ```bash
 TACTICS_MCP_HOST=127.0.0.1 TACTICS_MCP_PORT=3104 \
 MCP_PUBLIC_ORIGIN=https://your-wgui.example \
-SUPABASE_URL=… SUPABASE_ANON_KEY=… SUPABASE_SERVICE_ROLE_KEY=… \
+SUPABASE_URL=â€¦ SUPABASE_ANON_KEY=â€¦ SUPABASE_SERVICE_ROLE_KEY=â€¦ \
 npm run dev
 # logs: listening on http://127.0.0.1:3104/mcp
 ```
@@ -213,8 +213,8 @@ The same setup for a self-hosted stack:
 
 ```bash
 cd /path/to/WanderersGuideUI/tactics-mcp && npm install
-SUPABASE_URL=https://your-supabase.example SUPABASE_ANON_KEY=… \
-SUPABASE_SERVICE_ROLE_KEY=… JWT_SECRET=… MCP_PUBLIC_ORIGIN=https://wgui.example.com \
+SUPABASE_URL=https://your-supabase.example SUPABASE_ANON_KEY=â€¦ \
+SUPABASE_SERVICE_ROLE_KEY=â€¦ JWT_SECRET=â€¦ MCP_PUBLIC_ORIGIN=https://wgui.example.com \
   pm2 start npm --name wgui-mcp -- run dev     # env is captured into the PM2 process
 
 cd .. && npm install && npm run build
@@ -238,9 +238,9 @@ Paths that must reach tactics-mcp (the same set prod proxies):
 | --- | --- |
 | `/.well-known/oauth-protected-resource` | exact |
 | `/.well-known/oauth-authorization-server` | exact |
-| `/oauth/mcp/…` (authorize, callback, token) | prefix |
+| `/oauth/mcp/â€¦` (authorize, callback, token) | prefix |
 | `/mcp` | prefix (Streamable HTTP, long-lived responses) |
-| everything else | → WGUI UI on 5194 |
+| everything else | â†’ WGUI UI on 5194 |
 
 #### Option 1: nginx (recommended, the typical setup)
 
@@ -369,9 +369,9 @@ On prod, Apache 2.4 terminates TLS with a Let's Encrypt (certbot) certificate. P
 
 ### A8. Tokens and auth
 
-- **Bearer only on `/mcp`:** a malformed, unknown, expired or revoked token is rejected, and there's no cookie fallback. An unauthenticated request gets a 401 with `WWW-Authenticate: Bearer resource_metadata="…", scope="read write"`.
+- **Bearer only on `/mcp`:** a malformed, unknown, expired or revoked token is rejected, and there's no cookie fallback. An unauthenticated request gets a 401 with `WWW-Authenticate: Bearer resource_metadata="â€¦", scope="read write"`.
 - **OAuth:** the authorization-code flow with PKCE S256. If authorize is sent **without** a scope (ChatGPT does this), the grant is **`read write`**. `scope=read` gives a read-only token. An unknown scope returns `invalid_scope`. Dynamic client registration isn't advertised.
-- **Minted tokens:** `POST /api/mcp-tokens` with `{"label":"…","scopes":["read","write"]}`. **If `scopes` is omitted, the token is read-only.** Tokens aren't upgraded later; mint a new one or sign in again.
+- **Minted tokens:** `POST /api/mcp-tokens` with `{"label":"â€¦","scopes":["read","write"]}`. **If `scopes` is omitted, the token is read-only.** Tokens aren't upgraded later; mint a new one or sign in again.
 - **Ownership:** this is separate from scope. Even with `write`, tools refuse to change characters you don't own, and encounter reads need campaign GM access.
 
 ### A9. Verification
@@ -379,9 +379,9 @@ On prod, Apache 2.4 terminates TLS with a Let's Encrypt (certbot) certificate. P
 1. `curl http://127.0.0.1:3104/health` on the server (publicly, `/health` is only reachable if you proxy it; see A7)
 2. `curl https://your-host/.well-known/oauth-authorization-server`. Expect `scopes_supported` to be `["read","write"]`.
 3. `curl -i -X POST https://your-host/mcp`. Expect a 401 with the `WWW-Authenticate` header.
-4. With a token, send `tools/list` and expect **71 tools**. `tools/list` shows every tool to any token; scope is only checked when a tool is called.
+4. With a token, send `tools/list` and expect **81 tools**. `tools/list` shows every tool to any token; scope is only checked when a tool is called.
 5. Call `get_profile`, which should return your Supabase user id. Then try a read such as `list_campaign_characters`.
-6. Check that a read-only token gets `AUTH_REQUIRED` ("MCP token missing scope write for …") on a write tool.
+6. Check that a read-only token gets `AUTH_REQUIRED` ("MCP token missing scope write for â€¦") on a write tool.
 7. Run `npm run smoke` locally for the full scripted check.
 
 ---
@@ -436,7 +436,7 @@ The `mcpServers` block is the format in the repo docs. Putting the token in `env
 
 The repo has no client-specific configs for these. Here's what the repo formats support:
 
-- **Remote HTTP:** for any client that supports Streamable HTTP plus OAuth, use URL `…/mcp`. Discovery is at `/.well-known/oauth-protected-resource`. If the client can't do OAuth, send a bearer header.
+- **Remote HTTP:** for any client that supports Streamable HTTP plus OAuth, use URL `â€¦/mcp`. Discovery is at `/.well-known/oauth-protected-resource`. If the client can't do OAuth, send a bearer header.
 - **stdio:** use the `mcpServers` JSON from B3. Claude Desktop, Cursor (`.cursor/mcp.json`) and Claude Code (`.mcp.json`) all use an `mcpServers` map.
 - **Codex:** the repo ships a Codex plugin manifest (`plugin/.codex-plugin/plugin.json`), which points to `.app.json` and the streamable-http `.mcp.json`.
 
@@ -458,7 +458,7 @@ Start every session with `get_profile`. Treat returned ids as authoritative, and
 | 6 | `choose` (`choiceId`, `optionId`) | Repeat until no open choices remain. Illegal ids are rejected |
 | 7 | `list_spell_options` (`source`) | For casters |
 | 8 | `add_spell` (`spellId`, `rank`, `source`, `prepare`) or `set_spells` | |
-| 9 | `list_options kind=item`, then `add_inventory_item` (`itemId`, `quantity`) | Gear. `remove_inventory_item` undoes it |
+| 9 | `list_options kind=item`, then `add_inventory_item` (`itemId`, `quantity`) | Gear. `remove_inventory_item` undoes it. `give_money` / `take_money` edit `inventory.coins` |
 | 10 | `export_character` (json slim/full or pdf) | Check the result |
 
 > *Example prompt:* "Using the wgui tools, create a level 1 human fighter named Aragorn. Use the Core rules only. Say what you'll change before each write, fill every open choice with sensible options, add a longsword and adventurer's pack, then export the slim JSON."
@@ -468,6 +468,10 @@ Start every session with `get_profile`. Treat returned ids as authoritative, and
 Run `join_campaign` with `characterId` and the GM's `joinKey`. **Never echo the key.** If the character is already in the campaign, the result is `already=true`. Check with `list_campaign_characters`.
 
 > *Prompt:* "Join my character 1234 to the campaign. I'll paste the join key; don't repeat it back."
+
+### C2b. Create or edit a campaign / encounter
+
+`create_campaign` and `update_campaign` post to stock `create-campaign`. `update_campaign` merges `meta_data` so campaign art stays. `create_encounter` omits `campaignId` for a standalone fight, or takes a campaign this user owns. `set_encounter_campaign` attaches or detaches (`campaignId` null). There is no delete tool.
 
 ### C3. GM encounter reads (all need `view: "gm"` and GM access)
 
@@ -516,13 +520,13 @@ It never changes initiative, HP, conditions or the roster. Those are C6.
 - **Destructive tools:** `delete_character`, `wgui_ext_hb_delete_content`, `remove_*`, `set_spells` (replaces a list) and `patch_encounter_dice` (replaces fields). Have the model state the change and get a yes first.
 - **Secrets:** keep tokens, codes, PKCE verifiers, cookies and join keys out of prompts, logs and repos. Tokens are stored only as hashes.
 - **Dev mint:** never enable `TACTICS_MCP_DEV_MINT` on a public host.
-- **Suggested bot instruction** (from grokbot-mcp-setup.md): "Use only tools discovered from the wgui MCP server… Say what will change before using a write tool, and only when the user asked. Re-read state after a failed or successful write before retrying. Do not invent endpoints, tool names, or schemas."
+- **Suggested bot instruction** (from grokbot-mcp-setup.md): "Use only tools discovered from the wgui MCP serverâ€¦ Say what will change before using a write tool, and only when the user asked. Re-read state after a failed or successful write before retrying. Do not invent endpoints, tool names, or schemas."
 
 ## 4. Troubleshooting
 
 | Symptom | Cause and fix |
 | --- | --- |
-| Write tools fail with `AUTH_REQUIRED … scope write` | The token is read-only: an old grant, `scope=read`, or a token minted without `scopes`. Sign in again (OAuth with no scope now grants read+write, since commit dc9d79b) or mint with `["read","write"]`. Tokens aren't upgraded in place |
+| Write tools fail with `AUTH_REQUIRED â€¦ scope write` | The token is read-only: an old grant, `scope=read`, or a token minted without `scopes`. Sign in again (OAuth with no scope now grants read+write, since commit dc9d79b) or mint with `["read","write"]`. Tokens aren't upgraded in place |
 | ChatGPT shows only read tools / "doesn't show write" | Delete the connector and re-add it (ChatGPT caches the grant). Make sure the server is running the read+write default |
 | OAuth sign-in succeeds, then fails before returning to ChatGPT | Check that the callback is `https://chatgpt.com/connector/oauth/<id>`, that `CHATGPT_MCP_CLIENT_ID` (if set) matches the client id you entered, that token auth is `none`, and that `MCP_PUBLIC_ORIGIN` is on the GoTrue allow-list |
 | Can't reach "add account"/auth UI | Use the ChatGPT developer-mode app form: OAuth, client id `chatgpt`, token auth `none` |
@@ -545,17 +549,18 @@ No tool exists today for:
 
 Each of these would need a new server tool.
 
-## Appendix: tool reference (71)
+## Appendix: tool reference (81)
 
-**Campaign, encounter and combat (26).**
+**Campaign, encounter and combat (33).**
 - Read: `get_profile`, `get_campaign_owner_contacts`, `list_campaign_characters`.
 - Read, GM view: `list_encounters`, `get_encounter`, `list_pcs`, `list_combatants`, `list_roster_edges`, `get_round_log`, `get_dice_log`, `get_stat_block`, `list_ability_groups`, `get_abilities`, `get_feats`, `get_class_features`, `get_skills`, `get_spells`, `get_character`, `get_monster`.
 - Write: `ensure_public_user`, `join_campaign`, `patch_encounter_dice`.
 - Write, GM view: `add_encounter_combatant`, `remove_encounter_combatant`, `patch_encounter_combatant`, `roll_initiative`.
+- Campaign/encounter rows: `list_campaigns`, `get_campaign`, `create_campaign`, `update_campaign`, `create_encounter`, `update_encounter`, `set_encounter_campaign`.
 
-**Character (15).**
-- Read: `export_character`, `get_character_row`, `list_options`, `list_open_choices`, `list_spell_options`.
-- Write: `create_character`, `delete_character`, `choose`, `set_identity`, `set_books`, `add_spell`, `remove_spell`, `set_spells`, `add_inventory_item`, `remove_inventory_item`.
+**Character (18).**
+- Read: `export_character`, `get_character_row`, `list_options`, `list_open_choices`, `list_spell_options`, `convert_coins`.
+- Write: `create_character`, `delete_character`, `choose`, `set_identity`, `set_books`, `add_spell`, `remove_spell`, `set_spells`, `add_inventory_item`, `remove_inventory_item`, `give_money`, `take_money`.
 
 **Homebrew (30).**
 - Read: `wgui_ext_hb_find_*` for content_source, trait, ability_block, ancestry, background, class, archetype, versatile_heritage, class_archetype, item, language, creature, spell and content_update, plus `wgui_ext_hb_get_content_source_stats`.
