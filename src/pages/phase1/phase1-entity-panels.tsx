@@ -1635,14 +1635,14 @@ export function HealthStatusPanel({ combatant, calculatedStatus, calculating, on
         {canEditTempHp ? (
           <EditableValueWithNote
             label='Temp. HP'
-            displayValue={entity.hp_temp || '-'}
+            displayValue={entity.hp_temp || '0'}
             editValue={entity.hp_temp ? String(entity.hp_temp) : ''}
             canEdit
-            accentClass={entity.hp_temp ? 'text-p1-temp-hp' : 'text-p1-faint'}
+            accentClass={entity.hp_temp ? 'text-p1-temp-hp' : 'text-p1-muted'}
             onCommit={(raw, note) => onPersistTempHp?.(raw, note)}
           />
         ) : (
-          <Metric label='Temp. HP' value={entity.hp_temp || '-'} />
+          <Metric label='Temp. HP' value={entity.hp_temp || '0'} />
         )}
       </div>
       <button
@@ -1742,10 +1742,10 @@ export function HealthStatusPanel({ combatant, calculatedStatus, calculating, on
     </>
   );
   const senses = layout === 'sheet' ? (
-    <section className='flex h-full flex-col divide-y divide-p1-border border border-p1-border bg-p1-surface'>
+    <section className='flex flex-col divide-y divide-p1-border border border-p1-border bg-p1-surface'>
       <SheetSenseRow icon={<Eye size={14} />} label='Perception' value={signed(status.perception)} detail={status.vision} onClick={() => openStatDetail?.('perception')} disabled={!openStatDetail} />
       <SheetSenseRow icon={<Footprints size={14} />} label='Speed' value={status.speed ? `${status.speed} ft.` : '-'} extra={status.otherSpeeds} onClick={() => openStatDetail?.('speed')} disabled={!openStatDetail} />
-      <SheetSenseRow label='Class DC' value={status.classDc} onClick={() => openStatDetail?.('classDc')} disabled={!openStatDetail} className='mt-auto' />
+      <SheetSenseRow label='Class DC' value={status.classDc} onClick={() => openStatDetail?.('classDc')} disabled={!openStatDetail} />
     </section>
   ) : (
     <section className='grid grid-cols-3 divide-x divide-p1-border border border-p1-border bg-p1-surface'>
@@ -1785,7 +1785,7 @@ export function HealthStatusPanel({ combatant, calculatedStatus, calculating, on
         </section>
       ) : null}
       {layout === 'sheet' ? (
-        <div className='grid grid-cols-1 items-stretch gap-2 lg:grid-cols-[minmax(11rem,0.85fr)_minmax(0,1.35fr)_minmax(12rem,1fr)]'>
+        <div className='grid grid-cols-1 items-start gap-2 lg:grid-cols-[minmax(11rem,0.85fr)_minmax(0,1.35fr)_minmax(12rem,1fr)]'>
           {attributes}
           <div className='space-y-2'>
             {hitPoints}
@@ -1890,7 +1890,7 @@ function AttributePill({ label, value, tall, onClick, disabled }: { label: strin
 }
 function SheetSenseRow({ icon, label, value, detail, extra, onClick, disabled, className }: { icon?: ReactNode; label: string; value: ReactNode; detail?: string; extra?: string[]; onClick?: () => void; disabled?: boolean; className?: string }) {
   return (
-    <button type='button' disabled={disabled} className={`flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-transparent ${className ?? ''}`} onClick={onClick}>
+    <button type='button' disabled={disabled} className={`flex w-full items-start gap-3 px-3 py-2 text-left hover:bg-p1-hover disabled:cursor-default disabled:hover:bg-transparent ${className ?? ''}`} onClick={onClick}>
       <div className='min-w-0 flex-1'>
         <div className='flex items-center gap-1 text-xs text-p1-muted'>{icon}{label}</div>
         {detail ? <div className='mt-0.5 text-[11px] text-p1-faint'>{detail}</div> : null}

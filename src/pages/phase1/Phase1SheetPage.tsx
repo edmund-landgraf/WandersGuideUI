@@ -986,21 +986,35 @@ function Phase1CharacterMenu({
 }) {
   const [open, setOpen] = useState(false);
   const [exporting, setExporting] = useState<'pdf' | 'json' | null>(null);
+  const [menuBox, setMenuBox] = useState<{ top: number; right: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
+    const place = () => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setMenuBox({ top: rect.bottom + 4, right: Math.max(8, window.innerWidth - rect.right) });
+    };
+    place();
     const close = (event: MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) return;
+      setOpen(false);
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false);
     };
     document.addEventListener('mousedown', close);
     document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
     return () => {
       document.removeEventListener('mousedown', close);
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
     };
   }, [open]);
 
@@ -1018,8 +1032,9 @@ function Phase1CharacterMenu({
   const label = exporting === 'pdf' ? 'Exporting PDF…' : exporting === 'json' ? 'Exporting JSON…' : 'Character';
 
   return (
-    <div ref={menuRef} className='relative'>
+    <div className='relative'>
       <button
+        ref={buttonRef}
         type='button'
         className='toolbar-button toolbar-button-compact'
         disabled={Boolean(exporting)}
@@ -1029,8 +1044,8 @@ function Phase1CharacterMenu({
       >
         <Menu size={13} /> {label} <ChevronDown size={13} />
       </button>
-      {open && (
-        <div role='menu' className='absolute left-0 z-50 mt-1 min-w-52 border border-p1-border bg-p1-surface py-1 shadow-2xl'>
+      {open && menuBox && createPortal(
+        <div ref={menuRef} role='menu' className='fixed z-[80] min-w-56 border border-p1-border bg-p1-surface py-1 shadow-2xl' style={{ top: menuBox.top, right: menuBox.right }}>
           {character.campaign_id ? (
             <Link role='menuitem' className={characterMenuItemClass} to={`/phase1/campaign/${character.campaign_id}`} onClick={() => setOpen(false)}>
               <Flag size={14} /> Campaign
@@ -1076,7 +1091,8 @@ function Phase1CharacterMenu({
               }}
             />
           </label>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

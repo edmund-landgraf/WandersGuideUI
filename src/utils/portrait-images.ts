@@ -132,6 +132,11 @@ const imageStore: Record<string, ImageOption[]> = {
       name: 'Luthar',
       url: 'https://api.wanderersguide.app/storage/v1/object/public/portraits/default/F43532E8-BE7B-42F9-B474-A632CFDD5490.jpeg',
     },
+    { name: 'Mira Valen', url: '/portraits/mira-valen.jpg' },
+    { name: 'Thalanis Reed', url: '/portraits/thalanis-reed.jpg' },
+    { name: 'Brunna Coppervein', url: '/portraits/brunna-coppervein.jpg' },
+    { name: 'Pip Underbough', url: '/portraits/pip-underbough.jpg' },
+    { name: 'Korga Ashhand', url: '/portraits/korga-ashhand.jpg' },
   ],
   pathfinder_iconics: [
     {
