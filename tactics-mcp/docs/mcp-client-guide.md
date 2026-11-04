@@ -23,7 +23,7 @@ WGUI campaign UI (vite app, PM2 "wgui")   +   WG character builder/sheet
 - **What it is:** `tactics-mcp` is the MCP server inside the WanderersGuideUI repo (package name `tactics-mcp`, server name `wgui-tactics`). It describes itself as "Encounter and character data for the GM. Mostly read-only, with scoped writes."
 - **It's separate from AMBA.** Don't point WG clients at AMBA's bridge.
 - **Production:** `https://wgui.wandersguide.site/mcp`. PM2 runs it as `wgui-mcp` from the `tactics-mcp` folder on port 3104. The campaign UI itself runs as the PM2 process `wgui`.
-- **Tools:** there are 95: 44 need the `read` scope and 51 need `write`. 20 of them are encounter tools that require `view: "gm"`. The full list is in the Appendix and in `docs/mcp-tool-directory-67.md`.
+- **Tools:** there are 95: 44 need the `read` scope and 51 need `write`. 20 of them are encounter tools that require `view: "gm"`. The full list is in the Appendix and in `docs/mcp-tool-directory-95.md`.
 - **Two transports:**
   - Streamable HTTP at `/mcp`, from `src/http.ts`.
   - stdio, with two entry points: `src/grokbotBridge.ts` (stdio to a remote HTTP server) and `src/localStdio.ts` (an in-process stdio server for local testing).
@@ -563,7 +563,7 @@ Each of these would need a new server tool.
 - Read: `wgui_ext_hb_find_*` for content_source, trait, ability_block, ancestry, background, class, archetype, versatile_heritage, class_archetype, item, language, creature, spell and content_update, plus `wgui_ext_hb_get_content_source_stats`.
 - Write: `wgui_ext_hb_create_*` for the same 13 content types (content_source through spell), plus `wgui_ext_hb_create_content_update` and `wgui_ext_hb_delete_content`.
 
-Parameters and return values for every tool are in `docs/mcp-tool-directory-67.md`.
+Parameters and return values for every tool are in `docs/mcp-tool-directory-95.md`.
 
 ## Not verified
 

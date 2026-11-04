@@ -1,6 +1,6 @@
 # WGUI MCP tool directory (95 tools)
 
-Generated Nov 3, 2026 from the live `wgui` MCP server tool list, with scopes checked against `READ_TOOLS` / `WRITE_TOOLS` in `src/server.ts`. The filename still says 67; the counts in this file are the current list.
+Generated Nov 3, 2026 from the live `wgui` MCP server tool list, with scopes checked against `READ_TOOLS` / `WRITE_TOOLS` in `src/server.ts`.
 
 **95 tools: 44 require `read`, 51 require `write`.** This includes the 7 campaign/encounter create-update tools in the section below. `tools/list` returns every tool for any token; scope is enforced at call time. The 20 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (27), character (28), homebrew `wgui_ext_hb_*` (30), plus campaign/encounter writes. Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
 
@@ -117,9 +117,9 @@ These tools call stock Wanderer's Guide functions (`find-campaign`, `create-camp
 
 Stock `find-encounter` is owner-only, so another user's encounter comes back empty and these tools return `NOT_FOUND`. `ENCOUNTER_FORBIDDEN` is only used when a row is actually returned and `user_id` is not the caller. Campaign writes use `CAMPAIGN_FORBIDDEN` the same way.
 
-`get_campaign` is owner-only. Stock `find-campaign` can still return another user's campaign, and this tool answers `CAMPAIGN_FORBIDDEN` in that case (it does not return the row with `isOwner: false`). PR #20's `get_campaign` did not allow campaign members either; a character in the campaign is not enough. A missing campaign is `NOT_FOUND`. `isOwner` on a successful read is true.
+`get_campaign` is owner-only. Stock `find-campaign` can still return another user's campaign, and this tool answers `CAMPAIGN_FORBIDDEN` in that case (it does not return the row with `isOwner: false`). Campaign members are not allowed either; a character in the campaign is not enough. A missing campaign is `NOT_FOUND`. `isOwner` on a successful read is true.
 
-`get_campaign` is the same tool name as PR #20. This result is a superset of that art payload: `id`, `name`, `image_url` (null when blank), `image_focus_y` (null when unset), `isOwner`, plus `description`, `notes`, `meta_data`, and `created_at`. When merging #20, keep this registration and delete the `get_campaign` block in that branch's `character-sheet.ts`. Leave `set_campaign_art` there.
+`get_campaign` returns `id`, `name`, `image_url` (null when blank), `image_focus_y` (null when unset), `isOwner`, plus `description`, `notes`, `meta_data`, and `created_at`.
 
 The encounter table has no `notes` column (`EncounterSchema` is name, icon, color, campaign_id, combatants, meta_data). `update_encounter` has no `notes` argument. Description is `meta_data.description`.
 
