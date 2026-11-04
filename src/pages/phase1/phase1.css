@@ -632,6 +632,17 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   background-size: cover;
   background-position: center top;
 }
+.p1-encounter-art-layer.is-color-only {
+  background: color-mix(in srgb, var(--campaign-row-color) 38%, var(--p1-bg-page));
+}
+.p1-encounter-art-color,
+.p1-char-row-art-color {
+  position: absolute;
+  inset: 0;
+  background: var(--campaign-row-color);
+  mix-blend-mode: soft-light;
+  opacity: 0.8;
+}
 .p1-encounter-has-art .p1-sheet-art-veil {
   background: linear-gradient(
     to bottom,

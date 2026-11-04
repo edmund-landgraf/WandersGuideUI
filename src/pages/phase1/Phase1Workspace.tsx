@@ -1488,9 +1488,9 @@ export function Phase1CharactersPage() {
                     {showStrip && (
                       <div className='p1-char-row-art' aria-hidden>
                         {artUrl ? (
-                          <CampaignStripArt url={artUrl} focusY={focusY} />
+                          <CampaignStripArt url={artUrl} focusY={focusY} wash={rowColor} />
                         ) : (
-                          <div className='h-full w-full' style={{ backgroundColor: rowColor }} />
+                          <div className='h-full w-full' style={{ background: `color-mix(in srgb, ${rowColor} 42%, var(--p1-bg-page))` }} />
                         )}
                         <div className='p1-char-row-art-veil' />
                       </div>
@@ -3469,6 +3469,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   }, [railOpen]);
 
   const campaignArtUrl = !viewingNotes && !viewingSettings ? campaign?.meta_data?.image_url?.trim() : '';
+  const campaignWash = !viewingNotes && !viewingSettings ? normalizeRowColor(campaign?.meta_data?.row_color) : '';
   const shownCampaignArt = useCampaignArtSrc(campaignArtUrl);
   const artFocus = campaignFocusY(campaign?.meta_data?.image_focus_y);
   useEffect(() => {
@@ -3500,7 +3501,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
             : 'grid-cols-1';
 
   return (
-    <div className={`relative flex h-dvh min-h-0 flex-col overflow-hidden bg-p1-page text-p1-text md:h-screen md:min-h-[680px]${campaignArtUrl && !artHidden ? ` p1-encounter-has-art p1-sheet-art-${artTone}` : ''}`}>
+    <div className={`relative flex h-dvh min-h-0 flex-col overflow-hidden bg-p1-page text-p1-text md:h-screen md:min-h-[680px]${(campaignArtUrl || campaignWash) && !artHidden ? ` p1-encounter-has-art p1-sheet-art-${artTone}` : ''}`}>
       <WorkspaceHeader section={standalone ? 'encounters' : undefined} label={campaign?.name ?? encounterDisplayName(selectedEncounter?.name ?? 'Encounter')} campaignId={campaign?.id ?? null} encounterId={selectedEncounter?.id ?? null} noteIndex={selectedNote?.index ?? null} viewingSettings={viewingSettings} isGm={isGm} railOpen={railOpen} onToggleRail={() => setRailOpen((open) => !open)} />
       <div className={`p1-encounter-body grid min-h-0 flex-1 ${encounterGrid}`}>
         {railDrawer ? railOpen && createPortal(
@@ -3511,8 +3512,17 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
           document.body,
         ) : railOpen && <div id='campaign-rail' className='min-h-0'>{rail}</div>}
         <main className='p1-encounter-main relative min-h-0 min-w-0 overflow-hidden bg-p1-surface'>
-          {campaignArtUrl && !artHidden && (
-            <div className='p1-encounter-art-layer' style={{ backgroundImage: `url(${shownCampaignArt})`, backgroundPosition: `center ${artFocus}%` }} aria-hidden>
+          {(campaignArtUrl || campaignWash) && !artHidden && (
+            <div
+              className={`p1-encounter-art-layer${campaignArtUrl ? '' : ' is-color-only'}`}
+              style={{
+                backgroundImage: campaignArtUrl ? `url(${shownCampaignArt})` : undefined,
+                backgroundPosition: `center ${artFocus}%`,
+                ['--campaign-row-color' as string]: campaignWash || undefined,
+              }}
+              aria-hidden
+            >
+              {campaignArtUrl && campaignWash && <div className='p1-encounter-art-color' />}
               <div className='p1-sheet-art-veil' />
             </div>
           )}
@@ -3715,9 +3725,10 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
           <div className='min-h-0 flex-1'>{inspector}</div>
         </div>
       )}
-      {campaignArtUrl && (
+      {(campaignArtUrl || campaignWash) && (
         <Phase1ArtworkOverlay
-          url={shownCampaignArt}
+          url={campaignArtUrl ? shownCampaignArt : undefined}
+          colorWash={campaignWash || undefined}
           label={campaign?.name ?? 'Campaign art'}
           canEdit={isGm}
           artTone={artTone}
@@ -6741,8 +6752,13 @@ async function shrinkCampaignArt(file: File): Promise<File> {
 
 function normalizeArtLink(raw: string): string {
   const cleaned = raw.trim().replace(/&amp;/g, '&').replace(/[\u200B-\u200D\uFEFF]/g, '');
-  const match = cleaned.match(/https?:\/\/\S+/i);
+  const match = cleaned.match(/https?:\/\/(?:(?!https?:\/\/)\S)+/i);
   return (match ? match[0] : cleaned).replace(/[)>"'`\],.;]+$/, '');
+}
+
+function artHostDenied(cause: unknown): boolean {
+  const message = cause instanceof Error ? cause.message : '';
+  return /does not have access/i.test(message);
 }
 
 function sniffImageType(bytes: Uint8Array): string {
@@ -7003,7 +7019,9 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
       onUploaded(url);
       onSaved();
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'Could not save campaign art.';
+      const message = artHostDenied(cause)
+        ? 'Hosting an uploaded image needs Patreon. Paste a public image link instead.'
+        : cause instanceof Error ? cause.message : 'Could not save campaign art.';
       setError(message);
       onFrameError(message);
     } finally {
@@ -7061,19 +7079,23 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
           }
         }
         if (stored.size <= 3 * 1024 * 1024) {
-          const hosted = await uploadImage(stored, 'backgrounds');
-          if (!hosted) throw new Error('Could not save campaign art.');
-          rememberTempArt(hosted, stored);
-          void writeTempArt(hosted, stored).catch(() => undefined);
-          await phase1Request('create-campaign', {
-            ...campaign,
-            meta_data: { ...campaign.meta_data, image_url: hosted },
-          });
-          setOpen(false);
-          onFrame(hosted);
-          onUploaded(hosted);
-          onSaved();
-          return;
+          try {
+            const hosted = await uploadImage(stored, 'backgrounds');
+            if (!hosted) throw new Error('Could not save campaign art.');
+            rememberTempArt(hosted, stored);
+            void writeTempArt(hosted, stored).catch(() => undefined);
+            await phase1Request('create-campaign', {
+              ...campaign,
+              meta_data: { ...campaign.meta_data, image_url: hosted },
+            });
+            setOpen(false);
+            onFrame(hosted);
+            onUploaded(hosted);
+            onSaved();
+            return;
+          } catch (cause) {
+            if (!artHostDenied(cause)) throw cause;
+          }
         }
       }
       await copyArtLink(url);
@@ -7352,9 +7374,14 @@ function useCampaignArtSrc(url: string | undefined): string {
   return url ? campaignArtSrc(url) : '';
 }
 
-function CampaignStripArt({ url, focusY }: { url: string; focusY: number }) {
+function CampaignStripArt({ url, focusY, wash }: { url: string; focusY: number; wash?: string }) {
   const src = useCampaignArtSrc(url);
-  return <img src={src} alt='' referrerPolicy='no-referrer' loading='lazy' decoding='async' style={{ ['--campaign-art-focus' as string]: `${focusY}%` }} />;
+  return (
+    <>
+      <img src={src} alt='' referrerPolicy='no-referrer' loading='lazy' decoding='async' style={{ ['--campaign-art-focus' as string]: `${focusY}%` }} />
+      {wash && <div className='p1-char-row-art-color' style={{ ['--campaign-row-color' as string]: wash }} />}
+    </>
+  );
 }
 
 function campaignFocusY(value?: number | string | null): number {
@@ -7686,9 +7713,9 @@ function CampaignWorkspaceRow({ campaign, canDelete, members, ownedCampaigns, on
       {showStrip && (
         <div className='p1-char-row-art' aria-hidden>
           {artUrl ? (
-            <CampaignStripArt url={artUrl} focusY={focusY} />
+            <CampaignStripArt url={artUrl} focusY={focusY} wash={rowColor} />
           ) : (
-            <div className='h-full w-full' style={{ backgroundColor: rowColor }} />
+            <div className='h-full w-full' style={{ background: `color-mix(in srgb, ${rowColor} 42%, var(--p1-bg-page))` }} />
           )}
           <div className='p1-char-row-art-veil' />
         </div>

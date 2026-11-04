@@ -75,6 +75,7 @@ export function Phase1BackgroundModal({
 export function Phase1ArtworkOverlay({
   url,
   label,
+  colorWash,
   canEdit,
   artTone,
   onArtTone,
@@ -86,6 +87,7 @@ export function Phase1ArtworkOverlay({
 }: {
   url?: string;
   label?: string;
+  colorWash?: string;
   canEdit: boolean;
   artTone: 'light' | 'dark';
   onArtTone: (tone: 'light' | 'dark') => void;
@@ -96,7 +98,8 @@ export function Phase1ArtworkOverlay({
   onToggleArt?: () => void;
 }) {
   const option = url ? getAllBackgroundImages().find((image) => image.url === url) ?? { name: label ?? 'Custom', url } : null;
-  if (!canEdit && !option) return null;
+  const colorOnly = Boolean(colorWash) && !option;
+  if (!canEdit && !option && !colorOnly) return null;
 
   return (
     <div className='pointer-events-none fixed bottom-3 right-3 z-20 flex max-w-[min(18rem,calc(100vw-1.5rem))] flex-col items-end gap-1'>
@@ -117,6 +120,16 @@ export function Phase1ArtworkOverlay({
         </div>
       )}
       <div className='pointer-events-auto flex flex-wrap justify-end gap-1'>
+        {colorOnly && onToggleArt && (
+          <button
+            type='button'
+            className={`icon-button${artHidden ? ' is-active' : ''}`}
+            title={artHidden ? 'Show campaign color on this screen' : 'Hide campaign color on this screen'}
+            onClick={onToggleArt}
+          >
+            <EyeOff size={16} />
+          </button>
+        )}
         {option && (
           <>
             <button
@@ -147,7 +160,7 @@ export function Phase1ArtworkOverlay({
             )}
           </>
         )}
-        {canEdit && (
+        {canEdit && !colorOnly && (
           <>
             {option && (
               <>
