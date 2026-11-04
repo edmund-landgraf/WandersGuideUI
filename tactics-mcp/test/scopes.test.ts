@@ -16,9 +16,11 @@ import { getEncounterReader, setEncounterReader, type EncounterReader } from "..
 import { createTacticsMcpServer, scopeForTool, TACTICS_MCP_DESCRIPTION, TACTICS_MCP_NAME } from "../src/server.js";
 import { mintToken, normalizeScopes, resetTokens, resolveBearer } from "../src/tokens.js";
 
-const WRITE_TOOLS = ["ensure_public_user", "join_campaign", "patch_encounter_dice"];
-const CHARACTER_READS = ["export_character", "get_character_row", "list_companions", "list_open_choices", "list_options", "list_spell_options"];
-const CHARACTER_WRITES = ["add_companion", "add_inventory_item", "add_spell", "choose", "create_character", "delete_character", "remove_companion", "remove_inventory_item", "remove_spell", "set_books", "set_identity", "set_spells", "update_companion"];
+const WRITE_TOOLS = ["ensure_public_user", "join_campaign", "patch_encounter_dice", "add_encounter_combatant", "remove_encounter_combatant", "patch_encounter_combatant", "roll_initiative"];
+const CAMPAIGN_READS = ["list_campaigns", "get_campaign"];
+const CAMPAIGN_WRITES = ["create_campaign", "update_campaign", "create_encounter", "update_encounter", "set_encounter_campaign"];
+const CHARACTER_READS = ["convert_coins", "export_character", "get_character_row", "list_companions", "list_open_choices", "list_options", "list_spell_options"];
+const CHARACTER_WRITES = ["add_companion", "add_inventory_item", "add_spell", "choose", "create_character", "delete_character", "give_money", "remove_companion", "remove_inventory_item", "remove_spell", "set_books", "set_identity", "set_spells", "take_money", "update_companion"];
 const HOMEBREW_WRITES = [
   "wgui_ext_hb_create_content_source",
   "wgui_ext_hb_create_trait",
@@ -37,6 +39,16 @@ const HOMEBREW_WRITES = [
   "wgui_ext_hb_delete_content",
 ];
 
+function writeArguments(name: string) {
+  if (name === "join_campaign") return { characterId: 7, joinKey: "secret" };
+  if (name === "patch_encounter_dice") return { campaignId: 1, encounterId: 2, diceRollState: { title: "t" } };
+  if (name === "add_encounter_combatant") return { view: "gm", campaignId: 1, encounterId: 2, characterId: 7 };
+  if (name === "remove_encounter_combatant") return { view: "gm", campaignId: 1, encounterId: 2, combatantId: "c1" };
+  if (name === "patch_encounter_combatant") return { view: "gm", campaignId: 1, encounterId: 2, combatantId: "c1", hpCurrent: 5 };
+  if (name === "roll_initiative") return { view: "gm", campaignId: 1, encounterId: 2, rolls: [{ combatantId: "c1", bonus: 4 }] };
+  return {};
+}
+
 function characterArguments(name: string) {
   if (name === "set_identity") return { characterId: 1, slot: "class", optionId: 1 };
   if (name === "choose") return { characterId: 1, choiceId: "lang-1", optionId: "thalassic" };
@@ -51,6 +63,10 @@ function characterArguments(name: string) {
   if (name === "set_spells") return { characterId: 1, list: [] };
   if (name === "add_inventory_item") return { characterId: 1, itemId: 1 };
   if (name === "remove_inventory_item") return { characterId: 1, inventoryItemId: "x" };
+  if (name === "get_campaign" || name === "update_campaign") return { campaignId: 1 };
+  if (name === "update_encounter" || name === "set_encounter_campaign") return { encounterId: 1, campaignId: 1 };
+  if (name === "give_money" || name === "take_money") return { characterId: 1, amount: { gp: 1 } };
+  if (name === "convert_coins") return { amount: { cp: 1 } };
   return {};
 }
 
@@ -137,12 +153,14 @@ describe("tactics scopes", { concurrency: 1 }, () => {
       assert.equal(info?.description, TACTICS_MCP_DESCRIPTION);
 
       const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
-      assert.equal(names.length, 71);
-      for (const name of [...CHARACTER_READS, ...CHARACTER_WRITES]) assert.ok(names.includes(name), name);
+      assert.equal(names.length, 85);
+      for (const name of [...CHARACTER_READS, ...CHARACTER_WRITES, ...CAMPAIGN_READS, ...CAMPAIGN_WRITES]) assert.ok(names.includes(name), name);
       assert.deepEqual(CHARACTER_READS.map(scopeForTool), CHARACTER_READS.map(() => "read"));
       assert.deepEqual(CHARACTER_WRITES.map(scopeForTool), CHARACTER_WRITES.map(() => "write"));
-      assert.deepEqual(names.filter((name) => scopeForTool(name) === "write"), [...WRITE_TOOLS, ...CHARACTER_WRITES, ...HOMEBREW_WRITES].sort());
-      assert.equal(names.filter((name) => scopeForTool(name) === "read").length, 40);
+      assert.deepEqual(CAMPAIGN_READS.map(scopeForTool), CAMPAIGN_READS.map(() => "read"));
+      assert.deepEqual(CAMPAIGN_WRITES.map(scopeForTool), CAMPAIGN_WRITES.map(() => "write"));
+      assert.deepEqual(names.filter((name) => scopeForTool(name) === "write"), [...WRITE_TOOLS, ...CAMPAIGN_WRITES, ...CHARACTER_WRITES, ...HOMEBREW_WRITES].sort());
+      assert.equal(names.filter((name) => scopeForTool(name) === "read").length, 43);
       assert.equal(scopeForTool("not_a_tool"), null);
 
       const profile = await client.callTool({ name: "get_profile", arguments: {} });
@@ -153,16 +171,17 @@ describe("tactics scopes", { concurrency: 1 }, () => {
       for (const name of WRITE_TOOLS) {
         const denied = await client.callTool({
           name,
-          arguments: name === "join_campaign"
-            ? { characterId: 7, joinKey: "secret" }
-            : name === "patch_encounter_dice"
-              ? { campaignId: 1, encounterId: 2, diceRollState: { title: "t" } }
-              : {},
+          arguments: writeArguments(name),
         });
         assert.equal(denied.isError, true);
         assert.equal(textOf(denied), `MCP token missing scope write for ${name}.`);
       }
       for (const name of CHARACTER_WRITES) {
+        const denied = await client.callTool({ name, arguments: characterArguments(name) });
+        assert.equal(denied.isError, true);
+        assert.equal(textOf(denied), `MCP token missing scope write for ${name}.`);
+      }
+      for (const name of CAMPAIGN_WRITES) {
         const denied = await client.callTool({ name, arguments: characterArguments(name) });
         assert.equal(denied.isError, true);
         assert.equal(textOf(denied), `MCP token missing scope write for ${name}.`);
@@ -173,6 +192,10 @@ describe("tactics scopes", { concurrency: 1 }, () => {
       const readDenied = await client.callTool({ name: "get_profile", arguments: {} });
       assert.equal(textOf(readDenied), "MCP token missing scope read for get_profile.");
       for (const name of CHARACTER_READS) {
+        const denied = await client.callTool({ name, arguments: characterArguments(name) });
+        assert.equal(textOf(denied), `MCP token missing scope read for ${name}.`);
+      }
+      for (const name of CAMPAIGN_READS) {
         const denied = await client.callTool({ name, arguments: characterArguments(name) });
         assert.equal(textOf(denied), `MCP token missing scope read for ${name}.`);
       }

@@ -1,4 +1,4 @@
-import type { ActionCost, Combatant, CombatantActionLogEntry, CombatantActionLogKind, InitiativeRoundLog } from '@schemas/content';
+import { initiativeRollBatch, type ActionCost, type Combatant, type CombatantActionLogEntry, type CombatantActionLogKind, type InitiativeRoundLog } from '@schemas/content';
 import { abilityNameAndCost } from '@utils/actions';
 import type { Phase1Ability } from './phase1-abilities';
 
@@ -23,7 +23,7 @@ export type ActionLogDraft = {
 
 export function currentActionRound(initiativeLog?: InitiativeRoundLog[]): number {
   if (!initiativeLog?.length) return 1;
-  return Math.max(...initiativeLog.map((entry) => entry.round));
+  return Math.max(...initiativeLog.map((entry) => initiativeRollBatch(entry) ?? 1));
 }
 
 export function actionCostCount(cost: ActionCost | string | null | undefined): number {
