@@ -1,12 +1,12 @@
-# WGUI MCP tool directory (85 tools)
+# WGUI MCP tool directory (95 tools)
 
 Generated Nov 3, 2026 from the live `wgui` MCP server tool list, with scopes checked against `READ_TOOLS` / `WRITE_TOOLS` in `src/server.ts`. The filename still says 67; the counts in this file are the current list.
 
-**85 tools: 43 require `read`, 42 require `write`.** This includes the 7 campaign/encounter create-update tools in the section below. `tools/list` returns every tool for any token; scope is enforced at call time. The 20 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (26), character (22), homebrew `wgui_ext_hb_*` (30), plus campaign/encounter writes. Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
+**95 tools: 44 require `read`, 51 require `write`.** This includes the 7 campaign/encounter create-update tools in the section below. `tools/list` returns every tool for any token; scope is enforced at call time. The 20 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (27), character (28), homebrew `wgui_ext_hb_*` (30), plus campaign/encounter writes. Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
 
 Common encounter params: `campaignId`, `encounterId`, and for per-combatant tools `combatantId`.
 
-## Campaign, encounter, and combat (26: 19 read, 7 write)
+## Campaign, encounter, and combat (27: 19 read, 8 write)
 
 | Tool | Scope | What it does / returns | Required params |
 | --- | --- | --- | --- |
@@ -15,6 +15,7 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `join_campaign` | write | Attaches a character the caller owns to a campaign via join key | `characterId`, `joinKey` |
 | `get_campaign_owner_contacts` | read | Email/display name of owners the caller shares a campaign with (max 24 ids) | `userIds` |
 | `list_campaign_characters` | read | Campaign PC roster: id, name, level, ancestry, class | `campaignId` |
+| `set_campaign_art` | write | Sets `meta_data.image_url` and/or `meta_data.image_focus_y`. `imageData` uploads via `upload-public-file` (`backgrounds`) first. Owner/GM only | `campaignId` (+ `imageUrl`, `imageData`, or `focusY`) |
 | `list_encounters` | read · GM | Encounters: id, name, combatant count | `view`, `campaignId` |
 | `get_encounter` | read · GM | Name, round, difficulty, XP, encounter revision | `view`, `campaignId`, `encounterId` |
 | `list_pcs` | read · GM | PCs fighting, benched, or down, with current HP | `view`, `campaignId`, `encounterId` |
@@ -37,14 +38,22 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `get_character` | read · GM | PC inventory, notes, details, log | `view`, ids, `combatantId` |
 | `get_monster` | read · GM | Creature inventory, notes, details, log | `view`, ids, `combatantId` |
 
-## Character (22: 7 read, 15 write)
+## Character (28: 8 read, 20 write)
 
 | Tool | Scope | What it does / returns | Required params |
 | --- | --- | --- | --- |
 | `create_character` | write | Creates a character row; returns id, updated_at | none (`name`, `level` optional) |
 | `delete_character` | write | Deletes a character the caller can read | `characterId` |
 | `export_character` | read | Export as JSON (slim/full) or PDF; owner or campaign GM | `characterId` |
-| `get_character_row` | read | Reads a character via find-character (`full` returns row) | none (`id`, `user_id`, `campaignId`) |
+| `get_character_row` | read | Reads a character via find-character (`full` returns row). Summary includes `image_url` and `background_image_url` | none (`id`, `user_id`, `campaignId`) |
+| `get_character_notes` | read | `notes.pages` (name, icon, color, shared, contents, text) for the owner | `characterId` |
+| `set_character_notes` | write | Append or replace one `notes.pages` entry. Owner only | `characterId`, `mode` (`append`/`replace`), `text` |
+| `add_character_note` | write | Inserts one `{ name, icon, color, contents }` page. Owner only | `characterId`, `title`, `contents` (`position` optional) |
+| `edit_character_note` | write | Replaces one page's `contents` by `pageIndex` or stored `pageId`. Owner only | `characterId`, `contents`, `pageIndex` or `pageId` |
+| `rename_character_note` | write | Changes one page's `name`. Owner only | `characterId`, `title`, `pageIndex` or `pageId` |
+| `delete_character_note` | write | Removes one page. Other pages stay. Owner only | `characterId`, `pageIndex` or `pageId` |
+| `upload_image` | write | PNG/JPEG/WebP through `upload-public-file`. Returns `{ url }`. Category `portraits` or `backgrounds` | `category` (+ `data` or `sourceUrl`) |
+| `set_character_art` | write | Sets `details.image_url` (portrait) and/or `details.background_image_url`. `portraitData` / `backgroundData` upload first. Owner only | `characterId` (+ a URL or image data) |
 | `list_options` | read | One catalog read by `kind` (class, ancestry, spell, item, …) | `kind` |
 | `list_open_choices` | read | Unfilled builder selects with legal options | `characterId` |
 | `list_spell_options` | read | Legal spells for one casting source | `characterId` |
@@ -56,6 +65,7 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `set_spells` | write | Replaces one source's spell list / prepared slots | `characterId` |
 | `add_inventory_item` | write | Adds a catalog item to inventory, formula book, or container | `characterId`, `itemId` |
 | `remove_inventory_item` | write | Removes one inventory entry (incl. inside containers) | `characterId`, `inventoryItemId` |
+| `set_inventory_item` | write | Sets `is_equipped` and/or `is_invested` on an existing entry. Owner only. `item.hands` is returned, not written | `characterId`, `inventoryItemId` (+ `equipped` or `invested`) |
 | `convert_coins` | read | Normalizes a coin amount at PF2e rates (1 pp = 10 gp = 100 sp = 1000 cp). Does not touch a character | `amount` |
 | `give_money` | write | Adds coins to `inventory.coins` (`cp`/`sp`/`gp`/`pp`). `normalize:true` rebalances the purse | `characterId`, `amount` |
 | `take_money` | write | Removes coins, breaking higher denominations; `INSUFFICIENT_FUNDS` if the purse is short | `characterId`, `amount` |
@@ -129,7 +139,4 @@ The encounter table has no `notes` column (`EncounterSchema` is name, icon, colo
 
 No tool exists today for:
 
-- **Character portrait / art / background image**: nothing sets them.
-- **Character notes**: no read or write of notes as a standalone tool (`get_character` returns notes read-only, GM view).
 - **Companion drawer extras**: current HP, temp HP, conditions, inventory, spells, and notes on a companion. `list_companions` / `add_companion` / `update_companion` / `remove_companion` write the Companions panel list (catalog creature, name, `abilities_added`, operation selects). Animal companions, familiars, and eidolons share that list; witch familiar spells stay on `spells`.
-- **Equip / invest / wield**: `add_inventory_item` has no equipped or invested flag.

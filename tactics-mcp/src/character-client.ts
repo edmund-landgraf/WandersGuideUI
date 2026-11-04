@@ -14,6 +14,10 @@ export function setCharacterFetch(next: FetchFn | null) {
   fetchImpl = next ?? globalThis.fetch.bind(globalThis);
 }
 
+export function characterFetch(input: Parameters<FetchFn>[0], init?: Parameters<FetchFn>[1]) {
+  return fetchImpl(input, init);
+}
+
 function env(name: string) {
   return process.env[name]?.trim() ?? "";
 }

@@ -73,6 +73,10 @@ function named(value: unknown) {
   return typeof name === "string" ? name : null;
 }
 
+function storedUrl(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
 export function summary(row: CharacterRow) {
   const details = (row.details as Record<string, unknown> | undefined) ?? {};
   const sources = (row.content_sources as { enabled?: unknown } | undefined)?.enabled;
@@ -84,6 +88,8 @@ export function summary(row: CharacterRow) {
     ancestry: named(details.ancestry),
     background: named(details.background),
     className: named(details.class),
+    image_url: storedUrl(details.image_url),
+    background_image_url: storedUrl(details.background_image_url),
     updated_at: row.updated_at ?? null,
   };
 }
