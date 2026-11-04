@@ -1,12 +1,12 @@
-# WGUI MCP tool directory (78 tools)
+# WGUI MCP tool directory (95 tools)
 
-Generated Nov 3, 2026 from the live `wgui` MCP server tool list, with scopes checked against `READ_TOOLS` / `WRITE_TOOLS` in `src/server.ts`.
+Generated Nov 3, 2026 from the live `wgui` MCP server tool list, with scopes checked against `READ_TOOLS` / `WRITE_TOOLS` in `src/server.ts`. The filename still says 67; the counts in this file are the current list.
 
-**78 tools: 41 require `read`, 37 require `write`.** `tools/list` returns every tool for any token; scope is enforced at call time. The 16 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (24), character (24), homebrew `wgui_ext_hb_*` (30). Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
+**95 tools: 44 require `read`, 51 require `write`.** This includes the 7 campaign/encounter create-update tools in the section below. `tools/list` returns every tool for any token; scope is enforced at call time. The 20 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (27), character (28), homebrew `wgui_ext_hb_*` (30), plus campaign/encounter writes. Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
 
 Common encounter params: `campaignId`, `encounterId`, and for per-combatant tools `combatantId`.
 
-## Campaign, encounter, and combat (24: 20 read, 4 write)
+## Campaign, encounter, and combat (27: 19 read, 8 write)
 
 | Tool | Scope | What it does / returns | Required params |
 | --- | --- | --- | --- |
@@ -15,16 +15,19 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `join_campaign` | write | Attaches a character the caller owns to a campaign via join key | `characterId`, `joinKey` |
 | `get_campaign_owner_contacts` | read | Email/display name of owners the caller shares a campaign with (max 24 ids) | `userIds` |
 | `list_campaign_characters` | read | Campaign PC roster: id, name, level, ancestry, class | `campaignId` |
-| `get_campaign` | read | Campaign art: `meta_data.image_url` and `meta_data.image_focus_y` (no separate background; join key omitted) | `campaignId` |
 | `set_campaign_art` | write | Sets `meta_data.image_url` and/or `meta_data.image_focus_y`. `imageData` uploads via `upload-public-file` (`backgrounds`) first. Owner/GM only | `campaignId` (+ `imageUrl`, `imageData`, or `focusY`) |
 | `list_encounters` | read · GM | Encounters: id, name, combatant count | `view`, `campaignId` |
-| `get_encounter` | read · GM | Name, round, difficulty, XP | `view`, `campaignId`, `encounterId` |
+| `get_encounter` | read · GM | Name, round, difficulty, XP, encounter revision | `view`, `campaignId`, `encounterId` |
 | `list_pcs` | read · GM | PCs fighting, benched, or down, with current HP | `view`, `campaignId`, `encounterId` |
 | `list_combatants` | read · GM | Initiative, defenses, conditions, current HP for all combatants | `view`, `campaignId`, `encounterId` |
 | `list_roster_edges` | read · GM | Benched/down PCs with current HP | `view`, `campaignId`, `encounterId` |
 | `get_round_log` | read · GM | Round log lines | `view`, `campaignId`, `encounterId` |
 | `get_dice_log` | read · GM | Dice tray state and saved dice log | `view`, `campaignId`, `encounterId` |
 | `patch_encounter_dice` | write | Writes only dice tray (`diceRollState`) and/or dice log (`diceRollLog`) | `campaignId`, `encounterId` (+ one field) |
+| `add_encounter_combatant` | write · GM | GM adds one joined PC (`wgui-ext-add-encounter-character`) or one catalog/homebrew creature (`wgui-ext-add-encounter-creature`). The reply includes that character or creature name. `ally` is for creatures | `view`, `campaignId`, `encounterId`, and one id |
+| `remove_encounter_combatant` | write · GM | GM removes one PC, creature, or hazard via `wgui-ext-remove-encounter-combatant`. Does not delete the character or catalog row | `view`, `campaignId`, `encounterId`, `combatantId` |
+| `patch_encounter_combatant` | write · GM | GM sets initiative, current HP, temp HP, and/or conditions via `wgui-ext-patch-encounter-combatant` | `view`, ids, `combatantId`, and one field |
+| `roll_initiative` | write · GM | GM rolls d20 + bonus via `wgui-ext-roll-initiative`. Reply names use the character or creature name. `rollBatch` counts initiative logs (older logs stored this as `round`). `scope` `empty` fills blanks; `all` rerolls. A repeated `clientRequestId` does not roll again | `view`, `campaignId`, `encounterId` |
 | `get_stat_block` | read · GM | Current HP, defenses, senses, speeds, ability mods | `view`, ids, `combatantId` |
 | `list_ability_groups` | read · GM | Action groups with counts | `view`, ids, `combatantId` |
 | `get_abilities` | read · GM | One action group: name, cost, traits, description | `view`, ids, `combatantId`, `group` |
@@ -35,7 +38,7 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `get_character` | read · GM | PC inventory, notes, details, log | `view`, ids, `combatantId` |
 | `get_monster` | read · GM | Creature inventory, notes, details, log | `view`, ids, `combatantId` |
 
-## Character (24: 6 read, 18 write)
+## Character (28: 8 read, 20 write)
 
 | Tool | Scope | What it does / returns | Required params |
 | --- | --- | --- | --- |
@@ -63,6 +66,13 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `add_inventory_item` | write | Adds a catalog item to inventory, formula book, or container | `characterId`, `itemId` |
 | `remove_inventory_item` | write | Removes one inventory entry (incl. inside containers) | `characterId`, `inventoryItemId` |
 | `set_inventory_item` | write | Sets `is_equipped` and/or `is_invested` on an existing entry. Owner only. `item.hands` is returned, not written | `characterId`, `inventoryItemId` (+ `equipped` or `invested`) |
+| `convert_coins` | read | Normalizes a coin amount at PF2e rates (1 pp = 10 gp = 100 sp = 1000 cp). Does not touch a character | `amount` |
+| `give_money` | write | Adds coins to `inventory.coins` (`cp`/`sp`/`gp`/`pp`). `normalize:true` rebalances the purse | `characterId`, `amount` |
+| `take_money` | write | Removes coins, breaking higher denominations; `INSUFFICIENT_FUNDS` if the purse is short | `characterId`, `amount` |
+| `list_companions` | read | `companions.list`: type, name, level, added abilities, open selects | `characterId` |
+| `add_companion` | write | Appends a catalog creature (companion type, or any creature that is not level -100) | `characterId`, `creatureId` |
+| `update_companion` | write | Sets type (`creatureId`), name, `abilities_added`, or one operation select. Same list for animal companions, familiars, and eidolons | `characterId`, `index` |
+| `remove_companion` | write | Removes `companions.list[index]` | `characterId`, `index` |
 
 ## Homebrew (30: 15 read, 15 write)
 
@@ -101,10 +111,32 @@ Create tools upsert: a `record` with `id` updates, omit `id` (or -1) to insert. 
 | `wgui_ext_hb_create_content_update` | write | Insert a PENDING change proposal (does not write the content row) | `type`, `action`, `data`, `content_source_id` |
 | `wgui_ext_hb_delete_content` | write | Delete a homebrew content row (character/campaign/encounter rejected) | `id`, `type` |
 
+## Campaign and encounter create / update (7: 2 read, 5 write)
+
+These tools call stock Wanderer's Guide functions (`find-campaign`, `create-campaign`, `find-encounter`, `create-encounter`). There is no `update-campaign` or `update-encounter`; updates POST the existing row to the matching `create-*` function. No new `wgui-ext-*` functions. No delete tools. Join keys are never returned.
+
+Stock `find-encounter` is owner-only, so another user's encounter comes back empty and these tools return `NOT_FOUND`. `ENCOUNTER_FORBIDDEN` is only used when a row is actually returned and `user_id` is not the caller. Campaign writes use `CAMPAIGN_FORBIDDEN` the same way.
+
+`get_campaign` is owner-only. Stock `find-campaign` can still return another user's campaign, and this tool answers `CAMPAIGN_FORBIDDEN` in that case (it does not return the row with `isOwner: false`). PR #20's `get_campaign` did not allow campaign members either; a character in the campaign is not enough. A missing campaign is `NOT_FOUND`. `isOwner` on a successful read is true.
+
+`get_campaign` is the same tool name as PR #20. This result is a superset of that art payload: `id`, `name`, `image_url` (null when blank), `image_focus_y` (null when unset), `isOwner`, plus `description`, `notes`, `meta_data`, and `created_at`. When merging #20, keep this registration and delete the `get_campaign` block in that branch's `character-sheet.ts`. Leave `set_campaign_art` there.
+
+The encounter table has no `notes` column (`EncounterSchema` is name, icon, color, campaign_id, combatants, meta_data). `update_encounter` has no `notes` argument. Description is `meta_data.description`.
+
+`list_campaigns` text caps every string at 120 characters (long `image_url` values included). `structuredContent` keeps the full strings.
+
+| Tool | Scope | What it does / returns | Required params |
+| --- | --- | --- | --- |
+| `list_campaigns` | read | Campaigns the caller owns (`find-campaign` `{ user_id }`) | none |
+| `get_campaign` | read | One campaign the caller owns, including art fields `image_url`, `image_focus_y`, `isOwner`. Another owner's row is `CAMPAIGN_FORBIDDEN` | `campaignId` |
+| `create_campaign` | write | Insert via `create-campaign`. Default name `My Campaign`, Phase 1 `meta_data.settings` | none (`name`, `description`, `notes`, `meta_data` optional) |
+| `update_campaign` | write | Merge name/description/notes/`meta_data` then `create-campaign`. Does not clobber existing `meta_data` keys such as `image_url` | `campaignId` |
+| `create_encounter` | write | Insert via `create-encounter`. Omit `campaignId` for standalone (`campaign_id: null`); pass it to file under an owned campaign | none (`name`, `description`, `campaignId`, `meta_data` optional) |
+| `update_encounter` | write | Merge name/description/`meta_data` then `create-encounter`. No notes column. Does not change `campaign_id` | `encounterId` |
+| `set_encounter_campaign` | write | Attach an owned encounter to an owned campaign, or detach (`campaignId` null) | `encounterId`, `campaignId` (nullable) |
+
 ## Known write gaps
 
 No tool exists today for:
 
-- **Companions**: `choose` can pick a companion feat, but nothing creates or edits the companion (type, name, stats).
-- **Creatures in an encounter**: nothing adds or removes combatants; the only encounter write is `patch_encounter_dice`.
-- **Initiative**: `list_combatants` reads it; nothing rolls or writes it.
+- **Companion drawer extras**: current HP, temp HP, conditions, inventory, spells, and notes on a companion. `list_companions` / `add_companion` / `update_companion` / `remove_companion` write the Companions panel list (catalog creature, name, `abilities_added`, operation selects). Animal companions, familiars, and eidolons share that list; witch familiar spells stay on `spells`.

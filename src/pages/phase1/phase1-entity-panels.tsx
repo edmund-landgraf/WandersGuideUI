@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as Rea
 import { createPortal } from 'react-dom';
 import { isPlayingStarfinder } from '@content/system-handler';
 import { convertToHardcodedLink } from '@content/hardcoded-links';
-import type { Character, Combatant, CombatantActionLogEntry, CombatantChangeLogEntry, Condition, Hazard, InitiativeRoundLog, InitiativeRoundLogEntry, Inventory, Item, LivingEntity, Spell } from '@schemas/content';
+import { initiativeRollBatch, type Character, type Combatant, type CombatantActionLogEntry, type CombatantChangeLogEntry, type Condition, type Hazard, type InitiativeRoundLog, type InitiativeRoundLogEntry, type Inventory, type Item, type LivingEntity, type Spell } from '@schemas/content';
 import { loadEntityAbilities, type Phase1Ability, type Phase1FeatCategory } from './phase1-abilities';
 import { readStoredDefenses } from './phase1-creature-defenses';
 import { applyStoredCreatureStats, type Phase1CreatureStatus } from './phase1-stats';
@@ -290,8 +290,8 @@ function CombatantNotesPanel({ combatant, hasMatchingCampaignNote, onSaveGmNotes
         <div className='space-y-4'>
           {rounds.length === 0 && changes.length === 0 && <p className='py-6 text-center text-xs italic text-p1-faint'>No rounds logged for this combatant yet.</p>}
           {rounds.map(({ round, entry }, index) => (
-            <div key={round.id ?? `${round.round}-${index}`} className='border border-p1-border bg-p1-surface p-3'>
-              <p className='text-[10px] font-semibold uppercase tracking-wide text-p1-accent'>Round {round.round}</p>
+            <div key={round.id ?? `${initiativeRollBatch(round) ?? index}-${index}`} className='border border-p1-border bg-p1-surface p-3'>
+              <p className='text-[10px] font-semibold uppercase tracking-wide text-p1-accent'>Roll {initiativeRollBatch(round) ?? '?'}</p>
               <p className='mt-1 text-xs text-p1-muted'>{entry.initiative != null ? `Init ${entry.initiative}` : 'No init'}{entry.calculation ? ` · ${entry.calculation}` : ''}</p>
               <div className='mt-2'>
                 <RoundNoteField value={entry.note} disabled={!canEditRoundNotes} onCommit={(note) => onUpdateRoundNote?.(round, entry, note)} />

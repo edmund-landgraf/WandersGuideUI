@@ -99,7 +99,7 @@ export function ownerGuard(row: CharacterRow, userId: string) {
   const owner = row.user_id;
   if (typeof owner !== "string" || !owner.trim()) return null;
   if (owner.trim().toLowerCase() === userId.trim().toLowerCase()) return null;
-  return { ok: false as const, code: "CHARACTER_FORBIDDEN", message: "Only the character owner can write this character." };
+  return { ok: false as const, code: "CHARACTER_FORBIDDEN" as const, message: "Only the character owner can write this character." };
 }
 
 export async function loadRow(userId: string, id: number) {
@@ -113,6 +113,8 @@ export async function loadRow(userId: string, id: number) {
 }
 
 export async function saveRow(userId: string, row: CharacterRow, patch: Record<string, unknown>) {
+  const forbidden = ownerGuard(row, userId);
+  if (forbidden) return forbidden;
   const expected = typeof row.updated_at === "string" ? row.updated_at : undefined;
   const saved = await invokeFunction(userId, "update-character", {
     id: row.id,
@@ -383,13 +385,15 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
     "delete_character",
     {
       title: "Delete character",
-      description: "Deletes a character the caller can read by posting { id, type: character } to delete-content.",
+      description: "Deletes a character the caller owns by posting { id, type: character } to delete-content. Another user's user_id is CHARACTER_FORBIDDEN and nothing is deleted.",
       annotations: writes,
       inputSchema: { characterId: z.number().int() },
     },
     async (args) => {
       const loaded = await loadRow(userId(), args.characterId);
       if (!loaded.ok) return fail(loaded);
+      const forbidden = ownerGuard(loaded.data, userId());
+      if (forbidden) return fail(forbidden);
       const deleted = await invokeFunction(userId(), "delete-content", { id: loaded.data.id, type: "character" });
       if (!deleted.ok) return fail(deleted);
       return textResult("Character deleted", { id: args.characterId });

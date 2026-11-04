@@ -477,22 +477,6 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
   );
 
   server.registerTool(
-    "get_campaign",
-    {
-      title: "Campaign art",
-      description: "Reads the campaign image find-campaign returns to the caller. image_url and image_focus_y are the fields the campaign art picker stores on meta_data. There is no separate campaign background: this image is the campaign art, and the Phase 1 sheet uses it as the sheet background when it is set. A missing image_focus_y is displayed as 30 by the sheet; this tool returns the stored value, or null when it is absent. The join key is not returned.",
-      annotations: readOnly,
-      inputSchema: { campaignId: z.number().int() },
-    },
-    async (args) => {
-      const loaded = await loadCampaign(userId(), args.campaignId);
-      if (!loaded.ok) return fail(loaded);
-      const art = campaignArt(loaded.data, userId());
-      return textResult(art.name ?? "Campaign", art);
-    },
-  );
-
-  server.registerTool(
     "set_campaign_art",
     {
       title: "Campaign art",

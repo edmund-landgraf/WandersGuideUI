@@ -277,8 +277,8 @@ test("campaign art writes meta_data.image_url and image_focus_y for the owner", 
   const stolen = await client.callTool({ name: "set_campaign_art", arguments: { campaignId: 7, imageUrl: "https://example.com/nope.png" } });
   assert.equal(stolen.structuredContent?.code, "CAMPAIGN_FORBIDDEN");
   assert.equal(writes.length, writesBefore);
-  const stillReadable = await client.callTool({ name: "get_campaign", arguments: { campaignId: 7 } });
-  assert.equal((stillReadable.structuredContent as { isOwner: boolean }).isOwner, false);
+  const notOwnerRead = await client.callTool({ name: "get_campaign", arguments: { campaignId: 7 } });
+  assert.equal(notOwnerRead.structuredContent?.code, "CAMPAIGN_FORBIDDEN");
 
   await client.close();
   setCharacterFetch(null);

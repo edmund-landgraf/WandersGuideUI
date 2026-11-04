@@ -1,6 +1,6 @@
 # Controlling Wanderer's Guide from an MCP client
 
-*A guide to the `wgui` (tactics-mcp) server: self-hosting it beside your own Wanderer's Guide stack, connecting clients, and using the 78 tools safely.*
+*A guide to the `wgui` (tactics-mcp) server: self-hosting it beside your own Wanderer's Guide stack, connecting clients, and using the 95 tools safely.*
 
 Written Nov 3, 2026. Every step comes from the repo on DAEDALUS (`D:\repos\WanderersGuideUI\tactics-mcp`, `D:\repos\WanderersGuideUI`, `D:\repos\wanderers-guide`) or from the live production server. Anything that isn't specific to this repo is labelled **general MCP client config**. The last section lists what couldn't be verified.
 
@@ -23,7 +23,7 @@ WGUI campaign UI (vite app, PM2 "wgui")   +   WG character builder/sheet
 - **What it is:** `tactics-mcp` is the MCP server inside the WanderersGuideUI repo (package name `tactics-mcp`, server name `wgui-tactics`). It describes itself as "Encounter and character data for the GM. Mostly read-only, with scoped writes."
 - **It's separate from AMBA.** Don't point WG clients at AMBA's bridge.
 - **Production:** `https://wgui.wandersguide.site/mcp`. PM2 runs it as `wgui-mcp` from the `tactics-mcp` folder on port 3104. The campaign UI itself runs as the PM2 process `wgui`.
-- **Tools:** there are 78: 41 need the `read` scope and 37 need `write`. 16 of them are encounter tools that require `view: "gm"`. The full list is in the Appendix and in `docs/mcp-tool-directory-67.md`.
+- **Tools:** there are 95: 44 need the `read` scope and 51 need `write`. 20 of them are encounter tools that require `view: "gm"`. The full list is in the Appendix and in `docs/mcp-tool-directory-67.md`.
 - **Two transports:**
   - Streamable HTTP at `/mcp`, from `src/http.ts`.
   - stdio, with two entry points: `src/grokbotBridge.ts` (stdio to a remote HTTP server) and `src/localStdio.ts` (an in-process stdio server for local testing).
@@ -379,7 +379,7 @@ On prod, Apache 2.4 terminates TLS with a Let's Encrypt (certbot) certificate. P
 1. `curl http://127.0.0.1:3104/health` on the server (publicly, `/health` is only reachable if you proxy it; see A7)
 2. `curl https://your-host/.well-known/oauth-authorization-server`. Expect `scopes_supported` to be `["read","write"]`.
 3. `curl -i -X POST https://your-host/mcp`. Expect a 401 with the `WWW-Authenticate` header.
-4. With a token, send `tools/list` and expect **78 tools**. `tools/list` shows every tool to any token; scope is only checked when a tool is called.
+4. With a token, send `tools/list` and expect **95 tools**. `tools/list` shows every tool to any token; scope is only checked when a tool is called.
 5. Call `get_profile`, which should return your Supabase user id. Then try a read such as `list_campaign_characters`.
 6. Check that a read-only token gets `AUTH_REQUIRED` ("MCP token missing scope write for …") on a write tool.
 7. Run `npm run smoke` locally for the full scripted check.
@@ -458,7 +458,7 @@ Start every session with `get_profile`. Treat returned ids as authoritative, and
 | 6 | `choose` (`choiceId`, `optionId`) | Repeat until no open choices remain. Illegal ids are rejected |
 | 7 | `list_spell_options` (`source`) | For casters |
 | 8 | `add_spell` (`spellId`, `rank`, `source`, `prepare`) or `set_spells` | |
-| 9 | `list_options kind=item`, then `add_inventory_item` (`itemId`, `quantity`) | Gear. `remove_inventory_item` undoes it |
+| 9 | `list_options kind=item`, then `add_inventory_item` (`itemId`, `quantity`) | Gear. `remove_inventory_item` undoes it. `give_money` / `take_money` edit `inventory.coins` |
 | 10 | `export_character` (json slim/full or pdf) | Check the result |
 
 > *Example prompt:* "Using the wgui tools, create a level 1 human fighter named Aragorn. Use the Core rules only. Say what you'll change before each write, fill every open choice with sensible options, add a longsword and adventurer's pack, then export the slim JSON."
@@ -468,6 +468,10 @@ Start every session with `get_profile`. Treat returned ids as authoritative, and
 Run `join_campaign` with `characterId` and the GM's `joinKey`. **Never echo the key.** If the character is already in the campaign, the result is `already=true`. Check with `list_campaign_characters`.
 
 > *Prompt:* "Join my character 1234 to the campaign. I'll paste the join key; don't repeat it back."
+
+### C2b. Create or edit a campaign / encounter
+
+`create_campaign` and `update_campaign` post to stock `create-campaign`. `update_campaign` merges `meta_data` so campaign art stays. `create_encounter` omits `campaignId` for a standalone fight, or takes a campaign this user owns. `set_encounter_campaign` attaches or detaches (`campaignId` null). There is no delete tool.
 
 ### C3. GM encounter reads (all need `view: "gm"` and GM access)
 
@@ -486,16 +490,26 @@ Run `join_campaign` with `characterId` and the GM's `joinKey`. **Never echo the 
 4. `wgui_ext_hb_delete_content` (`id`, `type: "creature"`) removes it. This is destructive, so confirm first.
 5. Use `wgui_ext_hb_create_content_update` to propose a change to existing content. It creates a PENDING proposal.
 
-These creatures go into the homebrew catalog. **They can't be added to an encounter through MCP** (see section 4).
+These creatures go into the homebrew catalog. To put one in a fight, call `add_encounter_combatant` with that creature's numeric `id` as `creatureId` (see C6).
 
 ### C5. Dice log
 
 1. `get_dice_log` to read the tray and log.
 2. `patch_encounter_dice` with the **full** `diceRollLog` you want to keep and/or `diceRollState`. A GM's write replaces whatever fields are sent. Players may only add, edit or drop rows they started.
 
-It never changes initiative, HP, conditions or the roster.
+It never changes initiative, HP, conditions or the roster. Those are C6.
 
 > *Prompt:* "Read the dice log for encounter 7, then add a row 'Perception vs DC 20' with Valeros 1d20+7 = 22, keeping all existing rows."
+
+### C6. Roster and initiative (GM only, `view: "gm"`, `write` scope)
+
+1. `get_encounter` returns `encounterRevision`. Pass it on the next roster write when someone else might be editing the same fight. Omit it to use the revision at call time. A stale value returns `ENCOUNTER_REVISION_CONFLICT`; read again and retry.
+2. `add_encounter_combatant` with `characterId` (a PC from `list_campaign_characters` that is already in the campaign; calls `wgui-ext-add-encounter-character`) or `creatureId` (from `wgui_ext_hb_find_creature`; calls `wgui-ext-add-encounter-creature`). The reply `name` is the character or creature name. `ally` applies to creatures and defaults to false.
+3. `list_combatants`, then `remove_encounter_combatant` with that combatant id (`wgui-ext-remove-encounter-combatant`). This drops the row from the fight. It does not delete the character or the catalog creature.
+4. `patch_encounter_combatant` (`wgui-ext-patch-encounter-combatant`) sets `initiative`, `hpCurrent`, `hpTemp`, and/or `conditions` on the encounter row. It does not edit the character sheet. A PC that was only linked by id has no encounter HP to edit until a snapshot exists; initiative still updates.
+5. `roll_initiative` (`wgui-ext-roll-initiative`) rolls a server d20 plus `bonus` (pass Perception). `scope` `empty` fills blanks; `all` rerolls the combatants you list. Omit `rolls` to roll every combatant at +0. Each rolled row uses the character or creature name. `rollBatch` counts how many times initiative has been logged; it is not the combat round. Older `initiative_log` rows stored that same counter as `round` and still read. Send `clientRequestId` if a retry must not roll a second time.
+
+> *Prompt:* "Add creature 501 as an enemy in encounter 7, roll initiative for everyone who doesn't have one, using Perception +5 for the new creature, then set it to 12 HP."
 
 ---
 
@@ -529,21 +543,21 @@ It never changes initiative, HP, conditions or the roster.
 No tool exists today for:
 
 - **Companions:** `choose` can pick a companion feat, but nothing creates or edits the companion.
-- **Creatures in an encounter:** nothing adds or removes combatants. The only encounter write is `patch_encounter_dice`.
-- **Initiative:** `list_combatants` reads it; nothing rolls it or writes it.
 
 Each of these would need a new server tool.
 
-## Appendix: tool reference (78)
+## Appendix: tool reference (95)
 
-**Campaign, encounter and combat (24).**
-- Read: `get_profile`, `get_campaign_owner_contacts`, `list_campaign_characters`, `get_campaign`.
+**Campaign, encounter and combat (34).**
+- Read: `get_profile`, `get_campaign_owner_contacts`, `list_campaign_characters`.
 - Read, GM view: `list_encounters`, `get_encounter`, `list_pcs`, `list_combatants`, `list_roster_edges`, `get_round_log`, `get_dice_log`, `get_stat_block`, `list_ability_groups`, `get_abilities`, `get_feats`, `get_class_features`, `get_skills`, `get_spells`, `get_character`, `get_monster`.
 - Write: `ensure_public_user`, `join_campaign`, `patch_encounter_dice`, `set_campaign_art`.
+- Write, GM view: `add_encounter_combatant`, `remove_encounter_combatant`, `patch_encounter_combatant`, `roll_initiative`.
+- Campaign/encounter rows: `list_campaigns`, `get_campaign`, `create_campaign`, `update_campaign`, `create_encounter`, `update_encounter`, `set_encounter_campaign`.
 
-**Character (24).**
-- Read: `export_character`, `get_character_row`, `get_character_notes`, `list_options`, `list_open_choices`, `list_spell_options`.
-- Write: `create_character`, `delete_character`, `choose`, `set_identity`, `set_books`, `upload_image`, `set_character_art`, `set_character_notes`, `add_character_note`, `edit_character_note`, `rename_character_note`, `delete_character_note`, `add_spell`, `remove_spell`, `set_spells`, `add_inventory_item`, `remove_inventory_item`, `set_inventory_item`.
+**Character (28).**
+- Read: `export_character`, `get_character_row`, `list_options`, `list_open_choices`, `list_spell_options`, `convert_coins`, `get_character_notes`.
+- Write: `create_character`, `delete_character`, `choose`, `set_identity`, `set_books`, `add_spell`, `remove_spell`, `set_spells`, `add_inventory_item`, `remove_inventory_item`, `give_money`, `take_money`, `upload_image`, `set_character_art`, `set_character_notes`, `add_character_note`, `edit_character_note`, `rename_character_note`, `delete_character_note`, `set_inventory_item`.
 
 **Homebrew (30).**
 - Read: `wgui_ext_hb_find_*` for content_source, trait, ability_block, ancestry, background, class, archetype, versatile_heritage, class_archetype, item, language, creature, spell and content_update, plus `wgui_ext_hb_get_content_source_stats`.

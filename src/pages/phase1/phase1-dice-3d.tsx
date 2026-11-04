@@ -49,10 +49,10 @@ export function parseInitiativeDie(calculation: string | undefined) {
   return clampDie(value);
 }
 
-export function initiativeRoundDiceKey(round: { id?: string; round?: number; entries: Array<{ combatant_id?: string; calculation?: string }> } | undefined) {
+export function initiativeRoundDiceKey(round: { id?: string; round?: number; roll_batch?: number; entries: Array<{ combatant_id?: string; calculation?: string }> } | undefined) {
   if (!round) return '';
   if (round.id) return round.id;
-  return `${round.round ?? ''}:${(round.entries ?? []).map((entry) => `${entry.combatant_id ?? ''}:${entry.calculation ?? ''}`).join('|')}`;
+  return `${round.roll_batch ?? round.round ?? ''}:${(round.entries ?? []).map((entry) => `${entry.combatant_id ?? ''}:${entry.calculation ?? ''}`).join('|')}`;
 }
 
 export function diceCheckOverlayTitle(dc: number, statLabel: string) {

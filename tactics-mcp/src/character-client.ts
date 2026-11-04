@@ -33,6 +33,9 @@ function userJwt(userId: string, secret: string) {
     sub: userId,
     role: "authenticated",
     aud: "authenticated",
+    // Lets wgui-ext requireCallerId tell this server JWT from an API-key minted JWT.
+    // Stock generateUserJWT does not set this claim. GoTrue still checks the signature.
+    wgui_mcp: true,
     iat: now,
     exp: now + 60 * 10,
   })).toString("base64url");
@@ -81,8 +84,16 @@ export async function invokeFunction(userId: string, name: string, body: Record<
   }
   const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
   if (!response.ok || record.status === "error" || record.status === "fail") {
-    const message = typeof record.message === "string" ? record.message : `${name} failed (${response.status}).`;
-    return { ok: false, code: "FUNCTION_ERROR", message, data: record.data };
+    const nested = record.data && typeof record.data === "object" && !Array.isArray(record.data)
+      ? record.data as Record<string, unknown>
+      : {};
+    const message = typeof record.message === "string"
+      ? record.message
+      : typeof nested.message === "string"
+        ? nested.message
+        : `${name} failed (${response.status}).`;
+    const rawCode = typeof record.code === "string" ? record.code : typeof nested.code === "string" ? nested.code : "";
+    return { ok: false, code: rawCode || "FUNCTION_ERROR", message, data: record.data };
   }
   return { ok: true, data: record.data ?? payload };
 }

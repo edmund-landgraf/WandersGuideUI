@@ -14,6 +14,7 @@
 // container. See docs/player-encounter-visibility-change.md.
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import { callerTokenKind } from './caller-token.ts';
 import type { Campaign, Character } from '../_shared/content';
 import { fetchData } from '../_shared/helpers.ts';
 import { HttpError, isAuthenticationError } from '../_shared/http-errors.ts';
@@ -68,18 +69,6 @@ export function sameNumericId(a: unknown, b: unknown): boolean {
   return left !== null && left === right;
 }
 
-function hasSessionId(token: string): boolean {
-  const part = token.split('.')[1];
-  if (!part) return false;
-  try {
-    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
-    const claims = JSON.parse(atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4)));
-    return typeof claims?.session_id === 'string' && claims.session_id !== '';
-  } catch {
-    return false;
-  }
-}
-
 /**
  * The authenticated caller's user id.
  *
@@ -99,7 +88,12 @@ export async function requireCallerId(
   // API key into a self-signed owner JWT without one; on a stack whose helpers still do
   // that (upstream prod), an API key would otherwise act as a full owner session on every
   // wgui-ext endpoint. API keys are only for the *-key-* endpoints.
-  if (!hasSessionId(token)) throw unauthenticated;
+  //
+  // tactics-mcp signs its own user JWT with JWT_SECRET and sets wgui_mcp. That claim is
+  // absent from generateUserJWT, so an API key still cannot pass. GoTrue getUser() below
+  // still checks the signature and the sub. A JWT with neither session_id nor wgui_mcp
+  // is rejected before getUser.
+  if (callerTokenKind(token) === 'rejected') throw unauthenticated;
 
   const {
     data: { user },

@@ -45,7 +45,9 @@ Errors: `{ "status": "fail", "data": { "message": "...", "code": "AUTH_REQUIRED"
 
 ## Why the session_id check
 
-The stock upstream `helpers.connect()` turns a 36-char API key into a self-signed owner JWT (`generateUserJWT`) before the handler runs. GoTrue `getUser()` accepts that token, so on a stack running the stock helpers, which includes prod today, any API key acted as a full owner session on every wgui-ext endpoint. That covers reads (campaign characters, notes, encounters, owner emails) and writes (join, notes, encounter patches). Real GoTrue session tokens carry `session_id` and the minted ones don't, so `requireCallerId` now refuses tokens without it. Signed-in app users are unaffected.
+The stock upstream `helpers.connect()` turns a 36-char API key into a self-signed owner JWT (`generateUserJWT`) before the handler runs. GoTrue `getUser()` accepts that token, so on a stack running the stock helpers, which includes prod today, any API key acted as a full owner session on every wgui-ext endpoint. That covers reads (campaign characters, notes, encounters, owner emails) and writes (join, notes, encounter patches). Real GoTrue session tokens carry `session_id` and the minted ones don't, so `requireCallerId` refuses tokens with neither `session_id` nor the MCP claim below. Signed-in app users are unaffected.
+
+tactics-mcp has no GoTrue session for the signed-in user. It signs a JWT with `JWT_SECRET` and sets `wgui_mcp: true` (`tactics-mcp/src/character-client.ts`). `requireCallerId` accepts that claim, then still calls GoTrue `getUser()` so the signature and `sub` have to check out. `generateUserJWT` does not set `wgui_mcp`, so an API key still cannot pass. A self-signed JWT with neither claim is still 401.
 
 ## Prod deploy notes (VPS Prod worker; not done yet)
 

@@ -53,6 +53,8 @@ These eight tools are on the same `wgui-mcp` process. They post to the stock Wan
 | `delete_character` | `delete-content` `{ id, type: "character" }` |
 | `list_spell_options` | `find-spell` with the common core plus enabled books, filtered by the casting source's tradition and max rank (sources and slots from the builder operation pass) |
 | `add_spell`, `remove_spell`, `set_spells` | `find-spell` validation, then `update-character` `spells` (`list` entries `{ spell_id, rank, source }`, prepared `slots` `{ rank, source, spell_id }`) |
+| `convert_coins` | No function. Pure PF2e conversion (1 pp = 10 gp = 100 sp = 1000 cp) |
+| `give_money`, `take_money` | `find-character`, then `update-character` `inventory.coins` `{ cp, sp, gp, pp }`. Other inventory keys are left in place |
 
 ## Character payload
 
@@ -79,8 +81,19 @@ These eight tools are on the same `wgui-mcp` process. They post to the stock Wan
 | `join_campaign` | Checks `campaign.join_key`, then sets `character.campaign_id` for a character that user owns. The key is not returned. Same job as `wgui-ext-join-campaign`. |
 | `get_campaign_owner_contacts` | Auth email for owners of campaigns the caller already shares. Unknown ids are omitted. Same job as `wgui-ext-campaign-owner-email`. |
 | `patch_encounter_dice` | Writes `meta_data.dice_roll_state` and `meta_data.dice_roll_log` only. A GM replaces the fields they send. A player is limited to their own log rows and the tray fields title, DC, stat, and results. Same job as `wgui-ext-patch-encounter-dice`. |
+| `add_encounter_combatant` | `POST /functions/v1/wgui-ext-add-encounter-character` with `{ campaign_id, encounter_id, character_id, encounter_revision }` or `POST /functions/v1/wgui-ext-add-encounter-creature` with `{ campaign_id, encounter_id, creature_id, ally, encounter_revision }`. The creature function was added for this tool. `wgui-ext-add-encounter-character` does not add creatures. |
+| `remove_encounter_combatant` | `POST /functions/v1/wgui-ext-remove-encounter-combatant` with `{ campaign_id, encounter_id, combatant_id, encounter_revision }`. That function was added for this tool. `wgui-ext-remove-encounter-character` still removes PCs only and rejects creatures. |
+| `patch_encounter_combatant` | `POST /functions/v1/wgui-ext-patch-encounter-combatant` with `{ campaign_id, encounter_id, combatant_id, encounter_revision, initiative?, hp_current?, hp_temp?, conditions? }`. |
+| `roll_initiative` | `POST /functions/v1/wgui-ext-roll-initiative` with `{ campaign_id, encounter_id, encounter_revision, scope, rolls: [{ combatant_id, bonus, source }], client_request_id? }`. The log row's counter is `roll_batch`. Readers still accept older rows that stored it as `round`. PC names come from the character row. |
 | `list_campaign_characters` | Characters in a campaign the caller belongs to. Same job as `wgui-ext-find-campaign-characters`. |
 | `export_character` | JSON v4 file from `wgui-export-character-slim` (default; no `all_spells` / `all_traits` catalog, about 0.12 MB instead of 4 MB). `detail: "full"` and PDF use `wgui-export-character`. Falls back to the full function when the slim one is not deployed. The caller must own the character or be that campaign's GM. |
+| `list_campaigns` | Stock `find-campaign` `{ user_id }`. Join key omitted. |
+| `get_campaign` | Stock `find-campaign` `{ id }`. Missing campaigns are `NOT_FOUND`. A row whose `user_id` is not the caller is `CAMPAIGN_FORBIDDEN` even when `find-campaign` returns it. Membership (a character in the campaign) is not enough. Owned rows include `image_url`, `image_focus_y`, and `isOwner` plus description, notes, and meta_data. Join key omitted. |
+| `create_campaign` | Stock `create-campaign` insert (no `id`). |
+| `update_campaign` | Stock `find-campaign` then `create-campaign` with the existing row and merged `meta_data`. |
+| `create_encounter` | Stock `create-encounter` `{ id: -1, campaign_id: null \| campaignId, combatants: { list: [] }, … }`. Campaign must be owned when `campaignId` is set. |
+| `update_encounter` | Stock `find-encounter` `{ id }` then `create-encounter` with the existing row and merged `meta_data`. No notes column on encounter; description is `meta_data.description`. A hidden encounter is `NOT_FOUND`. `ENCOUNTER_FORBIDDEN` only if the returned row is owned by someone else. |
+| `set_encounter_campaign` | Same as `update_encounter`, changing only `campaign_id` (null detaches). Destination campaign must be owned. |
 
 ## Errors
 

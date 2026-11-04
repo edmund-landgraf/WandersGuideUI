@@ -1,7 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import { registerCampaignWrites } from "./campaign-writes.js";
 import { registerCharacterCatalog } from "./character-catalog.js";
+import { registerCharacterCompanions } from "./character-companions.js";
+import { registerCharacterCoins } from "./character-coins.js";
 import { registerCharacterInventory } from "./character-inventory.js";
 import { registerCharacterSheet } from "./character-sheet.js";
 import { registerCharacterSpells } from "./character-spells.js";
@@ -30,7 +33,31 @@ function notFound(message: string) {
   return textResult(message, { code: "NOT_FOUND", retryable: false }, true);
 }
 
-export function registerEncounterTool(
+export function registerGmWrite(
+  server: McpServer,
+  name: string,
+  config: ToolConfig,
+  handler: (args: Record<string, unknown>, userId: string) => Promise<ReturnType<typeof textResult>>,
+  userId: () => string,
+) {
+  server.registerTool(
+    name,
+    {
+      title: config.title,
+      description: config.description,
+      annotations: writes,
+      inputSchema: { ...gm, ...(config.inputSchema ?? {}) },
+    },
+    async (args) => {
+      if ((args as { view?: string }).view !== "gm") {
+        return textResult("view must be gm.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      }
+      return handler(args as Record<string, unknown>, userId());
+    },
+  );
+}
+
+function registerEncounterTool(
   server: McpServer,
   name: string,
   config: ToolConfig,
@@ -171,6 +198,91 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     },
   );
 
+  const encounterRevision = z.number().int().min(0).optional().describe("From get_encounter or the previous write. Omit to use the revision at call time. A stale value returns ENCOUNTER_REVISION_CONFLICT.");
+  const combatantId = z.string().describe("Encounter combatant id from list_combatants, not a character or creature catalog id.");
+
+  registerGmWrite(server, "add_encounter_combatant", {
+    title: "Add encounter combatant",
+    description: "GM adds one combatant. characterId calls wgui-ext-add-encounter-character (a PC already in the campaign). creatureId calls wgui-ext-add-encounter-creature (a catalog or homebrew creature from wgui_ext_hb_find_creature). Not both. ally applies only to creatures and defaults to false. Does not edit the character sheet. Only the campaign GM.",
+    inputSchema: {
+      ...ids,
+      characterId: z.number().int().positive().optional().describe("Numeric id of a PC joined to this campaign."),
+      creatureId: z.number().int().positive().optional().describe("Numeric creature id from wgui_ext_hb_find_creature."),
+      ally: z.boolean().optional().describe("Creature side. True is an ally. Defaults to false. Ignored for a PC."),
+      encounterRevision,
+    },
+  }, async (args, uid) => {
+    const result = await getEncounterReader().addEncounterCombatant(uid, Number(args.campaignId), Number(args.encounterId), {
+      characterId: args.characterId == null ? undefined : Number(args.characterId),
+      creatureId: args.creatureId == null ? undefined : Number(args.creatureId),
+      ally: args.ally === true ? true : args.ally === false ? false : undefined,
+      encounterRevision: args.encounterRevision == null ? undefined : Number(args.encounterRevision),
+    });
+    if (!result.ok) return textResult(result.message, { code: result.code, retryable: result.code === "ENCOUNTER_REVISION_CONFLICT" }, true);
+    return textResult(`Added ${result.data.name ?? result.data.combatantId}.`, result.data);
+  }, userId);
+
+  registerGmWrite(server, "remove_encounter_combatant", {
+    title: "Remove encounter combatant",
+    description: "GM removes one PC, creature, or hazard by combatant id via wgui-ext-remove-encounter-combatant. wgui-ext-remove-encounter-character removes PCs only and is not used here. Does not delete the character, the catalog creature, or the campaign membership. Only the campaign GM.",
+    inputSchema: { ...ids, combatantId, encounterRevision },
+  }, async (args, uid) => {
+    const result = await getEncounterReader().removeEncounterCombatant(uid, Number(args.campaignId), Number(args.encounterId), String(args.combatantId), args.encounterRevision == null ? undefined : Number(args.encounterRevision));
+    if (!result.ok) return textResult(result.message, { code: result.code, retryable: result.code === "ENCOUNTER_REVISION_CONFLICT" }, true);
+    return textResult("Combatant removed.", result.data);
+  }, userId);
+
+  registerGmWrite(server, "patch_encounter_combatant", {
+    title: "Patch encounter combatant",
+    description: "GM sets initiative, current HP, temp HP, or conditions on one encounter combatant via wgui-ext-patch-encounter-combatant. Send at least one field. conditions replaces that combatant's encounter conditions. Initiative here is a number, not a roll; use roll_initiative to roll. HP and conditions are stored on the encounter row. A PC that was only linked by id has no encounter HP to edit. This does not change the character sheet. Only the campaign GM.",
+    inputSchema: {
+      ...ids,
+      combatantId,
+      initiative: z.number().nullable().optional().describe("Set the initiative total, or null to clear it."),
+      hpCurrent: z.number().nullable().optional().describe("Current HP on the encounter row."),
+      hpTemp: z.number().nullable().optional().describe("Temp HP on the encounter row."),
+      conditions: z.array(z.object({ name: z.string(), value: z.number().optional() }).strict()).nullable().optional().describe("Full condition list for this combatant. Null clears it."),
+      encounterRevision,
+    },
+  }, async (args, uid) => {
+    const result = await getEncounterReader().patchEncounterCombatant(uid, Number(args.campaignId), Number(args.encounterId), String(args.combatantId), {
+      initiative: args.initiative as number | null | undefined,
+      hpCurrent: args.hpCurrent as number | null | undefined,
+      hpTemp: args.hpTemp as number | null | undefined,
+      conditions: args.conditions as { name: string; value?: number }[] | null | undefined,
+    }, args.encounterRevision == null ? undefined : Number(args.encounterRevision));
+    if (!result.ok) return textResult(result.message, { code: result.code, retryable: result.code === "ENCOUNTER_REVISION_CONFLICT" }, true);
+    return textResult(`Updated ${result.data.name ?? result.data.combatantId}.`, result.data);
+  }, userId);
+
+  registerGmWrite(server, "roll_initiative", {
+    title: "Roll initiative",
+    description: "GM rolls initiative via wgui-ext-roll-initiative. Each roll is a server d20 plus bonus (use the combatant's perception modifier; combatantIds and the roll-everyone shorthand use +0). scope empty fills combatants with no initiative; scope all rerolls the ones you list. The reply names each combatant and returns rollBatch, which counts initiative logs and is not the combat round. A repeated clientRequestId returns the earlier log row and does not roll again. To set a number without rolling, use patch_encounter_combatant. Only the campaign GM.",
+    inputSchema: {
+      ...ids,
+      scope: z.enum(["empty", "all"]).optional().describe("empty (default) fills missing initiative. all rerolls the listed combatants."),
+      rolls: z.array(z.object({
+        combatantId: z.string(),
+        bonus: z.number().describe("Modifier added to the d20, usually Perception."),
+        source: z.string().optional().describe("Label stored on the roll, such as Perception."),
+      }).strict()).min(1).optional(),
+      combatantIds: z.array(z.string()).min(1).optional().describe("Roll these combatants at +0. Do not send rolls as well."),
+      clientRequestId: z.string().optional().describe("Retry token. The same id returns the original roll."),
+      encounterRevision,
+    },
+  }, async (args, uid) => {
+    const result = await getEncounterReader().rollInitiative(uid, Number(args.campaignId), Number(args.encounterId), {
+      scope: args.scope === "all" ? "all" : "empty",
+      rolls: args.rolls as { combatantId: string; bonus: number; source?: string }[] | undefined,
+      combatantIds: args.combatantIds as string[] | undefined,
+      clientRequestId: args.clientRequestId == null ? undefined : String(args.clientRequestId),
+      encounterRevision: args.encounterRevision == null ? undefined : Number(args.encounterRevision),
+    });
+    if (!result.ok) return textResult(result.message, { code: result.code, retryable: result.code === "ENCOUNTER_REVISION_CONFLICT" }, true);
+    const line = result.data.idempotent ? "Initiative already recorded for this request." : "Initiative rolled.";
+    return textResult(line, result.data);
+  }, userId);
+
   server.registerTool(
     "list_campaign_characters",
     {
@@ -231,7 +343,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
 
   registerEncounterTool(server, "get_encounter", {
     title: "Encounter header",
-    description: "Name, round, difficulty, and XP for one encounter.",
+    description: "Name, round, difficulty, XP, and encounterRevision for one encounter. Pass encounterRevision to a later roster or initiative write when other people may be editing the fight.",
     inputSchema: ids,
   }, async (args, uid) => {
     const record = await encounter(uid, Number(args.campaignId), Number(args.encounterId));
@@ -242,6 +354,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
       difficulty: record.difficulty ?? null,
       xp: record.xp ?? null,
       noteName: record.noteName ?? null,
+      encounterRevision: record.encounterRevision ?? null,
     });
   }, userId);
 
@@ -446,10 +559,13 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     return textResult(found.row.name, { inventory: found.sheet.inventory ?? null, notes: found.sheet.notes ?? null, details: found.sheet.sourceDetails ?? null, log: found.sheet.log ?? null });
   }, userId);
 
+  registerCampaignWrites(server, userId);
   registerCharacterCatalog(server, userId);
   registerCharacterSpells(server, userId);
   registerCharacterInventory(server, userId);
   registerCharacterSheet(server, userId);
+  registerCharacterCompanions(server, userId);
+  registerCharacterCoins(server, userId);
 }
 
 function formatEncounter(record: EncounterRecord) {
@@ -458,6 +574,7 @@ function formatEncounter(record: EncounterRecord) {
     `Round: ${record.round}`,
     `Difficulty: ${record.difficulty ?? "unknown"}`,
     `XP: ${record.xp ?? "unknown"}`,
+    `Revision: ${record.encounterRevision ?? "unknown"}`,
     `Note: ${record.noteName ?? "none"}`,
   ].join("\n");
 }
