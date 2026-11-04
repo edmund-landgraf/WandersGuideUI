@@ -53,6 +53,8 @@ These eight tools are on the same `wgui-mcp` process. They post to the stock Wan
 | `delete_character` | `delete-content` `{ id, type: "character" }` |
 | `list_spell_options` | `find-spell` with the common core plus enabled books, filtered by the casting source's tradition and max rank (sources and slots from the builder operation pass) |
 | `add_spell`, `remove_spell`, `set_spells` | `find-spell` validation, then `update-character` `spells` (`list` entries `{ spell_id, rank, source }`, prepared `slots` `{ rank, source, spell_id }`) |
+| `convert_coins` | No function. Pure PF2e conversion (1 pp = 10 gp = 100 sp = 1000 cp) |
+| `give_money`, `take_money` | `find-character`, then `update-character` `inventory.coins` `{ cp, sp, gp, pp }`. Other inventory keys are left in place |
 
 ## Character payload
 
