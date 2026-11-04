@@ -27,6 +27,7 @@ export type EncounterRecord = {
   difficulty?: string;
   xp?: number;
   noteName?: string;
+  encounterRevision?: number;
   combatants: CombatantRow[];
   roundLog: { round: number; name: string; side: string; initiative?: number; calculation?: string; note?: string }[];
   diceLog: ({ title?: string; dc?: number; stat?: string; result?: string; [key: string]: unknown })[];
@@ -56,6 +57,31 @@ export type CombatantSheet = {
   log?: unknown;
 };
 
+export type EncounterCombatantResult = {
+  combatantId: string;
+  name: string | null;
+  kind: "character" | "creature" | "hazard";
+  ally: boolean;
+  initiative: number | null;
+  hpCurrent: number | null;
+  encounterRevision: number;
+};
+
+export type EncounterCombatantPatch = {
+  initiative?: number | null;
+  hpCurrent?: number | null;
+  hpTemp?: number | null;
+  conditions?: { name: string; value?: number }[] | null;
+};
+
+export type InitiativeRollResult = {
+  rolled: { combatantId: string; name: string; initiative: number | null; die: number | null; bonus: number | null; source: string | null }[];
+  /** How many times initiative has been logged for this encounter. Not the combat round. */
+  rollBatch: number | null;
+  encounterRevision: number;
+  idempotent: boolean;
+};
+
 export type ActionFailure = { ok: false; code: string; message: string };
 export type ActionResult<T> = { ok: true; data: T } | ActionFailure;
 
@@ -71,6 +97,10 @@ export type EncounterReader = {
   joinCampaign(userId: string, characterId: number, joinKey: string): Promise<ActionResult<{ characterId: number; campaignId: number; campaignName: string; already: boolean }>>;
   campaignOwnerContacts(userId: string, ownerIds: string[]): Promise<ActionResult<{ userId: string; email: string; displayName: string }[]>>;
   patchEncounterDice(userId: string, campaignId: number, encounterId: number, patch: { diceRollState?: Record<string, unknown> | null; diceRollLog?: unknown[] }): Promise<ActionResult<{ diceRollState: unknown; diceRollLog: unknown[] }>>;
+  addEncounterCombatant(userId: string, campaignId: number, encounterId: number, input: { characterId?: number; creatureId?: number; ally?: boolean; encounterRevision?: number }): Promise<ActionResult<EncounterCombatantResult>>;
+  removeEncounterCombatant(userId: string, campaignId: number, encounterId: number, combatantId: string, encounterRevision?: number): Promise<ActionResult<{ removedCombatantId: string; encounterRevision: number }>>;
+  patchEncounterCombatant(userId: string, campaignId: number, encounterId: number, combatantId: string, patch: EncounterCombatantPatch, encounterRevision?: number): Promise<ActionResult<EncounterCombatantResult>>;
+  rollInitiative(userId: string, campaignId: number, encounterId: number, input: { scope?: "empty" | "all"; rolls?: { combatantId: string; bonus: number; source?: string }[]; combatantIds?: string[]; clientRequestId?: string; encounterRevision?: number }): Promise<ActionResult<InitiativeRollResult>>;
   listCampaignCharacters(userId: string, campaignId: number): Promise<ActionResult<{ id: number; name: string; level: number | null; ancestry: string | null; className: string | null }[]>>;
   exportCharacter(userId: string, characterId: number, format?: "json" | "pdf", detail?: "slim" | "full"): Promise<ActionResult<CharacterExport>>;
 };
@@ -99,6 +129,18 @@ const empty: EncounterReader = {
     return unavailable();
   },
   async patchEncounterDice() {
+    return unavailable();
+  },
+  async addEncounterCombatant() {
+    return unavailable();
+  },
+  async removeEncounterCombatant() {
+    return unavailable();
+  },
+  async patchEncounterCombatant() {
+    return unavailable();
+  },
+  async rollInitiative() {
     return unavailable();
   },
   async listCampaignCharacters() {

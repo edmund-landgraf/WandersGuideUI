@@ -52,6 +52,18 @@ const fixture: EncounterReader = {
   async patchEncounterDice() {
     return { ok: true, data: { diceRollState: {}, diceRollLog: [] } };
   },
+  async addEncounterCombatant() {
+    return { ok: false, code: "INTERNAL_ERROR", message: "Not available in the smoke fixture." };
+  },
+  async removeEncounterCombatant() {
+    return { ok: false, code: "INTERNAL_ERROR", message: "Not available in the smoke fixture." };
+  },
+  async patchEncounterCombatant() {
+    return { ok: false, code: "INTERNAL_ERROR", message: "Not available in the smoke fixture." };
+  },
+  async rollInitiative() {
+    return { ok: false, code: "INTERNAL_ERROR", message: "Not available in the smoke fixture." };
+  },
   async listCampaignCharacters() {
     return { ok: true, data: [{ id: 7, name: "Joey Turtle", level: 3, ancestry: "Kobold", className: "Kineticist" }] };
   },

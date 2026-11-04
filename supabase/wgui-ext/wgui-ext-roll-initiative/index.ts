@@ -34,7 +34,9 @@ type InitiativeLogEntry = {
 
 type InitiativeLog = {
   id: string;
-  round: number;
+  /** How many times initiative has been logged. Not the combat round. Older rows used `round`. */
+  roll_batch?: number;
+  round?: number;
   entries: InitiativeLogEntry[];
   client_request_id?: string;
 };
@@ -55,12 +57,36 @@ function calculation(die: number, bonus: number, source: string, total: number):
   return equation + ' = ' + total;
 }
 
-function displayName(combatant: CombatantCommand): string {
+function characterIdOf(combatant: CombatantCommand): number | null {
+  const value = combatant.character;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function displayName(combatant: CombatantCommand, characterNames: ReadonlyMap<number, string>): string {
   const creature = combatant.creature;
   const data = combatant.data;
   const hazard = combatant.hazard as { name?: unknown } | undefined;
-  const name = creature?.name ?? data?.name ?? hazard?.name;
+  const characterId = characterIdOf(combatant);
+  const characterName = characterId === null ? undefined : characterNames.get(characterId);
+  const name = creature?.name ?? data?.name ?? characterName ?? hazard?.name;
   return typeof name === 'string' && name.trim() !== '' ? name : 'Combatant';
+}
+
+async function loadCharacterNames(
+  admin: ReturnType<typeof createServiceClient>,
+  combatants: CombatantCommand[],
+): Promise<Map<number, string>> {
+  const ids = [...new Set(combatants.map(characterIdOf).filter((id): id is number => id !== null))];
+  const names = new Map<number, string>();
+  if (ids.length === 0) return names;
+  const { data, error } = await admin.from('character').select('id, name').in('id', ids);
+  if (error) throw new HttpError(500, error.message, 'CHARACTER_LOOKUP_FAILED');
+  for (const row of data ?? []) {
+    if (typeof row.id === 'number' && typeof row.name === 'string' && row.name.trim() !== '') {
+      names.set(row.id, row.name);
+    }
+  }
+  return names;
 }
 
 function isOut(combatant: CombatantCommand): boolean {
@@ -76,10 +102,15 @@ function initiativeLog(meta: Record<string, unknown> | null | undefined): Initia
   return Array.isArray(log) ? (log as InitiativeLog[]) : [];
 }
 
-function nextRound(log: InitiativeLog[]): number {
-  const rounds = log.map((entry) => entry.round).filter((round) => Number.isFinite(round));
-  if (rounds.length === 0) return 1;
-  return Math.max(...rounds) + 1;
+function loggedBatch(entry: InitiativeLog): number | null {
+  const value = entry.roll_batch ?? entry.round;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function nextRollBatch(log: InitiativeLog[]): number {
+  const batches = log.map(loggedBatch).filter((batch): batch is number => batch !== null);
+  if (batches.length === 0) return 1;
+  return Math.max(...batches) + 1;
 }
 
 function parseRolls(value: unknown): Map<string, { bonus: number; source: string }> {
@@ -183,6 +214,7 @@ serve(async (req: Request) => {
       return next;
     });
 
+    const characterNames = await loadCharacterNames(admin, nextList);
     const entries: InitiativeLogEntry[] = nextList
       .filter((combatant) => combatant._id && !isOut(combatant))
       .map((combatant) => {
@@ -190,7 +222,7 @@ serve(async (req: Request) => {
         if (rolledIds.has(id) && combatant.initiative_roll && typeof combatant.initiative === 'number') {
           const roll = combatant.initiative_roll as { die: number; bonus: number; source: string };
           return {
-            name: displayName(combatant),
+            name: displayName(combatant, characterNames),
             ally: Boolean(combatant.ally),
             initiative: combatant.initiative,
             calculation: calculation(roll.die, roll.bonus, roll.source ?? '', combatant.initiative),
@@ -198,7 +230,7 @@ serve(async (req: Request) => {
           };
         }
         return {
-          name: displayName(combatant),
+          name: displayName(combatant, characterNames),
           ally: Boolean(combatant.ally),
           initiative: typeof combatant.initiative === 'number' ? combatant.initiative : null,
           calculation: 'Skipped',
@@ -208,7 +240,7 @@ serve(async (req: Request) => {
 
     const logEntry: InitiativeLog = {
       id: crypto.randomUUID(),
-      round: nextRound(existingLog),
+      roll_batch: nextRollBatch(existingLog),
       entries,
       ...(requestId ? { client_request_id: requestId } : {}),
     };

@@ -1,12 +1,12 @@
-# WGUI MCP tool directory (70 tools)
+# WGUI MCP tool directory (81 tools)
 
-Generated Nov 3, 2026 from the live `wgui` MCP server tool list, with scopes checked against `READ_TOOLS` / `WRITE_TOOLS` in `src/server.ts`.
+Generated Nov 3, 2026 from the live `wgui` MCP server tool list, with scopes checked against `READ_TOOLS` / `WRITE_TOOLS` in `src/server.ts`. The filename still says 67; the counts in this file are the current list.
 
-**70 tools: 40 require `read`, 30 require `write`.** Plus the 7 campaign/encounter create-update tools in the section below (2 read, 5 write), the live server now lists **77**. `tools/list` returns every tool for any token; scope is enforced at call time. The 16 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (22), character (18), homebrew `wgui_ext_hb_*` (30), plus campaign/encounter writes. Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
+**81 tools: 42 require `read`, 39 require `write`.** This includes the 7 campaign/encounter create-update tools in the section below. `tools/list` returns every tool for any token; scope is enforced at call time. The 20 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (26), character (18), homebrew `wgui_ext_hb_*` (30), plus campaign/encounter writes. Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
 
 Common encounter params: `campaignId`, `encounterId`, and for per-combatant tools `combatantId`.
 
-## Campaign, encounter, and combat (22: 19 read, 3 write)
+## Campaign, encounter, and combat (26: 19 read, 7 write)
 
 | Tool | Scope | What it does / returns | Required params |
 | --- | --- | --- | --- |
@@ -16,13 +16,17 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `get_campaign_owner_contacts` | read | Email/display name of owners the caller shares a campaign with (max 24 ids) | `userIds` |
 | `list_campaign_characters` | read | Campaign PC roster: id, name, level, ancestry, class | `campaignId` |
 | `list_encounters` | read · GM | Encounters: id, name, combatant count | `view`, `campaignId` |
-| `get_encounter` | read · GM | Name, round, difficulty, XP | `view`, `campaignId`, `encounterId` |
+| `get_encounter` | read · GM | Name, round, difficulty, XP, encounter revision | `view`, `campaignId`, `encounterId` |
 | `list_pcs` | read · GM | PCs fighting, benched, or down, with current HP | `view`, `campaignId`, `encounterId` |
 | `list_combatants` | read · GM | Initiative, defenses, conditions, current HP for all combatants | `view`, `campaignId`, `encounterId` |
 | `list_roster_edges` | read · GM | Benched/down PCs with current HP | `view`, `campaignId`, `encounterId` |
 | `get_round_log` | read · GM | Round log lines | `view`, `campaignId`, `encounterId` |
 | `get_dice_log` | read · GM | Dice tray state and saved dice log | `view`, `campaignId`, `encounterId` |
 | `patch_encounter_dice` | write | Writes only dice tray (`diceRollState`) and/or dice log (`diceRollLog`) | `campaignId`, `encounterId` (+ one field) |
+| `add_encounter_combatant` | write · GM | GM adds one joined PC (`wgui-ext-add-encounter-character`) or one catalog/homebrew creature (`wgui-ext-add-encounter-creature`). The reply includes that character or creature name. `ally` is for creatures | `view`, `campaignId`, `encounterId`, and one id |
+| `remove_encounter_combatant` | write · GM | GM removes one PC, creature, or hazard via `wgui-ext-remove-encounter-combatant`. Does not delete the character or catalog row | `view`, `campaignId`, `encounterId`, `combatantId` |
+| `patch_encounter_combatant` | write · GM | GM sets initiative, current HP, temp HP, and/or conditions via `wgui-ext-patch-encounter-combatant` | `view`, ids, `combatantId`, and one field |
+| `roll_initiative` | write · GM | GM rolls d20 + bonus via `wgui-ext-roll-initiative`. Reply names use the character or creature name. `rollBatch` counts initiative logs (older logs stored this as `round`). `scope` `empty` fills blanks; `all` rerolls. A repeated `clientRequestId` does not roll again | `view`, `campaignId`, `encounterId` |
 | `get_stat_block` | read · GM | Current HP, defenses, senses, speeds, ability mods | `view`, ids, `combatantId` |
 | `list_ability_groups` | read · GM | Action groups with counts | `view`, ids, `combatantId` |
 | `get_abilities` | read · GM | One action group: name, cost, traits, description | `view`, ids, `combatantId`, `group` |
@@ -125,5 +129,3 @@ No tool exists today for:
 - **Character notes**: no read or write of notes as a standalone tool (`get_character` returns notes read-only, GM view).
 - **Companions**: `choose` can pick a companion feat, but nothing creates or edits the companion (type, name, stats).
 - **Equip / invest / wield**: `add_inventory_item` has no equipped or invested flag.
-- **Creatures in an encounter**: nothing adds or removes combatants; the only encounter write is `patch_encounter_dice`.
-- **Initiative**: `list_combatants` reads it; nothing rolls or writes it.

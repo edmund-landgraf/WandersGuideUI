@@ -30,6 +30,13 @@ const WGUI_ROWS: FnRow[] = [
     up: { name: 'wgui-ext-add-encounter-character', label: 'add-pc', desc: 'add PC to fight' },
     down: { name: 'wgui-ext-remove-encounter-character', label: 'remove-pc', desc: 'remove PC from fight' },
   },
+  {
+    kind: 'pair',
+    label: 'creature',
+    desc: 'add / remove any combatant',
+    up: { name: 'wgui-ext-add-encounter-creature', label: 'add-creature', desc: 'add creature to fight' },
+    down: { name: 'wgui-ext-remove-encounter-combatant', label: 'remove-any', desc: 'remove one combatant' },
+  },
   { kind: 'one', name: 'wgui-ext-roll-initiative', label: 'initiative', desc: 'server initiative roll' },
   {
     kind: 'pair',

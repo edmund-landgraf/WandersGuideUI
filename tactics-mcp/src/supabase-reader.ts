@@ -1,7 +1,8 @@
 import { createHmac } from "node:crypto";
 
+import { invokeFunction, type InvokeResult } from "./character-client.js";
 import { mergePlayerDiceRollLog, mergePlayerDiceRollState } from "./dice-merge.js";
-import { setEncounterReader, type ActionResult, type CharacterExport, type CombatantRow, type CombatantSheet, type EncounterReader, type EncounterRecord } from "./reader.js";
+import { setEncounterReader, type ActionResult, type CharacterExport, type CombatantRow, type CombatantSheet, type EncounterCombatantPatch, type EncounterCombatantResult, type EncounterReader, type EncounterRecord, type InitiativeRollResult } from "./reader.js";
 
 import { readLiveStatBlock } from "./stat-block.js";
 
@@ -869,6 +870,7 @@ function mapEncounter(raw: Json, characters: Json[]): EncounterRecord {
     encounterId: num(raw.id) ?? 0,
     name: typeof raw.name === "string" ? raw.name : "Encounter",
     round: Math.max(1, roundLog.length || num(meta.round) || 1),
+    encounterRevision: revisionOf(meta),
     difficulty: typeof raw.difficulty === "string" ? raw.difficulty : undefined,
     xp: num(raw.xp),
     combatants,
@@ -882,6 +884,95 @@ function mapEncounter(raw: Json, characters: Json[]): EncounterRecord {
       result: Array.isArray(row.entries) ? `${row.entries.length} rolls` : undefined,
     })),
     sheets,
+  };
+}
+
+function revisionOf(meta: Json | undefined): number {
+  const value = meta?.encounter_revision;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+async function gmEncounter(userId: string, campaignId: number, encounterId: number): Promise<ActionResult<Json>> {
+  const access = await campaignAccess(userId, campaignId);
+  if (!access) return fail("CAMPAIGN_FORBIDDEN", "You do not have access to this campaign.");
+  if (!access.isGm) return fail("GM_REQUIRED", "Only the campaign GM can change encounter combatants.");
+  const rows = await rest(`encounter?id=eq.${encounterId}&select=id,campaign_id,meta_data,combatants`);
+  const encounter = rows[0];
+  if (!encounter || num(encounter.campaign_id) !== campaignId) return fail("ENCOUNTER_FORBIDDEN", "You do not have access to this encounter.");
+  return { ok: true, data: encounter };
+}
+
+function functionData(result: InvokeResult): ActionResult<Json> {
+  if (!result.ok) return fail(result.code, result.message);
+  const data = result.data && typeof result.data === "object" && !Array.isArray(result.data) ? result.data as Json : {};
+  return { ok: true, data };
+}
+
+function combatantResult(combatant: Json, revision: number): EncounterCombatantResult {
+  const kind = combatant.type === "CHARACTER" ? "character" : combatant.type === "HAZARD" ? "hazard" : "creature";
+  const entity = (combatant.type === "CREATURE" ? combatant.creature : combatant.data) as Json | undefined;
+  const named = entity?.name;
+  const hp = entity?.hp_current;
+  return {
+    combatantId: typeof combatant._id === "string" ? combatant._id : "",
+    name: typeof named === "string" && named !== "" ? named : null,
+    kind,
+    ally: combatant.ally === true || kind === "character",
+    initiative: typeof combatant.initiative === "number" ? combatant.initiative : null,
+    hpCurrent: typeof hp === "number" ? hp : null,
+    encounterRevision: revision,
+  };
+}
+
+function revisionFrom(data: Json): number {
+  return typeof data.encounter_revision === "number" ? data.encounter_revision : 0;
+}
+
+function storedPatch(patch: EncounterCombatantPatch): Json {
+  const stored: Json = {};
+  if (patch.initiative !== undefined) stored.initiative = patch.initiative;
+  if (patch.hpCurrent !== undefined) stored.hp_current = patch.hpCurrent;
+  if (patch.hpTemp !== undefined) stored.hp_temp = patch.hpTemp;
+  if (patch.conditions !== undefined) stored.conditions = patch.conditions;
+  return stored;
+}
+
+function rollBatchOf(entry: Json): number | null {
+  if (typeof entry.roll_batch === "number") return entry.roll_batch;
+  if (typeof entry.round === "number") return entry.round;
+  return null;
+}
+
+function rollResult(data: Json): InitiativeRollResult {
+  const rolled = Array.isArray(data.rolled) ? data.rolled as Json[] : [];
+  const entry = data.initiative_log_entry && typeof data.initiative_log_entry === "object" ? data.initiative_log_entry as Json : {};
+  const loggedNames = new Map<string, string>();
+  if (Array.isArray(entry.entries)) {
+    for (const row of entry.entries as Json[]) {
+      if (typeof row?.combatant_id === "string" && typeof row.name === "string" && row.name.trim() !== "") {
+        loggedNames.set(row.combatant_id, row.name);
+      }
+    }
+  }
+  return {
+    rolled: rolled.map((combatant) => {
+      const roll = combatant.initiative_roll && typeof combatant.initiative_roll === "object" ? combatant.initiative_roll as Json : {};
+      const entity = (combatant.creature ?? combatant.data ?? combatant.hazard) as Json | undefined;
+      const id = typeof combatant._id === "string" ? combatant._id : "";
+      const logged = loggedNames.get(id);
+      const name = typeof entity?.name === "string" && entity.name.trim() !== "" ? entity.name : logged;
+      return {
+        combatantId: id,
+        name: typeof name === "string" && name.trim() !== "" ? name : "Combatant",
+        initiative: typeof combatant.initiative === "number" ? combatant.initiative : null,
+        die: typeof roll.die === "number" ? roll.die : null,
+        bonus: typeof roll.bonus === "number" ? roll.bonus : null,
+        source: typeof roll.source === "string" ? roll.source : null,
+      };
+    }),
+    rollBatch: rollBatchOf(entry),
+    encounterRevision: revisionFrom(data),
+    idempotent: data.idempotent === true,
   };
 }
 
@@ -1029,6 +1120,90 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
       }
       await restWrite("PATCH", `encounter?id=eq.${encounterId}`, { meta_data: meta });
       return { ok: true, data: { diceRollState: meta.dice_roll_state ?? null, diceRollLog: Array.isArray(meta.dice_roll_log) ? meta.dice_roll_log : [] } };
+    },
+    async addEncounterCombatant(userId, campaignId, encounterId, input) {
+      const hasCharacter = input.characterId != null;
+      const hasCreature = input.creatureId != null;
+      if (hasCharacter === hasCreature) return fail("VALIDATION_ERROR", "Send characterId or creatureId, not both.");
+      const loaded = await gmEncounter(userId, campaignId, encounterId);
+      if (!loaded.ok) return loaded;
+      const revision = input.encounterRevision ?? revisionOf(loaded.data.meta_data as Json | undefined);
+      const body = hasCharacter
+        ? { campaign_id: campaignId, encounter_id: encounterId, character_id: input.characterId, encounter_revision: revision }
+        : { campaign_id: campaignId, encounter_id: encounterId, creature_id: input.creatureId, ally: input.ally === true, encounter_revision: revision };
+      const called = functionData(await invokeFunction(userId, hasCharacter ? "wgui-ext-add-encounter-character" : "wgui-ext-add-encounter-creature", body));
+      if (!called.ok) return called;
+      const combatant = called.data.combatant as Json | undefined;
+      if (!combatant || typeof combatant !== "object") return fail("INTERNAL_ERROR", "The encounter function did not return a combatant.");
+      const result = combatantResult(combatant, revisionFrom(called.data));
+      if (result.kind === "character" && !result.name && input.characterId != null) {
+        const rows = await rest(`character?id=eq.${input.characterId}&select=id,name`);
+        const name = rows[0]?.name;
+        if (typeof name === "string" && name.trim() !== "") result.name = name;
+      }
+      return { ok: true, data: result };
+    },
+    async removeEncounterCombatant(userId, campaignId, encounterId, combatantId, encounterRevisionInput) {
+      const loaded = await gmEncounter(userId, campaignId, encounterId);
+      if (!loaded.ok) return loaded;
+      const revision = encounterRevisionInput ?? revisionOf(loaded.data.meta_data as Json | undefined);
+      const called = functionData(await invokeFunction(userId, "wgui-ext-remove-encounter-combatant", {
+        campaign_id: campaignId,
+        encounter_id: encounterId,
+        combatant_id: combatantId,
+        encounter_revision: revision,
+      }));
+      if (!called.ok) return called;
+      const removed = called.data.removed_combatant_id;
+      if (typeof removed !== "string") return fail("INTERNAL_ERROR", "The encounter function did not return the removed combatant.");
+      return { ok: true, data: { removedCombatantId: removed, encounterRevision: revisionFrom(called.data) } };
+    },
+    async patchEncounterCombatant(userId, campaignId, encounterId, combatantId, patch, encounterRevisionInput) {
+      const loaded = await gmEncounter(userId, campaignId, encounterId);
+      if (!loaded.ok) return loaded;
+      const revision = encounterRevisionInput ?? revisionOf(loaded.data.meta_data as Json | undefined);
+      const called = functionData(await invokeFunction(userId, "wgui-ext-patch-encounter-combatant", {
+        campaign_id: campaignId,
+        encounter_id: encounterId,
+        combatant_id: combatantId,
+        encounter_revision: revision,
+        ...storedPatch(patch),
+      }));
+      if (!called.ok) return called;
+      const combatant = called.data.combatant as Json | undefined;
+      if (!combatant || typeof combatant !== "object") return fail("INTERNAL_ERROR", "The encounter function did not return a combatant.");
+      return { ok: true, data: combatantResult(combatant, revisionFrom(called.data)) };
+    },
+    async rollInitiative(userId, campaignId, encounterId, input) {
+      if (input.rolls && input.combatantIds) return fail("VALIDATION_ERROR", "Send rolls or combatantIds, not both.");
+      const loaded = await gmEncounter(userId, campaignId, encounterId);
+      if (!loaded.ok) return loaded;
+      const revision = input.encounterRevision ?? revisionOf(loaded.data.meta_data as Json | undefined);
+      let rolls = input.rolls;
+      if (!rolls) {
+        const list = ((loaded.data.combatants as Json | undefined)?.list as Json[] | undefined) ?? [];
+        const wanted = input.combatantIds;
+        if (wanted) {
+          const known = new Set(list.map((combatant) => combatant._id).filter((id): id is string => typeof id === "string"));
+          if (wanted.some((id) => !known.has(id))) return fail("COMBATANT_NOT_FOUND", "Combatant not found.");
+        }
+        const chosen = wanted ? new Set(wanted) : null;
+        rolls = list.flatMap((combatant) => {
+          if (typeof combatant._id !== "string" || (chosen && !chosen.has(combatant._id))) return [];
+          return [{ combatantId: combatant._id, bonus: 0, source: "" }];
+        });
+        if (!rolls.length) return fail("ROLLS_REQUIRED", "This encounter has no combatants to roll.");
+      }
+      const called = functionData(await invokeFunction(userId, "wgui-ext-roll-initiative", {
+        campaign_id: campaignId,
+        encounter_id: encounterId,
+        encounter_revision: revision,
+        scope: input.scope === "all" ? "all" : "empty",
+        rolls: rolls.map((roll) => ({ combatant_id: roll.combatantId, bonus: roll.bonus, source: roll.source ?? "" })),
+        ...(input.clientRequestId ? { client_request_id: input.clientRequestId } : {}),
+      }));
+      if (!called.ok) return called;
+      return { ok: true, data: rollResult(called.data) };
     },
     async listCampaignCharacters(userId, campaignId) {
       const access = await campaignAccess(userId, campaignId);
