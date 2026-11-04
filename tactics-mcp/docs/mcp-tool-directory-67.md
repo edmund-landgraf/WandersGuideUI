@@ -1,8 +1,8 @@
-# WGUI MCP tool directory (81 tools)
+# WGUI MCP tool directory (85 tools)
 
 Generated Nov 3, 2026 from the live `wgui` MCP server tool list, with scopes checked against `READ_TOOLS` / `WRITE_TOOLS` in `src/server.ts`. The filename still says 67; the counts in this file are the current list.
 
-**81 tools: 42 require `read`, 39 require `write`.** This includes the 7 campaign/encounter create-update tools in the section below. `tools/list` returns every tool for any token; scope is enforced at call time. The 20 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (26), character (18), homebrew `wgui_ext_hb_*` (30), plus campaign/encounter writes. Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
+**85 tools: 43 require `read`, 42 require `write`.** This includes the 7 campaign/encounter create-update tools in the section below. `tools/list` returns every tool for any token; scope is enforced at call time. The 20 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (26), character (22), homebrew `wgui_ext_hb_*` (30), plus campaign/encounter writes. Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
 
 Common encounter params: `campaignId`, `encounterId`, and for per-combatant tools `combatantId`.
 
@@ -37,7 +37,7 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `get_character` | read · GM | PC inventory, notes, details, log | `view`, ids, `combatantId` |
 | `get_monster` | read · GM | Creature inventory, notes, details, log | `view`, ids, `combatantId` |
 
-## Character (18: 6 read, 12 write)
+## Character (22: 7 read, 15 write)
 
 | Tool | Scope | What it does / returns | Required params |
 | --- | --- | --- | --- |
@@ -59,6 +59,10 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `convert_coins` | read | Normalizes a coin amount at PF2e rates (1 pp = 10 gp = 100 sp = 1000 cp). Does not touch a character | `amount` |
 | `give_money` | write | Adds coins to `inventory.coins` (`cp`/`sp`/`gp`/`pp`). `normalize:true` rebalances the purse | `characterId`, `amount` |
 | `take_money` | write | Removes coins, breaking higher denominations; `INSUFFICIENT_FUNDS` if the purse is short | `characterId`, `amount` |
+| `list_companions` | read | `companions.list`: type, name, level, added abilities, open selects | `characterId` |
+| `add_companion` | write | Appends a catalog creature (companion type, or any creature that is not level -100) | `characterId`, `creatureId` |
+| `update_companion` | write | Sets type (`creatureId`), name, `abilities_added`, or one operation select. Same list for animal companions, familiars, and eidolons | `characterId`, `index` |
+| `remove_companion` | write | Removes `companions.list[index]` | `characterId`, `index` |
 
 ## Homebrew (30: 15 read, 15 write)
 
@@ -127,5 +131,5 @@ No tool exists today for:
 
 - **Character portrait / art / background image**: nothing sets them.
 - **Character notes**: no read or write of notes as a standalone tool (`get_character` returns notes read-only, GM view).
-- **Companions**: `choose` can pick a companion feat, but nothing creates or edits the companion (type, name, stats).
+- **Companion drawer extras**: current HP, temp HP, conditions, inventory, spells, and notes on a companion. `list_companions` / `add_companion` / `update_companion` / `remove_companion` write the Companions panel list (catalog creature, name, `abilities_added`, operation selects). Animal companions, familiars, and eidolons share that list; witch familiar spells stay on `spells`.
 - **Equip / invest / wield**: `add_inventory_item` has no equipped or invested flag.
