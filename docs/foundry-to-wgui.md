@@ -143,6 +143,8 @@ The forward module and this reverse import share a character only when the Found
 
 **Design ideal.** A lossless round-trip is the goal, not a guarantee. If about 60% of a Wanderer's Guide character converts into Foundry and about 40% does not convert at all, a later pull back onto that linked character writes the 60% back and leaves the 40% untouched. The unconverted part is still sitting on the Wanderer's Guide character the way it was. Full achievement of that split is not promised. Implement toward it: mapped fields round-trip, and anything that never exported is not damaged on the way back.
 
+The other direction is the common case. Foundry has more customization options than Wanderer's Guide. Players add options on the actor that the Wanderer's Guide sheet cannot display. Those Foundry-only values are not dropped. Store them as tagged leftovers on the character so a later push or re-sync can put them back. A push is not the normal path — re-sync the other way will be rare — but the stored values are what makes a rethink of re-sync possible without damaging those options. Wanderer's Guide-only content stays untouched on the character. Foundry-only extras stay in `foundryLeftovers`. Neither side is deleted because the other side has no field for it.
+
 **Link discovery.** When `foundry-wanderersguide-import` creates or updates an actor, it tags the actor. `scripts/mapping.js` sets `plan.wgId` from `character.id`. `scripts/importer.js` writes that onto the actor as:
 
 - `flags["foundry-wanderersguide-import"].wgId` — the Wanderer's Guide character id (`MODULE_ID` is `foundry-wanderersguide-import` in `scripts/constants.js`)
@@ -158,9 +160,11 @@ An actor with no `wgId` is not linked by the forward module. Match it with `foun
 
 **Lossy export is not a destructive re-import.** Something that does not get exported stays on the Wanderer's Guide character exactly as it is. That is the 40% in the ideal above. If a Wanderer's Guide choice, selection, or item does not map into Foundry, leave it on the character. Do not delete it because the actor lacks it. On the Foundry side that same value may sit as a leftover (`flags["foundry-wanderersguide-import"].wgLeftovers`, coverage status `leftover-preserved`) because Foundry has nowhere to put it. That leftover is a copy of what did not fit. It is not a newer value.
 
-**What a linked update writes.** Merge mapped fields onto the linked character. Update a Wanderer's Guide path only when this plan maps the actor path onto it. Leave unresolved, leftover-preserved, and unexported Wanderer's Guide content untouched. Foundry leftovers are not a source of truth: do not copy `wgLeftovers` back over the character, and do not clear a Wanderer's Guide field because its only representation on the actor is a leftover. A path that is `dropped` on the Foundry coverage ledger for the same reason (Foundry recomputes it, or the forward import omitted it) is also left as-is on the character.
+**What a linked update writes.** Merge mapped fields onto the linked character. Update a Wanderer's Guide path only when this plan maps the actor path onto it. Leave unresolved, leftover-preserved, and unexported Wanderer's Guide content untouched. The forward module's `wgLeftovers` are not a source of truth for the sheet: do not copy that blob over a Wanderer's Guide field, and do not clear a Wanderer's Guide field because its only representation on the actor is a leftover. A path that is `dropped` on the Foundry coverage ledger for the same reason (Foundry recomputes it, or the forward import omitted it) is also left as-is on the character.
 
-An unlinked create still writes the whole plan, including `foundryLeftovers` for paths this reverse plan does not interpret. The "do not overwrite from Foundry leftovers" rule applies to the update of a character that is already linked.
+**Foundry-only extras.** When the actor has a value the Wanderer's Guide sheet cannot display, give that source path status `leftover-preserved` and store the raw value in `character.meta_data.foundryLeftovers`, keyed by the actor path. Tag the ledger reason so a later re-sync can tell these from Wanderer's Guide values that merely failed to export (for example `foundry-only: no Wanderer's Guide field`). Do not render them on the sheet. Do not invent a sheet field for them. Do not drop them. On a later linked update, replace a leftover only when the same actor path is read again; do not delete a stored leftover because this read did not map it onto the sheet. The sheet fields and `foundryLeftovers` stay separate. A future push, if one is built, sends `foundryLeftovers` back onto the actor and still does not treat them as Wanderer's Guide builder state. This design does not build that push.
+
+An unlinked create still writes the whole plan, including `foundryLeftovers` for paths this reverse plan does not interpret. The same store holds Foundry-only extras. The rule against overwriting sheet fields from leftovers applies to every character, linked or not.
 
 ### Where the plan is stored
 
@@ -188,7 +192,11 @@ type CharacterFoundryMeta = {
     actorId: string;
   };
   foundry_ledger?: FoundryLedgerRow[];
-  /** Values of leftover-preserved paths, keyed by source path. Verbatim. */
+  /**
+   * Leftover-preserved paths, keyed by actor source path. Verbatim.
+   * Includes Foundry-only options the sheet does not display.
+   * Not applied to sheet fields. Kept so a later re-sync can restore them.
+   */
   foundryLeftovers?: Record<string, unknown>;
 };
 ```
@@ -321,7 +329,7 @@ A confirmed **Import** that succeeded is not rolled back by a later actor's canc
 ## Out of scope
 
 - NPCs, hazards, and any actor whose type is not `character`.
-- Writing back to Foundry. The forward module remains the WG JSON → Foundry path.
+- Writing back to Foundry. The forward module remains the WG JSON → Foundry path. Store Foundry-only extras in `foundryLeftovers` so a later re-sync could restore them. Do not build that push here.
 - Mapping PF2e rule elements onto Wanderer's Guide operation keys.
 - Choosing an owner from a display name, email, or Foundry username.
 - Receiving or storing the Foundry password.
