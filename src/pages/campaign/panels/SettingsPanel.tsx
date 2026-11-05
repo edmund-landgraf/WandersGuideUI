@@ -53,6 +53,7 @@ import { drawerState } from '@atoms/navAtoms';
 import { Campaign, Character } from '@schemas/content';
 import { userState } from '@atoms/userAtoms';
 import { isValidImage } from '@utils/images';
+import { persistPublicArtUrl } from '@upload/image-upload';
 import { makeRequest } from '@requests/request-manager';
 import { cloneDeep, isEqual, uniq } from 'lodash-es';
 
@@ -778,12 +779,13 @@ export default function SettingsPanel(props: {
             defaultValue={props.campaign.meta_data?.image_url ?? ''}
             label='Image URL'
             onBlur={async (e) => {
-              setIsValidImageURL(e.target.value.trim() ? await isValidImage(e.target.value) : true);
+              const stored = e.target.value.trim() ? await persistPublicArtUrl(e.target.value, 'backgrounds') : '';
+              setIsValidImageURL(stored ? await isValidImage(stored) : true);
               props.setCampaign({
                 ...props.campaign,
                 meta_data: {
                   ...props.campaign.meta_data,
-                  image_url: e.target.value,
+                  image_url: stored,
                 },
               });
             }}

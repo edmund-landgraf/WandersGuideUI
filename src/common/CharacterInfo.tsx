@@ -22,13 +22,14 @@ import { phoneQuery } from '@utils/mobile-responsive';
 import { truncate } from 'lodash-es';
 import { LegacyRef, forwardRef } from 'react';
 import { IMPRINT_BG_COLOR, IMPRINT_BORDER_COLOR } from '@constants/data';
+import { publicArtSrc } from '@utils/public-art-url';
 
 const ProfilePic = (props: { src?: string }) => {
   const theme = useMantineTheme();
 
   return (
     <Avatar
-      src={props.src}
+      src={publicArtSrc(props.src)}
       alt='Character Portrait'
       size={75}
       radius={75}
@@ -260,7 +261,7 @@ export function CharacterDetailedInfo(props: { character: Character | null; name
               </HoverCard>
             )}
             <Avatar
-              src={props.character?.details?.image_url}
+              src={publicArtSrc(props.character?.details?.image_url)}
               alt='Character Portrait'
               size={75}
               radius={75}

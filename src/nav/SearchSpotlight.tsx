@@ -10,6 +10,7 @@ import { useDebouncedState } from '@mantine/hooks';
 import { Spotlight, SpotlightActionData, spotlight } from '@mantine/spotlight';
 import { AdvancedSearchModal } from '@modals/AdvancedSearchModal';
 import { getEntityLevel } from '@utils/entity-utils';
+import { publicArtSrc } from '@utils/public-art-url';
 import { makeRequest } from '@requests/request-manager';
 import { Session } from '@supabase/supabase-js';
 import {
@@ -528,7 +529,7 @@ async function fetchCharacters(
         //   stroke={1.5}
         // />
         <Avatar
-          src={character.details?.image_url}
+          src={publicArtSrc(character.details?.image_url)}
           alt='Character Portrait'
           size={40}
           radius={40}

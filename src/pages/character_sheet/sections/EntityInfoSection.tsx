@@ -19,6 +19,7 @@ import { IMPRINT_BG_COLOR } from '@constants/data';
 import { modals, openContextModal } from '@mantine/modals';
 import { getEntityLevel } from '@utils/entity-utils';
 import { getAllPortraitImages } from '@utils/portrait-images';
+import { publicArtSrc } from '@utils/public-art-url';
 import ImprintButton from '@common/ImprintButton';
 
 export default function EntityInfoSection(props: {
@@ -103,7 +104,7 @@ export default function EntityInfoSection(props: {
                           ...prev,
                           details: {
                             ...prev.details,
-                            image_url: prev.details?.image_url === option.url ? undefined : option.url,
+                            image_url: prev.details?.image_url === option.url ? undefined : publicArtSrc(option.url) || undefined,
                           },
                         };
                       });

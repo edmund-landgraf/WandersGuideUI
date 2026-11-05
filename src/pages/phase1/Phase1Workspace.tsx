@@ -75,7 +75,8 @@ import { hasPatreonAccess } from '@utils/patreon';
 import { getAllBackgroundImages } from '@utils/background-images';
 import { Phase1ArtworkOverlay, Phase1ArtworkPreview } from './phase1-background-modal';
 import { PHASE1_SHEET_ART_TONE_EVENT, persistSheetArtTone, readStoredSheetArtTone, type Phase1SheetArtTone } from './phase1-theme';
-import { uploadImage } from '@upload/image-upload';
+import { persistPublicArtUrl, uploadImage } from '@upload/image-upload';
+import { isSiteRelativeArtPath, publicArtSrc } from '@utils/public-art-url';
 import { getFileContents } from '@import/json/import-from-json';
 import exportToJSON, { downloadObjectAsJson } from '@export/export-to-json';
 import exportToPDF from '@export/export-to-pdf';
@@ -645,8 +646,8 @@ function CharacterRosterRow({
   ownedCampaign?: boolean;
 }) {
   const identity = [character.details?.ancestry?.name, character.details?.background?.name, character.details?.class?.name].filter(Boolean).join(' · ');
-  const portraitUrl = character.details?.image_url?.trim();
-  const sheetArtUrl = character.details?.background_image_url?.trim();
+  const portraitUrl = publicArtSrc(character.details?.image_url);
+  const sheetArtUrl = publicArtSrc(character.details?.background_image_url);
   return (
     <div
       className={`p1-char-row group grid w-full items-center gap-4 px-2 text-left${compact ? ' py-1' : ' py-4'}${showCampaign ? ' grid-cols-[auto_1fr_minmax(7.5rem,11rem)_auto]' : ' grid-cols-[auto_1fr_auto]'}${sheetArtUrl ? ' p1-char-row-has-art' : ''}${className ? ` ${className}` : ''}`}
@@ -1643,8 +1644,9 @@ export function Phase1CharactersPage() {
             currentUrl={portraitPreview.details?.image_url}
             overlayClass='z-[110]'
             onSelect={(url) => {
-              const next = { ...portraitPreview, details: { ...portraitPreview.details, image_url: url } };
-              setPortraitPreview(url ? next : null);
+              void persistPublicArtUrl(url ?? '').then((stored) => {
+              const next = { ...portraitPreview, details: { ...portraitPreview.details, image_url: stored || undefined } };
+              setPortraitPreview(stored ? next : null);
               setPortraitPickerOpen(false);
               void phase1Request('update-character', { id: portraitPreview.id, details: next.details }).then(
                 () => {
@@ -1654,6 +1656,7 @@ export function Phase1CharactersPage() {
                   setJoinStatus(error instanceof Error ? error.message : 'Could not update portrait.');
                 }
               );
+              });
             }}
             onClose={() => {
               setPortraitPickerOpen(false);
@@ -6498,7 +6501,7 @@ function PortraitPreviewModal({
     >
       <section role='dialog' aria-modal='true' aria-labelledby='portrait-preview-title' className='flex max-h-[min(92vh,960px)] w-full max-w-[min(90vw,720px)] flex-col border border-p1-border bg-p1-surface p-4'>
         <h2 id='portrait-preview-title' className='mb-3 truncate text-lg font-semibold'>{name}</h2>
-        <img src={url} alt={name} className='min-h-0 w-full flex-1 object-contain' />
+        <img src={publicArtSrc(url)} alt={name} className='min-h-0 w-full flex-1 object-contain' />
         <div className='mt-4 flex justify-end gap-2'>
           <button type='button' className='toolbar-button' onClick={onChange}>
             Change
@@ -6972,7 +6975,7 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
     panelRef.current?.focus();
     function onWindowPaste(event: ClipboardEvent) {
       const text = event.clipboardData?.getData('text/plain').trim() ?? '';
-      if (/^https?:\/\//i.test(text)) {
+      if (/^https?:\/\//i.test(text) || isSiteRelativeArtPath(text)) {
         setLinkText(text);
         if (event.target === panelRef.current) {
           event.preventDefault();
@@ -7059,7 +7062,7 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
   }
 
   async function saveImageUrl(raw: string) {
-    const url = normalizeArtLink(raw);
+    const url = publicArtSrc(normalizeArtLink(raw));
     if (!/^https?:\/\//i.test(url)) {
       setError('Paste an http or https image link.');
       return;
@@ -7171,7 +7174,7 @@ function CampaignArtControl({ campaign, onSaved, onFrame, onUploaded, onFrameErr
             <button
               type='button'
               className='toolbar-button'
-              disabled={busy || !/^https?:\/\//i.test(linkText.trim())}
+              disabled={busy || !( /^https?:\/\//i.test(linkText.trim()) || isSiteRelativeArtPath(linkText) )}
               onClick={() => void saveImageUrl(linkText.trim())}
             >
               {busy ? 'Saving…' : 'Use link'}
@@ -7328,17 +7331,18 @@ async function rescueTempArt(sourceUrl: string) {
 
 /** Dev pages talk to Kong through the Vite origin. Upload returns :8000, which the image tag cannot reach. */
 function campaignArtSrc(url: string): string {
-  const temp = tempArtUrls.get(url);
+  const resolved = publicArtSrc(url);
+  const temp = tempArtUrls.get(url) ?? tempArtUrls.get(resolved);
   if (temp) return temp;
-  if (!import.meta.env.DEV || typeof window === 'undefined') return url;
+  if (!import.meta.env.DEV || typeof window === 'undefined') return resolved;
   try {
-    const parsed = new URL(url, window.location.origin);
-    if (!parsed.pathname.startsWith('/storage/')) return url;
+    const parsed = new URL(resolved, window.location.origin);
+    if (!parsed.pathname.startsWith('/storage/')) return resolved;
     const localHost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '::1' || parsed.hostname === 'kong';
-    if (parsed.protocol !== 'http:' || (!localHost && parsed.port !== '8000')) return url;
+    if (parsed.protocol !== 'http:' || (!localHost && parsed.port !== '8000')) return resolved;
     return window.location.origin + parsed.pathname + parsed.search;
   } catch {
-    return url;
+    return resolved;
   }
 }
 

@@ -25,6 +25,7 @@ import {
 } from '@mantine/core';
 import { useHover, useMediaQuery } from '@mantine/hooks';
 import { makeRequest } from '@requests/request-manager';
+import { publicArtSrc } from '@utils/public-art-url';
 import { IconFlag, IconPlus, IconSearch, IconX } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Campaign, Character } from '@schemas/content';
@@ -303,7 +304,7 @@ function CampaignCard(props: { campaign: Campaign }) {
 
       {/* Background image */}
       <Image
-        src={props.campaign?.meta_data?.image_url}
+        src={publicArtSrc(props.campaign?.meta_data?.image_url)}
         alt={props.campaign?.name}
         fallbackSrc={getDefaultCampaignBackgroundImage().url}
         style={{

@@ -1,3 +1,5 @@
+import { publicArtSrc } from '@utils/public-art-url';
+
 export async function getShapeIcon(content: string) {
   const res = await fetch(`https://api.dicebear.com/7.x/shapes/svg?seed=${content}`);
   return res.ok ? await res.text() : '';
@@ -28,8 +30,9 @@ function loadImage(url: string, referrerPolicy: ReferrerPolicy): Promise<boolean
 }
 
 export async function isValidImage(url?: string): Promise<boolean> {
-  const trimmed = url?.trim();
-  if (!trimmed) return false;
+  const raw = url?.trim();
+  if (!raw) return false;
+  const trimmed = publicArtSrc(raw);
   let parsed: URL;
   try {
     parsed = new URL(trimmed);

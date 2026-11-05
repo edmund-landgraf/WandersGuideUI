@@ -1,5 +1,6 @@
 import BlurBox from '@common/BlurBox';
 import { glassStyle } from '@utils/colors';
+import { publicArtSrc } from '@utils/public-art-url';
 import { CharacterDetailedInfo } from '@common/CharacterInfo';
 import DiceRoller from '@common/dice/DiceRoller';
 import {
@@ -197,7 +198,7 @@ export function CampaignInner(props: { campaignId: number; onFinishLoading: () =
                   <Box>
                     <Card radius='md' p='md' style={{ backgroundColor: 'transparent' }} h={235}>
                       <Image
-                        src={campaign?.meta_data?.image_url}
+                        src={publicArtSrc(campaign?.meta_data?.image_url)}
                         alt={campaign?.name}
                         fallbackSrc={getDefaultCampaignBackgroundImage().url}
                         style={{
