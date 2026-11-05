@@ -2420,7 +2420,7 @@ export function Phase1CampaignPage() {
     mutationFn: async (characterId) => {
       const roster = queryClient.getQueryData<Character[]>(playersKey) ?? [];
       const character = roster.find((item) => numericId(item.id) === characterId);
-      const ownedByMe = character != null && sameUserId(character.user_id, session.user.id);
+      const ownedByMe = character != null && sameUserId(character.user_id, session?.user.id);
       queryClient.setQueryData<Character[]>(playersKey, (current = []) => current.filter((item) => numericId(item.id) !== characterId));
       // remove-from-campaign kicks someone else's PC. The GM's own sheets only
       // leave when campaign_id is cleared, which is what the roster "leave" path does.
