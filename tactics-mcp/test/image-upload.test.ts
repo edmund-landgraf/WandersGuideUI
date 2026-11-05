@@ -52,6 +52,9 @@ test("upload_image posts upload-public-file and the art tools store the returned
   setCharacterFetch(async (input, init) => {
     const url = String(input);
     if (url === "https://images.example/pip.png") return new Response(PNG, { status: 200, headers: { "content-type": "image/png" } });
+    if (url === "https://wgui.wandersguide.site/portraits/thalanis-reed.jpg") {
+      return new Response(JPEG, { status: 200, headers: { "content-type": "image/jpeg" } });
+    }
     if (url === "https://images.example/huge.png") return new Response(Buffer.alloc(8), { status: 200, headers: { "content-length": String(MAX_IMAGE_BYTES + 1) } });
     const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
     if (url.endsWith("/upload-public-file")) {
@@ -132,6 +135,25 @@ test("upload_image posts upload-public-file and the art tools store the returned
   assert.equal((campaign.meta_data as { image_url?: string }).image_url, "https://cdn.example/backgrounds/webp");
   assert.equal((campaign.meta_data as { settings?: { dice_3d?: boolean } }).settings?.dice_3d, true);
   assert.equal(JSON.stringify(campaignArt).includes("secret-key"), false);
+
+  const relative = await client.callTool({
+    name: "set_character_art",
+    arguments: { characterId: 95, portraitUrl: "/portraits/thalanis-reed.jpg" },
+  });
+  assert.equal(relative.isError, undefined);
+  assert.equal((character.details as { image_url?: string }).image_url, "https://cdn.example/portraits/jpeg");
+  assert.equal(uploads.at(-1)?.category, "portraits");
+  assert.equal(uploads.at(-1)?.type, "jpeg");
+
+  const missed = await client.callTool({
+    name: "set_campaign_art",
+    arguments: { campaignId: 7, imageUrl: "/portraits/missing.jpg" },
+  });
+  assert.equal(missed.isError, undefined);
+  assert.equal(
+    (campaign.meta_data as { image_url?: string }).image_url,
+    "https://wgui.wandersguide.site/portraits/missing.jpg",
+  );
 
   await client.close();
   setCharacterFetch(null);

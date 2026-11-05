@@ -13,6 +13,7 @@ import {
   MantineStyleProp,
 } from '@mantine/core';
 import { isValidImage } from '@utils/images';
+import { publicArtSrc } from '@utils/public-art-url';
 import { useEffect, useState } from 'react';
 import { Icon } from './Icon';
 import { SelectIconModalContents } from '@modals/SelectIconModal';
@@ -20,6 +21,7 @@ import DOMPurify from 'dompurify';
 import { GUIDE_BLUE } from '@constants/data';
 import { usePrevious } from '@mantine/hooks';
 import useRefresh from '@utils/use-refresh';
+import { persistPublicArtUrl } from '@upload/image-upload';
 
 export function SelectIcon(props: {
   strValue: string;
@@ -85,7 +87,7 @@ export function SelectIcon(props: {
               const valid = !e.target?.value ? true : await isValidImage(e.target?.value);
               setIsValidImageURL(valid);
               if (valid) {
-                updateIconValue({ type: 'image', value: e.target.value });
+                updateIconValue({ type: 'image', value: await persistPublicArtUrl(e.target.value) });
               }
             }}
             error={isValidImageURL ? false : 'Invalid Image'}
@@ -221,9 +223,9 @@ export function parseIconValue(value: string): { type: 'icon' | 'image'; value: 
   const parts = value.split('|||');
 
   if (parts.length === 1) {
-    return { type: 'image', value: DOMPurify.sanitize(parts[0]) };
+    return { type: 'image', value: publicArtSrc(DOMPurify.sanitize(parts[0])) };
   } else if (parts.length === 2) {
-    return { type: 'image', value: DOMPurify.sanitize(parts[1]) };
+    return { type: 'image', value: publicArtSrc(DOMPurify.sanitize(parts[1])) };
   } else if (parts.length === 3) {
     let type: 'icon' | 'image' = 'image';
     let color: string | undefined;
@@ -231,7 +233,8 @@ export function parseIconValue(value: string): { type: 'icon' | 'image'; value: 
       type = 'icon';
       color = DOMPurify.sanitize(parts[2]);
     }
-    return { type, value: DOMPurify.sanitize(parts[1]), color };
+    const value = type === 'icon' ? DOMPurify.sanitize(parts[1]) : publicArtSrc(DOMPurify.sanitize(parts[1]));
+    return { type, value, color };
   } else {
     return { type: 'image', value: '' };
   }

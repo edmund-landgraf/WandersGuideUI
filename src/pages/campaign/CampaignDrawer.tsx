@@ -16,6 +16,7 @@ import {
 import { useMediaQuery } from '@mantine/hooks';
 import { tabletQuery, wideDesktopQuery } from '@utils/mobile-responsive';
 import { glassStyle } from '@utils/colors';
+import { publicArtSrc } from '@utils/public-art-url';
 import { IconHeartFilled } from '@tabler/icons-react';
 import { Campaign, Character } from '@schemas/content';
 import { useQuery } from '@tanstack/react-query';
@@ -147,7 +148,7 @@ export default function CampaignDrawer(props: { opened: boolean; onClose: () => 
         >
           {/* Full-height campaign background image */}
           <Image
-            src={campaign?.meta_data?.image_url}
+            src={publicArtSrc(campaign?.meta_data?.image_url)}
             alt={campaign?.name}
             fallbackSrc={getDefaultCampaignBackgroundImage().url}
             style={{

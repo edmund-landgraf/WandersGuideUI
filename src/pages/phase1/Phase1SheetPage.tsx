@@ -14,6 +14,8 @@ import { cloneDeep } from 'lodash-es';
 import { noteContentsToMarkdown, ProseMarkdown } from './phase1-markdown';
 import { PlateNotesEditor } from './phase1-plate-notes';
 import { Phase1PortraitModal } from './phase1-portrait-modal';
+import { persistPublicArtUrl } from '@upload/image-upload';
+import { publicArtSrc } from '@utils/public-art-url';
 import { Phase1ArtworkOverlay, Phase1ArtworkPreview, Phase1BackgroundModal } from './phase1-background-modal';
 import { getAllBackgroundImages } from '@utils/background-images';
 import { parseTempHpInput } from './phase1-change-log';
@@ -230,9 +232,9 @@ export function Phase1SheetPage() {
     isOwner &&
     view === 'sheet' &&
     (remainingChoices > 0 || (choiceCountsQuery.isSuccess && !isPlayable(character)));
-  const campaignArtUrl = campaignQuery.data?.meta_data?.image_url?.trim() ?? '';
+  const campaignArtUrl = publicArtSrc(campaignQuery.data?.meta_data?.image_url?.trim() ?? '');
   const campaignArtFocus = campaignArtFocusY(campaignQuery.data?.meta_data?.image_focus_y);
-  const sheetArtUrl = campaignArtUrl || character.details?.background_image_url;
+  const sheetArtUrl = campaignArtUrl || publicArtSrc(character.details?.background_image_url);
 
   function persistHp(raw: string) {
     patchCharacter((current) => (confirmHealth(raw, maxHp, current)?.entity as Character) ?? current);
@@ -382,7 +384,7 @@ export function Phase1SheetPage() {
         }}
       >
         {character.details?.image_url ? (
-          <img src={character.details.image_url} alt='' className='h-full w-full object-cover' />
+          <img src={publicArtSrc(character.details.image_url)} alt='' className='h-full w-full object-cover' />
         ) : (
           <User size={18} />
         )}
@@ -562,24 +564,28 @@ export function Phase1SheetPage() {
       {portraitOpen && (
         <Phase1PortraitModal
           currentUrl={character.details?.image_url}
-          onSelect={(url) =>
-            patchCharacter((current) => ({
-              ...current,
-              details: { ...current.details, image_url: url },
-            }))
-          }
+          onSelect={(url) => {
+            void persistPublicArtUrl(url ?? '').then((stored) => {
+              patchCharacter((current) => ({
+                ...current,
+                details: { ...current.details, image_url: stored || undefined },
+              }));
+            });
+          }}
           onClose={() => setPortraitOpen(false)}
         />
       )}
       {backgroundOpen && (
         <Phase1BackgroundModal
           currentUrl={character.details?.background_image_url}
-          onSelect={(url) =>
-            patchCharacter((current) => ({
-              ...current,
-              details: { ...current.details, background_image_url: url },
-            }))
-          }
+          onSelect={(url) => {
+            void persistPublicArtUrl(url ?? '', 'backgrounds').then((stored) => {
+              patchCharacter((current) => ({
+                ...current,
+                details: { ...current.details, background_image_url: stored || undefined },
+              }));
+            });
+          }}
           onClose={() => setBackgroundOpen(false)}
         />
       )}

@@ -2,6 +2,7 @@ import { Button, Group, Stack, Text, TextInput } from '@mantine/core';
 import { ContextModalProps } from '@mantine/modals';
 import { Character } from '@schemas/content';
 import { isValidImage } from '@utils/images';
+import { persistPublicArtUrl } from '@upload/image-upload';
 import { useState } from 'react';
 
 export default function UpdateCharacterPortraitModal({
@@ -34,8 +35,10 @@ export default function UpdateCharacterPortraitModal({
         <Button
           disabled={!isValid}
           onClick={() => {
-            innerProps.updatePortrait(imageURL ?? '');
-            context.closeModal(id);
+            void persistPublicArtUrl(imageURL ?? '', 'portraits').then((stored) => {
+              innerProps.updatePortrait(stored);
+              context.closeModal(id);
+            });
           }}
         >
           Update

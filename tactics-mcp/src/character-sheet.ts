@@ -4,6 +4,7 @@ import { z } from "zod";
 import { asRow, invokeFunction } from "./character-client.js";
 import { fail, loadRow, ownerGuard, saveRow, textResult } from "./character-catalog.js";
 import { decodeImageData, fetchImageUrl, uploadImageBytes, type ImageCategory } from "./image-upload.js";
+import { isSiteRelativeArtPath, publicArtSrc } from "./public-art-url.js";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const writes = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
@@ -24,17 +25,30 @@ function sameUser(left: unknown, right: string) {
   return typeof left === "string" && left.trim().toLowerCase() === right.trim().toLowerCase();
 }
 
-function imageUrl(value: string | null): { ok: true; url: string | undefined } | { ok: false } {
-  if (value == null) return { ok: true, url: undefined };
+function imageUrl(value: string | null): { ok: true; url: string | undefined; siteRelative: boolean } | { ok: false } {
+  if (value == null) return { ok: true, url: undefined, siteRelative: false };
   const trimmed = value.trim();
-  if (!trimmed) return { ok: true, url: undefined };
+  if (!trimmed) return { ok: true, url: undefined, siteRelative: false };
+  const siteRelative = isSiteRelativeArtPath(trimmed);
+  const candidate = siteRelative ? publicArtSrc(trimmed) : trimmed;
   try {
-    const parsed = new URL(trimmed);
+    const parsed = new URL(candidate);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { ok: false };
   } catch {
     return { ok: false };
   }
-  return { ok: true, url: trimmed };
+  return { ok: true, url: candidate, siteRelative };
+}
+
+async function materializeArtUrl(
+  userId: string,
+  parsed: { ok: true; url: string | undefined; siteRelative: boolean } | { ok: false } | null,
+  category: ImageCategory,
+) {
+  if (!parsed || !parsed.ok || !parsed.siteRelative || !parsed.url) return parsed;
+  const uploaded = await uploadInput(userId, undefined, parsed.url, category);
+  if (uploaded.ok) return { ok: true as const, url: uploaded.url, siteRelative: true };
+  return { ok: true as const, url: parsed.url, siteRelative: true };
 }
 
 function detailsOf(row: Record<string, unknown>) {
@@ -200,7 +214,7 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
     "set_character_art",
     {
       title: "Character portrait and background",
-      description: "Sets the portrait and sheet background the character art pickers store. portraitUrl writes details.image_url. backgroundUrl writes details.background_image_url. Pass an http(s) URL, or null or \"\" to clear that field the way the sheet drops it. portraitData or backgroundData is base64 (no data: prefix) and is uploaded with upload-public-file, portraits or backgrounds, then the returned URL is stored. source URLs belong on upload_image. Other details keys are kept. Only the character owner can write. Saves with expected_updated_at.",
+      description: "Sets the portrait and sheet background the character art pickers store. portraitUrl writes details.image_url. backgroundUrl writes details.background_image_url. Pass an http(s) URL, a site-relative path such as /portraits/file.jpg, or null or \"\" to clear that field the way the sheet drops it. A site-relative path is fetched from PUBLIC_ASSET_ORIGIN (default https://wgui.wandersguide.site) and re-uploaded with upload-public-file; if that fails the absolute public URL is stored. portraitData or backgroundData is base64 (no data: prefix) and is uploaded with upload-public-file, portraits or backgrounds, then the returned URL is stored. source URLs belong on upload_image. Other details keys are kept. Only the character owner can write. Saves with expected_updated_at.",
       annotations: writes,
       inputSchema: {
         characterId: z.number().int(),
@@ -223,14 +237,16 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
       const portrait = args.portraitUrl === undefined ? null : imageUrl(args.portraitUrl);
       const background = args.backgroundUrl === undefined ? null : imageUrl(args.backgroundUrl);
       if ((args.portraitUrl !== undefined && portrait && !portrait.ok) || (args.backgroundUrl !== undefined && background && !background.ok)) {
-        return textResult("Art URLs must be http(s) links.", { code: "VALIDATION_ERROR", retryable: false }, true);
+        return textResult("Art URLs must be http(s) links or site-relative image paths.", { code: "VALIDATION_ERROR", retryable: false }, true);
       }
       const loaded = await loadRow(userId(), args.characterId);
       if (!loaded.ok) return fail(loaded);
       const forbidden = ownerGuard(loaded.data, userId());
       if (forbidden) return fail(forbidden);
-      let portraitUrl = portrait?.ok ? portrait.url : undefined;
-      let backgroundUrl = background?.ok ? background.url : undefined;
+      const hostedPortrait = await materializeArtUrl(userId(), portrait, "portraits");
+      const hostedBackground = await materializeArtUrl(userId(), background, "backgrounds");
+      let portraitUrl = hostedPortrait?.ok ? hostedPortrait.url : undefined;
+      let backgroundUrl = hostedBackground?.ok ? hostedBackground.url : undefined;
       if (args.portraitData !== undefined) {
         const uploaded = await uploadInput(userId(), args.portraitData, undefined, "portraits");
         if (!uploaded.ok) return fail(uploaded);
@@ -480,7 +496,7 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
     "set_campaign_art",
     {
       title: "Campaign art",
-      description: "Sets the campaign image the campaign UI stores. imageUrl writes meta_data.image_url (http(s), or null or \"\" to clear). imageData is base64 and is uploaded with upload-public-file in the backgrounds bucket, the same category the campaign art picker uses, then that URL is stored. focusY writes meta_data.image_focus_y, clamped to 0–100 the way the sheet's focus slider does. There is no separate background field. Other meta_data keys are kept. Only the campaign owner (the GM, campaign.user_id) can write. Saves with create-campaign and the existing campaign id, the same call the campaign art picker uses.",
+      description: "Sets the campaign image the campaign UI stores. imageUrl writes meta_data.image_url (http(s), a site-relative path such as /portraits/file.jpg, or null or \"\" to clear). A site-relative path is fetched from PUBLIC_ASSET_ORIGIN (default https://wgui.wandersguide.site) and re-uploaded with upload-public-file; if that fails the absolute public URL is stored. imageData is base64 and is uploaded with upload-public-file in the backgrounds bucket, the same category the campaign art picker uses, then that URL is stored. focusY writes meta_data.image_focus_y, clamped to 0–100 the way the sheet's focus slider does. There is no separate background field. Other meta_data keys are kept. Only the campaign owner (the GM, campaign.user_id) can write. Saves with create-campaign and the existing campaign id, the same call the campaign art picker uses.",
       annotations: writes,
       inputSchema: {
         campaignId: z.number().int(),
@@ -498,14 +514,15 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
       }
       const image = args.imageUrl === undefined ? null : imageUrl(args.imageUrl);
       if (args.imageUrl !== undefined && image && !image.ok) {
-        return textResult("Campaign art URLs must be http(s) links.", { code: "VALIDATION_ERROR", retryable: false }, true);
+        return textResult("Campaign art URLs must be http(s) links or site-relative image paths.", { code: "VALIDATION_ERROR", retryable: false }, true);
       }
       const loaded = await loadCampaign(userId(), args.campaignId);
       if (!loaded.ok) return fail(loaded);
       if (!sameUser(loaded.data.user_id, userId())) {
         return textResult("Only the campaign owner can write campaign art.", { code: "CAMPAIGN_FORBIDDEN", retryable: false }, true);
       }
-      let imageUrlValue = image?.ok ? image.url : undefined;
+      const hosted = await materializeArtUrl(userId(), image, "backgrounds");
+      let imageUrlValue = hosted?.ok ? hosted.url : undefined;
       if (args.imageData !== undefined) {
         const uploaded = await uploadInput(userId(), args.imageData, undefined, "backgrounds");
         if (!uploaded.ok) return fail(uploaded);

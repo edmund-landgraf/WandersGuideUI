@@ -56,6 +56,7 @@ import { ImageOption } from '@schemas/index';
 import { OperationSelect } from '@schemas/operations';
 import { VariableListStr, VariableProf } from '@schemas/variables';
 import { getAllPortraitImages } from '@utils/portrait-images';
+import { publicArtSrc } from '@utils/public-art-url';
 import { displayResistWeak } from '@utils/resist-weaks';
 import { isCharacterBuilderMobile } from '@utils/screen-sizes';
 import { displayAttributeValue, displayFinalHealthValue, displayFinalProfValue } from '@variables/variable-display';
@@ -527,7 +528,7 @@ function CharacterStatSidebar(props: { content: ContentPackage; pageHeight: numb
                       ...prev,
                       details: {
                         ...prev.details,
-                        image_url: prev.details?.image_url === option.url ? undefined : option.url,
+                        image_url: prev.details?.image_url === option.url ? undefined : publicArtSrc(option.url) || undefined,
                       },
                     };
                   });

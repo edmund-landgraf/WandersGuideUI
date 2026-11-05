@@ -53,6 +53,7 @@ import {
 } from '@tabler/icons-react';
 import { getAllBackgroundImages } from '@utils/background-images';
 import { getAllPortraitImages } from '@utils/portrait-images';
+import { publicArtSrc } from '@utils/public-art-url';
 import useRefresh from '@utils/use-refresh';
 import { useState } from 'react';
 import { useAtom } from 'jotai';
@@ -110,7 +111,7 @@ export default function CharBuilderHome(props: { characterId: number; pageHeight
               ...prev,
               details: {
                 ...prev.details,
-                background_image_url: option.url,
+                background_image_url: publicArtSrc(option.url) || undefined,
               },
             };
           });
@@ -1001,7 +1002,7 @@ export default function CharBuilderHome(props: { characterId: number; pageHeight
                 radius='md'
                 h='auto'
                 fit='contain'
-                src={character?.details?.background_image_url}
+                src={publicArtSrc(character?.details?.background_image_url)}
                 fallbackSrc='/backgrounds/placeholder.jpeg'
               />
             </UnstyledButton>
@@ -1324,7 +1325,7 @@ export default function CharBuilderHome(props: { characterId: number; pageHeight
                             ...prev,
                             details: {
                               ...prev.details,
-                              image_url: prev.details?.image_url === option.url ? undefined : option.url,
+                              image_url: prev.details?.image_url === option.url ? undefined : publicArtSrc(option.url) || undefined,
                             },
                           };
                         });
@@ -1335,7 +1336,7 @@ export default function CharBuilderHome(props: { characterId: number; pageHeight
                 }}
               >
                 <Avatar
-                  src={character?.details?.image_url}
+                  src={publicArtSrc(character?.details?.image_url)}
                   alt='Character Portrait'
                   size='38'
                   radius='xl'

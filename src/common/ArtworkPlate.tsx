@@ -6,11 +6,12 @@ import { getAllBackgroundImages } from '@utils/background-images';
 import { phoneQuery } from '@utils/mobile-responsive';
 import { useMediaQuery } from '@mantine/hooks';
 import { useAtomValue } from 'jotai';
+import { publicArtSrc } from '@utils/public-art-url';
 
 export default function ArtworkPlate() {
   const isPhone = useMediaQuery(phoneQuery());
   const character = useAtomValue(characterState);
-  const url = character?.details?.background_image_url;
+  const url = publicArtSrc(character?.details?.background_image_url);
 
   if (isPhone || !url) return null;
 
