@@ -2398,9 +2398,31 @@ export function Phase1CampaignPage() {
     mutationFn: () => phase1Request<Campaign>('reset-campaign-key', { id: campaignId }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: campaignKey }),
   });
-  const kickPlayer = useMutation({
-    mutationFn: (characterId: number) =>
-      phase1Request('remove-from-campaign', { character_id: characterId, campaign_id: campaignId }),
+  const kickPlayer = useMutation<unknown, Error, number, { previous?: Character[] }>({
+    mutationFn: async (characterId) => {
+      const roster = queryClient.getQueryData<Character[]>(playersKey) ?? [];
+      const character = roster.find((item) => numericId(item.id) === characterId);
+      const ownedByMe = character != null && sameUserId(character.user_id, session.user.id);
+      queryClient.setQueryData<Character[]>(playersKey, (current = []) => current.filter((item) => numericId(item.id) !== characterId));
+      // remove-from-campaign kicks someone else's PC. The GM's own sheets only
+      // leave when campaign_id is cleared, which is what the roster "leave" path does.
+      if (ownedByMe) {
+        const updated = await phase1Request<Character | Character[]>('update-character', { id: characterId, campaign_id: null });
+        const saved = asRecordList(updated)[0];
+        if (saved && numericId(saved.campaign_id) != null) {
+          throw new Error('Could not remove that character from the campaign.');
+        }
+        return;
+      }
+      await phase1Request('remove-from-campaign', { character_id: characterId, campaign_id: campaignId });
+    },
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: playersKey });
+      return { previous: queryClient.getQueryData<Character[]>(playersKey) };
+    },
+    onError: (_error, _characterId, context) => {
+      if (context?.previous) queryClient.setQueryData(playersKey, context.previous);
+    },
     onSettled: () => queryClient.invalidateQueries({ queryKey: playersKey }),
   });
   const deleteCampaign = useMutation({
@@ -2742,6 +2764,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
 
   function addPlayer(characterId: number) {
     if (!selectedEncounter || activeCharacterIds.has(characterId)) return;
+    addToParty(characterId);
     setEncounterTab('combat');
     updateRoster([...selectedEncounter.combatants.list, { _id: crypto.randomUUID(), type: 'CHARACTER', ally: true, initiative: undefined, character: characterId, data: undefined }]);
   }
@@ -2808,6 +2831,12 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
       return id != null && !activeCharacterIds.has(id);
     });
     if (!selectedEncounter || waiting.length === 0) return;
+    const nextParty = new Set(partyIds ?? players.map((player) => partyMemberId(player.id)).filter((value): value is number => value != null));
+    for (const player of waiting) {
+      const id = partyMemberId(player.id);
+      if (id != null) nextParty.add(id);
+    }
+    writeParty([...nextParty]);
     setEncounterTab('combat');
     updateRoster([
       ...selectedEncounter.combatants.list,
@@ -2823,10 +2852,16 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     if (selectedId === combatantId) setSelectedId(null);
   }
 
+  function combatantCharacterId(item: Combatant): number | null {
+    const nested = item.data && typeof item.data === 'object' && 'id' in item.data ? item.data.id : undefined;
+    return numericId(item.character) ?? numericId(nested);
+  }
+
   async function removeCharacterFromCampaign(characterId: number) {
+    leaveParty(characterId);
     await onKickPlayer(characterId);
     for (const encounter of encounters) {
-      const list = encounter.combatants.list.filter((item) => item.type !== 'CHARACTER' || item.character !== characterId);
+      const list = encounter.combatants.list.filter((item) => item.type !== 'CHARACTER' || combatantCharacterId(item) !== characterId);
       if (list.length === encounter.combatants.list.length) continue;
       if (encounter.id === selectedEncounterRef.current?.id) {
         persistRoster(list);
@@ -6439,10 +6474,10 @@ function CampaignArtPreviewModal({ url, name, onClose }: { url: string; name: st
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <section role='dialog' aria-modal='true' aria-labelledby='campaign-art-title' className='flex max-h-[min(92vh,960px)] w-full max-w-[min(94vw,1100px)] flex-col border border-p1-border bg-p1-surface p-4 shadow-2xl'>
-        <h2 id='campaign-art-title' className='mb-3 truncate text-lg font-semibold'>{name}</h2>
-        <img src={url} alt={`${name} art`} className='min-h-0 w-full flex-1 object-contain' referrerPolicy='no-referrer' />
-        <div className='mt-4 flex justify-end'>
+      <section role='dialog' aria-modal='true' aria-labelledby='campaign-art-title' className='flex max-h-[85vh] w-full max-w-[min(85vw,1100px)] flex-col overflow-hidden border border-p1-border bg-p1-surface p-4 shadow-2xl'>
+        <h2 id='campaign-art-title' className='mb-3 shrink-0 truncate text-lg font-semibold'>{name}</h2>
+        <img src={url} alt={`${name} art`} className='min-h-0 w-full max-h-[calc(85vh-7.5rem)] flex-1 object-contain' referrerPolicy='no-referrer' />
+        <div className='mt-4 flex shrink-0 justify-end'>
           <button type='button' className='toolbar-button' onClick={onClose}>OK</button>
         </div>
       </section>
@@ -6485,10 +6520,10 @@ function PortraitPreviewModal({
         if (event.target === event.currentTarget && !ignoreEscape) onClose();
       }}
     >
-      <section role='dialog' aria-modal='true' aria-labelledby='portrait-preview-title' className='flex max-h-[min(92vh,960px)] w-full max-w-[min(90vw,720px)] flex-col border border-p1-border bg-p1-surface p-4'>
-        <h2 id='portrait-preview-title' className='mb-3 truncate text-lg font-semibold'>{name}</h2>
-        <img src={url} alt={name} className='min-h-0 w-full flex-1 object-contain' />
-        <div className='mt-4 flex justify-end gap-2'>
+      <section role='dialog' aria-modal='true' aria-labelledby='portrait-preview-title' className='flex max-h-[85vh] w-full max-w-[min(85vw,720px)] flex-col overflow-hidden border border-p1-border bg-p1-surface p-4'>
+        <h2 id='portrait-preview-title' className='mb-3 shrink-0 truncate text-lg font-semibold'>{name}</h2>
+        <img src={url} alt={name} className='min-h-0 w-full max-h-[calc(85vh-7.5rem)] flex-1 object-contain' />
+        <div className='mt-4 flex shrink-0 justify-end gap-2'>
           <button type='button' className='toolbar-button' onClick={onChange}>
             Change
           </button>
