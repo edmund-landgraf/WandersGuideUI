@@ -129,13 +129,38 @@ Every source path on the actor gets exactly one status, from what the plan actua
 
 Match order onto Wanderer's Guide content is slug, then an unambiguous name. Several records for one name stay unresolved. A standard miss stays unresolved and is not copied as homebrew. A world item that is actually a custom item, with no compendium uuid, is the homebrew case. That is the same boundary as the forward importer's "no unambiguous compendium match; left unresolved (no homebrew copy created)" (`planImport` in `scripts/importer.js`). The forward module still creates a homebrew world item for a WG custom item (`custom-items.js`). Mirror that boundary: custom Foundry items with no compendium uuid are the homebrew case; a named compendium miss is unresolved.
 
-Before any character write, the dialog shows the five counts, the unresolved list, and the leftover-preserved paths. **Import** is the only action that creates or updates. Re-import finds the Wanderer's Guide character that already stores this Foundry actor id and world identity and updates that character. A failed write leaves the previous character in place.
+Before any character write, the dialog shows the five counts, the unresolved list, and the leftover-preserved paths. **Import** is the only action that creates or updates. Re-import updates the linked Wanderer's Guide character (see "Linked round-trip"). A failed write leaves the previous character in place.
 
 Biography and GM-only notes are omitted from the read. The omission is a `dropped` row with that reason.
 
 After the run, the status line names the character or the failure. The ledger and `foundryLeftovers` stay on the character.
 
 PF2e rule elements are not mapped onto Wanderer's Guide operation keys here. A path with no evidenced Wanderer's Guide target is unresolved or leftover-preserved. Class mechanics stay experimental for the same reason `docs/CLASS_COVERAGE.md` keeps the forward matrix experimental: do not mark a class supported because a name matched.
+
+### Linked round-trip
+
+The forward module and this reverse import share a character only when the Foundry actor is tagged with that Wanderer's Guide character. Conversion is lossy. Some Wanderer's Guide choices never land on the actor. A linked update must not use that gap as a reason to delete them.
+
+**Design ideal.** A lossless round-trip is the goal, not a guarantee. If about 60% of a Wanderer's Guide character converts into Foundry and about 40% does not convert at all, a later pull back onto that linked character writes the 60% back and leaves the 40% untouched. The unconverted part is still sitting on the Wanderer's Guide character the way it was. Full achievement of that split is not promised. Implement toward it: mapped fields round-trip, and anything that never exported is not damaged on the way back.
+
+**Link discovery.** When `foundry-wanderersguide-import` creates or updates an actor, it tags the actor. `scripts/mapping.js` sets `plan.wgId` from `character.id`. `scripts/importer.js` writes that onto the actor as:
+
+- `flags["foundry-wanderersguide-import"].wgId` — the Wanderer's Guide character id (`MODULE_ID` is `foundry-wanderersguide-import` in `scripts/constants.js`)
+- `flags["foundry-wanderersguide-import"].host` — the Wanderer's Guide functions base URL the export was fetched from (`opts().baseUrl` in `scripts/dialog.js`)
+
+`findActor` in `scripts/importer.js` finds the actor again by `wgId` plus `host`. `scripts/dialog.js` uses the same pair to see whether a character is already in the world. The module does not write `game.world.id` onto the actor. `host` is the Wanderer's Guide server, not the Foundry world.
+
+On the way back, treat `wgId` as the link. If that character id exists on the signed-in account (player button) or in this campaign (GM button), that character is the one to update. `host` only confirms which Wanderer's Guide server the forward import used. It is not a Foundry world id and it is not `foundry_links.worldId`.
+
+Items the forward module created also carry `flags["foundry-wanderersguide-import"]` keys (`wgContentId`, `kind`, and on spellcasting entries `wgSource`). Those identify mapped rows. They are not the character link. `wgLeftovers` and `importDigest` on the same flag object are the forward module's own leftover blob and import report. Do not read either as Wanderer's Guide character state.
+
+An actor with no `wgId` is not linked by the forward module. Match it with `foundry_source` or a `foundry_links.pcs` row, as below. The first successful reverse import of that actor writes `foundry_source`. It does not invent a `wgId` flag. Only the forward module writes `wgId`.
+
+**Lossy export is not a destructive re-import.** Something that does not get exported stays on the Wanderer's Guide character exactly as it is. That is the 40% in the ideal above. If a Wanderer's Guide choice, selection, or item does not map into Foundry, leave it on the character. Do not delete it because the actor lacks it. On the Foundry side that same value may sit as a leftover (`flags["foundry-wanderersguide-import"].wgLeftovers`, coverage status `leftover-preserved`) because Foundry has nowhere to put it. That leftover is a copy of what did not fit. It is not a newer value.
+
+**What a linked update writes.** Merge mapped fields onto the linked character. Update a Wanderer's Guide path only when this plan maps the actor path onto it. Leave unresolved, leftover-preserved, and unexported Wanderer's Guide content untouched. Foundry leftovers are not a source of truth: do not copy `wgLeftovers` back over the character, and do not clear a Wanderer's Guide field because its only representation on the actor is a leftover. A path that is `dropped` on the Foundry coverage ledger for the same reason (Foundry recomputes it, or the forward import omitted it) is also left as-is on the character.
+
+An unlinked create still writes the whole plan, including `foundryLeftovers` for paths this reverse plan does not interpret. The "do not overwrite from Foundry leftovers" rule applies to the update of a character that is already linked.
 
 ### Where the plan is stored
 
@@ -168,7 +193,7 @@ type CharacterFoundryMeta = {
 };
 ```
 
-Re-import match is `foundry_source.worldId` plus `foundry_source.actorId` on the character. The optional campaign PC row (below) points at which existing character to update. It is not a second copy of the key. A copied Foundry world has a new `game.world.id`, so old `foundry_source` rows do not match it.
+`foundry_source` is the reverse-direction key for an actor the forward module has not tagged. The optional campaign PC row (below) points at which existing character to update. It is not a second copy of the key. A copied Foundry world has a new `game.world.id`, so old `foundry_source` rows do not match it. An actor tagged with `wgId` still matches after a world copy, because that flag is the Wanderer's Guide character id, not the Foundry world id.
 
 Foundry user id and display name that were not applied as `character.user_id` go in `foundryLeftovers` under an explicit path (for example `ownership.users`), as leftover-preserved rows. They are not keys.
 
@@ -255,11 +280,12 @@ Re-import of an already linked character updates that character. It does not mov
 
 Match an existing character in this order:
 
-1. `foundry_links.pcs` entry whose `actorId` is this actor, and whose character is still in this campaign.
-2. Else a character in this campaign whose `meta_data.foundry_source` is this `worldId` and `actorId`.
-3. Else create. Attach `foundry_source` on that create.
+1. `flags["foundry-wanderersguide-import"].wgId` on the actor, when that Wanderer's Guide character id exists in scope (this account for the player button, this campaign for the GM button). That character is linked. Update it under "Linked round-trip". Do not create a second character.
+2. Else a `foundry_links.pcs` entry whose `actorId` is this actor, and whose character is still in this campaign.
+3. Else a character in this campaign whose `meta_data.foundry_source` is this `worldId` and `actorId`.
+4. Else create. Attach `foundry_source` on that create.
 
-If step 1 and step 2 name different characters, stop and show both ids. Do not update either until the GM picks one on the review dialog.
+If step 2 and step 3 name different characters, stop and show both ids. Do not update either until the GM picks one on the review dialog. If step 1 names a character and step 2 or 3 names a different one, use step 1 and say so on the review dialog. Do not move the link off the `wgId` character.
 
 ## Transfer owner
 
