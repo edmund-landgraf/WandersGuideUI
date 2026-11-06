@@ -35,7 +35,8 @@
     "test:wgui-export": "node scripts/wgui-export.mjs test",
     "foundry-relay": "node server/foundry-relay.mjs",
     "test:foundry-relay": "node --test server/foundry-relay.test.mjs",
-    "test:dist-videos": "node --test scripts/link-dist-videos.test.mjs"
+    "test:dist-videos": "node --test scripts/link-dist-videos.test.mjs",
+    "test:export-bundle-guard": "node --test scripts/export-bundle-guard.test.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
