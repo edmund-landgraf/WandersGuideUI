@@ -705,6 +705,50 @@ const CharacterVariantsSchema = z.object({
 
 // ─── LivingEntity ─────────────────────────────────────────────────────────────
 
+/** JSON values stored under character.meta_data.foundry.leftovers. Not sheet fields. */
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+export const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number().finite(),
+    z.boolean(),
+    z.null(),
+    z.array(JsonValueSchema),
+    z.record(z.string(), JsonValueSchema),
+  ])
+);
+
+export const FoundryLedgerRowSchema = z.object({
+  path: z.string(),
+  status: z.enum(['mapped', 'included', 'unresolved', 'leftover-preserved', 'dropped']),
+  reason: z.string(),
+});
+
+/** Re-import key plus verbatim Foundry paths. Absent on characters that have never been imported. */
+export const FoundryCharacterMetaSchema = z.object({
+  worldId: z.string().min(1),
+  actorId: z.string().min(1),
+  leftovers: z.record(z.string(), JsonValueSchema).optional(),
+  ledger: z.array(FoundryLedgerRowSchema).optional(),
+});
+
+export const LivingEntityMetaSchema = z.object({
+  active_modes: z.array(z.string()).optional(),
+  given_item_ids: z.array(z.number()).optional(),
+  reset_hp: z.boolean().optional(),
+  calculated_stats: z
+    .object({
+      hp_max: z.number().optional(),
+      stamina_max: z.number().optional(),
+      resolve_max: z.number().optional(),
+      ac: z.number().optional(),
+      profs: z.record(z.string(), z.object({ total: z.number(), type: ProficiencyTypeSchema })),
+    })
+    .optional(),
+  foundry: FoundryCharacterMetaSchema.optional(),
+});
+
 export const LivingEntitySchema = z.object({
   id: z.number().optional(),
   name: z.string(),
@@ -738,22 +782,7 @@ export const LivingEntitySchema = z.object({
       notes: z.record(z.string(), z.string()).optional(),
     })
     .nullable(),
-  meta_data: z
-    .object({
-      active_modes: z.array(z.string()).optional(),
-      given_item_ids: z.array(z.number()).optional(),
-      reset_hp: z.boolean().optional(),
-      calculated_stats: z
-        .object({
-          hp_max: z.number().optional(),
-          stamina_max: z.number().optional(),
-          resolve_max: z.number().optional(),
-          ac: z.number().optional(),
-          profs: z.record(z.string(), z.object({ total: z.number(), type: ProficiencyTypeSchema })),
-        })
-        .optional(),
-    })
-    .nullable(),
+  meta_data: LivingEntityMetaSchema.nullable(),
 });
 export type LivingEntity = z.infer<typeof LivingEntitySchema>;
 

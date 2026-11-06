@@ -30,6 +30,7 @@ type ActorSource = {
   _id?: unknown;
   id?: unknown;
   system?: { details?: { level?: { value?: unknown }; biography?: unknown } };
+  [key: string]: unknown;
 };
 
 const DROPPED_PREFIX = 'system.details.biography';

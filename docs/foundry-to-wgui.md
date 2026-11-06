@@ -88,7 +88,7 @@ Cancel writes nothing for that PC. Import is the only action that creates or upd
 
 A new Wanderer's Guide character is created only after Import.
 
-Re-import finds the character that already stores this Foundry actor id and world identity and updates that character. Current HP and other session values that the forward import preserves are preserved on re-import when the Wanderer's Guide character already has them, same idea as the README’s re-import note in `foundry-wanderersguide-import`.
+Re-import finds the character that already stores this Foundry actor id and world identity and updates that character. Those two ids, the ledger, and the leftover JSON live on `character.meta_data.foundry` in `LivingEntityMetaSchema`. Other `meta_data` keys stay declared as they were. Current HP and other session values that the forward import preserves are preserved on re-import when the Wanderer's Guide character already has them, same idea as the README’s re-import note in `foundry-wanderersguide-import`.
 
 A failed write leaves the previous character in place.
 
