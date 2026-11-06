@@ -32,6 +32,7 @@
     "export:up": "node scripts/wgui-export.mjs up",
     "export:restart": "node scripts/wgui-export.mjs restart",
     "export:bundle": "node scripts/wgui-export.mjs bundle",
+    "test:export-bundle-guard": "node --test scripts/export-bundle-guard.test.mjs",
     "test:wgui-export": "node scripts/wgui-export.mjs test"
   },
   "dependencies": {

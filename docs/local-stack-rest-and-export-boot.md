@@ -92,6 +92,18 @@ A file saved on disk after the container started is not in the tmpfs. The worker
 - `rest` or `storage` is left running across a compose change. `docker restart` keeps the old env. Only create / recreate / `up` reads `.env` again.
 - `zzz-passwords.sh` is edited and nobody applies it to the existing volume.
 
+**Missing or unreadable `compile.bundle.js`**
+
+`npm run stack:up`, `stack:restart`, `export:up`, and `export:restart` check the overlay directories they are about to mount before Docker runs. The check refuses to continue, and the running functions container stays up, when any of these is true:
+
+- `supabase/wgui-ext` or `supabase/wgui-export` in this repo does not exist. The launchers mount those directories; `WG_DIR` only selects the wanderers-guide checkout. A missing bind source is created by Docker as an empty directory, and the next functions container then boots without that overlay.
+- `supabase/wgui-export/wgui-export-character/compile.bundle.js` is absent. Both `wgui-export-character/index.ts` and `wgui-export-character-slim/index.ts` import it. The file is gitignored.
+- That file still contains the mathjs identifier regexp (`isString2 && /^(?:[A-Za-z\xAA`, one line longer than 8000 characters). The edge runtime reports `failed to create the graph` and never names the line.
+
+`npm run export:bundle` rewrites that line and will not write a file that still matches it. The bundle script needs `vite` installed in this repo and a wanderers-guide `frontend` (`WG_DIR`, default `../wanderers-guide`). `stack:up` and `stack:restart` do not rebuild the bundle. They only refuse a missing or known-invalid one, so a machine without `vite` can still recreate functions after the file has been generated or rewritten.
+
+A raw `docker compose up` from wanderers-guide does not run this check. Use the npm scripts. `down`, `config`, and `test` do not recreate the service and do not run the check.
+
 **Export stays yellow**
 
 - `caller-auth.ts` is added or edited, and `wanderers-guide-functions-1` is not restarted.
