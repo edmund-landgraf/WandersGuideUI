@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { GRAPH_LINE_LIMIT, MATHJS_GRAPH_NEEDLE, invalidBundleReason } from './export-bundle-guard.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const wgDir = resolve(process.env.WG_DIR ?? join(repoRoot, '..', 'wanderers-guide'));
@@ -173,10 +174,15 @@ mkdirSync(outDir, { recursive: true });
 const text = result.outputFiles[0].text
   .split('\n')
   .map((line) =>
-    line.length > 8000 && line.includes('isString2 && /^(?:[A-Za-z\\xAA')
+    line.length > GRAPH_LINE_LIMIT && line.includes(MATHJS_GRAPH_NEEDLE)
       ? '      test: (s) => isString2 && /^[A-Za-z_][A-Za-z0-9_]*$/.test(s)'
       : line
   )
   .join('\n');
+const reason = invalidBundleReason(text);
+if (reason) {
+  console.error(`wgui-export bundle: refusing to write compile.bundle.js: ${reason}`);
+  process.exit(1);
+}
 writeFileSync(join(outDir, 'compile.bundle.js'), text);
 console.log(`wrote ${join(outDir, 'compile.bundle.js')} (${text.length} bytes)`);
