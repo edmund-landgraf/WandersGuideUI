@@ -151,6 +151,13 @@ export default defineConfig(({ mode }) => ({
           fs.createReadStream(file).pipe(res);
         });
       },
+      closeBundle() {
+        const videosDir = path.resolve(__dirname, 'videos');
+        const link = path.resolve(__dirname, 'dist/videos');
+        if (!fs.existsSync(videosDir)) return;
+        fs.rmSync(link, { recursive: true, force: true });
+        fs.symlinkSync(videosDir, link, 'dir');
+      },
     },
     {
       name: 'serve-help-pages',
