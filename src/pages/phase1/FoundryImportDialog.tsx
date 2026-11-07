@@ -3,11 +3,10 @@ import { Character } from '@schemas/content';
 import { useState } from 'react';
 import {
   FoundryListRow,
-  LIST_PATH,
   SinglePcPlan,
-  actorPath,
   findImportedCharacter,
-  foundryGet,
+  foundryRelayRead,
+  foundryRelayUrl,
   planImportWrite,
   planSinglePc,
 } from '@import/foundry/single-pc';
@@ -45,7 +44,7 @@ export function FoundryImportDialog({ accessToken, characters, onClose, onImport
     setBusy(true);
     setError(null);
     try {
-      const body = await foundryGet<{ characters?: FoundryListRow[] }>(origin, code, LIST_PATH);
+      const body = await foundryRelayRead<{ characters?: FoundryListRow[] }>(foundryRelayUrl(), origin, code, 'list');
       const list = (body.characters ?? []).filter((row) => row.id);
       setRows(list);
       setSelectedId(list.length === 1 ? list[0].id : null);
@@ -63,7 +62,13 @@ export function FoundryImportDialog({ accessToken, characters, onClose, onImport
     setBusy(true);
     setError(null);
     try {
-      const body = await foundryGet<{ worldId?: string; actor?: Parameters<typeof planSinglePc>[0] }>(origin, code, actorPath(row.id));
+      const body = await foundryRelayRead<{ worldId?: string; actor?: Parameters<typeof planSinglePc>[0] }>(
+        foundryRelayUrl(),
+        origin,
+        code,
+        'actor',
+        row.id,
+      );
       if (!body.actor) throw new Error('Foundry did not return that character.');
       setPlan(planSinglePc(body.actor, body.worldId || row.worldId));
       setStep('review');

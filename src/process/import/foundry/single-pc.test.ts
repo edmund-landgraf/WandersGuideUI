@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { findImportedCharacter, foundryGet, planImportWrite, planSinglePc } from './single-pc';
+import { findImportedCharacter, foundryRelayRead, planImportWrite, planSinglePc } from './single-pc';
 
 describe('planSinglePc', () => {
   it('maps name and level and keeps the rest', () => {
@@ -51,27 +51,32 @@ describe('planSinglePc', () => {
   });
 });
 
-describe('foundryGet', () => {
-  const path = '/modules/foundry-wanderersguide-import/export/characters';
+describe('foundryRelayRead', () => {
+  const relay = 'http://127.0.0.1:8787';
 
   it('uses one sentence for a missing read, a server error, a non-JSON body, and a network failure', async () => {
     const sentence = 'The Foundry world did not answer.';
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('missing', { status: 404 })));
-    await expect(foundryGet('http://localhost:30000', 'code', path)).rejects.toThrow(sentence);
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      calls.push(String(url));
+      return new Response('missing', { status: 404 });
+    }));
+    await expect(foundryRelayRead(relay, 'http://localhost:30000', 'code', 'list')).rejects.toThrow(sentence);
     vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 500 })));
-    await expect(foundryGet('http://localhost:30000', 'code', path)).rejects.toThrow(sentence);
+    await expect(foundryRelayRead(relay, 'http://localhost:30000', 'code', 'list')).rejects.toThrow(sentence);
     vi.stubGlobal('fetch', vi.fn(async () => new Response('not-json', { status: 200 })));
-    await expect(foundryGet('http://localhost:30000', 'code', path)).rejects.toThrow(sentence);
+    await expect(foundryRelayRead(relay, 'http://localhost:30000', 'code', 'list')).rejects.toThrow(sentence);
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
-    await expect(foundryGet('http://localhost:30000', 'code', path)).rejects.toThrow(sentence);
+    await expect(foundryRelayRead(relay, 'http://localhost:30000', 'code', 'list')).rejects.toThrow(sentence);
+    expect(calls.every((url) => url.startsWith(`${relay}/foundry-relay/`) && !url.includes('/modules/'))).toBe(true);
     vi.unstubAllGlobals();
   });
 
   it('uses the rejection sentence for 401 and 403', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('no', { status: 401 })));
-    await expect(foundryGet('http://localhost:30000', 'code', path)).rejects.toThrow('Connection code rejected.');
+    await expect(foundryRelayRead(relay, 'http://localhost:30000', 'code', 'actor', 'actor1')).rejects.toThrow('Connection code rejected.');
     vi.stubGlobal('fetch', vi.fn(async () => new Response('no', { status: 403 })));
-    await expect(foundryGet('http://localhost:30000', 'code', path)).rejects.toThrow('Connection code rejected.');
+    await expect(foundryRelayRead(relay, 'http://localhost:30000', 'code', 'actor', 'actor1')).rejects.toThrow('Connection code rejected.');
     vi.unstubAllGlobals();
   });
 });
