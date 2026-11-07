@@ -32,7 +32,9 @@
     "export:up": "node scripts/wgui-export.mjs up",
     "export:restart": "node scripts/wgui-export.mjs restart",
     "export:bundle": "node scripts/wgui-export.mjs bundle",
-    "test:wgui-export": "node scripts/wgui-export.mjs test"
+    "test:wgui-export": "node scripts/wgui-export.mjs test",
+    "foundry-relay": "node server/foundry-relay.mjs",
+    "test:foundry-relay": "node --test server/foundry-relay.test.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",

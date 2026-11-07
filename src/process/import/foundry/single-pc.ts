@@ -1,6 +1,8 @@
 /** One Foundry character actor, read into Wanderer's Guide. No content is guessed. */
 
-export const LIST_PATH = '/modules/foundry-wanderersguide-import/export/characters';
+/** Browser reads go to the relay, not to a route inside the Foundry module. */
+export const RELAY_CHARACTERS = '/foundry-relay/v1/characters';
+export const RELAY_ACTOR = '/foundry-relay/v1/actor';
 
 export type FoundryListRow = {
   id: string;
@@ -35,17 +37,35 @@ type ActorSource = {
 
 const DROPPED_PREFIX = 'system.details.biography';
 
-export function actorPath(actorId: string): string {
-  return `${LIST_PATH}/${encodeURIComponent(actorId)}`;
+export function foundryRelayUrl(): string {
+  const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
+  const configured = env?.VITE_FOUNDRY_RELAY_URL?.trim();
+  return (configured || 'http://127.0.0.1:8787').replace(/\/$/, '');
 }
 
-export async function foundryGet<T>(origin: string, code: string, path: string): Promise<T> {
-  const base = origin.trim().replace(/\/$/, '');
-  if (!base) throw new Error('Enter the Foundry world address.');
+/** Read one list or one actor from the relay. The relay does not fetch `origin`. */
+export async function foundryRelayRead<T>(
+  relayUrl: string,
+  origin: string,
+  code: string,
+  op: 'list' | 'actor',
+  actorId?: string,
+): Promise<T> {
+  const base = relayUrl.trim().replace(/\/$/, '');
+  if (!base || !origin.trim()) throw new Error('Enter the Foundry world address.');
   if (!code.trim()) throw new Error('Enter the connection code.');
+  const path = op === 'list' ? RELAY_CHARACTERS : RELAY_ACTOR;
   let response: Response;
   try {
-    response = await fetch(`${base}${path}`, { headers: { 'X-WGI-Connection-Code': code.trim() } });
+    response = await fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        origin: origin.trim(),
+        code: code.trim(),
+        ...(actorId ? { actorId } : {}),
+      }),
+    });
   } catch {
     throw new Error('The Foundry world did not answer.');
   }

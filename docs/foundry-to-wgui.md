@@ -1,6 +1,6 @@
 # Import from Foundry (WGUI)
 
-**Status: single-PC import in the character upload menu.** Campaign import is not built. This repo does not serve the Foundry read. Tests mock `fetch` and do not call a world.
+**Status: single-PC import in the character upload menu.** The browser reads through the loopback relay in `server/foundry-relay.mjs`. The Foundry module does not open an HTTP route, and this relay does not fetch the world. A live world answers only after `foundry-wanderersguide-import` dials the relay. That module change is not in this repo. See `docs/foundry-read-relay.md`.
 
 The user starts in Wanderer's Guide, from the character upload menu. A Foundry world is the source. The flow imports one player character: connect, pick one actor, review the plan, and write only after confirm. Campaign import is out of this flow. The new or updated character is not given a `campaign_id`.
 
@@ -46,7 +46,7 @@ The dialog asks for:
 
 The code is created in this module’s Foundry settings, client scope. Same privacy rule as the Wanderer's Guide API key in `docs/PLAN.md` section 2.2 of `foundry-wanderersguide-import`: client scope, not written into chat, flags, or journals, and not logged. WGUI does not ask for the Foundry admin password. WGUI does not store the code on the server.
 
-The module answers a read-only list and a read-only actor read. If the origin does not answer, or the code is rejected, the dialog shows that error and stops. There is no file-paste fallback.
+The browser asks the relay in `docs/foundry-read-relay.md` for a read-only list and a read-only actor read. The relay asks the connected module. If the world is not connected, or the code is rejected, the dialog shows that error and stops. There is no file-paste fallback.
 
 ## List
 
