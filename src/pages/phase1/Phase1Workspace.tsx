@@ -87,6 +87,7 @@ import { importFromFTC } from '@import/ftc/import-from-ftc';
 import { importFromPathbuilder } from '@import/pathbuilder/import-from-pathbuilder';
 import { Phase1RandomCharacterModal } from './phase1-random-character-modal';
 import OfficialImportDialog from './OfficialImportDialog';
+import { FoundryImportDialog } from './FoundryImportDialog';
 import { Phase1PortraitModal } from './phase1-portrait-modal';
 import { calculateDifficulty, formatLevelDelta, shouldDisplayEncounterDifficulty, type EncounterDifficulty } from '@utils/encounter-difficulty';
 import { createHazardCombatant, getHazardCurrentHp, getHazardInitiativeModifier, isHazardCombatant, updateHazardHp } from '@utils/encounter-hazard';
@@ -744,6 +745,7 @@ export function Phase1CharactersPage() {
   const [randomOpen, setRandomOpen] = useState(false);
   const [pathbuilderOpen, setPathbuilderOpen] = useState(false);
   const [officialImportOpen, setOfficialImportOpen] = useState(false);
+  const [foundryImportOpen, setFoundryImportOpen] = useState(false);
   const [pathbuilderId, setPathbuilderId] = useState('');
   const [pathbuilderFile, setPathbuilderFile] = useState<File | null>(null);
   const pathbuilderFileRef = useRef<HTMLInputElement>(null);
@@ -1377,6 +1379,7 @@ export function Phase1CharactersPage() {
                     <button type='button' className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => { setUploadOpen(false); setPathbuilderOpen(true); }}>Import from Pathbuilder</button>
                     <button type='button' className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => { setUploadOpen(false); guidecharInputRef.current?.click(); }}>Import from GUIDECHAR</button>
                     <button type='button' className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => { setUploadOpen(false); setOfficialImportOpen(true); }}>Import from wanderersguide.app</button>
+                    <button type='button' className='block w-full px-3 py-2 text-left text-sm text-p1-text hover:bg-p1-hover' onClick={() => { setUploadOpen(false); setFoundryImportOpen(true); }}>Import from Foundry</button>
                   </div>
                 )}
               </div>
@@ -1805,6 +1808,18 @@ export function Phase1CharactersPage() {
           }
           onClose={() => setOfficialImportOpen(false)}
           onImported={() => queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] })}
+        />
+      )}
+      {foundryImportOpen && (
+        <FoundryImportDialog
+          accessToken={session?.access_token}
+          characters={characters.data ?? []}
+          onClose={() => setFoundryImportOpen(false)}
+          onImported={(message) => {
+            setFoundryImportOpen(false);
+            void queryClient.invalidateQueries({ queryKey: ['phase1-characters', session?.user.id] });
+            setJoinStatus(message);
+          }}
         />
       )}
       {pathbuilderOpen && (
