@@ -7,6 +7,8 @@ const MAX_MODULE_BODY = 1_500_000;
 const WAIT_MS = 20_000;
 const READ_MS = 8_000;
 const SESSION_MS = 60_000;
+const MIN_CODE = 16;
+const MAX_DEPTH = 32;
 
 const ID_TEXT = /^[A-Za-z0-9]{1,32}$/;
 
@@ -35,15 +37,22 @@ export function createFoundryRelay({ allowOrigins = [] } = {}) {
     return url.origin;
   }
 
-  function send(res, status, body, requestOrigin) {
+  function allowed(requestOrigin) {
+    return typeof requestOrigin === 'string' && allowOrigins.includes(requestOrigin);
+  }
+
+  function send(res, status, body, req) {
+    const requestOrigin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
+    const privateNetwork = req.headers['access-control-request-private-network'] === 'true';
     const headers = {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
       'x-content-type-options': 'nosniff',
     };
-    if (requestOrigin && allowOrigins.includes(requestOrigin)) {
+    if (allowed(requestOrigin)) {
       headers['access-control-allow-origin'] = requestOrigin;
       headers.vary = 'Origin';
+      if (privateNetwork) headers['access-control-allow-private-network'] = 'true';
     }
     res.writeHead(status, headers);
     res.end(JSON.stringify(body));
@@ -135,6 +144,7 @@ export function createFoundryRelay({ allowOrigins = [] } = {}) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         if (session.pending && session.pending.requestId === requestId) session.pending = null;
+        if (session.queued && session.queued.requestId === requestId) session.queued = null;
         reject(Object.assign(new Error('timeout'), { status: 504 }));
       }, READ_MS);
       session.pending = { requestId, kind, actorId, resolve, reject, timer };
@@ -168,6 +178,15 @@ export function createFoundryRelay({ allowOrigins = [] } = {}) {
     if (!actor || typeof actor !== 'object' || Array.isArray(actor)) return null;
     const id = typeof actor._id === 'string' ? actor._id : typeof actor.id === 'string' ? actor.id : '';
     if (id !== actorId) return null;
+    let depth = 0;
+    const walk = (value) => {
+      if (value === null || typeof value !== 'object') return;
+      depth += 1;
+      if (depth > MAX_DEPTH) throw Object.assign(new Error('deep'), { status: 413 });
+      for (const child of Object.values(value)) walk(child);
+      depth -= 1;
+    };
+    walk(actor);
     const copy = JSON.parse(JSON.stringify(actor));
     const details = copy.system && copy.system.details;
     if (details && typeof details === 'object') delete details.biography;
@@ -181,13 +200,17 @@ export function createFoundryRelay({ allowOrigins = [] } = {}) {
     const origin = worldOrigin(body.origin);
     const worldId = typeof body.worldId === 'string' && ID_TEXT.test(body.worldId) ? body.worldId : null;
     const code = typeof body.code === 'string' ? body.code.trim() : '';
-    if (!origin || !worldId || code.length < 8 || code.length > 128) {
-      send(res, 400, { message: 'The Foundry world did not answer.' }, req.headers.origin);
+    if (!origin || !worldId || code.length < MIN_CODE || code.length > 128) {
+      send(res, 400, { message: 'The Foundry world did not answer.' }, req);
       return;
     }
     const previous = byCode.get(code);
     if (previous) {
       const old = sessions.get(previous);
+      if (old && old.expires >= Date.now() && (old.worldId !== worldId || old.origin !== origin)) {
+        send(res, 409, { message: 'Connection code rejected.' }, req);
+        return;
+      }
       if (old) dropSession(old);
     }
     const token = randomBytes(32).toString('hex');
@@ -203,50 +226,59 @@ export function createFoundryRelay({ allowOrigins = [] } = {}) {
     };
     sessions.set(token, session);
     byCode.set(code, token);
-    send(res, 200, { session: token, worldId }, req.headers.origin);
+    send(res, 200, { session: token, worldId }, req);
   }
 
   async function wait(req, res) {
     const session = sessionFromToken(req.headers['x-wgi-relay-session']);
     if (!session) {
-      send(res, 401, { message: 'Connection code rejected.' }, req.headers.origin);
+      send(res, 401, { message: 'Connection code rejected.' }, req);
       return;
     }
     touch(session);
     if (session.queued) {
       const job = session.queued;
       session.queued = null;
-      send(res, 200, job, req.headers.origin);
+      send(res, 200, job, req);
       return;
     }
     if (session.waiter) {
-      send(res, 429, { message: 'The Foundry world did not answer.' }, req.headers.origin);
+      send(res, 429, { message: 'The Foundry world did not answer.' }, req);
       return;
     }
+    let settled = false;
     const job = await new Promise((resolve) => {
-      const timer = setTimeout(() => {
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
         if (session.waiter) session.waiter = null;
-        resolve({ type: 'idle' });
-      }, WAIT_MS);
-      session.waiter = { resolve, timer };
+        clearTimeout(timer);
+        req.off('close', onClose);
+        resolve(value);
+      };
+      const timer = setTimeout(() => finish({ type: 'idle' }), WAIT_MS);
+      const onClose = () => finish({ type: 'bye' });
+      req.on('close', onClose);
+      session.waiter = { resolve: (value) => finish(value), timer };
     });
+    if (res.writableEnded) return;
     if (!sessions.has(session.token)) {
-      send(res, 401, { message: 'Connection code rejected.' }, req.headers.origin);
+      send(res, 401, { message: 'Connection code rejected.' }, req);
       return;
     }
-    send(res, 200, job, req.headers.origin);
+    send(res, 200, job, req);
   }
 
   async function respond(req, res) {
     const session = sessionFromToken(req.headers['x-wgi-relay-session']);
     if (!session) {
-      send(res, 401, { message: 'Connection code rejected.' }, req.headers.origin);
+      send(res, 401, { message: 'Connection code rejected.' }, req);
       return;
     }
     const body = await readBody(req, MAX_MODULE_BODY);
     const pending = session.pending;
     if (!pending || body.requestId !== pending.requestId) {
-      send(res, 409, { message: 'The Foundry world did not answer.' }, req.headers.origin);
+      send(res, 409, { message: 'The Foundry world did not answer.' }, req);
       return;
     }
     session.pending = null;
@@ -254,28 +286,29 @@ export function createFoundryRelay({ allowOrigins = [] } = {}) {
     touch(session);
     if (body.worldId !== session.worldId) {
       pending.reject(Object.assign(new Error('world'), { status: 502 }));
-      send(res, 200, { ok: false }, req.headers.origin);
+      send(res, 200, { ok: false }, req);
       return;
     }
     if (body.ok === false) {
       const status = body.status === 401 || body.status === 403 ? body.status : 502;
       pending.reject(Object.assign(new Error('module'), { status }));
-      send(res, 200, { ok: true }, req.headers.origin);
+      send(res, 200, { ok: true }, req);
       return;
     }
-    if (pending.kind === 'list') {
-      const characters = listRows(body.characters, session.worldId);
-      if (!characters) {
-        pending.reject(Object.assign(new Error('shape'), { status: 502 }));
+    try {
+      if (pending.kind === 'list') {
+        const characters = listRows(body.characters, session.worldId);
+        if (!characters) pending.reject(Object.assign(new Error('shape'), { status: 502 }));
+        else pending.resolve({ worldId: session.worldId, characters });
       } else {
-        pending.resolve({ worldId: session.worldId, characters });
+        const actor = scrubActor(body.actor, pending.actorId);
+        if (!actor) pending.reject(Object.assign(new Error('shape'), { status: 502 }));
+        else pending.resolve({ worldId: session.worldId, actor });
       }
-    } else {
-      const actor = scrubActor(body.actor, pending.actorId);
-      if (!actor) pending.reject(Object.assign(new Error('shape'), { status: 502 }));
-      else pending.resolve({ worldId: session.worldId, actor });
+    } catch (error) {
+      pending.reject(Object.assign(new Error('shape'), { status: error.status || 502 }));
     }
-    send(res, 200, { ok: true }, req.headers.origin);
+    send(res, 200, { ok: true }, req);
   }
 
   async function browserRead(req, res, kind) {
@@ -283,43 +316,47 @@ export function createFoundryRelay({ allowOrigins = [] } = {}) {
     const origin = worldOrigin(body.origin);
     const code = typeof body.code === 'string' ? body.code.trim() : '';
     if (!origin || !code) {
-      send(res, 400, { message: 'The Foundry world did not answer.' }, req.headers.origin);
+      send(res, 400, { message: 'The Foundry world did not answer.' }, req);
       return;
     }
     const session = sessionFromCode(code, origin);
     if (!session) {
-      send(res, 401, { message: 'Connection code rejected.' }, req.headers.origin);
+      send(res, 401, { message: 'Connection code rejected.' }, req);
       return;
     }
     let actorId;
     if (kind === 'actor') {
       actorId = typeof body.actorId === 'string' ? body.actorId : '';
       if (!ID_TEXT.test(actorId)) {
-        send(res, 400, { message: 'The Foundry world did not answer.' }, req.headers.origin);
+        send(res, 400, { message: 'The Foundry world did not answer.' }, req);
         return;
       }
     }
     try {
       const result = await ask(session, kind, actorId);
-      send(res, 200, result, req.headers.origin);
+      send(res, 200, result, req);
     } catch (error) {
       const status = error.status === 401 || error.status === 403 ? error.status : 502;
       const message = status === 401 || status === 403 ? 'Connection code rejected.' : 'The Foundry world did not answer.';
-      send(res, status, { message }, req.headers.origin);
+      send(res, status, { message }, req);
     }
   }
 
   return {
     async handle(req, res) {
       const requestOrigin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
+      const privateNetwork = req.headers['access-control-request-private-network'] === 'true';
       if (req.method === 'OPTIONS') {
-        if (requestOrigin && allowOrigins.includes(requestOrigin)) {
-          res.writeHead(204, {
+        if (allowed(requestOrigin)) {
+          const headers = {
             'access-control-allow-origin': requestOrigin,
             'access-control-allow-methods': 'POST, OPTIONS',
             'access-control-allow-headers': 'content-type, x-wgi-relay-session',
+            'access-control-max-age': '600',
             vary: 'Origin',
-          });
+          };
+          if (privateNetwork) headers['access-control-allow-private-network'] = 'true';
+          res.writeHead(204, headers);
           res.end();
           return;
         }
@@ -328,7 +365,7 @@ export function createFoundryRelay({ allowOrigins = [] } = {}) {
         return;
       }
       if (req.method !== 'POST') {
-        send(res, 405, { message: 'The Foundry world did not answer.' }, requestOrigin);
+        send(res, 405, { message: 'The Foundry world did not answer.' }, req);
         return;
       }
       const path = new URL(req.url || '/', 'http://relay.local').pathname;
@@ -338,9 +375,9 @@ export function createFoundryRelay({ allowOrigins = [] } = {}) {
         if (path === '/foundry-relay/v1/respond') return await respond(req, res);
         if (path === '/foundry-relay/v1/characters') return await browserRead(req, res, 'list');
         if (path === '/foundry-relay/v1/actor') return await browserRead(req, res, 'actor');
-        send(res, 404, { message: 'The Foundry world did not answer.' }, requestOrigin);
+        send(res, 404, { message: 'The Foundry world did not answer.' }, req);
       } catch (error) {
-        send(res, error.status || 400, { message: 'The Foundry world did not answer.' }, requestOrigin);
+        send(res, error.status || 400, { message: 'The Foundry world did not answer.' }, req);
       }
     },
   };

@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 import { createFoundryRelay } from './foundry-relay-core.mjs';
 
 const ORIGIN = 'http://localhost:30000';
-const CODE = 'test-code-value';
+const CODE = 'test-code-value-ok';
 const WORLD = 'worldA';
 
 async function listen(relay) {
@@ -160,6 +160,57 @@ describe('foundry relay', () => {
       const silent = await post(base, '/foundry-relay/v1/actor', { code: CODE, origin: ORIGIN, actorId: 'actor1' });
       assert.equal(silent.status, 502);
       assert.equal(silent.json.message, 'The Foundry world did not answer.');
+    } finally {
+      server.close();
+    }
+  });
+
+  it('keeps the first world when another connect reuses the code, and allows the same world to replace itself', async () => {
+    const { server, base } = await listen(createFoundryRelay({ allowOrigins: ['http://localhost:30000', 'http://localhost:5194'] }));
+    try {
+      const first = await connect(base);
+      const stolen = await connect(base, { worldId: 'worldB' });
+      assert.equal(stolen.status, 409);
+      const again = await connect(base);
+      assert.equal(again.status, 200);
+      assert.notEqual(again.json.session, first.json.session);
+      const listWait = serveOne(base, again.json.session, (job) => ({
+        requestId: job.requestId,
+        ok: true,
+        worldId: WORLD,
+        characters: [],
+      }));
+      const listed = await post(base, '/foundry-relay/v1/characters', { code: CODE, origin: ORIGIN });
+      await listWait;
+      assert.equal(listed.status, 200);
+      assert.equal(listed.json.worldId, WORLD);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('answers preflight only for an allowlisted origin, including private-network', async () => {
+    const { server, base } = await listen(createFoundryRelay({ allowOrigins: ['http://localhost:30000'] }));
+    try {
+      const ok = await fetch(`${base}/foundry-relay/v1/connect`, {
+        method: 'OPTIONS',
+        headers: {
+          origin: 'http://localhost:30000',
+          'access-control-request-method': 'POST',
+          'access-control-request-private-network': 'true',
+        },
+      });
+      assert.equal(ok.status, 204);
+      assert.equal(ok.headers.get('access-control-allow-origin'), 'http://localhost:30000');
+      assert.equal(ok.headers.get('access-control-allow-private-network'), 'true');
+      const denied = await fetch(`${base}/foundry-relay/v1/connect`, {
+        method: 'OPTIONS',
+        headers: { origin: 'https://evil.example', 'access-control-request-method': 'POST' },
+      });
+      assert.equal(denied.status, 403);
+      assert.equal(denied.headers.get('access-control-allow-origin'), null);
+      const short = await connect(base, { code: 'short-code' });
+      assert.equal(short.status, 400);
     } finally {
       server.close();
     }

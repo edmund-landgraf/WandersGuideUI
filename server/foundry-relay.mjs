@@ -10,7 +10,7 @@ if (!remote && host !== '127.0.0.1' && host !== '::1') {
   console.error('foundry-relay: refusing to listen outside loopback. Set FOUNDRY_RELAY_ALLOW_REMOTE=1 to bind elsewhere.');
   process.exit(1);
 }
-const allowOrigins = (process.env.FOUNDRY_RELAY_ORIGINS || 'http://localhost:5194,http://127.0.0.1:5194')
+const allowOrigins = (process.env.FOUNDRY_RELAY_ORIGINS || 'http://localhost:5194,http://127.0.0.1:5194,http://localhost:30000,http://127.0.0.1:30000')
   .split(',')
   .map((item) => item.trim())
   .filter(Boolean);
