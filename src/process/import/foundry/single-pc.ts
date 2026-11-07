@@ -30,6 +30,7 @@ type ActorSource = {
   _id?: unknown;
   id?: unknown;
   system?: { details?: { level?: { value?: unknown }; biography?: unknown } };
+  [key: string]: unknown;
 };
 
 const DROPPED_PREFIX = 'system.details.biography';
@@ -136,13 +137,80 @@ function walk(value: unknown, path: string, visit: (path: string, value: unknown
 }
 
 export function foundryMeta(plan: SinglePcPlan, previous: Record<string, unknown> | null | undefined) {
+  const prev = previous ?? {};
+  const prevFoundry =
+    prev.foundry && typeof prev.foundry === 'object' ? (prev.foundry as Record<string, unknown>) : {};
+  const prevLeftovers =
+    prevFoundry.leftovers && typeof prevFoundry.leftovers === 'object'
+      ? (prevFoundry.leftovers as Record<string, unknown>)
+      : {};
   return {
-    ...(previous ?? {}),
+    ...prev,
     foundry: {
+      ...prevFoundry,
       worldId: plan.worldId,
       actorId: plan.actorId,
-      leftovers: plan.leftovers,
+      leftovers: { ...prevLeftovers, ...plan.leftovers },
       ledger: plan.rows,
     },
+  };
+}
+
+export type FoundryLinkedCharacter = {
+  id: number;
+  name: string;
+  meta_data?: Record<string, unknown> | null;
+};
+
+/** Match only when both the Foundry world id and the actor id are present and equal. */
+export function findImportedCharacter<T extends { meta_data?: unknown }>(
+  characters: readonly T[],
+  worldId: string,
+  actorId: string,
+): T | undefined {
+  if (!worldId || !actorId) return undefined;
+  return characters.find((character) => {
+    const meta = character.meta_data;
+    if (!meta || typeof meta !== 'object') return undefined;
+    const foundry = (meta as { foundry?: { worldId?: unknown; actorId?: unknown } }).foundry;
+    return foundry?.worldId === worldId && foundry?.actorId === actorId;
+  });
+}
+
+export const CREATE_REQUIRES_NAME_AND_LEVEL =
+  'Import needs a string name and a numeric level to create a character.';
+
+export type ImportWrite =
+  | { action: 'reject'; message: string }
+  | { action: 'create'; body: Record<string, unknown>; messageName: string }
+  | { action: 'update'; body: Record<string, unknown>; messageName: string };
+
+/**
+ * Create needs a nonempty string name and a finite numeric level.
+ * An existing world+actor match may update with either field absent.
+ * The update body carries id, optional name, optional level, and meta_data only.
+ */
+export function planImportWrite(plan: SinglePcPlan, previous: FoundryLinkedCharacter | undefined): ImportWrite {
+  if (!previous && (plan.name == null || plan.level == null)) {
+    return { action: 'reject', message: CREATE_REQUIRES_NAME_AND_LEVEL };
+  }
+  if (previous) {
+    const body: Record<string, unknown> = {
+      id: previous.id,
+      meta_data: foundryMeta(plan, previous.meta_data ?? undefined),
+    };
+    if (plan.name) body.name = plan.name;
+    if (plan.level != null) body.level = plan.level;
+    return { action: 'update', body, messageName: plan.name ?? previous.name };
+  }
+  return {
+    action: 'create',
+    body: {
+      name: plan.name,
+      level: plan.level,
+      meta_data: foundryMeta(plan, { reset_hp: true }),
+      details: {},
+    },
+    messageName: plan.name ?? 'character',
   };
 }

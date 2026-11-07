@@ -1,6 +1,6 @@
 # Import from Foundry (WGUI)
 
-**Status: design only.** This document does not add the button, the dialog, or a write path.
+**Status: single-PC import in the character upload menu.** Campaign import is not built. This repo does not serve the Foundry read. Tests mock `fetch` and do not call a world.
 
 The user starts in Wanderer's Guide, from the character upload menu. A Foundry world is the source. The flow imports one player character: connect, pick one actor, review the plan, and write only after confirm. Campaign import is out of this flow. The new or updated character is not given a `campaign_id`.
 
@@ -10,7 +10,7 @@ Two products. They do not share a button.
 
 | Piece | Repo | What it does |
 | --- | --- | --- |
-| Button, connect dialog, character table, plan, review, character create/update, status line | This repo, `WandersGuideUI` | The user-facing import. The button is added later in `src/pages/phase1/Phase1Workspace.tsx`, in the character upload menu that already has Import from JSON, Pathbuilder, GUIDECHAR, and wanderersguide.app. |
+| Button, connect dialog, character table, plan, review, character create/update, status line | This repo, `WandersGuideUI` | The user-facing import. The button is in `src/pages/phase1/Phase1Workspace.tsx`, in the character upload menu that already has Import from JSON, Pathbuilder, GUIDECHAR, and wanderersguide.app. |
 | Connection code setting, read-only list, read-only actor source | `foundry-wanderersguide-import` | Answers the browser. Does not write a Wanderer's Guide character. |
 
 The other direction stays the rulebook and is not rewritten here. Foundry already pulls a Wanderer's Guide export through `scripts/coverage.js`, `scripts/importer.js`, and `scripts/dialog.js`. This design classifies each actor path with that ledger, reversed onto Wanderer's Guide content. It does not call those scripts.
@@ -88,7 +88,7 @@ Cancel writes nothing for that PC. Import is the only action that creates or upd
 
 A new Wanderer's Guide character is created only after Import.
 
-Re-import finds the character that already stores this Foundry actor id and world identity and updates that character. Current HP and other session values that the forward import preserves are preserved on re-import when the Wanderer's Guide character already has them, same idea as the README’s re-import note in `foundry-wanderersguide-import`.
+Re-import finds the character that already stores this Foundry actor id and world identity and updates that character. Those two ids, the ledger, and the leftover JSON live on `character.meta_data.foundry` in `LivingEntityMetaSchema`. Other `meta_data` keys stay declared as they were. Current HP and other session values that the forward import preserves are preserved on re-import when the Wanderer's Guide character already has them, same idea as the README’s re-import note in `foundry-wanderersguide-import`.
 
 A failed write leaves the previous character in place.
 

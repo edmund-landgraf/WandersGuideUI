@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { foundryGet, planSinglePc } from './single-pc';
+import { findImportedCharacter, foundryGet, planImportWrite, planSinglePc } from './single-pc';
 
 describe('planSinglePc', () => {
   it('maps name and level and keeps the rest', () => {
@@ -52,11 +52,107 @@ describe('planSinglePc', () => {
 });
 
 describe('foundryGet', () => {
-  it('reports that the world did not answer when the read is missing', async () => {
+  const path = '/modules/foundry-wanderersguide-import/export/characters';
+
+  it('uses one sentence for a missing read, a server error, a non-JSON body, and a network failure', async () => {
+    const sentence = 'The Foundry world did not answer.';
     vi.stubGlobal('fetch', vi.fn(async () => new Response('missing', { status: 404 })));
-    await expect(foundryGet('http://localhost:30000', 'code', '/modules/foundry-wanderersguide-import/export/characters')).rejects.toThrow(
-      'The Foundry world did not answer.',
-    );
+    await expect(foundryGet('http://localhost:30000', 'code', path)).rejects.toThrow(sentence);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 500 })));
+    await expect(foundryGet('http://localhost:30000', 'code', path)).rejects.toThrow(sentence);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('not-json', { status: 200 })));
+    await expect(foundryGet('http://localhost:30000', 'code', path)).rejects.toThrow(sentence);
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
+    await expect(foundryGet('http://localhost:30000', 'code', path)).rejects.toThrow(sentence);
     vi.unstubAllGlobals();
+  });
+
+  it('uses the rejection sentence for 401 and 403', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('no', { status: 401 })));
+    await expect(foundryGet('http://localhost:30000', 'code', path)).rejects.toThrow('Connection code rejected.');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('no', { status: 403 })));
+    await expect(foundryGet('http://localhost:30000', 'code', path)).rejects.toThrow('Connection code rejected.');
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('planImportWrite', () => {
+  const actor = { name: 'Reed', _id: 'actor1', system: { details: { level: { value: 3 } } }, items: [{ name: 'Longsword' }] };
+
+  it('refuses to create when the name or level is absent or the wrong type', () => {
+    const missing = planSinglePc({ _id: 'actor1', system: { details: { level: { value: 1 } } } }, 'world1');
+    expect(planImportWrite(missing, undefined).action).toBe('reject');
+    const wrong = planSinglePc({ name: '   ', _id: 'actor1', system: { details: { level: { value: '3' } } } }, 'world1');
+    expect(wrong.name).toBeNull();
+    expect(wrong.level).toBeNull();
+    expect(planImportWrite(wrong, undefined).action).toBe('reject');
+  });
+
+  it('creates when name and level are valid, including level 0', () => {
+    const plan = planSinglePc({ name: 'Reed', _id: 'actor1', system: { details: { level: { value: 0 } } } }, 'world1');
+    const write = planImportWrite(plan, undefined);
+    expect(write.action).toBe('create');
+    if (write.action !== 'create') return;
+    expect(write.body.name).toBe('Reed');
+    expect(write.body.level).toBe(0);
+    expect(write.body).not.toHaveProperty('campaign_id');
+  });
+
+  it('does not treat the same actor id in another world as the same character', () => {
+    const stored = [
+      { id: 1, name: 'A', meta_data: { foundry: { worldId: 'world-a', actorId: 'actor1' } } },
+      { id: 2, name: 'B', meta_data: { foundry: { worldId: 'world-b', actorId: 'actor1' } } },
+    ];
+    expect(findImportedCharacter(stored, 'world-b', 'actor1')?.id).toBe(2);
+    expect(findImportedCharacter(stored, 'world-c', 'actor1')).toBeUndefined();
+    expect(findImportedCharacter(stored, '', 'actor1')).toBeUndefined();
+    const plan = planSinglePc(actor, 'world-c');
+    const write = planImportWrite(plan, findImportedCharacter(stored, plan.worldId, plan.actorId));
+    expect(write.action).toBe('create');
+  });
+
+  it('updates a matching world and actor without sending unrelated Wanderer\'s Guide fields', () => {
+    const plan = planSinglePc(
+      {
+        _id: 'actor1',
+        items: [{ system: { rules: [{ key: 'FlatModifier' }] } }],
+      },
+      'world1',
+    );
+    expect(plan.name).toBeNull();
+    expect(plan.level).toBeNull();
+    const previous = {
+      id: 9,
+      name: 'Kept',
+      meta_data: {
+        calculated_stats: { hp_max: 20 },
+        reset_hp: false,
+        foundry: {
+          worldId: 'world1',
+          actorId: 'actor1',
+          leftovers: { 'items[0].name': 'Longsword' },
+        },
+      },
+    };
+    const write = planImportWrite(plan, previous);
+    expect(write.action).toBe('update');
+    if (write.action !== 'update') return;
+    expect(write.body.id).toBe(9);
+    expect(write.body).not.toHaveProperty('name');
+    expect(write.body).not.toHaveProperty('level');
+    expect(write.body).not.toHaveProperty('details');
+    expect(write.body).not.toHaveProperty('spells');
+    expect(write.body).not.toHaveProperty('inventory');
+    expect(write.body).not.toHaveProperty('hp_current');
+    expect(write.body).not.toHaveProperty('operation_data');
+    const meta = write.body.meta_data as {
+      calculated_stats: { hp_max: number };
+      reset_hp: boolean;
+      foundry: { leftovers: Record<string, unknown> };
+    };
+    expect(meta.calculated_stats).toEqual({ hp_max: 20 });
+    expect(meta.reset_hp).toBe(false);
+    expect(meta.foundry.leftovers['items[0].name']).toBe('Longsword');
+    expect(meta.foundry.leftovers['items[0].system.rules[0].key']).toBe('FlatModifier');
   });
 });

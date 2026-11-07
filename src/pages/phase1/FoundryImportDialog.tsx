@@ -6,8 +6,9 @@ import {
   LIST_PATH,
   SinglePcPlan,
   actorPath,
+  findImportedCharacter,
   foundryGet,
-  foundryMeta,
+  planImportWrite,
   planSinglePc,
 } from '@import/foundry/single-pc';
 
@@ -20,11 +21,14 @@ type Props = {
   onImported: (message: string) => void;
 };
 
-function existingFor(characters: Character[], worldId: string, actorId: string): Character | undefined {
-  return characters.find((character) => {
-    const foundry = (character as Character & { meta_data?: { foundry?: { worldId?: string; actorId?: string } } }).meta_data?.foundry;
-    return foundry?.worldId === worldId && foundry?.actorId === actorId;
-  });
+function linkedCharacter(characters: Character[], worldId: string, actorId: string) {
+  const match = findImportedCharacter(characters, worldId, actorId);
+  if (!match || match.id == null) return undefined;
+  return {
+    id: match.id,
+    name: match.name,
+    meta_data: (match.meta_data ?? undefined) as Record<string, unknown> | undefined,
+  };
 }
 
 export function FoundryImportDialog({ accessToken, characters, onClose, onImported }: Props) {
@@ -76,26 +80,14 @@ export function FoundryImportDialog({ accessToken, characters, onClose, onImport
     setError(null);
     try {
       await ensurePhase1PublicUser(accessToken);
-      const previous = existingFor(characters, plan.worldId, plan.actorId) as (Character & { meta_data?: Record<string, unknown> }) | undefined;
-      if (!previous && (!plan.name || plan.level == null)) {
-        throw new Error('Import needs a string name and a numeric level to create a character.');
-      }
-      if (previous) {
-        await phase1Request('update-character', {
-          id: previous.id,
-          ...(plan.name ? { name: plan.name } : {}),
-          ...(plan.level != null ? { level: plan.level } : {}),
-          meta_data: foundryMeta(plan, previous.meta_data),
-        }, accessToken);
-        onImported(`Updated “${plan.name ?? previous.name}”.`);
+      const decision = planImportWrite(plan, linkedCharacter(characters, plan.worldId, plan.actorId));
+      if (decision.action === 'reject') throw new Error(decision.message);
+      if (decision.action === 'update') {
+        await phase1Request('update-character', decision.body, accessToken);
+        onImported(`Updated "${decision.messageName}".`);
       } else {
-        const created = await phase1Request<Character>('create-character', {
-          ...(plan.name ? { name: plan.name } : {}),
-          ...(plan.level != null ? { level: plan.level } : {}),
-          meta_data: foundryMeta(plan, { reset_hp: true }),
-          details: {},
-        }, accessToken);
-        onImported(`Imported “${created.name ?? plan.name ?? 'character'}”.`);
+        const created = await phase1Request<Character>('create-character', decision.body, accessToken);
+        onImported(`Imported "${created.name ?? decision.messageName}".`);
       }
       onClose();
     } catch (cause) {
@@ -134,7 +126,7 @@ export function FoundryImportDialog({ accessToken, characters, onClose, onImport
                   <input type='radio' name='foundry-pc' checked={selectedId === row.id} onChange={() => setSelectedId(row.id)} />
                   <span>
                     {row.name || 'Unnamed'} {row.level != null ? `· level ${row.level}` : ''} {row.className ? `· ${row.className}` : ''}
-                    {existingFor(characters, row.worldId, row.id) ? ' · already in this account' : ''}
+                    {linkedCharacter(characters, row.worldId, row.id) ? ' · already in this account' : ''}
                   </span>
                 </label>
               </li>
@@ -145,10 +137,10 @@ export function FoundryImportDialog({ accessToken, characters, onClose, onImport
         {step === 'review' && plan && (
           <div className='mt-4 text-sm'>
             <p>{plan.counts.mapped} mapped, {plan.counts.included} included, {plan.counts.unresolved} unresolved, {plan.counts['leftover-preserved']} leftover-preserved, {plan.counts.dropped} dropped.</p>
-            {existingFor(characters, plan.worldId, plan.actorId) || (plan.name && plan.level != null) ? (
-              <p className='mt-2'>Import will {existingFor(characters, plan.worldId, plan.actorId) ? 'update' : 'create'} “{plan.name ?? 'this character'}”{plan.level != null ? `, level ${plan.level}` : ''}. Feats, spells, and gear stay in the leftovers.</p>
-            ) : (
+            {planImportWrite(plan, linkedCharacter(characters, plan.worldId, plan.actorId)).action === 'reject' ? (
               <p className='mt-2'>Import needs a string name and a numeric level to create a character. The other values stay in the leftovers.</p>
+            ) : (
+              <p className='mt-2'>Import will {linkedCharacter(characters, plan.worldId, plan.actorId) ? 'update' : 'create'} "{plan.name ?? 'this character'}"{plan.level != null ? `, level ${plan.level}` : ''}. Feats, spells, and gear stay in the leftovers.</p>
             )}
           </div>
         )}
@@ -161,7 +153,7 @@ export function FoundryImportDialog({ accessToken, characters, onClose, onImport
             <button
               type='button'
               className='toolbar-button'
-              disabled={busy || !plan || (!existingFor(characters, plan.worldId, plan.actorId) && (!plan.name || plan.level == null))}
+              disabled={busy || !plan || planImportWrite(plan, linkedCharacter(characters, plan.worldId, plan.actorId)).action === 'reject'}
               onClick={() => void write()}
             >
               Import
