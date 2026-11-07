@@ -37,5 +37,7 @@ fi
 
 npm install
 npm run build
+# Videos are gitignored and stay outside dist/. `serve -s` only sees files under dist/.
+ln -sfn ../videos dist/videos
 pm2 restart wgui --update-env
 pm2 save
