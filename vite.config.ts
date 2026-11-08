@@ -6,6 +6,7 @@ import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { VitePWA, VitePWAOptions } from 'vite-plugin-pwa';
 import tailwindcss from '@tailwindcss/vite';
+import { linkDistVideos } from './scripts/link-dist-videos.mjs';
 
 const manifestForPlugin: Partial<VitePWAOptions> = {
   registerType: 'prompt',
@@ -150,6 +151,9 @@ export default defineConfig(({ mode }) => ({
           res.setHeader('Content-Length', stat.size);
           fs.createReadStream(file).pipe(res);
         });
+      },
+      closeBundle() {
+        linkDistVideos(__dirname);
       },
     },
     {

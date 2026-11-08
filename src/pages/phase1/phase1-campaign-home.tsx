@@ -1758,7 +1758,12 @@ function RosterArtModal({ name, url, onClose }: { name: string; url: string; onC
       if (event.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      document.body.style.overflow = overflow;
+    };
   }, [onClose]);
 
   return createPortal(
@@ -1770,10 +1775,10 @@ function RosterArtModal({ name, url, onClose }: { name: string; url: string; onC
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <section role='dialog' aria-modal='true' aria-label={name} className='flex max-h-[min(92vh,960px)] w-full max-w-[min(94vw,1100px)] flex-col border border-p1-border bg-p1-surface p-4 shadow-2xl' onClick={(event) => event.stopPropagation()}>
-        <h2 className='mb-3 truncate text-lg font-semibold'>{name}</h2>
-        <img src={url} alt={`${name} art`} className='min-h-0 w-full flex-1 object-contain' referrerPolicy='no-referrer' />
-        <div className='mt-4 flex justify-end'>
+      <section role='dialog' aria-modal='true' aria-label={name} className='flex max-h-[85vh] w-full max-w-[min(85vw,1100px)] flex-col overflow-hidden border border-p1-border bg-p1-surface p-4 shadow-2xl' onClick={(event) => event.stopPropagation()}>
+        <h2 className='mb-3 shrink-0 truncate text-lg font-semibold'>{name}</h2>
+        <img src={url} alt={`${name} art`} className='min-h-0 w-full max-h-[calc(85vh-7.5rem)] flex-1 object-contain' referrerPolicy='no-referrer' />
+        <div className='mt-4 flex shrink-0 justify-end'>
           <button type='button' className='toolbar-button' onClick={onClose}>OK</button>
         </div>
       </section>

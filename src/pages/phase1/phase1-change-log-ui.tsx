@@ -120,7 +120,7 @@ export function EditableValueWithNote({
       <button
         type='button'
         disabled={!canEdit}
-        className={`text-center disabled:cursor-default ${canEdit ? 'hover:bg-p1-hover' : ''}`}
+        className={`w-full text-center disabled:cursor-default ${canEdit ? 'hover:bg-p1-hover' : ''}`}
         onClick={startEditing}
       >
         <div className='text-[10px] uppercase text-p1-faint'>{label}</div>
