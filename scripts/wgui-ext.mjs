@@ -21,6 +21,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertOverlaysReady } from './export-bundle-guard.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const extDir = path.join(repoRoot, 'supabase', 'wgui-ext');
@@ -61,6 +62,14 @@ function run(command, args, options = {}) {
 }
 
 function compose(args) {
+  const recreates = args[0] === 'up' || args[0] === 'restart';
+  if (recreates) {
+    try {
+      assertOverlaysReady({ exportDir, extDir });
+    } catch (error) {
+      die(error.message);
+    }
+  }
   run(
     'docker',
     [
