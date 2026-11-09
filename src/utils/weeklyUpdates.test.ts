@@ -35,8 +35,9 @@ describe('groupUpdateLines', () => {
       'Show shared dice for initiative.',
       'Fix the production build.',
     ]);
-    expect(groups.map((group) => group.title)).toEqual(['Characters', 'Encounters and combat', 'Also']);
-    expect(groups[0].items).toEqual(['Add a character sheet.']);
+    expect(groups.map((group) => group.title)).toEqual(['Encounters and combat', 'Characters', 'Also']);
+    expect(groups[0].items).toEqual(['Show shared dice for initiative.']);
+    expect(groups[1].items).toEqual(['Add a character sheet.']);
   });
 });
 
