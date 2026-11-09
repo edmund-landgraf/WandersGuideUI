@@ -393,6 +393,23 @@
         "Expand campaign-home party rows with linked stats, and let GMs multi-select encounters into folders.",
         "Show campaign-home party max HP from the character sheet, sharing the store prepare queue so the lookup does not deadlock."
       ]
+    },
+    {
+      "weekStart": "2026-11-02",
+      "label": "Nov 2 – Nov 8, 2026",
+      "count": 9,
+      "summary": "Campaign lists and sheets take on the campaign color, and portraits still appear when file hosting is limited. The assistant tool directory now documents 95 tools. The character menu stays fully on screen, and temporary hit points read 0 when a character has none. A GM can remove their own characters from a campaign, remove another player's character, and keep the party list in step. Removing a character from a campaign no longer breaks when there is no sign-in session. Plus 4 more.",
+      "subjects": [
+        "Campaign lists and sheets take on the campaign color, and portraits still appear when file hosting is limited.",
+        "The assistant tool directory now documents 95 tools.",
+        "The character menu stays fully on screen, and temporary hit points read 0 when a character has none.",
+        "A GM can remove their own characters from a campaign, remove another player's character, and keep the party list in step.",
+        "Removing a character from a campaign no longer breaks when there is no sign-in session.",
+        "Portrait paths saved on the site still show for characters on the campaign and on Amba.",
+        "Import one character from Foundry, review it before anything is saved, and re-import that same actor by world and actor so a second copy is not created.",
+        "A local relay can read one Foundry character for that import. The Foundry module is not available yet, so this is groundwork and characters do not sync from Foundry on their own.",
+        "Sample NPC portraits are included, and campaign demo videos are served with the site."
+      ]
     }
   ]
 }
