@@ -318,7 +318,7 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
     "list_open_choices",
     {
       title: "Open builder choices",
-      description: "Runs character operations and returns unfilled selects: stored selection key, kind, remaining, already, and legal options. Pass that key to choose.",
+      description: "Runs character operations and returns unfilled selects: stored selection key, kind, remaining, already, and legal options. Pass that key to choose_many (batch the picks you can decide now) or choose.",
       annotations: readOnly,
       inputSchema: { characterId: z.number().int() },
     },
@@ -372,10 +372,12 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
       title: "Record several builder choices",
       description: [
         "Batch version of choose: applies an ordered list of { choiceId, optionId } picks to one character in a single call and saves once.",
-        "Prefer this over repeated choose calls: put every pick you have already decided from list_open_choices into one call (for example all skill, feat, language and boost picks for a level).",
+        "Guidance, not a rule; you decide the grouping: batch every pick you can already decide from the open list into one call.",
+        "Start a new batch only when the next picks depend on choices the previous batch opened (a class feat's sub-choices, skill increases after training). A level-5 build typically takes about 5-7 batches.",
+        "Use the openChoices this returns instead of calling list_open_choices again. Use choose for a one-off correction.",
         "Picks run in order against the character as updated by the earlier picks, so a later pick may answer a dependent choice an earlier pick opened. Each pick is validated exactly like choose.",
-        "Default (atomic false): legal picks are saved and illegal ones are reported per pick with a code and reason; a failed pick changes nothing. atomic true saves nothing unless every pick is legal.",
-        "Returns per-pick results, applied/failed counts, the saved row summary, and the remaining open choices (same shape as list_open_choices), so you usually do not need to call list_open_choices again.",
+        "Default (atomic false): legal picks are saved and illegal ones are reported per pick with a code and reason; a failed pick changes nothing. atomic true saves nothing unless every pick is legal; use it only when the picks must succeed together.",
+        "Returns per-pick results, applied/failed counts, the saved row summary, and the remaining open choices (same shape as list_open_choices).",
       ].join(" "),
       annotations: writes,
       inputSchema: {

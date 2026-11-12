@@ -455,11 +455,23 @@ Start every session with `get_profile`. Treat returned ids as authoritative, and
 | 3 | `list_options kind=ancestry` / `background` / `class` | Find option ids |
 | 4 | `set_identity` (`slot`, `optionId`) | Once each for ancestry, background and class |
 | 5 | `list_open_choices` | Unfilled selects with legal options |
-| 6 | `choose_many` (`picks: [{ choiceId, optionId }]`) | Send every pick you have decided in one call; it returns per-pick results and the choices still open. Repeat until none remain. `choose` does one pick. Illegal ids are rejected per pick |
+| 6 | `choose_many` (`picks: [{ choiceId, optionId }]`) | Batch the picks you can decide now; it returns per-pick results and the choices still open. Repeat until none remain. See C1a. Illegal ids are rejected per pick |
 | 7 | `list_spell_options` (`source`) | For casters |
 | 8 | `add_spell` (`spellId`, `rank`, `source`, `prepare`) or `set_spells` | |
 | 9 | `list_options kind=item`, then `add_inventory_item` (`itemId`, `quantity`) | Gear. `remove_inventory_item` undoes it. `give_money` / `take_money` edit `inventory.coins` |
 | 10 | `export_character` (json slim/full or pdf) | Check the result |
+
+### C1a. Batching builder choices (guidance)
+
+The client decides how to group picks. What tends to work:
+
+1. Call `list_open_choices` once, after `set_identity`.
+2. Put every pick you can already decide from that list into one `choose_many` call.
+3. Read the `openChoices` that `choose_many` returns instead of calling `list_open_choices` again.
+4. Start a new batch only when the next picks depend on choices the last batch opened, such as a class feat's sub-choices or skill increases after training.
+5. A level-5 build typically takes about 5-7 batches. Each one is a single read and a single save, however many picks it holds.
+6. Leave `atomic` off unless the picks must succeed together. By default the legal picks save and each bad pick comes back with its reason, so you can fix just those.
+7. Use `choose` for a one-off correction.
 
 > *Example prompt:* "Using the wgui tools, create a level 1 human fighter named Aragorn. Use the Core rules only. Say what you'll change before each write, fill every open choice with sensible options, add a longsword and adventurer's pack, then export the slim JSON."
 
