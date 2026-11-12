@@ -58,6 +58,7 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `list_open_choices` | read | Unfilled builder selects with legal options | `characterId` |
 | `list_spell_options` | read | Legal spells for one casting source | `characterId` |
 | `choose` | write | Sets one option in a selection key, reruns operations | `characterId`, `choiceId`, `optionId` |
+| `choose_many` | write | Batch `choose`: ordered picks, validated like `choose`, one read and one save; returns per-pick results and remaining open choices. Batch the picks you can decide now; a new batch when picks depend on the last one (about 5-7 for level 5). Added after this directory was generated (tool 96) | `characterId`, `picks[{choiceId, optionId}]` (1-50), `atomic?` |
 | `set_identity` | write | Sets ancestry, background, or class | `characterId`, `slot`, `optionId` |
 | `set_books` | write | Adds/removes enabled content sources | `characterId` |
 | `add_spell` | write | Adds a spell to a source; optional `prepare` | `characterId`, `spellId`, `rank` |

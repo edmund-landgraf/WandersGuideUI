@@ -50,6 +50,7 @@ These eight tools are on the same `wgui-mcp` process. They post to the stock Wan
 | `set_identity` | `update-character` `details` plus cleared child selections |
 | `list_open_choices` | Operation results already computed for the character. No new function. |
 | `choose` | `update-character` `operation_data.selections` |
+| `choose_many` | one `find-character`, one `update-character` `operation_data.selections` for the whole batch |
 | `delete_character` | `delete-content` `{ id, type: "character" }` |
 | `list_spell_options` | `find-spell` with the common core plus enabled books, filtered by the casting source's tradition and max rank (sources and slots from the builder operation pass) |
 | `add_spell`, `remove_spell`, `set_spells` | `find-spell` validation, then `update-character` `spells` (`list` entries `{ spell_id, rank, source }`, prepared `slots` `{ rank, source, spell_id }`) |

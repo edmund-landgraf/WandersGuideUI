@@ -2,10 +2,13 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { applyCharacterWrite, listCharacterChoices, type OpenChoice } from "./character-choices.js";
+import { planPick, planPicks, selectionsOf, withSelections } from "./character-choose.js";
 import { asRow, guardOf, invokeFunction, type CharacterRow, type InvokeResult } from "./character-client.js";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const writes = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
+/** Upper bound for one choose_many call. Aragorn needed 33 picks in total. */
+const MAX_PICKS = 50;
 
 const KINDS = {
   class: "find-class",
@@ -315,7 +318,7 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
     "list_open_choices",
     {
       title: "Open builder choices",
-      description: "Runs character operations and returns unfilled selects: stored selection key, kind, remaining, already, and legal options. Pass that key to choose.",
+      description: "Runs character operations and returns unfilled selects: stored selection key, kind, remaining, already, and legal options. Pass that key to choose_many (batch the picks you can decide now) or choose.",
       annotations: readOnly,
       inputSchema: { characterId: z.number().int() },
     },
@@ -336,7 +339,7 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
     "choose",
     {
       title: "Record a builder choice",
-      description: "Writes or changes one option id in a selection key, reruns character operations, reopens dependent choices, and saves the builder fields. An id that is not legal for that choice is rejected before the save.",
+      description: "Writes or changes one option id in a selection key, reruns character operations, reopens dependent choices, and saves the builder fields. An id that is not legal for that choice is rejected before the save. When you already know several picks, call choose_many once instead of choose repeatedly.",
       annotations: writes,
       inputSchema: {
         characterId: z.number().int(),
@@ -347,37 +350,89 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
     async (args) => {
       const loaded = await loadRow(userId(), args.characterId);
       if (!loaded.ok) return fail(loaded);
-      const operation = (loaded.data.operation_data as Record<string, unknown> | undefined) ?? {};
-      const currentSelections = { ...((operation.selections as Record<string, string> | undefined) ?? {}) };
-      const wasAnswered = Object.prototype.hasOwnProperty.call(currentSelections, args.choiceId);
-      // Remove the target and nested answers before rerunning the builder. This
-      // makes an answered choice visible again and prevents stale dependent
-      // selections from surviving a changed parent choice.
-      const selectionsWithoutChoice = Object.fromEntries(Object.entries(currentSelections).filter(([key]) => key !== args.choiceId && !key.startsWith(`${args.choiceId}_`)));
-      const choiceCharacter = wasAnswered
-        ? { ...loaded.data, operation_data: { ...operation, selections: selectionsWithoutChoice } }
-        : loaded.data;
-      let choices: OpenChoice[];
-      try {
-        choices = await listCharacterChoices(choiceCharacter, userId());
-      } catch (error) {
-        return thrown(error);
-      }
-      const choice = choices.find((item) => item.id === args.choiceId);
-      if (!choice) return textResult("That choice is not open.", { code: "NOT_FOUND", retryable: false }, true);
-      if (!choice.options.some((option) => option.id === args.optionId)) {
-        return textResult("That option is not legal for this choice.", { code: "VALIDATION_ERROR", retryable: false }, true);
-      }
-      const selections = { ...selectionsWithoutChoice, [args.choiceId]: args.optionId };
+      const list = (character: CharacterRow) => listCharacterChoices(character, userId());
+      const planned = await planPick(loaded.data, selectionsOf(loaded.data), args, list);
+      // Same messages and codes as before: NOT_FOUND / VALIDATION_ERROR (not retryable), INTERNAL_ERROR (retryable).
+      if (!planned.ok) return textResult(planned.message, { code: planned.code, retryable: planned.retryable }, true);
       let drafted: CharacterRow;
       try {
-        drafted = await applyCharacterWrite({ ...loaded.data, operation_data: { ...operation, selections } });
+        drafted = await applyCharacterWrite(withSelections(loaded.data, planned.selections));
       } catch (error) {
         return thrown(error);
       }
       const saved = await saveRow(userId(), loaded.data, savePatch(drafted));
       if (!saved.ok) return fail(saved);
       return textResult("Choice saved", { ...summary(saved.data), choiceId: args.choiceId, optionId: args.optionId });
+    },
+  );
+
+  server.registerTool(
+    "choose_many",
+    {
+      title: "Record several builder choices",
+      description: [
+        "Batch version of choose: applies an ordered list of { choiceId, optionId } picks to one character in a single call and saves once.",
+        "Guidance, not a rule; you decide the grouping: batch every pick you can already decide from the open list into one call.",
+        "Start a new batch only when the next picks depend on choices the previous batch opened (a class feat's sub-choices, skill increases after training). A level-5 build typically takes about 5-7 batches.",
+        "Use the openChoices this returns instead of calling list_open_choices again. Use choose for a one-off correction.",
+        "Picks run in order against the character as updated by the earlier picks, so a later pick may answer a dependent choice an earlier pick opened. Each pick is validated exactly like choose.",
+        "Default (atomic false): legal picks are saved and illegal ones are reported per pick with a code and reason; a failed pick changes nothing. atomic true saves nothing unless every pick is legal; use it only when the picks must succeed together.",
+        "Returns per-pick results, applied/failed counts, the saved row summary, and the remaining open choices (same shape as list_open_choices).",
+      ].join(" "),
+      annotations: writes,
+      inputSchema: {
+        characterId: z.number().int(),
+        picks: z.array(z.object({ choiceId: z.string(), optionId: z.string() })).max(MAX_PICKS),
+        atomic: z.boolean().optional(),
+      },
+    },
+    async (args) => {
+      if (args.picks.length === 0) {
+        return textResult("picks is empty. Pass at least one { choiceId, optionId }.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      }
+      const loaded = await loadRow(userId(), args.characterId);
+      if (!loaded.ok) return fail(loaded);
+      // Refuse before running the builder rather than after, so a non-owner gets no work done.
+      const forbidden = ownerGuard(loaded.data, userId());
+      if (forbidden) return fail(forbidden);
+      const list = (character: CharacterRow) => listCharacterChoices(character, userId());
+      const planned = await planPicks(loaded.data, args.picks, list);
+      const atomic = args.atomic === true;
+      const base = { id: loaded.data.id, atomic, applied: planned.applied, failed: planned.failed, results: planned.results };
+      if (planned.applied === 0 || (atomic && planned.failed > 0)) {
+        const why = planned.applied === 0 ? "No pick was legal" : "atomic is true and a pick failed";
+        return textResult(`${why}; nothing was saved.`, {
+          ...base,
+          applied: 0,
+          results: planned.results.map((result) => (result.status === "applied" ? { ...result, status: "not_saved" as const } : result)),
+          saved: false,
+          code: "VALIDATION_ERROR",
+          retryable: planned.results.some((result) => result.status === "error" && result.retryable),
+        }, true);
+      }
+      let drafted: CharacterRow;
+      try {
+        drafted = await applyCharacterWrite(withSelections(loaded.data, planned.selections));
+      } catch (error) {
+        return thrown(error);
+      }
+      const saved = await saveRow(userId(), loaded.data, savePatch(drafted));
+      if (!saved.ok) return fail(saved);
+      let openChoices: OpenChoice[] | null = null;
+      let openChoicesError: string | null = null;
+      try {
+        openChoices = await listCharacterChoices(saved.data, userId());
+      } catch (error) {
+        openChoicesError = error instanceof Error ? error.message : "Character operations failed.";
+      }
+      const text = `${planned.applied} of ${args.picks.length} picks saved${planned.failed ? `, ${planned.failed} failed` : ""}`;
+      return textResult(text, {
+        ...base,
+        saved: true,
+        character: summary(saved.data),
+        openChoices,
+        ...(openChoicesError ? { openChoicesError } : {}),
+      });
     },
   );
 
