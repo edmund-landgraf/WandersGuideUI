@@ -7,6 +7,16 @@ export const TACTICS_MCP_VERSION = "1.0.0";
 export const TACTICS_MCP_NAME = "wgui-tactics";
 export const TACTICS_MCP_DESCRIPTION = "Encounter and character data for the GM. Mostly read-only, with scoped writes.";
 
+/** Sent to clients at initialize. Guidance only: no tool behaves differently because of it. */
+export const TACTICS_MCP_INSTRUCTIONS = [
+  "Start with get_profile; treat returned ids as authoritative.",
+  "Character build: create_character, optional set_books, list_options for ancestry/background/class, set_identity for each, list_open_choices, then choose_many, then spells (list_spell_options, add_spell or set_spells), gear (list_options kind=item, add_inventory_item), and export_character to check.",
+  "Builder choices (guidance; you decide the grouping): batch every pick you can already decide from the open list into one choose_many call, and reuse the openChoices it returns instead of calling list_open_choices again.",
+  "Start a new batch only when picks depend on choices the last batch opened (a class feat's sub-choices, skill increases after training); a level-5 build typically takes about 5-7 batches.",
+  "Use atomic only when the picks must succeed together, and choose for one-off fixes.",
+  "Full guide: tactics-mcp/docs/mcp-client-guide.md (Part C).",
+].join("\n");
+
 const READ_TOOLS = new Set([
   "get_profile",
   "list_encounters",
@@ -122,7 +132,7 @@ export function createTacticsMcpServer(userId: () => string, scopes: () => strin
     description: TACTICS_MCP_DESCRIPTION,
     websiteUrl: "https://wgui.wandersguide.site",
     icons: [{ src: `${origin}/icon.png`, mimeType: "image/png", sizes: ["512x512"] }],
-  });
+  }, { instructions: TACTICS_MCP_INSTRUCTIONS });
   const register = server.registerTool.bind(server);
   server.registerTool = ((name: string, config: unknown, handler: (...args: never[]) => unknown) => {
     return register(name, config as never, (async (...args: never[]) => {

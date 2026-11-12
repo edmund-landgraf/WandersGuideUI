@@ -13,7 +13,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { startTacticsHttp } from "../src/http.js";
 import { consumeCode, issueCode, rememberLogin, resetCodes, takeLogin } from "../src/oauth.js";
 import { getEncounterReader, setEncounterReader, type EncounterReader } from "../src/reader.js";
-import { createTacticsMcpServer, scopeForTool, TACTICS_MCP_DESCRIPTION, TACTICS_MCP_NAME } from "../src/server.js";
+import { createTacticsMcpServer, scopeForTool, TACTICS_MCP_DESCRIPTION, TACTICS_MCP_INSTRUCTIONS, TACTICS_MCP_NAME } from "../src/server.js";
 import { mintToken, normalizeScopes, resetTokens, resolveBearer } from "../src/tokens.js";
 
 const WRITE_TOOLS = ["ensure_public_user", "join_campaign", "patch_encounter_dice", "add_encounter_combatant", "remove_encounter_combatant", "patch_encounter_combatant", "roll_initiative", "set_campaign_art"];
@@ -162,6 +162,11 @@ describe("tactics scopes", { concurrency: 1 }, () => {
       const info = client.getServerVersion();
       assert.equal(info?.name, TACTICS_MCP_NAME);
       assert.equal(info?.description, TACTICS_MCP_DESCRIPTION);
+      const instructions = client.getInstructions();
+      assert.equal(instructions, TACTICS_MCP_INSTRUCTIONS);
+      assert.match(instructions ?? "", /choose_many/);
+      assert.match(instructions ?? "", /openChoices/);
+      assert.match(instructions ?? "", /5-7 batches/);
 
       const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
       assert.equal(names.length, 96);
