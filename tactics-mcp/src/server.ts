@@ -71,6 +71,7 @@ const WRITE_TOOLS = new Set([
   "set_books",
   "set_identity",
   "choose",
+  "choose_many",
   "add_spell",
   "remove_spell",
   "set_spells",

@@ -42,6 +42,7 @@ Thirty-eight tools require `read`. Twenty-three tools require `write`. Encounter
 | `set_books` | `write` | Enabled content source ids |
 | `set_identity` | `write` | Ancestry, background, or class |
 | `choose` | `write` | One legal option on an open choice |
+| `choose_many` | `write` | Several legal options in one call, one save |
 | `delete_character` | `write` | Delete a character row |
 | `add_spell` | `write` | One `spells.list` entry, optionally prepared into a slot |
 | `remove_spell` | `write` | Remove a spell from a source's list and slots |

@@ -455,7 +455,7 @@ Start every session with `get_profile`. Treat returned ids as authoritative, and
 | 3 | `list_options kind=ancestry` / `background` / `class` | Find option ids |
 | 4 | `set_identity` (`slot`, `optionId`) | Once each for ancestry, background and class |
 | 5 | `list_open_choices` | Unfilled selects with legal options |
-| 6 | `choose` (`choiceId`, `optionId`) | Repeat until no open choices remain. Illegal ids are rejected |
+| 6 | `choose_many` (`picks: [{ choiceId, optionId }]`) | Send every pick you have decided in one call; it returns per-pick results and the choices still open. Repeat until none remain. `choose` does one pick. Illegal ids are rejected per pick |
 | 7 | `list_spell_options` (`source`) | For casters |
 | 8 | `add_spell` (`spellId`, `rank`, `source`, `prepare`) or `set_spells` | |
 | 9 | `list_options kind=item`, then `add_inventory_item` (`itemId`, `quantity`) | Gear. `remove_inventory_item` undoes it. `give_money` / `take_money` edit `inventory.coins` |
