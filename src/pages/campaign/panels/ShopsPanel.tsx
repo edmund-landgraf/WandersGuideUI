@@ -19,7 +19,9 @@ export default function ShopsPanel(props: {
     void listOwned(SHOP_CONTENT_KIND)
       .then((nodes) => {
         if (cancelled) return;
-        setRows(nodes.filter((row) => row.kind === 'entry' && row.draft?.campaignId === props.campaign.id) as SyndicatedNode<ShopDraft>[]);
+        setRows(nodes.filter((row): row is SyndicatedNode<ShopDraft> => (
+          row.kind === 'entry' && (row.draft as ShopDraft | undefined)?.campaignId === props.campaign.id
+        )));
       })
       .catch((cause: unknown) => {
         if (!cancelled) setError(cause instanceof Error ? cause.message : 'Could not load shops.');

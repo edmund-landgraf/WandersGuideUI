@@ -26,7 +26,7 @@ export function ShopPopout({
   titleClassName: string;
   children: ReactNode;
 }) {
-  const anchor = useRef<HTMLElement>(null);
+  const anchor = useRef<HTMLElement | null>(null);
   const showTimer = useRef(0);
   const hideTimer = useRef(0);
   const pinned = useRef(false);
@@ -112,7 +112,7 @@ export function ShopPopout({
     <>
       {href ? (
         <a
-          ref={anchor}
+          ref={(node) => { anchor.current = node; }}
           className={labelClass}
           href={href}
           target='_blank'
@@ -126,7 +126,7 @@ export function ShopPopout({
           {label}
         </a>
       ) : (
-        <button ref={anchor} type='button' className={labelClass} onClick={stick} {...hover}>
+        <button ref={(node) => { anchor.current = node; }} type='button' className={labelClass} onClick={() => stick()} {...hover}>
           {label}
         </button>
       )}

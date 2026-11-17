@@ -1,5 +1,7 @@
 # WGUI MCP tool directory (112 tools)
 
+The filename keeps the old "95" count. This file is the current catalog. The count in the heading is the one to use.
+
 Generated Nov 3, 2026 from the live `wgui` MCP server tool list, with scopes checked against `READ_TOOLS` / `WRITE_TOOLS` in `src/server.ts`.
 
 **112 tools: 48 require `read`, 64 require `write`.** This includes the 7 campaign/encounter create-update tools and 16 shop tools. `tools/list` returns every tool for any token; scope is enforced at call time. The 20 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (27), character (28), homebrew `wgui_ext_hb_*` (30), shops (16), plus campaign/encounter writes. Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).

@@ -340,7 +340,7 @@ function ShopsPage() {
       setRarities((draft.rarities ?? []).filter((row): row is ShopRarity => SHOP_RARITIES.includes(row)));
       setMarkup(draft.markup ?? 0);
       setPageStyle(draft.style === 'homebrew-v3' ? 'homebrew-v3' : 'default');
-      setStockCount(draft.size ?? loaded.length || STOCK_COUNT);
+      setStockCount(draft.size ?? (loaded.length || STOCK_COUNT));
       setShopName(node?.name ?? '');
       setShopDescription(draft.description ?? '');
       setCampaignId(draft.campaignId ?? null);

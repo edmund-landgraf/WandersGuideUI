@@ -1,5 +1,9 @@
 # Production checkout integrated onto main
 
+## Status (2026-11-17)
+
+`docs/tool-directory-95` is retired. It had no commits that `main` lacks. Production (`wgui` on the VPS) is checked out on `main`. Do not deploy from that branch. The remote branch is deleted. The name "95" on `tactics-mcp/docs/mcp-tool-directory-95.md` is the old tool count. That file is the live catalog (112 tools). `tactics-mcp/docs/mcp-client-guide.md` points at it for the current list. The notes below are the record from before that checkout moved.
+
 The VPS checkout `docs/tool-directory-95` at `e6254923451be918edc1ca999b3bdd7d2869ac2a` diverges from `main` at `6bc09ff2fb4d5b5cf5ac2f78b4c959571985fd97`. Four commits on that branch are not in `main`. This branch replays them onto current `main` (`9245c1e6d69bee8f5fe5b247d723d7d41ca3103f`, which includes the merged Foundry import and read relay). The production branch was not moved.
 
 | Production commit | What it keeps |
