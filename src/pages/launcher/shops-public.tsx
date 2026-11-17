@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useState } from 'react';
+import { ShopPopout } from './shop-popout';
 import { readPublic } from '../../syndication/store';
 import { LauncherHeader } from './launcher-header';
 import { SHOP_CONTENT_KIND, type ShopDraft, type ShopStockRow } from './shops-syndicate';
@@ -103,84 +103,36 @@ export const HOMEBREW_CSS = `
 `;
 
 function StockName({ row, homebrew = false }: { row: ShopStockRow; homebrew?: boolean }) {
-  const anchor = useRef<HTMLButtonElement>(null);
-  const showTimer = useRef(0);
-  const hideTimer = useRef(0);
-  const [box, setBox] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
-  const clearTimers = () => {
-    window.clearTimeout(showTimer.current);
-    window.clearTimeout(hideTimer.current);
-  };
-  const open = () => {
-    const node = anchor.current;
-    if (!node) return;
-    const rect = node.getBoundingClientRect();
-    const width = 360;
-    const left = Math.min(rect.left, window.innerWidth - width - 12);
-    const above = window.innerHeight - rect.bottom < 220;
-    setBox(above
-      ? { left: Math.max(12, left), bottom: window.innerHeight - rect.top + 6 }
-      : { left: Math.max(12, left), top: rect.bottom + 6 });
-  };
-  useEffect(() => () => clearTimers(), []);
-
   return (
-    <>
-      <button
-        ref={anchor}
-        type='button'
-        className='text-left underline decoration-white/25 underline-offset-2 hover:decoration-white/70'
-        onMouseEnter={() => {
-          clearTimers();
-          showTimer.current = window.setTimeout(open, 250);
-        }}
-        onMouseLeave={() => {
-          clearTimers();
-          hideTimer.current = window.setTimeout(() => setBox(null), 120);
-        }}
-        onFocus={open}
-        onBlur={() => setBox(null)}
-      >
-        {row.name}
-      </button>
-      {box && createPortal(
-        <div
-          className={homebrew
-            ? 'w-[360px] max-h-[min(50vh,420px)] overflow-y-auto bg-[#f7edd4] p-4 text-left text-[#1c140c] shadow-2xl ring-1 ring-[#8a5a22]'
-            : 'w-[360px] max-h-[min(50vh,420px)] overflow-y-auto rounded-xl bg-[#1c1c1c] p-4 text-left text-[#fafafa] shadow-2xl ring-1 ring-white/25'}
-          style={{ position: 'fixed', zIndex: 40, left: box.left, top: box.top, bottom: box.bottom }}
-          onMouseEnter={clearTimers}
-          onMouseLeave={() => {
-            clearTimers();
-            hideTimer.current = window.setTimeout(() => setBox(null), 120);
-          }}
-        >
-          <p className={homebrew ? 'font-serif text-lg text-[#6b1d14]' : 'font-heading text-base text-[#fafafa]'}>{row.name}</p>
-          <p className={homebrew ? 'mt-1 text-[11px] uppercase tracking-wide text-[#5c4630]' : 'mt-1 text-[11px] uppercase tracking-wide text-[#b5b5b5]'}>
-            Level {row.level} · {row.rarity} · {row.group.replaceAll('_', ' ')}
-          </p>
-          {row.traits.length > 0 && (
-            <div className='mt-2 flex flex-wrap gap-1'>
-              {row.traits.map((name) => (
-                <span key={name} className={homebrew ? 'rounded bg-[#6b1d14]/10 px-1.5 py-0.5 text-[10px] uppercase text-[#6b1d14]' : 'rounded bg-white/10 px-1.5 py-0.5 text-[10px] uppercase text-[#d4d4d4]'}>
-                  {name}
-                </span>
-              ))}
-            </div>
-          )}
-          <p className={homebrew ? 'mt-3 text-xs text-[#5c4630]' : 'mt-3 text-xs text-[#b5b5b5]'}>
-            {row.price}
-            {row.bulk ? ` · Bulk ${row.bulk}` : ''}
-          </p>
-          {row.description && (
-            <p className={homebrew ? 'mt-3 whitespace-pre-wrap text-sm leading-6 text-[#1c140c]' : 'mt-3 whitespace-pre-wrap text-sm leading-6 text-[#f4f4f5]'}>
-              {row.description}
-            </p>
-          )}
-        </div>,
-        document.body,
+    <ShopPopout
+      label={row.name}
+      cardClassName={homebrew
+        ? 'w-[360px] max-h-[min(50vh,420px)] overflow-y-auto bg-[#f7edd4] p-4 text-left text-[#1c140c] shadow-2xl ring-1 ring-[#8a5a22]'
+        : 'w-[360px] max-h-[min(50vh,420px)] overflow-y-auto rounded-xl bg-[#1c1c1c] p-4 text-left text-[#fafafa] shadow-2xl ring-1 ring-white/25'}
+      titleClassName={homebrew ? 'font-serif text-lg text-[#6b1d14]' : 'font-heading text-base text-[#fafafa]'}
+    >
+      <p className={homebrew ? 'text-[11px] uppercase tracking-wide text-[#5c4630]' : 'text-[11px] uppercase tracking-wide text-[#b5b5b5]'}>
+        Level {row.level} · {row.rarity} · {row.group.replaceAll('_', ' ')}
+      </p>
+      {row.traits.length > 0 && (
+        <div className='mt-2 flex flex-wrap gap-1'>
+          {row.traits.map((name) => (
+            <span key={name} className={homebrew ? 'rounded bg-[#6b1d14]/10 px-1.5 py-0.5 text-[10px] uppercase text-[#6b1d14]' : 'rounded bg-white/10 px-1.5 py-0.5 text-[10px] uppercase text-[#d4d4d4]'}>
+              {name}
+            </span>
+          ))}
+        </div>
       )}
-    </>
+      <p className={homebrew ? 'mt-3 text-xs text-[#5c4630]' : 'mt-3 text-xs text-[#b5b5b5]'}>
+        {row.price}
+        {row.bulk ? ` · Bulk ${row.bulk}` : ''}
+      </p>
+      {row.description && (
+        <p className={homebrew ? 'mt-3 whitespace-pre-wrap text-sm leading-6 text-[#1c140c]' : 'mt-3 whitespace-pre-wrap text-sm leading-6 text-[#f4f4f5]'}>
+          {row.description}
+        </p>
+      )}
+    </ShopPopout>
   );
 }
 

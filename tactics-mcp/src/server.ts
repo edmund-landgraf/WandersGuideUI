@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { registerCatalog } from "./catalog.js";
 import { registerHomebrew } from "./homebrew-catalog.js";
+import { registerShops } from "./shops-tools.js";
 
 export const TACTICS_MCP_VERSION = "1.0.0";
 export const TACTICS_MCP_NAME = "wgui-tactics";
@@ -62,6 +63,10 @@ const READ_TOOLS = new Set([
   "wgui_ext_hb_find_spell",
   "wgui_ext_hb_find_content_update",
   "wgui_ext_hb_get_content_source_stats",
+  "list_shops",
+  "get_shop",
+  "get_published_shop",
+  "search_shop_catalog",
 ]);
 
 const WRITE_TOOLS = new Set([
@@ -117,6 +122,18 @@ const WRITE_TOOLS = new Set([
   "wgui_ext_hb_create_spell",
   "wgui_ext_hb_create_content_update",
   "wgui_ext_hb_delete_content",
+  "create_shop",
+  "create_shop_folder",
+  "update_shop",
+  "resize_shop",
+  "add_shop_item",
+  "update_shop_item",
+  "remove_shop_item",
+  "set_shop_stock",
+  "move_shop",
+  "delete_shop",
+  "publish_shop",
+  "unpublish_shop",
 ]);
 
 export function scopeForTool(name: string) {
@@ -151,5 +168,6 @@ export function createTacticsMcpServer(userId: () => string, scopes: () => strin
 
   registerCatalog(server, userId);
   registerHomebrew(server, userId);
+  registerShops(server, userId);
   return server;
 }

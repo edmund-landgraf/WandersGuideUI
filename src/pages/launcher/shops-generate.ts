@@ -207,6 +207,95 @@ export function isShopFormula(item: Item) {
   return item.name.startsWith('Formula: ') || item.name.toLowerCase().includes('formula');
 }
 
+/** Archives of Nethys equipment shelves, most specific first. */
+const SHOP_SHELF_TRAITS: [string, string][] = [
+  ['potion', 'Potions'],
+  ['elixir', 'Elixirs'],
+  ['oil', 'Oils'],
+  ['scroll', 'Scrolls'],
+  ['talisman', 'Talismans'],
+  ['ammunition', 'Ammunition'],
+  ['bomb', 'Bombs'],
+  ['snare', 'Snares'],
+  ['poison', 'Poisons'],
+  ['drug', 'Drugs'],
+  ['spellheart', 'Spellhearts'],
+  ['grimoire', 'Grimoires'],
+  ['catalyst', 'Catalysts'],
+  ['gadget', 'Gadgets'],
+  ['tattoo', 'Tattoos'],
+];
+
+const SHOP_SHELF_ORDER = [
+  'Armor',
+  'Shields',
+  'Weapons',
+  'Runes',
+  'Materials',
+  'Potions',
+  'Elixirs',
+  'Oils',
+  'Scrolls',
+  'Talismans',
+  'Ammunition',
+  'Bombs',
+  'Snares',
+  'Poisons',
+  'Drugs',
+  'Alchemical items',
+  'Spellhearts',
+  'Grimoires',
+  'Wands',
+  'Staves',
+  'Catalysts',
+  'Gadgets',
+  'Tattoos',
+  'Worn items',
+  'Held items',
+  'Formulas',
+  'Other',
+];
+
+export function shopShelf(item: Item, traits: Trait[]) {
+  if (isShopFormula(item)) return 'Formulas';
+  const names = new Map(traits.map((trait) => [trait.id, trait.name.toLowerCase()]));
+  const labels = traitNames(item, names);
+  const category = String(item.meta_data?.category ?? '').toLowerCase();
+  const usage = usageText(item);
+  for (const [needle, shelf] of SHOP_SHELF_TRAITS) {
+    if (hasLabel(labels, needle) || category.includes(needle)) return shelf;
+  }
+  if (item.group === 'ARMOR') return 'Armor';
+  if (item.group === 'SHIELD') return 'Shields';
+  if (item.group === 'WEAPON') return 'Weapons';
+  if (item.group === 'RUNE') return 'Runes';
+  if (item.group === 'MATERIAL') return 'Materials';
+  if (item.group === 'UPGRADE') return 'Upgrades';
+  if (hasLabel(labels, 'wand') || category.includes('wand') || usage.includes('wand')) return 'Wands';
+  if (hasLabel(labels, 'staff') || category.includes('staff') || category.includes('stave') || /\bstaff\b|\bstave\b/.test(usage)) return 'Staves';
+  if (hasLabel(labels, 'alchemical') || category.includes('alchemical')) return 'Alchemical items';
+  if (usage.includes('worn')) return 'Worn items';
+  if (usage.includes('held')) return 'Held items';
+  return 'Other';
+}
+
+export function groupShopStock<T extends Item>(stock: T[], traits: Trait[]) {
+  const buckets = new Map<string, T[]>();
+  for (const item of stock) {
+    const shelf = shopShelf(item, traits);
+    const rows = buckets.get(shelf);
+    if (rows) rows.push(item);
+    else buckets.set(shelf, [item]);
+  }
+  const rank = new Map(SHOP_SHELF_ORDER.map((name, index) => [name, index]));
+  return [...buckets.entries()]
+    .sort(([left], [right]) => (rank.get(left) ?? 99) - (rank.get(right) ?? 99) || left.localeCompare(right))
+    .map(([shelf, rows]) => ({
+      shelf,
+      rows: [...rows].sort((left, right) => left.name.localeCompare(right.name) || left.level - right.level),
+    }));
+}
+
 export function shopLineQuantity(item: ShopStockItem) {
   return Math.max(1, item.shopQuantity) * Math.max(1, item.packSize);
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Item, Trait } from '@schemas/content';
-import { activeShopRarities, formatShopPrice, raritiesForSettlement, STOCK_COUNT, stockShop } from './shops-generate';
+import { activeShopRarities, formatShopPrice, groupShopStock, raritiesForSettlement, shopShelf, STOCK_COUNT, stockShop } from './shops-generate';
 
 function item(
   partial: Omit<Partial<Item>, 'meta_data'> &
@@ -189,5 +189,28 @@ describe('stockShop', () => {
       item({ id: 21, name: 'Lost Rope', group: 'GENERAL', level: 0, rarity: 'COMMON', content_source_id: 2 }),
     ];
     expect(stockShop(mixed, traits, 'general', 1, () => 0, new Set([1])).map((row) => row.name)).toEqual(['Formula: Core Rope']);
+  });
+});
+
+describe('shopShelf', () => {
+  const shelfTraits = [
+    ...traits,
+    { id: 8, name: 'Scroll' },
+  ] as Trait[];
+
+  it('uses Archives of Nethys shelves', () => {
+    expect(shopShelf(item({ id: 1, name: 'Healing Potion', group: 'GENERAL', level: 1, rarity: 'COMMON', traits: [5] }), shelfTraits)).toBe('Potions');
+    expect(shopShelf(item({ id: 2, name: 'Scroll of Fireball', group: 'GENERAL', level: 5, rarity: 'COMMON', traits: [8] }), shelfTraits)).toBe('Scrolls');
+    expect(shopShelf(item({ id: 3, name: 'Breastplate', group: 'ARMOR', level: 1, rarity: 'COMMON' }), shelfTraits)).toBe('Armor');
+    expect(shopShelf(item({ id: 4, name: 'Formula: Breastplate', group: 'ARMOR', level: 1, rarity: 'COMMON' }), shelfTraits)).toBe('Formulas');
+  });
+
+  it('keeps shelf order', () => {
+    const shelves = groupShopStock([
+      item({ id: 2, name: 'Scroll of Fireball', group: 'GENERAL', level: 5, rarity: 'COMMON', traits: [8] }),
+      item({ id: 3, name: 'Breastplate', group: 'ARMOR', level: 1, rarity: 'COMMON' }),
+      item({ id: 1, name: 'Healing Potion', group: 'GENERAL', level: 1, rarity: 'COMMON', traits: [5] }),
+    ], shelfTraits).map((section) => section.shelf);
+    expect(shelves).toEqual(['Armor', 'Potions', 'Scrolls']);
   });
 });

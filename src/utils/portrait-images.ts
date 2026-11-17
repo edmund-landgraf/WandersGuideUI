@@ -137,6 +137,11 @@ const imageStore: Record<string, ImageOption[]> = {
     { name: 'Brunna Coppervein', url: '/portraits/brunna-coppervein.jpg' },
     { name: 'Pip Underbough', url: '/portraits/pip-underbough.jpg' },
     { name: 'Korga Ashhand', url: '/portraits/korga-ashhand.jpg' },
+    { name: 'Zik-Zak Brasswhistle', url: '/portraits/zik-zak-brasswhistle.png' },
+    { name: 'Naya Moonstep', url: '/portraits/naya-moonstep.png' },
+    { name: 'Kiyomi Emberveil', url: '/portraits/kiyomi-emberveil.png' },
+    { name: 'Tavik Seven-Feathers', url: '/portraits/tavik-seven-feathers.png' },
+    { name: 'Miraq Underroot', url: '/portraits/miraq-underroot.png' },
   ],
   pathfinder_iconics: [
     {

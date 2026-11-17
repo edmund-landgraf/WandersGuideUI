@@ -1,7 +1,6 @@
 import { ENABLED_OAUTH_PROVIDERS, signInWithOAuthProvider } from '@auth/campaign-auth';
 import { fetchContentAll, fetchContentById, fetchContentSources } from '@content/content-store';
 import { StrictMode, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import type { ContentSource, Item, Trait } from '@schemas/content';
 import { supabase } from '../../supabase-client';
@@ -17,6 +16,7 @@ import {
   listShopPool,
   SETTLEMENT_LEVELS,
   shopCeiling,
+  groupShopStock,
   shopLineQuantity,
   SHOP_PRESETS,
   SHOP_RARITIES,
@@ -29,11 +29,12 @@ import {
   type ShopStockItem,
 } from './shops-generate';
 import { fetchPf2eShopCatalog, isPf2eShopItem, mergeShopCatalog, pf2eTraits } from './shops-pf2e';
+import { ShopPopout } from './shop-popout';
 import { collectShopCards, shopExportHtml } from './shops-export';
 import { ShopsLibrary } from './shops-library';
 import { HOMEBREW_CSS, ShopDocument, ShopsPublic } from './shops-public';
-import { SHOP_CONTENT_KIND, shopDraft, type ShopDraft, type ShopPageStyle } from './shops-syndicate';
-import { insertNode, listOwned } from '../../syndication/store';
+import { SHOP_CONTENT_KIND, shopDraft, stockCatalogId, stockSource, type ShopDraft, type ShopPageStyle } from './shops-syndicate';
+import { insertNode, listOwned, updateOwned } from '../../syndication/store';
 import './launcher.css';
 
 const BOOK_GROUPS = [
@@ -66,84 +67,37 @@ function itemCardText(value: string) {
     .trim();
 }
 
-function ShopItemName({ item, traits, markup }: { item: Item; traits: Trait[]; markup: number }) {
-  const anchor = useRef<HTMLButtonElement>(null);
-  const showTimer = useRef(0);
-  const hideTimer = useRef(0);
-  const [box, setBox] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+function ShopItemName({ item, traits, markup, aon }: { item: Item; traits: Trait[]; markup: number; aon?: boolean }) {
   const traitNames = (item.traits ?? [])
     .map((id) => traits.find((trait) => trait.id === id)?.name)
     .filter((name): name is string => Boolean(name));
   const description = itemCardText(item.description);
 
-  const clearTimers = () => {
-    window.clearTimeout(showTimer.current);
-    window.clearTimeout(hideTimer.current);
-  };
-  const open = () => {
-    const node = anchor.current;
-    if (!node) return;
-    const rect = node.getBoundingClientRect();
-    const width = 360;
-    const left = Math.min(rect.left, window.innerWidth - width - 12);
-    const above = window.innerHeight - rect.bottom < 220;
-    setBox(above
-      ? { left: Math.max(12, left), bottom: window.innerHeight - rect.top + 6 }
-      : { left: Math.max(12, left), top: rect.bottom + 6 });
-  };
-  useEffect(() => () => clearTimers(), []);
-
   return (
-    <>
-      <button
-        ref={anchor}
-        type='button'
-        className='text-left underline decoration-white/25 underline-offset-2 hover:decoration-white/70'
-        onMouseEnter={() => {
-          clearTimers();
-          showTimer.current = window.setTimeout(open, 250);
-        }}
-        onMouseLeave={() => {
-          clearTimers();
-          hideTimer.current = window.setTimeout(() => setBox(null), 120);
-        }}
-        onFocus={open}
-        onBlur={() => setBox(null)}
-      >
-        {item.name}
-      </button>
-      {box && createPortal(
-        <div
-          className='w-[360px] max-h-[min(50vh,420px)] overflow-y-auto rounded-xl bg-[#1c1c1c] p-4 text-left text-[#fafafa] shadow-2xl ring-1 ring-white/25'
-          style={{ position: 'fixed', zIndex: 40, left: box.left, top: box.top, bottom: box.bottom }}
-          onMouseEnter={clearTimers}
-          onMouseLeave={() => {
-            clearTimers();
-            hideTimer.current = window.setTimeout(() => setBox(null), 120);
-          }}
-        >
-          <p className='font-heading text-base text-[#fafafa]'>{item.name}</p>
-          <p className='mt-1 text-[11px] uppercase tracking-wide text-[#b5b5b5]'>
-            Level {item.level} · {item.rarity} · {isShopFormula(item) ? 'FORMULA' : (item.group ?? '').replaceAll('_', ' ')}
-          </p>
-          {traitNames.length > 0 && (
-            <div className='mt-2 flex flex-wrap gap-1'>
-              {traitNames.map((name) => (
-                <span key={name} className='rounded bg-white/10 px-1.5 py-0.5 text-[10px] uppercase text-[#d4d4d4]'>
-                  {name}
-                </span>
-              ))}
-            </div>
-          )}
-          <p className='mt-3 text-xs text-[#b5b5b5]'>
-            {formatShopOffer(asShopLine(item), markup)}
-            {item.bulk ? ` · Bulk ${item.bulk}` : ''}
-          </p>
-          {description && <p className='mt-3 whitespace-pre-wrap text-sm leading-6 text-[#f4f4f5]'>{description}</p>}
-        </div>,
-        document.body
+    <ShopPopout
+      label={item.name}
+      href={aon ? `https://2e.aonprd.com/Equipment.aspx?ID=${Math.abs(item.id)}` : undefined}
+      cardClassName='w-[360px] max-h-[min(50vh,420px)] overflow-y-auto rounded-xl bg-[#1c1c1c] p-4 text-left text-[#fafafa] shadow-2xl ring-1 ring-white/25'
+      titleClassName='font-heading text-base text-[#fafafa]'
+    >
+      <p className='text-[11px] uppercase tracking-wide text-[#b5b5b5]'>
+        Level {item.level} · {item.rarity} · {isShopFormula(item) ? 'FORMULA' : (item.group ?? '').replaceAll('_', ' ')}
+      </p>
+      {traitNames.length > 0 && (
+        <div className='mt-2 flex flex-wrap gap-1'>
+          {traitNames.map((name) => (
+            <span key={name} className='rounded bg-white/10 px-1.5 py-0.5 text-[10px] uppercase text-[#d4d4d4]'>
+              {name}
+            </span>
+          ))}
+        </div>
       )}
-    </>
+      <p className='mt-3 text-xs text-[#b5b5b5]'>
+        {formatShopOffer(asShopLine(item), markup)}
+        {item.bulk ? ` · Bulk ${item.bulk}` : ''}
+      </p>
+      {description && <p className='mt-3 whitespace-pre-wrap text-sm leading-6 text-[#f4f4f5]'>{description}</p>}
+    </ShopPopout>
   );
 }
 
@@ -291,7 +245,10 @@ function ShopsPage() {
   const [shopDescription, setShopDescription] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveNote, setSaveNote] = useState('');
+  const [openedId, setOpenedId] = useState<string | null>(null);
+  const [campaignId, setCampaignId] = useState<number | null>(null);
   const [edited, setEdited] = useState(false);
+  const [useGroupings, setUseGroupings] = useState(false);
   const [removed, setRemoved] = useState<{ item: ShopStockItem; index: number } | null>(null);
 
   useEffect(() => {
@@ -313,7 +270,7 @@ function ShopsPage() {
         try {
           pf2eList = await fetchPf2eShopCatalog();
         } catch (cause) {
-          if (!cancelled) setPf2eError(cause instanceof Error ? cause.message : 'Could not load the local PF2E catalog.');
+          if (!cancelled) setPf2eError(cause instanceof Error ? cause.message : 'Could not load the PF2E catalog.');
         }
         if (cancelled) return;
         const combinedItems = mergeShopCatalog(itemList, pf2eList);
@@ -347,6 +304,16 @@ function ShopsPage() {
     }),
     [drawFromPf2e, drawFromWanderersGuide, enabledBooks, items],
   );
+  const sourceCounts = useMemo(() => {
+    const books = new Set(enabledBooks);
+    let wanderersGuide = 0;
+    let pf2e = 0;
+    for (const item of items) {
+      if (isPf2eShopItem(item)) pf2e += 1;
+      else if (books.has(item.content_source_id)) wanderersGuide += 1;
+    }
+    return { wanderersGuide, pf2e };
+  }, [enabledBooks, items]);
 
   useEffect(() => {
     const id = new URLSearchParams(location.search).get('id');
@@ -358,20 +325,33 @@ function ShopsPage() {
       const draft = node?.draft as ShopDraft | null | undefined;
       if (!draft || cancelled) return;
       const loaded = (await Promise.all(draft.stock.map(async (row) => {
-        const found = items.find((item) => item.id === row.id);
+        const found = items.find((item) => {
+          if (row.source) return stockSource(item) === row.source && stockCatalogId(item) === row.id;
+          return item.id === row.id;
+        });
         if (found) return found;
+        if (row.source === 'pf2e') return undefined;
         return fetchContentById<Item>('item', row.id);
       }))).filter((item): item is Item => Boolean(item));
       if (cancelled) return;
+      setOpenedId(id);
       setPreset(draft.preset);
       setSettlement(SETTLEMENT_LEVELS.some((row) => row.id === draft.settlement) ? draft.settlement : 'village');
-      setRarities([]);
+      setRarities((draft.rarities ?? []).filter((row): row is ShopRarity => SHOP_RARITIES.includes(row)));
       setMarkup(draft.markup ?? 0);
       setPageStyle(draft.style === 'homebrew-v3' ? 'homebrew-v3' : 'default');
-      setStockCount(loaded.length || STOCK_COUNT);
+      setStockCount(draft.size ?? loaded.length || STOCK_COUNT);
       setShopName(node?.name ?? '');
       setShopDescription(draft.description ?? '');
-      setStock(loaded.map((item) => asShopLine(item)));
+      setCampaignId(draft.campaignId ?? null);
+      if (draft.books?.length) setEnabledBooks(draft.books);
+      if (draft.sources?.length) {
+        setDrawFromWanderersGuide(draft.sources.includes('wanderers-guide'));
+        setDrawFromPf2e(draft.sources.includes('pf2e'));
+      }
+      const lines = loaded.map((item) => asShopLine(item));
+      setStock(lines);
+      setUseGroupings(lines.length > 20);
       setEdited(false);
       setRemoved(null);
       lastStockIds.current = new Set(loaded.map((item) => item.id));
@@ -420,6 +400,7 @@ function ShopsPage() {
                 );
                 lastStockIds.current = new Set(next.map((row) => row.id));
                 setStock(next);
+                setUseGroupings(next.length > 20);
                 setEdited(false);
                 setRemoved(null);
                 setPanel('stock');
@@ -454,26 +435,27 @@ function ShopsPage() {
                   ))}
                 </select>
               </label>
-              <fieldset className='grid gap-2 text-sm text-muted-foreground'>
-                <legend>Data sources</legend>
-                <div className='flex flex-wrap gap-x-4 gap-y-1'>
-                  <label className='flex items-center gap-2 text-foreground'>
-                    <input type='checkbox' checked={drawFromWanderersGuide} onChange={(event) => setDrawFromWanderersGuide(event.target.checked)} />
-                    Draw from Wanderer&apos;s Guide
+              <div className='grid gap-2 text-sm text-muted-foreground'>
+                <span>Data sources</span>
+                <div className='flex flex-wrap gap-2'>
+                  <label className='flex h-10 items-center gap-2 rounded-lg bg-card px-3 text-foreground ring-1 ring-white/15' title={`${sourceCounts.wanderersGuide.toLocaleString()} items from the checked books`}>
+                    <input className='size-4 shrink-0 accent-sky-400' type='checkbox' checked={drawFromWanderersGuide} onChange={(event) => setDrawFromWanderersGuide(event.target.checked)} />
+                    Wanderer&apos;s Guide
                   </label>
-                  <label className='flex items-center gap-2 text-foreground'>
-                    <input type='checkbox' checked={drawFromPf2e} onChange={(event) => setDrawFromPf2e(event.target.checked)} />
-                    Draw from local PF2E database
+                  <label className='flex h-10 items-center gap-2 rounded-lg bg-card px-3 text-foreground ring-1 ring-white/15' title={`${sourceCounts.pf2e.toLocaleString()} items`}>
+                    <input className='size-4 shrink-0 accent-sky-400' type='checkbox' checked={drawFromPf2e} onChange={(event) => setDrawFromPf2e(event.target.checked)} />
+                    PF2E database
                   </label>
                 </div>
-              </fieldset>
-              {pf2eError && <p className='basis-full text-xs text-amber-300'>Local PF2E database unavailable: {pf2eError}</p>}
-              <fieldset className='grid gap-2 text-sm text-muted-foreground'>
-                <legend>Rarity</legend>
-                <div className='flex flex-wrap gap-x-4 gap-y-1'>
+              </div>
+              {pf2eError && <p className='basis-full text-xs text-amber-300'>PF2E database unavailable: {pf2eError}</p>}
+              <div className='grid gap-2 text-sm text-muted-foreground'>
+                <span>Rarity</span>
+                <div className='flex h-10 flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-card px-3 text-foreground ring-1 ring-white/15'>
                   {SHOP_RARITIES.map((rarity) => (
-                    <label key={rarity} className='flex items-center gap-2 text-foreground'>
+                    <label key={rarity} className='flex items-center gap-2'>
                       <input
+                        className='size-4 shrink-0 accent-sky-400'
                         type='checkbox'
                         checked={rarities.includes(rarity)}
                         onChange={(event) => {
@@ -488,7 +470,7 @@ function ShopsPage() {
                     </label>
                   ))}
                 </div>
-              </fieldset>
+              </div>
               <label className='grid gap-2 text-sm text-muted-foreground'>
                 Inventory size
                 <input
@@ -596,14 +578,38 @@ function ShopsPage() {
                       if (!name || !stock) return;
                       setSaving(true);
                       setSaveNote('');
-                      void insertNode({
-                        content_kind: SHOP_CONTENT_KIND,
-                        kind: 'entry',
-                        name,
-                        parent_id: null,
-                        draft: shopDraft(preset, settlement, stock, traits, markup, pageStyle, shopDescription),
-                      })
-                        .then(() => setSaveNote('Saved. Open Saved shops to publish it.'))
+                      const sources = [
+                        ...(drawFromWanderersGuide ? (['wanderers-guide'] as const) : []),
+                        ...(drawFromPf2e ? (['pf2e'] as const) : []),
+                      ];
+                      const draft = shopDraft(preset, settlement, stock, traits, markup, pageStyle, shopDescription, {
+                        sources,
+                        books: enabledBooks,
+                        rarities,
+                        size: stockCount,
+                        campaignId,
+                      });
+                      const save = openedId
+                        ? listOwned(SHOP_CONTENT_KIND).then((rows) => {
+                            const node = rows.find((row) => row.id === openedId && row.kind === 'entry');
+                            if (!node) throw new Error('Could not find this shop.');
+                            return updateOwned(node, { name, draft });
+                          })
+                        : insertNode({
+                            content_kind: SHOP_CONTENT_KIND,
+                            kind: 'entry',
+                            name,
+                            parent_id: null,
+                            draft,
+                          });
+                      void save
+                        .then((node) => {
+                          setOpenedId(node.id);
+                          const url = new URL(location.href);
+                          url.searchParams.set('id', node.id);
+                          history.replaceState({}, '', url);
+                          setSaveNote(openedId ? 'Saved.' : 'Saved. Open Saved shops to publish it.');
+                        })
                         .catch((cause: unknown) => {
                           setSaveNote(cause instanceof Error ? cause.message : 'Could not save this shop.');
                         })
@@ -645,6 +651,14 @@ function ShopsPage() {
                 >
                   Books
                 </button>
+                <label className='mb-2 ml-auto flex items-center gap-2 pr-2 text-sm text-muted-foreground'>
+                  <input
+                    type='checkbox'
+                    checked={useGroupings}
+                    onChange={(event) => setUseGroupings(event.target.checked)}
+                  />
+                  Use groupings
+                </label>
               </div>
               {panel === 'books' ? (
                 <div className='grid gap-5 p-6' role='tabpanel'>
@@ -763,11 +777,23 @@ function ShopsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {stock.map((row, index) => (
+                        {(useGroupings ? groupShopStock(stock, traits) : [{ shelf: '', rows: stock }]).flatMap((section) => {
+                          const header = section.shelf ? [(
+                            <tr className='border-t border-white/10 bg-white/5' key={`shelf-${section.shelf}`}>
+                              <th className='px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground' colSpan={7} scope='rowgroup'>
+                                {section.shelf}
+                              </th>
+                            </tr>
+                          )] : [];
+                          return [
+                            ...header,
+                            ...section.rows.map((row) => {
+                          const index = stock.findIndex((item) => item.shopKey === row.shopKey);
+                          return (
                           <tr className='border-t border-white/10' key={row.shopKey}>
                             <td className='px-4 py-3'>{shopLineQuantity(row)} ×</td>
                             <td className='px-4 py-3'>
-                              <ShopItemName item={row} traits={traits} markup={markup} />
+                              <ShopItemName item={row} traits={traits} markup={markup} aon={drawFromPf2e && !drawFromWanderersGuide} />
                             </td>
                             <td className='px-4 py-3'>{row.level}</td>
                             <td className='px-4 py-3'>{row.rarity}</td>
@@ -788,7 +814,10 @@ function ShopsPage() {
                               </button>
                             </td>
                           </tr>
-                        ))}
+                          );
+                            }),
+                          ];
+                        })}
                       </tbody>
                     </table>
                   )}

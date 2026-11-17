@@ -362,8 +362,8 @@
     {
       "weekStart": "2026-10-26",
       "label": "Oct 26 – Nov 1, 2026",
-      "count": 27,
-      "summary": "Add a Phase 1 homebrew page so bundle links stay in the new UI, and hide empty item bulk. Paginate Phase 1 homebrew bundles, unlock keyed packs, and show item images with content feedback. Let the phase switch treat Homebrew as a section so the Phase 1 header type-checks. Give Phase 1 its own homebrew editors and expose the homebrew catalog on the tactics MCP. Add a test plan for the homebrew tactics MCP tools. Add an admin Players tab so staff can open characters, and keep the homebrew editor in the app. Plus 21 more.",
+      "count": 37,
+      "summary": "Add a Phase 1 homebrew page so bundle links stay in the new UI, and hide empty item bulk. Paginate Phase 1 homebrew bundles, unlock keyed packs, and show item images with content feedback. Let the phase switch treat Homebrew as a section so the Phase 1 header type-checks. Give Phase 1 its own homebrew editors and expose the homebrew catalog on the tactics MCP. Add a test plan for the homebrew tactics MCP tools. Add an admin Players tab so staff can open characters, and keep the homebrew editor in the app. Plus 31 more.",
       "subjects": [
         "Add a Phase 1 homebrew page so bundle links stay in the new UI, and hide empty item bulk.",
         "Paginate Phase 1 homebrew bundles, unlock keyed packs, and show item images with content feedback.",
@@ -391,24 +391,54 @@
         "Let the GM show or hide encounters from players, and pin campaign-home roster previews as windows.",
         "Let GMs group campaign-home encounters into nested folders.",
         "Expand campaign-home party rows with linked stats, and let GMs multi-select encounters into folders.",
-        "Show campaign-home party max HP from the character sheet, sharing the store prepare queue so the lookup does not deadlock."
+        "Show campaign-home party max HP from the character sheet, sharing the store prepare queue so the lookup does not deadlock.",
+        "Honor player_visible so a shown encounter reaches the whole party and a hidden one stays hidden, and let GMs add or delete the matching campaign note from the encounter menu.",
+        "Let players open shared campaign notes and the encounter rail, and load party stat windows through the sheet character API.",
+        "Show a real missing-page fallback, tighten the character sheet header, and let players roll challenges on their own characters while campaign encounters still load when the campaign query comes back empty.",
+        "Let GMs unmask combatants so players see the encounter the way the GM does, save an art password on the account page, and load local Pathfinder art through the Vite proxy.",
+        "Let players add and leave the campaign party when the setting allows it, through a party-only patch so they cannot rewrite the rest of the campaign.",
+        "Keep a rested character out of the party by polling campaign membership and ignoring reads that drop party_ids, and surface party-patch failures instead of a generic edge error.",
+        "Move encounters below campaign settings in the rail and open them when one is selected, and let party rest and return follow who can edit the party.",
+        "Guard edge error body reads so a response without json or text still falls back to the SDK message.",
+        "Load weekly changelog notes from generated git history with topic filters, and open creature stat windows from the combatant menu with larger art.",
+        "Use campaign artwork on the Phase 1 character sheet when the campaign has an image, including its vertical focus, and keep personal background editing off while that art is showing."
       ]
     },
     {
       "weekStart": "2026-11-02",
       "label": "Nov 2 – Nov 8, 2026",
-      "count": 9,
-      "summary": "Campaign lists and sheets take on the campaign color, and portraits still appear when file hosting is limited. The assistant tool directory now documents 95 tools. The character menu stays fully on screen, and temporary hit points read 0 when a character has none. A GM can remove their own characters from a campaign, remove another player's character, and keep the party list in step. Removing a character from a campaign no longer breaks when there is no sign-in session. Plus 4 more.",
+      "count": 11,
+      "summary": "Let site admins manage a campaign party without a character on it, and keep the sheet toolbar compact while party members can be reordered by drag. Drop the site-admin party bypass so only the GM or a player with a character can edit the party, and let roster portraits open full art. docs(tactics-mcp): add 67-tool directory and MCP client/self-hosting guide. docs(tactics-mcp): add nginx-only reverse proxy option. docs(tactics-mcp): include character create and edit in the encounters skill. Plus 6 more.",
       "subjects": [
-        "Campaign lists and sheets take on the campaign color, and portraits still appear when file hosting is limited.",
-        "The assistant tool directory now documents 95 tools.",
-        "The character menu stays fully on screen, and temporary hit points read 0 when a character has none.",
-        "A GM can remove their own characters from a campaign, remove another player's character, and keep the party list in step.",
-        "Removing a character from a campaign no longer breaks when there is no sign-in session.",
-        "Portrait paths saved on the site still show for characters on the campaign and on Amba.",
-        "Import one character from Foundry, review it before anything is saved, and re-import that same actor by world and actor so a second copy is not created.",
-        "A local relay can read one Foundry character for that import. The Foundry module is not available yet, so this is groundwork and characters do not sync from Foundry on their own.",
-        "Sample NPC portraits are included, and campaign demo videos are served with the site."
+        "Let site admins manage a campaign party without a character on it, and keep the sheet toolbar compact while party members can be reordered by drag.",
+        "Drop the site-admin party bypass so only the GM or a player with a character can edit the party, and let roster portraits open full art.",
+        "docs(tactics-mcp): add 67-tool directory and MCP client/self-hosting guide.",
+        "docs(tactics-mcp): add nginx-only reverse proxy option.",
+        "docs(tactics-mcp): include character create and edit in the encounters skill.",
+        "Document importing Foundry PCs into Wanderer's Guide.",
+        "Tint campaign lists and encounter sheets with the campaign color, and fall back when image hosting is gated.",
+        "Expand the Foundry → Wanderer's Guide import design (#26).",
+        "Resolve site-relative portrait URLs on wgui and amba (#27).",
+        "Add a Foundry PC import dialog and plan so a character can be reviewed before any write.",
+        "Document replacing the campaign page poll with a Realtime broadcast refetch."
+      ]
+    },
+    {
+      "weekStart": "2026-11-09",
+      "label": "Nov 9 – Nov 15, 2026",
+      "count": 1,
+      "summary": "Document the 2 Nov 2026 Aragorn MCP session. (#33).",
+      "subjects": [
+        "Document the 2 Nov 2026 Aragorn MCP session. (#33)."
+      ]
+    },
+    {
+      "weekStart": "2026-11-16",
+      "label": "Nov 16 – Nov 22, 2026",
+      "count": 1,
+      "summary": "Expand shop catalogs with PF2E database sources.",
+      "subjects": [
+        "Expand shop catalogs with PF2E database sources."
       ]
     }
   ]

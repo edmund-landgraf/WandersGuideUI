@@ -91,6 +91,15 @@ export function updateOwnedSnapshot<T>(node: SyndicatedNode<T>) {
   return writePublishState(updateSnapshot(node));
 }
 
+export async function updateOwned<T>(node: SyndicatedNode<T>, patch: { name?: string; draft?: T }) {
+  const body: Record<string, unknown> = {};
+  if (patch.name !== undefined) body.name = patch.name;
+  if (patch.draft !== undefined) body.draft = patch.draft;
+  const { data, error } = await supabase.from(TABLE).update(body).eq('id', node.id).select('*').single();
+  fail(error);
+  return data as SyndicatedNode<T>;
+}
+
 export async function patchOwnedDraft<T>(node: SyndicatedNode<T>, patch: Partial<T>) {
   if (node.draft == null) throw new Error('Nothing to update.');
   const draft = { ...node.draft, ...patch };

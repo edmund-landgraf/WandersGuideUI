@@ -9,9 +9,11 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { allowedMcpRedirect, consumeCode, gotrueChallenge, issueCode, rememberLogin, takeLogin } from "./oauth.js";
 import { createTacticsMcpServer, TACTICS_MCP_NAME } from "./server.js";
 import { installSupabaseReader } from "./supabase-reader.js";
+import { isShopApiPath, handleShopApi } from "./shops-http.js";
 import { KNOWN_SCOPES, listTokens, mintToken, normalizeScopes, resolveBearer, revokeToken } from "./tokens.js";
 
 const MCP_BODY_BYTES = 64 * 1024;
+const SHOP_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_INFLIGHT = 64;
 const REQUEST_TIMEOUT_MS = 30_000;
 
@@ -40,7 +42,7 @@ function sendJson(res: ServerResponse, status: number, body: unknown, extra?: Re
     "Content-Length": Buffer.byteLength(payload),
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "authorization, content-type, mcp-session-id, mcp-protocol-version",
-    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
     ...extra,
   });
   res.end(payload);
@@ -50,19 +52,23 @@ function pathOf(url: string) {
   return url.split("?")[0] ?? "/";
 }
 
+function methodNeedsBody(method: string | undefined) {
+  return method === "POST" || method === "PATCH";
+}
+
 function readBearer(req: IncomingMessage) {
   const header = req.headers.authorization;
   if (!header || Array.isArray(header) || !header.toLowerCase().startsWith("bearer ")) return undefined;
   return header.slice("bearer ".length).trim();
 }
 
-async function readJson(req: IncomingMessage) {
+async function readJson(req: IncomingMessage, limit = MCP_BODY_BYTES) {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
-    if (size > MCP_BODY_BYTES) throw new Error("PAYLOAD_TOO_LARGE");
+    if (size > limit) throw new Error("PAYLOAD_TOO_LARGE");
     chunks.push(buffer);
   }
   if (!chunks.length) return undefined;
@@ -204,7 +210,7 @@ export function startTacticsHttp() {
           res.writeHead(204, {
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Headers": "authorization, content-type, mcp-session-id, mcp-protocol-version, x-wgui-user",
-            "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+            "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
           });
           res.end();
           return;
@@ -432,6 +438,11 @@ else fetch("/oauth/mcp/callback", { method: "POST", headers: { "content-type": "
               res.writeHead(204, { "Access-Control-Allow-Origin": "*" });
               res.end();
             }
+            return;
+          }
+          if (isShopApiPath(path)) {
+            const parsed = methodNeedsBody(req.method) ? await readJson(req, SHOP_BODY_BYTES) : undefined;
+            await handleShopApi(req, res, path, row.userId, row.scopes, parsed);
             return;
           }
           if (path === "/mcp") {

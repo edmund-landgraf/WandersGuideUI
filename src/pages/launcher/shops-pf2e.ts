@@ -31,7 +31,9 @@ type Pf2eEquipmentResponse = {
 export const PF2E_SHOP_SOURCE = 'pf2e-local';
 
 function apiBase() {
-  return import.meta.env.DEV ? '/local-pf' : 'http://localhost:3333';
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
+  if (host === 'localhost' || host === '127.0.0.1' || import.meta.env.DEV) return 'http://127.0.0.1:3333';
+  return 'https://pf2.unwhelm.online';
 }
 
 function normalize(value: string | null | undefined) {

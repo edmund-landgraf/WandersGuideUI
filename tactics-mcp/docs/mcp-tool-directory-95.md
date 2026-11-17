@@ -1,8 +1,8 @@
-# WGUI MCP tool directory (95 tools)
+# WGUI MCP tool directory (112 tools)
 
 Generated Nov 3, 2026 from the live `wgui` MCP server tool list, with scopes checked against `READ_TOOLS` / `WRITE_TOOLS` in `src/server.ts`.
 
-**95 tools: 44 require `read`, 51 require `write`.** This includes the 7 campaign/encounter create-update tools in the section below. `tools/list` returns every tool for any token; scope is enforced at call time. The 20 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (27), character (28), homebrew `wgui_ext_hb_*` (30), plus campaign/encounter writes. Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
+**112 tools: 48 require `read`, 64 require `write`.** This includes the 7 campaign/encounter create-update tools and 16 shop tools. `tools/list` returns every tool for any token; scope is enforced at call time. The 20 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (27), character (28), homebrew `wgui_ext_hb_*` (30), shops (16), plus campaign/encounter writes. Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
 
 Common encounter params: `campaignId`, `encounterId`, and for per-combatant tools `combatantId`.
 
@@ -135,6 +135,29 @@ The encounter table has no `notes` column (`EncounterSchema` is name, icon, colo
 | `create_encounter` | write | Insert via `create-encounter`. Omit `campaignId` for standalone (`campaign_id: null`); pass it to file under an owned campaign | none (`name`, `description`, `campaignId`, `meta_data` optional) |
 | `update_encounter` | write | Merge name/description/`meta_data` then `create-encounter`. No notes column. Does not change `campaign_id` | `encounterId` |
 | `set_encounter_campaign` | write | Attach an owned encounter to an owned campaign, or detach (`campaignId` null) | `encounterId`, `campaignId` (nullable) |
+
+## Shops (16: 4 read, 12 write)
+
+Saved shops live in `syndicated_nodes` with `content_kind: shop`. Each stock line has `source` (`wanderers-guide` or `pf2e`). Line keys are `wanderers-guide:{id}`, `pf2e:{id}`, or with `:formula`. The same operations are on `GET/POST/PATCH/DELETE /api/shops`.
+
+| Tool | Scope | What it does / returns | Required params |
+| --- | --- | --- | --- |
+| `list_shops` | read | Owned folders and entries; list omits stock descriptions | none |
+| `get_shop` | read | One owned draft plus stock line keys | `shopId` |
+| `get_published_shop` | read | Snapshot from `syndicated_public` | `token` |
+| `search_shop_catalog` | read | WG and/or PF2E equipment hits with `source` | none (`q`, `source`) |
+| `create_shop` | write | Insert entry; `generate` stocks from catalogs | `name` |
+| `create_shop_folder` | write | Root folder | `name` |
+| `update_shop` | write | Rename and patch draft, including `campaignId` | `shopId` |
+| `resize_shop` | write | Regenerate stock to `size` 1–100 | `shopId`, `size` |
+| `add_shop_item` | write | Add one catalog item; `source` required | `shopId`, `source`, `itemId` |
+| `update_shop_item` | write | Quantity and/or price on a line key | `shopId`, `key` |
+| `remove_shop_item` | write | Remove a line key | `shopId`, `key` |
+| `set_shop_stock` | write | Replace from catalog refs or regenerate | `shopId` |
+| `move_shop` | write | Move into a root folder or to root | `shopId`, `parentId` |
+| `delete_shop` | write | Delete shop or folder | `shopId` |
+| `publish_shop` | write | Publish or refresh the public snapshot | `shopId` |
+| `unpublish_shop` | write | Clear published flag | `shopId` |
 
 ## Known write gaps
 
