@@ -13,7 +13,7 @@ import {
   formatShopOffer,
   isShopFormula,
   activeShopRarities,
-  DEFAULT_SHOP_BOOKS,
+  DEFAULT_SHOP_EXCLUDED_GROUPS,
   listShopPool,
   SETTLEMENT_LEVELS,
   shopCeiling,
@@ -28,6 +28,7 @@ import {
   type ShopRarity,
   type ShopStockItem,
 } from './shops-generate';
+import { fetchPf2eShopCatalog, isPf2eShopItem, mergeShopCatalog, pf2eTraits } from './shops-pf2e';
 import { collectShopCards, shopExportHtml } from './shops-export';
 import { ShopsLibrary } from './shops-library';
 import { HOMEBREW_CSS, ShopDocument, ShopsPublic } from './shops-public';
@@ -272,6 +273,9 @@ function ShopsPage() {
   const [traits, setTraits] = useState<Trait[]>([]);
   const [books, setBooks] = useState<ContentSource[]>([]);
   const [enabledBooks, setEnabledBooks] = useState<number[]>([]);
+  const [drawFromWanderersGuide, setDrawFromWanderersGuide] = useState(true);
+  const [drawFromPf2e, setDrawFromPf2e] = useState(true);
+  const [pf2eError, setPf2eError] = useState('');
   const [panel, setPanel] = useState<'stock' | 'books'>('stock');
   const [stock, setStock] = useState<ShopStockItem[] | null>(null);
   const lastStockIds = useRef<Set<number>>(new Set());
@@ -305,16 +309,25 @@ function ShopsPage() {
           fetchContentAll<Item>('item', sourceIds),
           fetchContentAll<Trait>('trait', sourceIds),
         ]);
+        let pf2eList: Item[] = [];
+        try {
+          pf2eList = await fetchPf2eShopCatalog();
+        } catch (cause) {
+          if (!cancelled) setPf2eError(cause instanceof Error ? cause.message : 'Could not load the local PF2E catalog.');
+        }
         if (cancelled) return;
-        if (itemList.length === 0) {
+        const combinedItems = mergeShopCatalog(itemList, pf2eList);
+        const combinedTraits = [...traitList, ...pf2eTraits(pf2eList)];
+        if (combinedItems.length === 0) {
           setError('The item catalog came back empty.');
           return;
         }
-        setItems(itemList);
-        setTraits(traitList);
+        setItems(combinedItems);
+        setTraits(combinedTraits);
         setBooks(sources);
-        const preferred = new Set(DEFAULT_SHOP_BOOKS.map((name) => name.toLowerCase()));
-        const defaults = sources.filter((book) => preferred.has(book.name.toLowerCase())).map((book) => book.id);
+        const defaults = sources
+          .filter((book) => !DEFAULT_SHOP_EXCLUDED_GROUPS.has(book.group ?? ''))
+          .map((book) => book.id);
         setEnabledBooks(defaults.length > 0 ? defaults : sourceIds);
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : 'Could not load items.');
@@ -326,6 +339,14 @@ function ShopsPage() {
       cancelled = true;
     };
   }, []);
+
+  const activeItems = useMemo(
+    () => items.filter((item) => {
+      if (isPf2eShopItem(item)) return drawFromPf2e;
+      return drawFromWanderersGuide && enabledBooks.includes(item.content_source_id);
+    }),
+    [drawFromPf2e, drawFromWanderersGuide, enabledBooks, items],
+  );
 
   useEffect(() => {
     const id = new URLSearchParams(location.search).get('id');
@@ -387,12 +408,12 @@ function ShopsPage() {
                 event.preventDefault();
                 if (edited && !window.confirm('Replace the current counter? Added and removed items will be lost.')) return;
                 const next = stockShop(
-                  items,
+                  activeItems,
                   traits,
                   preset,
                   shopCeiling(preset, settlement),
                   Math.random,
-                  new Set(enabledBooks),
+                  undefined,
                   lastStockIds.current,
                   stockCount,
                   new Set(activeShopRarities(rarities, settlement)),
@@ -433,6 +454,20 @@ function ShopsPage() {
                   ))}
                 </select>
               </label>
+              <fieldset className='grid gap-2 text-sm text-muted-foreground'>
+                <legend>Data sources</legend>
+                <div className='flex flex-wrap gap-x-4 gap-y-1'>
+                  <label className='flex items-center gap-2 text-foreground'>
+                    <input type='checkbox' checked={drawFromWanderersGuide} onChange={(event) => setDrawFromWanderersGuide(event.target.checked)} />
+                    Draw from Wanderer&apos;s Guide
+                  </label>
+                  <label className='flex items-center gap-2 text-foreground'>
+                    <input type='checkbox' checked={drawFromPf2e} onChange={(event) => setDrawFromPf2e(event.target.checked)} />
+                    Draw from local PF2E database
+                  </label>
+                </div>
+              </fieldset>
+              {pf2eError && <p className='basis-full text-xs text-amber-300'>Local PF2E database unavailable: {pf2eError}</p>}
               <fieldset className='grid gap-2 text-sm text-muted-foreground'>
                 <legend>Rarity</legend>
                 <div className='flex flex-wrap gap-x-4 gap-y-1'>
@@ -583,7 +618,7 @@ function ShopsPage() {
               {!loading && !needsSignIn && !error && items.length > 0 && (
                 <p className='basis-full text-xs text-muted-foreground'>
                   {(() => {
-                    const pool = listShopPool(items, traits, preset, shopCeiling(preset, settlement), new Set(enabledBooks), new Set(activeShopRarities(rarities, settlement))).length;
+                    const pool = listShopPool(activeItems, traits, preset, shopCeiling(preset, settlement), undefined, new Set(activeShopRarities(rarities, settlement))).length;
                     return `Drawing ${Math.min(stockCount, pool)} of ${pool} matching items.`;
                   })()}
                 </p>
@@ -675,7 +710,7 @@ function ShopsPage() {
                   })}
                 </div>
               ) : loading ? (
-                <p className='p-6 text-sm text-muted-foreground'>Loading official items…</p>
+                <p className='p-6 text-sm text-muted-foreground'>Loading item catalogs…</p>
               ) : needsSignIn ? (
                 <div className='grid gap-3 p-6'>
                   <p className='text-sm text-muted-foreground'>Sign in to load the official item catalog.</p>
@@ -701,8 +736,8 @@ function ShopsPage() {
               ) : (
                 <div role='tabpanel'>
                   <ShopAddItem
-                    items={items}
-                    enabledBooks={enabledBooks}
+                    items={activeItems}
+                    enabledBooks={[]}
                     stockIds={new Set(stock.map((row) => row.id))}
                     markup={markup}
                     onAdd={(item) => {

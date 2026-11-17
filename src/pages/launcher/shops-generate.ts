@@ -58,18 +58,8 @@ export const STOCK_COUNT = 15;
 /** Armor, blacksmith, and gunsmith use the full 0–20 catalog. They are not capped by settlement. */
 export const WIDE_CATALOG_PRESETS = new Set<ShopPresetId>(['armorer', 'blacksmith', 'gunsmith']);
 
-/**
- * Exact content-source titles. "(in progress)" and remaster names do not match, so
- * Advanced Player's Guide and Secrets of Magic stay unchecked. Runes live mainly in
- * GM Core, tattoos and most potions in Treasure Vault; those books start unchecked.
- */
-export const DEFAULT_SHOP_BOOKS = [
-  'Core Rulebook',
-  "Advanced Player's Guide",
-  'Gamemastery Guide',
-  'Guns & Gears',
-  'Secrets of Magic',
-] as const;
+/** Shops default to the full Pathfinder catalog; Starfinder content is a separate ruleset. */
+export const DEFAULT_SHOP_EXCLUDED_GROUPS = new Set(['starfinder-core']);
 
 export function shopCeiling(preset: ShopPresetId, settlement: SettlementId) {
   if (WIDE_CATALOG_PRESETS.has(preset)) return 20;
