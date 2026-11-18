@@ -10,6 +10,7 @@ export function ShopsLibrary() {
   const [rows, setRows] = useState<ShopNode[]>([]);
   const [folderName, setFolderName] = useState('');
   const [error, setError] = useState('');
+  const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
 
   const reload = async () => {
@@ -28,12 +29,14 @@ export function ShopsLibrary() {
 
   const folders = rows.filter((row) => row.kind === 'folder');
   const shops = rows.filter((row) => row.kind === 'entry');
-  const run = async (work: () => Promise<unknown>) => {
+  const run = async (work: () => Promise<unknown>, done: string) => {
     setBusy(true);
     setError('');
+    setNote('');
     try {
       await work();
       await reload();
+      setNote(done);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not update this shop.');
     } finally {
@@ -68,7 +71,7 @@ export function ShopsLibrary() {
                 void run(async () => {
                   await insertNode({ content_kind: SHOP_CONTENT_KIND, kind: 'folder', name, parent_id: null, draft: null });
                   setFolderName('');
-                });
+                }, 'Folder created.');
               }}
             >
               <label className='grid gap-2 text-sm text-muted-foreground'>
@@ -84,6 +87,7 @@ export function ShopsLibrary() {
               </button>
             </form>
             {error && <p className='text-sm text-red-300'>{error}</p>}
+            {note && <p className='text-sm text-muted-foreground'>{note}</p>}
             <div className='overflow-x-auto rounded-xl bg-white/5 ring-1 ring-white/20'>
               <table className='w-full text-left text-sm'>
                 <thead className='text-muted-foreground'>
@@ -115,7 +119,7 @@ export function ShopsLibrary() {
                           disabled={busy}
                           onChange={(event) => {
                             const parentId = event.target.value || null;
-                            void run(() => moveNode(shop, parentId));
+                            void run(() => moveNode(shop, parentId), 'Folder updated.');
                           }}
                         >
                           <option value=''>Root</option>
@@ -132,7 +136,7 @@ export function ShopsLibrary() {
                           disabled={busy || !shop.draft}
                           onChange={(event) => {
                             const style = event.target.value as ShopPageStyle;
-                            void run(() => patchOwnedDraft(shop, { style }));
+                            void run(() => patchOwnedDraft(shop, { style }), 'Style updated.');
                           }}
                         >
                           <option value='default'>Default</option>
@@ -140,29 +144,29 @@ export function ShopsLibrary() {
                         </select>
                       </td>
                       <td className='px-4 py-3'>
-                        <div className='flex flex-wrap gap-2'>
+                        <div className='flex flex-col items-start'>
                           {shop.published ? (
                             <>
-                              <button className='underline' type='button' disabled={busy} onClick={() => void run(() => updateOwnedSnapshot(shop))}>
+                              <button className='cursor-pointer px-1 py-1 underline disabled:opacity-50' type='button' disabled={busy} onClick={() => void run(() => updateOwnedSnapshot(shop), 'Snapshot updated. The public link is unchanged.')}>
                                 Update
                               </button>
-                              <button className='underline' type='button' disabled={busy} onClick={() => void run(() => unpublishOwned(shop))}>
+                              <button className='cursor-pointer px-1 py-1 underline disabled:opacity-50' type='button' disabled={busy} onClick={() => void run(() => unpublishOwned(shop), 'Unpublished. The public link is off.')}>
                                 Unpublish
                               </button>
                             </>
                           ) : (
-                            <button className='underline' type='button' disabled={busy} onClick={() => void run(() => publishOwned(shop))}>
+                            <button className='cursor-pointer px-1 py-1 underline disabled:opacity-50' type='button' disabled={busy} onClick={() => void run(() => publishOwned(shop), 'Published.')}>
                               Publish
                             </button>
                           )}
                           <button
-                            className='underline'
+                            className='cursor-pointer px-1 py-1 underline disabled:opacity-50'
                             type='button'
                             disabled={busy}
                             onClick={() => {
                               const published = shop.published ? ' The public link will stop working.' : '';
                               if (!window.confirm(`Delete “${shop.name}”?${published}`)) return;
-                              void run(() => deleteOwned(shop.id));
+                              void run(() => deleteOwned(shop.id), 'Deleted.');
                             }}
                           >
                             Delete
