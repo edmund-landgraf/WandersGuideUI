@@ -41,10 +41,7 @@ export type ShopDraft = {
 };
 
 function cardText(value: string) {
-  return toStandard2eProse(compileWgText(value))
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
-    .replace(/[*_#>]/g, '')
-    .trim();
+  return toStandard2eProse(compileWgText(value)).trim();
 }
 
 export function stockSource(item: Item): ShopCatalogSource {

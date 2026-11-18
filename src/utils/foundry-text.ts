@@ -125,6 +125,12 @@ export function toWgMarkdownLinks(text: string): string {
   if (!text) return text;
   // `[[label](link_type_id)]` is an unresolved WG wiki wrapper around a real content link.
   let out = text.replace(/\[\[([^\]]+)\]\((?:<)?(link_[^)\s>]+)(?:>)?\)\]/g, '[$1](<$2>)');
+  // `[_+1_](link)` cannot open emphasis: `_` next to punctuation is not a flanking delimiter.
+  // Move the marks outside the link and use `*`, which can wrap a link that starts with `+`.
+  out = out.replace(/\[([_*]+)([^\]]+?)\1\]\((?:<)?(link_[^)\s>]+)(?:>)?\)/g, (_match, marks: string, label: string, href: string) => {
+    const stars = '*'.repeat(marks.length);
+    return `${stars}[${label}](<${href}>)${stars}`;
+  });
   out = out.replace(/\[([^\]]+)\]\((?:<)?(link_[^)\s>]+)(?:>)?\)/g, '[$1](<$2>)');
   return out;
 }

@@ -32,7 +32,7 @@ import { fetchPf2eShopCatalog, isPf2eShopItem, mergeShopCatalog, pf2eTraits, sho
 import { ShopPopout } from './shop-popout';
 import { collectShopCards, shopExportHtml } from './shops-export';
 import { ShopsLibrary } from './shops-library';
-import { HOMEBREW_CSS, ShopDocument, ShopsPublic } from './shops-public';
+import { HOMEBREW_CSS, ShopDocument, ShopProse, ShopsPublic } from './shops-public';
 import { SHOP_CONTENT_KIND, shopDraft, stockCatalogId, stockSource, type ShopDraft, type ShopPageStyle } from './shops-syndicate';
 import { insertNode, listOwned, updateOwned } from '../../syndication/store';
 import './launcher.css';
@@ -61,10 +61,7 @@ async function readySession() {
 }
 
 function itemCardText(value: string) {
-  return toStandard2eProse(compileWgText(value))
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
-    .replace(/[*_#>]/g, '')
-    .trim();
+  return toStandard2eProse(compileWgText(value)).trim();
 }
 
 function ShopItemName({ item, traits, markup, aon }: { item: Item; traits: Trait[]; markup: number; aon?: boolean }) {
@@ -96,7 +93,7 @@ function ShopItemName({ item, traits, markup, aon }: { item: Item; traits: Trait
         {formatShopOffer(asShopLine(item), markup)}
         {item.bulk ? ` · Bulk ${item.bulk}` : ''}
       </p>
-      {description && <p className='mt-3 whitespace-pre-wrap text-sm leading-6 text-[#f4f4f5]'>{description}</p>}
+      {description && <ShopProse text={description} className='mt-3 text-sm leading-6 text-[#f4f4f5]' />}
     </ShopPopout>
   );
 }

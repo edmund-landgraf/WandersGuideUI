@@ -36,7 +36,7 @@ function cardKey(type: string, id: string) {
   return `${type}:${id}`;
 }
 
-function asContentType(type: string): ContentType | null {
+export function asContentType(type: string): ContentType | null {
   const converted = isAbilityBlockType(type) || type === 'cast-spell' || type === 'add-spell' || type === 'inv-item'
     ? convertToContentType(type as ContentType)
     : type;

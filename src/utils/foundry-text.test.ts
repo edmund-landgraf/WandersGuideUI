@@ -17,6 +17,12 @@ describe('WG / wiki condition links', () => {
     expect(out).toContain('[suppressed](<link_condition_suppressed>)');
   });
 
+  it('moves emphasis off link labels so punctuation like +1 can be italic', () => {
+    expect(toWgMarkdownLinks('[_+1_](link_item_1) [_striking_](link_item_2) and [_holy light_](link_spell_3)')).toBe(
+      '*[+1](<link_item_1>)* *[striking](<link_item_2>)* and *[holy light](<link_spell_3>)*'
+    );
+  });
+
   it('unwraps [[label](link_type_id)] wiki wrappers', () => {
     const out = toWgMarkdownLinks('See [[Hidden](link_condition_hidden)] nearby.');
     expect(out).toBe('See [Hidden](<link_condition_hidden>) nearby.');
