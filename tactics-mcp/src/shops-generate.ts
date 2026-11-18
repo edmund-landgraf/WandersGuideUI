@@ -75,16 +75,14 @@ export type ShopStockItem = CatalogItem & {
 };
 
 export const STOCK_COUNT = 15;
-export const WIDE_CATALOG_PRESETS = new Set<ShopPresetId>(["armorer", "blacksmith", "gunsmith"]);
 export const PF2E_SHOP_SOURCE = "pf2e-local";
 
 export function raritiesForSettlement(_id: SettlementId): ShopRarity[] {
   return SHOP_RARITIES.filter((rarity) => RARITY_WEIGHTS[rarity] > 0);
 }
 
-export function shopCeiling(preset: ShopPresetId, settlement: SettlementId) {
-  if (WIDE_CATALOG_PRESETS.has(preset)) return 20;
-  return SETTLEMENT_LEVELS.find((row) => row.id === settlement)?.level ?? 2;
+export function shopCeiling(settlement: SettlementId) {
+  return SETTLEMENT_LEVELS.find((row) => row.id === settlement)?.level ?? SETTLEMENT_LEVELS[0].level;
 }
 
 export function isPf2eShopItem(item: CatalogItem) {
@@ -112,8 +110,8 @@ export function lineKeyOf(item: ShopStockItem) {
   return lineKey(catalogSourceOf(item), catalogIdOf(item), isShopFormula(item));
 }
 
-export function shopCeilingLevel(preset: ShopPresetId, settlement: SettlementId) {
-  return shopCeiling(preset, settlement);
+export function shopCeilingLevel(settlement: SettlementId) {
+  return shopCeiling(settlement);
 }
 
 function levelProfiles(ceiling: number) {

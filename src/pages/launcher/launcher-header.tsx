@@ -8,6 +8,9 @@ export function LauncherHeader() {
           Wanderer's Guide
         </a>
         <div className='flex items-center gap-5'>
+          <a className='text-sm text-muted-foreground transition hover:text-foreground' href='/shops'>
+            Shops
+          </a>
           <a className='text-sm text-muted-foreground transition hover:text-foreground' href='/help/index.html'>
             Help
           </a>

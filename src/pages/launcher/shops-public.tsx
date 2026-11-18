@@ -258,6 +258,7 @@ function StockName({ row, homebrew = false }: { row: ShopStockRow; homebrew?: bo
   return (
     <ShopPopout
       label={row.name}
+      href={row.name.trim() ? `https://2e.aonprd.com/Search.aspx?q=${encodeURIComponent(row.name.trim())}` : undefined}
       cardClassName={homebrew
         ? 'w-[360px] max-h-[min(50vh,420px)] overflow-y-auto bg-[#f7edd4] p-4 text-left text-[#1c140c] shadow-2xl ring-1 ring-[#8a5a22]'
         : 'w-[360px] max-h-[min(50vh,420px)] overflow-y-auto rounded-xl bg-[#1c1c1c] p-4 text-left text-[#fafafa] shadow-2xl ring-1 ring-white/25'}
@@ -310,6 +311,24 @@ function groupedStock(stock: ShopStockRow[]) {
     }));
 }
 
+const GROUPINGS_SESSION_KEY = 'wg-shop-use-groupings';
+
+export function readGroupingsPreference(): boolean {
+  try {
+    return sessionStorage.getItem(GROUPINGS_SESSION_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+export function writeGroupingsPreference(value: boolean) {
+  try {
+    sessionStorage.setItem(GROUPINGS_SESSION_KEY, value ? '1' : '0');
+  } catch {
+    // Private mode can block storage; the in-memory checkbox still works.
+  }
+}
+
 function GroupingsToggle({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
   return (
     <label className='flex items-center gap-2 text-sm'>
@@ -320,7 +339,7 @@ function GroupingsToggle({ checked, onChange }: { checked: boolean; onChange: (v
 }
 
 export function ShopDocument({ name, stock, homebrew, description }: { name: string; stock: ShopStockRow[]; homebrew: boolean; description?: string }) {
-  const [useGroupings, setUseGroupings] = useState(true);
+  const [useGroupings, setUseGroupings] = useState(readGroupingsPreference);
   const sections = useGroupings ? groupedStock(stock) : null;
 
   if (homebrew) {
@@ -339,7 +358,10 @@ export function ShopDocument({ name, stock, homebrew, description }: { name: str
               </header>
               {description ? <p className='brew-note'>{description}</p> : null}
               <div className='mb-4 flex justify-end'>
-                <GroupingsToggle checked={useGroupings} onChange={setUseGroupings} />
+                <GroupingsToggle checked={useGroupings} onChange={(value) => {
+                  writeGroupingsPreference(value);
+                  setUseGroupings(value);
+                }} />
               </div>
               {sections ? sections.map((section) => (
                 <details className='border-t border-[#6b3a1f]/30' key={section.group}>
@@ -367,7 +389,10 @@ export function ShopDocument({ name, stock, homebrew, description }: { name: str
           <div className='mx-auto grid max-w-6xl gap-6'>
             <div className='flex flex-wrap items-end justify-between gap-4'>
               <h1 className='font-heading text-4xl text-foreground'>{name}</h1>
-              <GroupingsToggle checked={useGroupings} onChange={setUseGroupings} />
+              <GroupingsToggle checked={useGroupings} onChange={(value) => {
+                writeGroupingsPreference(value);
+                setUseGroupings(value);
+              }} />
             </div>
             {description ? <p className='max-w-3xl text-sm leading-6 text-muted-foreground'>{description}</p> : null}
             {sections ? (

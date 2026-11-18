@@ -125,7 +125,7 @@ export function shopAonHref(item: Item): string | undefined {
   const stored = (item.meta_data as { aon_url?: string } | null | undefined)?.aon_url?.trim();
   if (stored) return stored;
   const name = item.name.trim();
-  if (!isPf2eShopItem(item) || !name) return undefined;
+  if (!name) return undefined;
   return `https://2e.aonprd.com/Search.aspx?q=${encodeURIComponent(name)}`;
 }
 

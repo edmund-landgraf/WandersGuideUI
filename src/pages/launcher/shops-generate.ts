@@ -55,15 +55,11 @@ export function activeShopRarities(selected: readonly ShopRarity[], settlement: 
 
 export const STOCK_COUNT = 15;
 
-/** Armor, blacksmith, and gunsmith use the full 0–20 catalog. They are not capped by settlement. */
-export const WIDE_CATALOG_PRESETS = new Set<ShopPresetId>(['armorer', 'blacksmith', 'gunsmith']);
-
 /** Shops default to the full Pathfinder catalog; Starfinder content is a separate ruleset. */
 export const DEFAULT_SHOP_EXCLUDED_GROUPS = new Set(['starfinder-core']);
 
-export function shopCeiling(preset: ShopPresetId, settlement: SettlementId) {
-  if (WIDE_CATALOG_PRESETS.has(preset)) return 20;
-  return SETTLEMENT_LEVELS.find((row) => row.id === settlement)?.level ?? 2;
+export function shopCeiling(settlement: SettlementId) {
+  return SETTLEMENT_LEVELS.find((row) => row.id === settlement)?.level ?? SETTLEMENT_LEVELS[0].level;
 }
 
 /** One band through town. City and up split the 0–ceiling span into low, then mid, then high. */

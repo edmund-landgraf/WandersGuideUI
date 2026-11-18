@@ -158,8 +158,8 @@ export function ShopPopout({
             )}
           </header>
           {href && (
-            <a className='mb-2 inline-block text-xs underline' href={href} target='_blank' rel='noreferrer'>
-              Archives of Nethys
+            <a className='mb-2 inline-block text-xs underline' href={href} target='_blank' rel='noreferrer' title='Archives of Nethys'>
+              aon
             </a>
           )}
           {children}

@@ -22,7 +22,6 @@ import {
   SHOP_RARITIES,
   STOCK_COUNT,
   stockShop,
-  WIDE_CATALOG_PRESETS,
   type SettlementId,
   type ShopPresetId,
   type ShopRarity,
@@ -32,7 +31,7 @@ import { fetchPf2eShopCatalog, isPf2eShopItem, mergeShopCatalog, pf2eTraits, sho
 import { ShopPopout } from './shop-popout';
 import { collectShopCards, shopExportHtml } from './shops-export';
 import { ShopsLibrary } from './shops-library';
-import { HOMEBREW_CSS, ShopDocument, ShopProse, ShopsPublic } from './shops-public';
+import { HOMEBREW_CSS, readGroupingsPreference, ShopDocument, ShopProse, ShopsPublic, writeGroupingsPreference } from './shops-public';
 import { SHOP_CONTENT_KIND, shopDraft, stockCatalogId, stockSource, type ShopDraft, type ShopPageStyle } from './shops-syndicate';
 import { insertNode, listOwned, updateOwned } from '../../syndication/store';
 import './launcher.css';
@@ -64,7 +63,7 @@ function itemCardText(value: string) {
   return toStandard2eProse(compileWgText(value)).trim();
 }
 
-function ShopItemName({ item, traits, markup, aon }: { item: Item; traits: Trait[]; markup: number; aon?: boolean }) {
+function ShopItemName({ item, traits, markup }: { item: Item; traits: Trait[]; markup: number }) {
   const traitNames = (item.traits ?? [])
     .map((id) => traits.find((trait) => trait.id === id)?.name)
     .filter((name): name is string => Boolean(name));
@@ -73,7 +72,7 @@ function ShopItemName({ item, traits, markup, aon }: { item: Item; traits: Trait
   return (
     <ShopPopout
       label={item.name}
-      href={aon ? shopAonHref(item) : undefined}
+      href={shopAonHref(item)}
       cardClassName='w-[360px] max-h-[min(50vh,420px)] overflow-y-auto rounded-xl bg-[#1c1c1c] p-4 text-left text-[#fafafa] shadow-2xl ring-1 ring-white/25'
       titleClassName='font-heading text-base text-[#fafafa]'
     >
@@ -245,7 +244,7 @@ function ShopsPage() {
   const [openedId, setOpenedId] = useState<string | null>(null);
   const [campaignId, setCampaignId] = useState<number | null>(null);
   const [edited, setEdited] = useState(false);
-  const [useGroupings, setUseGroupings] = useState(false);
+  const [useGroupings, setUseGroupings] = useState(readGroupingsPreference);
   const [removed, setRemoved] = useState<{ item: ShopStockItem; index: number } | null>(null);
 
   useEffect(() => {
@@ -348,7 +347,6 @@ function ShopsPage() {
       }
       const lines = loaded.map((item) => asShopLine(item));
       setStock(lines);
-      setUseGroupings(lines.length > 105);
       setEdited(false);
       setRemoved(null);
       lastStockIds.current = new Set(loaded.map((item) => item.id));
@@ -388,7 +386,7 @@ function ShopsPage() {
                   activeItems,
                   traits,
                   preset,
-                  shopCeiling(preset, settlement),
+                  shopCeiling(settlement),
                   Math.random,
                   undefined,
                   lastStockIds.current,
@@ -397,7 +395,6 @@ function ShopsPage() {
                 );
                 lastStockIds.current = new Set(next.map((row) => row.id));
                 setStock(next);
-                setUseGroupings(next.length > 105);
                 setEdited(false);
                 setRemoved(null);
                 setPanel('stock');
@@ -420,9 +417,8 @@ function ShopsPage() {
               <label className='grid gap-2 text-sm text-muted-foreground'>
                 Settlement level
                 <select
-                  className='rounded-lg bg-card px-3 py-2 text-foreground ring-1 ring-white/15 disabled:opacity-50'
+                  className='rounded-lg bg-card px-3 py-2 text-foreground ring-1 ring-white/15'
                   value={settlement}
-                  disabled={WIDE_CATALOG_PRESETS.has(preset)}
                   onChange={(event) => setSettlement(event.target.value as SettlementId)}
                 >
                   {SETTLEMENT_LEVELS.map((choice) => (
@@ -621,7 +617,7 @@ function ShopsPage() {
               {!loading && !needsSignIn && !error && items.length > 0 && (
                 <p className='basis-full text-xs text-muted-foreground'>
                   {(() => {
-                    const pool = listShopPool(activeItems, traits, preset, shopCeiling(preset, settlement), undefined, new Set(activeShopRarities(rarities, settlement))).length;
+                    const pool = listShopPool(activeItems, traits, preset, shopCeiling(settlement), undefined, new Set(activeShopRarities(rarities, settlement))).length;
                     return `Drawing ${Math.min(stockCount, pool)} of ${pool} matching items.`;
                   })()}
                 </p>
@@ -652,7 +648,10 @@ function ShopsPage() {
                   <input
                     type='checkbox'
                     checked={useGroupings}
-                    onChange={(event) => setUseGroupings(event.target.checked)}
+                    onChange={(event) => {
+                      writeGroupingsPreference(event.target.checked);
+                      setUseGroupings(event.target.checked);
+                    }}
                   />
                   Use groupings
                 </label>
@@ -774,7 +773,6 @@ function ShopsPage() {
                             stock={stock}
                             traits={traits}
                             markup={markup}
-                            aon={drawFromPf2e && !drawFromWanderersGuide}
                             onRemove={(row, index) => {
                               setRemoved({ item: row, index });
                               setStock((current) => current?.filter((item) => item.shopKey !== row.shopKey) ?? []);
@@ -790,7 +788,6 @@ function ShopsPage() {
                       stock={stock}
                       traits={traits}
                       markup={markup}
-                      aon={drawFromPf2e && !drawFromWanderersGuide}
                       onRemove={(row, index) => {
                         setRemoved({ item: row, index });
                         setStock((current) => current?.filter((item) => item.shopKey !== row.shopKey) ?? []);
@@ -834,14 +831,12 @@ function ShopStockTable({
   stock,
   traits,
   markup,
-  aon,
   onRemove,
 }: {
   rows: ShopStockItem[];
   stock: ShopStockItem[];
   traits: Trait[];
   markup: number;
-  aon: boolean;
   onRemove: (row: ShopStockItem, index: number) => void;
 }) {
   return (
@@ -864,7 +859,7 @@ function ShopStockTable({
             <tr className='border-t border-white/10' key={row.shopKey}>
               <td className='px-4 py-3'>{shopLineQuantity(row)} ×</td>
               <td className='px-4 py-3'>
-                <ShopItemName item={row} traits={traits} markup={markup} aon={aon} />
+                <ShopItemName item={row} traits={traits} markup={markup} />
               </td>
               <td className='px-4 py-3'>{row.level}</td>
               <td className='px-4 py-3'>{row.rarity}</td>

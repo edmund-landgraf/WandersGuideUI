@@ -458,7 +458,7 @@ async function generateStock(userId: string, draft: ShopDraft, avoidIds?: Set<nu
   if (!catalog.ok) return catalog;
   const preset = draft.preset;
   const settlement = draft.settlement;
-  const level = shopCeiling(preset, settlement);
+  const level = shopCeiling(settlement);
   const bookSet = draft.books ? new Set(draft.books) : undefined;
   const sourceIds = bookSet && sources.includes("wanderers-guide")
     ? new Set([
