@@ -358,7 +358,7 @@ export function formatShopOffer(item: ShopStockItem, markup = 0) {
   const base = formatShopPrice(item.price, markup);
   if (base === "—") return base;
   const packed = pack > 1 ? `${base} for ${pack}` : base;
-  return isShopFormula(item) && item.rarity !== "COMMON" ? `${packed}*` : packed;
+  return packed;
 }
 
 export function traitLabels(item: CatalogItem, traits: CatalogTrait[]) {

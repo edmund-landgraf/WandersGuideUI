@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { SyndicatedNode } from '../../syndication/nodes';
 import { deleteOwned, insertNode, listOwned, moveNode, patchOwnedDraft, publishOwned, unpublishOwned, updateOwnedSnapshot } from '../../syndication/store';
 import { LauncherHeader } from './launcher-header';
-import { SHOP_CONTENT_KIND, shopPublicUrl, type ShopDraft, type ShopPageStyle } from './shops-syndicate';
+import { SHOP_CONTENT_KIND, shopPublicUrl, shopTraceStart, type ShopDraft, type ShopPageStyle } from './shops-syndicate';
 
 type ShopNode = SyndicatedNode<ShopDraft>;
 
@@ -13,11 +13,15 @@ export function ShopsLibrary() {
   const [busy, setBusy] = useState(false);
 
   const reload = async () => {
-    setRows((await listOwned(SHOP_CONTENT_KIND)) as ShopNode[]);
+    const done = shopTraceStart('library list');
+    const rows = (await listOwned(SHOP_CONTENT_KIND)) as ShopNode[];
+    done({ rows: rows.length });
+    setRows(rows);
   };
 
   useEffect(() => {
     void reload().catch((cause: unknown) => {
+      console.error('[wgui shops] library list failed', cause);
       setError(cause instanceof Error ? cause.message : 'Could not load shops.');
     });
   }, []);

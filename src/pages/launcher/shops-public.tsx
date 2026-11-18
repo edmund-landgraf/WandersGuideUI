@@ -10,10 +10,26 @@ import { ShopPopout } from './shop-popout';
 import { readPublic } from '../../syndication/store';
 import { LauncherHeader } from './launcher-header';
 import { asContentType } from './shops-export';
-import { SHOP_CONTENT_KIND, type ShopDraft, type ShopStockRow } from './shops-syndicate';
+import { priceAsGp } from './shops-generate';
+import { SHOP_CONTENT_KIND, shopTraceStart, type ShopDraft, type ShopStockRow } from './shops-syndicate';
 
 export function prepareShopProse(text: string) {
-  return normalizeMarkdownTables(toStandard2eProse(compileWgText(text)));
+  return htmlInlineToMarkdown(normalizeMarkdownTables(toStandard2eProse(compileWgText(text))));
+}
+
+/** Common HTML formatting becomes markdown; leftover tags are dropped so raw markup is not shown. */
+function htmlInlineToMarkdown(text: string): string {
+  if (!text || !text.includes('<')) return text;
+  let out = text;
+  out = out.replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi, (_match, level: string, inner: string) => {
+    return `\n${'#'.repeat(Number(level))} ${inner.trim()}\n\n`;
+  });
+  out = out.replace(/<(strong|b)\b[^>]*>([\s\S]*?)<\/\1>/gi, '**$2**');
+  out = out.replace(/<(em|i)\b[^>]*>([\s\S]*?)<\/\1>/gi, '*$2*');
+  out = out.replace(/<li\b[^>]*>([\s\S]*?)<\/li>/gi, (_match, inner: string) => `\n- ${inner.trim()}`);
+  out = out.replace(/<\/?(?:ul|ol|div|span|section)\b[^>]*>/gi, '\n');
+  out = out.replace(/<\/?[a-z][a-z0-9]*\b[^>]*>/gi, '');
+  return out.replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/\n{3,}/g, '\n\n');
 }
 
 export function ShopProse({ text, className, homebrew = false }: { text: string; className?: string; homebrew?: boolean }) {
@@ -244,17 +260,22 @@ export const HOMEBREW_CSS = `
   text-underline-offset: 3px;
   cursor: pointer;
 }
-.brew-sheet .text-foreground,
-.brew-sheet .text-muted-foreground,
-.brew-sheet button,
-.brew-sheet label,
-.brew-sheet input,
-.brew-sheet td { color: #3b2414; }
-.brew-sheet .border-white\\/10,
-.brew-sheet .border-b { border-color: rgba(107, 58, 31, 0.28); }
+.brew-v3 .brew-sheet .text-foreground,
+.brew-v3 .brew-sheet .text-muted-foreground,
+.brew-v3 .brew-sheet button,
+.brew-v3 .brew-sheet label,
+.brew-v3 .brew-sheet input,
+.brew-v3 .brew-sheet td { color: #3b2414; }
+.brew-v3 .brew-sheet .border-white\\/10,
+.brew-v3 .brew-sheet .border-b { border-color: rgba(107, 58, 31, 0.28); }
 `;
 
-function StockName({ row, homebrew = false }: { row: ShopStockRow; homebrew?: boolean }) {
+function shownPrice(price: string, inGp: boolean) {
+  const plain = price.replace(/\*$/, '');
+  return inGp ? priceAsGp(plain) : plain;
+}
+
+function StockName({ row, homebrew = false, inGp = false }: { row: ShopStockRow; homebrew?: boolean; inGp?: boolean }) {
   return (
     <ShopPopout
       label={row.name}
@@ -277,7 +298,7 @@ function StockName({ row, homebrew = false }: { row: ShopStockRow; homebrew?: bo
         </div>
       )}
       <p className={homebrew ? 'mt-3 text-xs text-[#5c4630]' : 'mt-3 text-xs text-[#b5b5b5]'}>
-        {row.price}
+        {shownPrice(row.price, inGp)}
         {row.bulk ? ` · Bulk ${row.bulk}` : ''}
       </p>
       {row.description && (
@@ -312,35 +333,77 @@ function groupedStock(stock: ShopStockRow[]) {
 }
 
 const GROUPINGS_SESSION_KEY = 'wg-shop-use-groupings';
+const IN_GP_SESSION_KEY = 'wg-shop-in-gp';
 
-export function readGroupingsPreference(): boolean {
+function readFlag(key: string, fallback: boolean) {
   try {
-    return sessionStorage.getItem(GROUPINGS_SESSION_KEY) !== '0';
+    const stored = sessionStorage.getItem(key);
+    if (stored === null) return fallback;
+    return stored !== '0';
   } catch {
-    return true;
+    return fallback;
   }
 }
 
-export function writeGroupingsPreference(value: boolean) {
+function writeFlag(key: string, value: boolean) {
   try {
-    sessionStorage.setItem(GROUPINGS_SESSION_KEY, value ? '1' : '0');
+    sessionStorage.setItem(key, value ? '1' : '0');
   } catch {
     // Private mode can block storage; the in-memory checkbox still works.
   }
 }
 
-function GroupingsToggle({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
+export function readGroupingsPreference(): boolean {
+  return readFlag(GROUPINGS_SESSION_KEY, true);
+}
+
+export function writeGroupingsPreference(value: boolean) {
+  writeFlag(GROUPINGS_SESSION_KEY, value);
+}
+
+function ShopViewToggles({
+  useGroupings,
+  inGp,
+  onGroupings,
+  onInGp,
+}: {
+  useGroupings: boolean;
+  inGp: boolean;
+  onGroupings: (value: boolean) => void;
+  onInGp: (value: boolean) => void;
+}) {
   return (
-    <label className='flex items-center gap-2 text-sm'>
-      <input type='checkbox' checked={checked} onChange={(event) => onChange(event.target.checked)} />
-      Use groupings
-    </label>
+    <div className='flex flex-wrap items-center gap-4 text-sm'>
+      <label className='flex items-center gap-2'>
+        <input type='checkbox' checked={useGroupings} onChange={(event) => onGroupings(event.target.checked)} />
+        Use groupings
+      </label>
+      <label className='flex items-center gap-2'>
+        <input type='checkbox' checked={inGp} onChange={(event) => onInGp(event.target.checked)} />
+        In gp
+      </label>
+    </div>
   );
 }
 
 export function ShopDocument({ name, stock, homebrew, description }: { name: string; stock: ShopStockRow[]; homebrew: boolean; description?: string }) {
   const [useGroupings, setUseGroupings] = useState(readGroupingsPreference);
+  const [inGp, setInGp] = useState(() => readFlag(IN_GP_SESSION_KEY, false));
   const sections = useGroupings ? groupedStock(stock) : null;
+  const toggles = (
+    <ShopViewToggles
+      useGroupings={useGroupings}
+      inGp={inGp}
+      onGroupings={(value) => {
+        writeGroupingsPreference(value);
+        setUseGroupings(value);
+      }}
+      onInGp={(value) => {
+        writeFlag(IN_GP_SESSION_KEY, value);
+        setInGp(value);
+      }}
+    />
+  );
 
   if (homebrew) {
     return (
@@ -356,22 +419,19 @@ export function ShopDocument({ name, stock, homebrew, description }: { name: str
                 <h1>{name}</h1>
                 <hr className='brew-rule-thin' />
               </header>
-              {description ? <p className='brew-note'>{description}</p> : null}
+              {description ? <ShopProse text={description} homebrew className='brew-note' /> : null}
               <div className='mb-4 flex justify-end'>
-                <GroupingsToggle checked={useGroupings} onChange={(value) => {
-                  writeGroupingsPreference(value);
-                  setUseGroupings(value);
-                }} />
+                {toggles}
               </div>
               {sections ? sections.map((section) => (
                 <details className='border-t border-[#6b3a1f]/30' key={section.group}>
                   <summary className='cursor-pointer py-2 font-serif text-sm uppercase tracking-wide text-[#6b1d14]'>
                     {groupLabel(section.group)} ({section.rows.length})
                   </summary>
-                  <StockTable stock={section.rows} homebrew />
+                  <StockTable stock={section.rows} homebrew inGp={inGp} />
                 </details>
               )) : (
-                <StockTable stock={stock} homebrew />
+                <StockTable stock={stock} homebrew inGp={inGp} />
               )}
             </article>
           </div>
@@ -389,12 +449,9 @@ export function ShopDocument({ name, stock, homebrew, description }: { name: str
           <div className='mx-auto grid max-w-6xl gap-6'>
             <div className='flex flex-wrap items-end justify-between gap-4'>
               <h1 className='font-heading text-4xl text-foreground'>{name}</h1>
-              <GroupingsToggle checked={useGroupings} onChange={(value) => {
-                writeGroupingsPreference(value);
-                setUseGroupings(value);
-              }} />
+              {toggles}
             </div>
-            {description ? <p className='max-w-3xl text-sm leading-6 text-muted-foreground'>{description}</p> : null}
+            {description ? <ShopProse text={description} className='max-w-3xl text-sm leading-6 text-muted-foreground' /> : null}
             {sections ? (
               <div className='overflow-hidden rounded-xl bg-white/5 ring-1 ring-white/20'>
                 {sections.map((section) => (
@@ -404,13 +461,13 @@ export function ShopDocument({ name, stock, homebrew, description }: { name: str
                       {groupLabel(section.group)}
                       <span className='ml-2 normal-case tracking-normal'>{section.rows.length}</span>
                     </summary>
-                    <StockTable stock={section.rows} />
+                    <StockTable stock={section.rows} inGp={inGp} />
                   </details>
                 ))}
               </div>
             ) : (
               <div className='overflow-hidden rounded-xl bg-white/5 ring-1 ring-white/20'>
-                <StockTable stock={stock} />
+                <StockTable stock={stock} inGp={inGp} />
               </div>
             )}
           </div>
@@ -420,7 +477,7 @@ export function ShopDocument({ name, stock, homebrew, description }: { name: str
   );
 }
 
-function StockTable({ stock, homebrew = false }: { stock: ShopStockRow[]; homebrew?: boolean }) {
+function StockTable({ stock, homebrew = false, inGp = false }: { stock: ShopStockRow[]; homebrew?: boolean; inGp?: boolean }) {
   if (homebrew) {
     return (
       <table>
@@ -438,11 +495,11 @@ function StockTable({ stock, homebrew = false }: { stock: ShopStockRow[]; homebr
           {stock.map((row) => (
             <tr key={row.id}>
               <td>{row.quantity ?? 1} ×</td>
-              <td><StockName row={row} homebrew /></td>
+              <td><StockName row={row} homebrew inGp={inGp} /></td>
               <td>{row.level}</td>
               <td>{row.rarity}</td>
               <td>{row.group}</td>
-              <td>{row.price}</td>
+              <td>{shownPrice(row.price, inGp)}</td>
             </tr>
           ))}
         </tbody>
@@ -466,11 +523,11 @@ function StockTable({ stock, homebrew = false }: { stock: ShopStockRow[]; homebr
         {stock.map((row) => (
           <tr className='border-t border-white/10' key={row.id}>
             <td className='px-4 py-3'>{row.quantity ?? 1} ×</td>
-            <td className='px-4 py-3'><StockName row={row} /></td>
+            <td className='px-4 py-3'><StockName row={row} inGp={inGp} /></td>
             <td className='px-4 py-3'>{row.level}</td>
             <td className='px-4 py-3'>{row.rarity}</td>
             <td className='px-4 py-3'>{row.group}</td>
-            <td className='px-4 py-3'>{row.price}</td>
+            <td className='px-4 py-3'>{shownPrice(row.price, inGp)}</td>
           </tr>
         ))}
       </tbody>
@@ -484,11 +541,15 @@ export function ShopsPublic({ token }: { token: string }) {
 
   useEffect(() => {
     let cancelled = false;
+    const done = shopTraceStart('public shop');
     void readPublic<ShopDraft>(SHOP_CONTENT_KIND, token)
       .then((result) => {
+        done({ found: Boolean(result) });
         if (!cancelled) setPage(result);
       })
       .catch((cause: unknown) => {
+        console.error('[wgui shops] public shop failed', cause);
+        done({ failed: true });
         if (!cancelled) setError(cause instanceof Error ? cause.message : 'Could not load this shop.');
       });
     return () => {

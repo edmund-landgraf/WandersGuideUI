@@ -31,8 +31,8 @@ import { fetchPf2eShopCatalog, isPf2eShopItem, mergeShopCatalog, pf2eTraits, sho
 import { ShopPopout } from './shop-popout';
 import { collectShopCards, shopExportHtml } from './shops-export';
 import { ShopsLibrary } from './shops-library';
-import { HOMEBREW_CSS, readGroupingsPreference, ShopDocument, ShopProse, ShopsPublic, writeGroupingsPreference } from './shops-public';
-import { SHOP_CONTENT_KIND, shopDraft, stockCatalogId, stockSource, type ShopDraft, type ShopPageStyle } from './shops-syndicate';
+import { readGroupingsPreference, ShopDocument, ShopProse, ShopsPublic, writeGroupingsPreference } from './shops-public';
+import { SHOP_CONTENT_KIND, shopDraft, shopTrace, shopTraceStart, stockCatalogId, stockSource, type ShopDraft, type ShopPageStyle } from './shops-syndicate';
 import { insertNode, listOwned, updateOwned } from '../../syndication/store';
 import './launcher.css';
 
@@ -251,10 +251,13 @@ function ShopsPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const done = shopTraceStart('catalog load');
       try {
         const signedIn = await readySession();
+        shopTrace('catalog session', { signedIn });
         if (!signedIn) {
           if (!cancelled) setNeedsSignIn(true);
+          done({ signedIn: false });
           return;
         }
         const sources = (await fetchContentSources('ALL-OFFICIAL-PUBLIC')).filter((book) => book.deprecated !== true);
@@ -274,6 +277,7 @@ function ShopsPage() {
         const combinedTraits = [...traitList, ...pf2eTraits(pf2eList)];
         if (combinedItems.length === 0) {
           setError('The item catalog came back empty.');
+          done({ items: 0 });
           return;
         }
         setAonIndex(shopAonIndex(pf2eList));
@@ -284,8 +288,11 @@ function ShopsPage() {
           .filter((book) => !DEFAULT_SHOP_EXCLUDED_GROUPS.has(book.group ?? ''))
           .map((book) => book.id);
         setEnabledBooks(defaults.length > 0 ? defaults : sourceIds);
+        done({ items: combinedItems.length, traits: combinedTraits.length, books: sources.length });
       } catch (cause) {
+        console.error('[wgui shops] catalog load failed', cause);
         if (!cancelled) setError(cause instanceof Error ? cause.message : 'Could not load items.');
+        done({ failed: true });
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -546,19 +553,19 @@ function ShopsPage() {
               </button>
               {exportNote && <p className='w-full text-sm text-muted-foreground'>{exportNote}</p>}
               {stock && stock.length > 0 && (
-                <div className='flex basis-full flex-wrap items-end gap-3'>
-                  <label className='grid gap-2 text-sm text-muted-foreground'>
+                <div className='grid w-full min-w-0 basis-full items-end gap-3 sm:grid-cols-[12rem_minmax(0,1fr)_auto]'>
+                  <label className='grid min-w-0 gap-2 text-sm text-muted-foreground'>
                     Shop name
                     <input
-                      className='rounded-lg bg-card px-3 py-2 text-foreground ring-1 ring-white/15'
+                      className='w-full rounded-lg bg-card px-3 py-2 text-foreground ring-1 ring-white/15'
                       value={shopName}
                       onChange={(event) => setShopName(event.target.value)}
                     />
                   </label>
-                  <label className='grid min-w-[16rem] flex-1 gap-2 text-sm text-muted-foreground'>
+                  <label className='grid min-w-0 gap-2 text-sm text-muted-foreground'>
                     Description
                     <textarea
-                      className='min-h-[2.5rem] rounded-lg bg-card px-3 py-2 text-foreground ring-1 ring-white/15'
+                      className='max-h-40 min-h-[2.5rem] w-full min-w-0 resize-y rounded-lg bg-card px-3 py-2 text-foreground ring-1 ring-white/15'
                       rows={2}
                       value={shopDescription}
                       onChange={(event) => setShopDescription(event.target.value)}
@@ -626,8 +633,7 @@ function ShopsPage() {
                 </p>
               )}
             </form>
-            {pageStyle === 'homebrew-v3' && <style>{HOMEBREW_CSS}</style>}
-            <div className={pageStyle === 'homebrew-v3' ? 'brew-sheet overflow-hidden' : 'overflow-hidden rounded-xl bg-white/5 ring-1 ring-white/20'} role='tablist' aria-label='Shop panels'>
+            <div className='overflow-hidden rounded-xl bg-white/5 ring-1 ring-white/20' role='tablist' aria-label='Shop panels'>
               <div className='flex gap-1 border-b border-white/10 px-3 pt-3'>
                 <button
                   className={`rounded-t-lg px-4 py-2 text-sm ${panel === 'stock' ? 'bg-white/10 text-foreground' : 'text-muted-foreground'}`}
@@ -895,14 +901,19 @@ function ShopDraftView({ id }: { id: string }) {
   const [error, setError] = useState('');
   useEffect(() => {
     let cancelled = false;
+    const done = shopTraceStart('draft view');
     void listOwned(SHOP_CONTENT_KIND)
       .then((rows) => {
-        if (cancelled) return;
         const node = rows.find((row) => row.id === id && row.kind === 'entry');
         const draft = node?.draft as ShopDraft | null | undefined;
+        const found = Boolean(node && draft);
+        done({ id, rows: rows.length, found });
+        if (cancelled) return;
         setPage(node && draft ? { name: node.name, draft } : null);
       })
       .catch((cause: unknown) => {
+        console.error('[wgui shops] draft view failed', cause);
+        done({ id, failed: true });
         if (!cancelled) setError(cause instanceof Error ? cause.message : 'Could not open this shop.');
       });
     return () => {

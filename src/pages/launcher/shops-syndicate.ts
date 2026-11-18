@@ -8,6 +8,20 @@ import { isPf2eShopItem, shopAonHref } from './shops-pf2e';
 export const SHOP_CONTENT_KIND = 'shop';
 export const SHOP_PUBLIC_PREFIX = '/shops/s';
 
+/** Console trace for shop startup. Filter DevTools on `[wgui shops]`. */
+export function shopTrace(step: string, detail?: Record<string, unknown>) {
+  if (detail) console.info(`[wgui shops] ${step}`, detail);
+  else console.info(`[wgui shops] ${step}`);
+}
+
+export function shopTraceStart(step: string) {
+  const started = performance.now();
+  shopTrace(step);
+  return (detail?: Record<string, unknown>) => {
+    shopTrace(`${step} done`, { ms: Math.round(performance.now() - started), ...detail });
+  };
+}
+
 export type ShopCatalogSource = 'wanderers-guide' | 'pf2e';
 
 export type ShopStockRow = {

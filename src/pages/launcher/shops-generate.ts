@@ -465,10 +465,23 @@ export function formatShopPrice(price: Item['price'], markup = 0) {
   return parts.length > 0 ? parts.join(' ') : '—';
 }
 
+/** Turn a formatted offer ("2 gp 5 sp for 10") into a bare GP figure ("2.5 for 10"). */
+export function priceAsGp(label: string) {
+  const match = label.match(/^((?:\d+\s+(?:pp|gp|sp|cp)\s*)+)(\s+for\s+\d+)?(\*)?$/i);
+  if (!match) return label;
+  const copper = [...match[1].matchAll(/(\d+)\s+(pp|gp|sp|cp)/gi)].reduce((sum, coin) => {
+    return sum + Number(coin[1]) * COPPER[coin[2].toLowerCase() as keyof typeof COPPER];
+  }, 0);
+  const whole = Math.floor(copper / COPPER.gp);
+  const fraction = String(copper % COPPER.gp).padStart(2, '0').replace(/0+$/, '');
+  const amount = fraction ? `${whole}.${fraction}` : String(whole);
+  return `${amount}${match[2] ?? ''}${match[3] ?? ''}`;
+}
+
 export function formatShopOffer(item: ShopStockItem, markup = 0) {
   const pack = Math.max(1, item.packSize);
   const base = formatShopPrice(item.price, markup);
   if (base === '—') return base;
   const packed = pack > 1 ? `${base} for ${pack}` : base;
-  return isShopFormula(item) && item.rarity !== 'COMMON' ? `${packed}*` : packed;
+  return packed;
 }

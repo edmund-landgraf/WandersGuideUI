@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { ShopProse } from './shops-public';
+import { prepareShopProse, ShopProse } from './shops-public';
 
 const SAMPLE = `A [_+1_](link_item_1) [sample](link_item_6) made of [_wood_](link_trait_2).
 
@@ -40,5 +40,20 @@ describe('ShopProse', () => {
     expect(markup).toContain('◆◆');
     expect(markup).toContain('<hr');
     expect(markup).toContain('<strong>Activate</strong>');
+  });
+
+  it('renders markdown, HTML formatting, and plain text', () => {
+    const markdown = renderToStaticMarkup(createElement(ShopProse, { text: 'A **bold** shop.\n\n- one' }));
+    expect(markdown).toContain('<strong>bold</strong>');
+    expect(markdown).toContain('<li>one</li>');
+
+    const html = renderToStaticMarkup(createElement(ShopProse, { text: '<p>Welcome to <em>the</em> <strong>bazaar</strong>.</p>' }));
+    expect(html).toContain('<em>the</em>');
+    expect(html).toContain('<strong>bazaar</strong>');
+    expect(html).not.toContain('<p>Welcome');
+
+    const plain = renderToStaticMarkup(createElement(ShopProse, { text: 'Open from dawn until dusk.' }));
+    expect(plain).toContain('Open from dawn until dusk.');
+    expect(prepareShopProse('<span>kept</span>')).toBe('\nkept\n');
   });
 });
