@@ -2,6 +2,7 @@ import type { Item, Trait } from '@schemas/content';
 
 type Pf2eEquipmentRow = {
   EquipmentId: number;
+  AonUrl?: string | null;
   Name: string;
   Level: number;
   Rarity: string | null;
@@ -106,6 +107,7 @@ function mapRow(row: Pf2eEquipmentRow): Item {
       group: normalize(row.WeaponGroup || row.ArmorGroupText),
       pf2e_traits: row.Traits ?? '',
       shop_source: PF2E_SHOP_SOURCE,
+      aon_url: row.AonUrl?.trim() || undefined,
       unselectable: false,
     },
     operations: null,
@@ -116,6 +118,15 @@ function mapRow(row: Pf2eEquipmentRow): Item {
 
 export function isPf2eShopItem(item: Item) {
   return (item.meta_data as (Item['meta_data'] & { shop_source?: string }) | null | undefined)?.shop_source === PF2E_SHOP_SOURCE;
+}
+
+/** Archives page for this catalog row. Local EquipmentId is not an AoN id. */
+export function shopAonHref(item: Item): string | undefined {
+  const stored = (item.meta_data as { aon_url?: string } | null | undefined)?.aon_url?.trim();
+  if (stored) return stored;
+  const name = item.name.trim();
+  if (!isPf2eShopItem(item) || !name) return undefined;
+  return `https://2e.aonprd.com/Search.aspx?q=${encodeURIComponent(name)}`;
 }
 
 export function mergeShopCatalog(wanderersGuide: Item[], pf2e: Item[]) {

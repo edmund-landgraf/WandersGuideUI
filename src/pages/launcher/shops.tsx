@@ -28,7 +28,7 @@ import {
   type ShopRarity,
   type ShopStockItem,
 } from './shops-generate';
-import { fetchPf2eShopCatalog, isPf2eShopItem, mergeShopCatalog, pf2eTraits } from './shops-pf2e';
+import { fetchPf2eShopCatalog, isPf2eShopItem, mergeShopCatalog, pf2eTraits, shopAonHref } from './shops-pf2e';
 import { ShopPopout } from './shop-popout';
 import { collectShopCards, shopExportHtml } from './shops-export';
 import { ShopsLibrary } from './shops-library';
@@ -76,7 +76,7 @@ function ShopItemName({ item, traits, markup, aon }: { item: Item; traits: Trait
   return (
     <ShopPopout
       label={item.name}
-      href={aon ? `https://2e.aonprd.com/Equipment.aspx?ID=${Math.abs(item.id)}` : undefined}
+      href={aon ? shopAonHref(item) : undefined}
       cardClassName='w-[360px] max-h-[min(50vh,420px)] overflow-y-auto rounded-xl bg-[#1c1c1c] p-4 text-left text-[#fafafa] shadow-2xl ring-1 ring-white/25'
       titleClassName='font-heading text-base text-[#fafafa]'
     >
@@ -248,7 +248,7 @@ function ShopsPage() {
   const [openedId, setOpenedId] = useState<string | null>(null);
   const [campaignId, setCampaignId] = useState<number | null>(null);
   const [edited, setEdited] = useState(false);
-  const [useGroupings, setUseGroupings] = useState(false);
+  const [useGroupings, setUseGroupings] = useState(true);
   const [removed, setRemoved] = useState<{ item: ShopStockItem; index: number } | null>(null);
 
   useEffect(() => {
@@ -763,63 +763,43 @@ function ShopsPage() {
                     <p className='px-6 pb-6 text-sm text-muted-foreground'>
                       {edited ? 'The counter is empty.' : 'Nothing in this preset matches the catalog.'}
                     </p>
+                  ) : useGroupings ? (
+                    <div>
+                      {groupShopStock(stock, traits).map((section) => (
+                        <details className='group border-t border-white/10 open:bg-white/[0.02]' key={section.shelf} open>
+                          <summary className='cursor-pointer list-none px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground marker:content-none [&::-webkit-details-marker]:hidden'>
+                            <span className='mr-2 inline-block w-3 transition-transform group-open:rotate-90' aria-hidden>▸</span>
+                            {section.shelf}
+                            <span className='ml-2 normal-case tracking-normal'>{section.rows.length}</span>
+                          </summary>
+                          <ShopStockTable
+                            rows={section.rows}
+                            stock={stock}
+                            traits={traits}
+                            markup={markup}
+                            aon={drawFromPf2e && !drawFromWanderersGuide}
+                            onRemove={(row, index) => {
+                              setRemoved({ item: row, index });
+                              setStock((current) => current?.filter((item) => item.shopKey !== row.shopKey) ?? []);
+                              setEdited(true);
+                            }}
+                          />
+                        </details>
+                      ))}
+                    </div>
                   ) : (
-                    <table className='w-full text-left text-sm'>
-                      <thead className='text-muted-foreground'>
-                        <tr>
-                          <th className='px-4 py-3 font-medium'>Qty</th>
-                          <th className='px-4 py-3 font-medium'>Name</th>
-                          <th className='px-4 py-3 font-medium'>Level</th>
-                          <th className='px-4 py-3 font-medium'>Rarity</th>
-                          <th className='px-4 py-3 font-medium'>Group</th>
-                          <th className='px-4 py-3 font-medium'>Price</th>
-                          <th className='px-4 py-3 font-medium'><span className='sr-only'>Remove</span></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(useGroupings ? groupShopStock(stock, traits) : [{ shelf: '', rows: stock }]).flatMap((section) => {
-                          const header = section.shelf ? [(
-                            <tr className='border-t border-white/10 bg-white/5' key={`shelf-${section.shelf}`}>
-                              <th className='px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground' colSpan={7} scope='rowgroup'>
-                                {section.shelf}
-                              </th>
-                            </tr>
-                          )] : [];
-                          return [
-                            ...header,
-                            ...section.rows.map((row) => {
-                          const index = stock.findIndex((item) => item.shopKey === row.shopKey);
-                          return (
-                          <tr className='border-t border-white/10' key={row.shopKey}>
-                            <td className='px-4 py-3'>{shopLineQuantity(row)} ×</td>
-                            <td className='px-4 py-3'>
-                              <ShopItemName item={row} traits={traits} markup={markup} aon={drawFromPf2e && !drawFromWanderersGuide} />
-                            </td>
-                            <td className='px-4 py-3'>{row.level}</td>
-                            <td className='px-4 py-3'>{row.rarity}</td>
-                            <td className='px-4 py-3'>{isShopFormula(row) ? 'FORMULA' : row.group}</td>
-                            <td className='px-4 py-3'>{formatShopOffer(row, markup)}</td>
-                            <td className='px-4 py-3 text-right'>
-                              <button
-                                className='text-sm text-muted-foreground underline'
-                                type='button'
-                                aria-label={`Remove ${row.name}`}
-                                onClick={() => {
-                                  setRemoved({ item: row, index });
-                                  setStock((current) => current?.filter((item) => item.shopKey !== row.shopKey) ?? []);
-                                  setEdited(true);
-                                }}
-                              >
-                                Remove
-                              </button>
-                            </td>
-                          </tr>
-                          );
-                            }),
-                          ];
-                        })}
-                      </tbody>
-                    </table>
+                    <ShopStockTable
+                      rows={stock}
+                      stock={stock}
+                      traits={traits}
+                      markup={markup}
+                      aon={drawFromPf2e && !drawFromWanderersGuide}
+                      onRemove={(row, index) => {
+                        setRemoved({ item: row, index });
+                        setStock((current) => current?.filter((item) => item.shopKey !== row.shopKey) ?? []);
+                        setEdited(true);
+                      }}
+                    />
                   )}
                   {removed && (
                     <p className='px-4 py-3 text-sm text-muted-foreground'>
@@ -849,6 +829,65 @@ function ShopsPage() {
         </section>
       </main>
     </div>
+  );
+}
+
+function ShopStockTable({
+  rows,
+  stock,
+  traits,
+  markup,
+  aon,
+  onRemove,
+}: {
+  rows: ShopStockItem[];
+  stock: ShopStockItem[];
+  traits: Trait[];
+  markup: number;
+  aon: boolean;
+  onRemove: (row: ShopStockItem, index: number) => void;
+}) {
+  return (
+    <table className='w-full text-left text-sm'>
+      <thead className='text-muted-foreground'>
+        <tr>
+          <th className='px-4 py-3 font-medium'>Qty</th>
+          <th className='px-4 py-3 font-medium'>Name</th>
+          <th className='px-4 py-3 font-medium'>Level</th>
+          <th className='px-4 py-3 font-medium'>Rarity</th>
+          <th className='px-4 py-3 font-medium'>Group</th>
+          <th className='px-4 py-3 font-medium'>Price</th>
+          <th className='px-4 py-3 font-medium'><span className='sr-only'>Remove</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => {
+          const index = stock.findIndex((item) => item.shopKey === row.shopKey);
+          return (
+            <tr className='border-t border-white/10' key={row.shopKey}>
+              <td className='px-4 py-3'>{shopLineQuantity(row)} ×</td>
+              <td className='px-4 py-3'>
+                <ShopItemName item={row} traits={traits} markup={markup} aon={aon} />
+              </td>
+              <td className='px-4 py-3'>{row.level}</td>
+              <td className='px-4 py-3'>{row.rarity}</td>
+              <td className='px-4 py-3'>{isShopFormula(row) ? 'FORMULA' : row.group}</td>
+              <td className='px-4 py-3'>{formatShopOffer(row, markup)}</td>
+              <td className='px-4 py-3 text-right'>
+                <button
+                  className='text-sm text-muted-foreground underline'
+                  type='button'
+                  aria-label={`Remove ${row.name}`}
+                  onClick={() => onRemove(row, index)}
+                >
+                  Remove
+                </button>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
