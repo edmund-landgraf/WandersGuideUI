@@ -23,7 +23,7 @@ describe('shop AoN links', () => {
   const pf2e = item({
     id: -7913,
     name: 'Abysium Chunk',
-    meta_data: { shop_source: 'pf2e-local', aon_url: ABYSIUM } as Item['meta_data'],
+    meta_data: { shop_source: 'pf2e-local', aon_url: ABYSIUM } as unknown as Item['meta_data'],
   });
   const guide = item({ id: 42, name: 'Abysium Chunk' });
 
@@ -32,7 +32,7 @@ describe('shop AoN links', () => {
     expect(shopAonHref(item({
       id: 1,
       name: 'Rope',
-      meta_data: { aon_url: 'https://2e.aonprd.com/Search.aspx?q=Rope' } as Item['meta_data'],
+      meta_data: { aon_url: 'https://2e.aonprd.com/Search.aspx?q=Rope' } as unknown as Item['meta_data'],
     }))).toBeUndefined();
   });
 
