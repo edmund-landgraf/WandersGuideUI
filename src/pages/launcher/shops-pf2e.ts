@@ -120,13 +120,28 @@ export function isPf2eShopItem(item: Item) {
   return (item.meta_data as (Item['meta_data'] & { shop_source?: string }) | null | undefined)?.shop_source === PF2E_SHOP_SOURCE;
 }
 
-/** Archives page for this catalog row. Local EquipmentId is not an AoN id. */
-export function shopAonHref(item: Item): string | undefined {
+/** Archives page with a numeric ID. Local EquipmentId is not an AoN id. */
+export function shopAonHref(item: Item, index?: ReadonlyMap<string, string>): string | undefined {
+  return ownAonUrl(item) ?? index?.get(shopAonKey(item));
+}
+
+export function shopAonKey(item: { name: string; level: number }) {
+  return `${item.name.trim().toLowerCase()}|${item.level}`;
+}
+
+export function shopAonIndex(items: Item[]) {
+  const index = new Map<string, string>();
+  for (const item of items) {
+    const href = ownAonUrl(item);
+    if (href) index.set(shopAonKey(item), href);
+  }
+  return index;
+}
+
+function ownAonUrl(item: Item) {
   const stored = (item.meta_data as { aon_url?: string } | null | undefined)?.aon_url?.trim();
-  if (stored) return stored;
-  const name = item.name.trim();
-  if (!name) return undefined;
-  return `https://2e.aonprd.com/Search.aspx?q=${encodeURIComponent(name)}`;
+  if (!stored || /Search\.aspx/i.test(stored) || !/[?&]ID=\d+/i.test(stored)) return undefined;
+  return stored;
 }
 
 export function mergeShopCatalog(wanderersGuide: Item[], pf2e: Item[]) {

@@ -3,7 +3,7 @@ import { compileWgText } from '@pages/phase1/phase1-markdown';
 import { toStandard2eProse } from '@utils/foundry-text';
 import { publicPath } from '../../syndication/nodes';
 import { asShopLine, formatShopOffer, isShopFormula, shopLineQuantity, type SettlementId, type ShopPresetId, type ShopRarity } from './shops-generate';
-import { isPf2eShopItem } from './shops-pf2e';
+import { isPf2eShopItem, shopAonHref } from './shops-pf2e';
 
 export const SHOP_CONTENT_KIND = 'shop';
 export const SHOP_PUBLIC_PREFIX = '/shops/s';
@@ -22,6 +22,7 @@ export type ShopStockRow = {
   traits: string[];
   description: string;
   source?: ShopCatalogSource | null;
+  aon?: string;
 };
 
 export type ShopPageStyle = 'default' | 'homebrew-v3';
@@ -60,7 +61,9 @@ export function shopDraft(
   markup = 0,
   style: ShopPageStyle = 'default',
   description = '',
-  extras: Pick<ShopDraft, 'sources' | 'books' | 'rarities' | 'size' | 'campaignId'> = {},
+  extras: Pick<ShopDraft, 'sources' | 'books' | 'rarities' | 'size' | 'campaignId'> & {
+    aonIndex?: ReadonlyMap<string, string>;
+  } = {},
 ): ShopDraft {
   return {
     preset,
@@ -87,6 +90,7 @@ export function shopDraft(
         .filter((name): name is string => Boolean(name)),
       description: cardText(item.description),
       source: stockSource(item),
+      aon: shopAonHref(item, extras.aonIndex),
     })),
   };
 }

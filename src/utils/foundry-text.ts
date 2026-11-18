@@ -39,8 +39,8 @@ export function toStandard2eProse(text: string): string {
 }
 
 const PAIZO_ACTION_GLYPHS: Record<string, string> = {
-  'free action': '`action_symbol_5`',
-  reaction: '`action_symbol_4`',
+  'free action': '`action_symbol_4`',
+  reaction: '`action_symbol_5`',
   'one action': '`action_symbol_1`',
   '1 action': '`action_symbol_1`',
   'two actions': '`action_symbol_2`',
@@ -48,6 +48,10 @@ const PAIZO_ACTION_GLYPHS: Record<string, string> = {
   'three actions': '`action_symbol_3`',
   '3 actions': '`action_symbol_3`',
 };
+
+/** Flattened `action_symbol_N`, `actionsymbol5`, or a spoken action cost at the start of an Activate line. */
+const LEADING_ACTION_GLYPH =
+  /^(?:`?action[\s_-]*symbol[\s_-]*([1-5])`?|(one action|1 action|two actions|2 actions|three actions|3 actions|free action|reaction))\b\s*/i;
 
 const PAIZO_CLAUSE_LABELS = ['Frequency', 'Trigger', 'Requirements', 'Effect', 'Duration', 'Range', 'Area', 'Targets', 'Cost', 'Defense'];
 
@@ -64,8 +68,10 @@ function formatPaizoLine(line: string): string {
   const trimmed = line.trim();
   if (!trimmed || trimmed.startsWith('**')) return line;
 
-  const activate = trimmed.match(/^Activate\s*[—–-]\s*(.+)$/i);
-  if (activate) return formatActivate(activate[1]);
+  const activate = trimmed.match(/^Activate\s*(?:[—–-]\s*)?(.+)$/i);
+  if (activate && (LEADING_ACTION_GLYPH.test(activate[1]) || /[—–-]/.test(trimmed.slice(0, 12)))) {
+    return formatActivate(activate[1]);
+  }
 
   const labeled = trimmed.match(/^(Passive|Special|Critical Success|Success|Failure|Critical Failure)\s*:\s*([\s\S]+)$/i);
   if (labeled) return `**${titleLabel(labeled[1])}** ${labeled[2].trim()}`;
@@ -73,19 +79,31 @@ function formatPaizoLine(line: string): string {
 }
 
 function formatActivate(body: string): string {
-  const linked = body.match(/^\[([^\]]+)\]\(([^)]+)\)\s*(?:\(([^)]+)\))?(?:[.;]\s*([\s\S]*))?$/);
-  if (linked) {
-    return finishActivate(`[${linked[1]}](${linked[2]})`, linked[3] ?? '', linked[4] ?? '');
+  const leading: string[] = [];
+  let restBody = body.trim();
+  let glyph = LEADING_ACTION_GLYPH.exec(restBody);
+  while (glyph) {
+    leading.push(glyph[1] ? `\`action_symbol_${glyph[1]}\`` : PAIZO_ACTION_GLYPHS[glyph[2].toLowerCase()]);
+    restBody = restBody.slice(glyph[0].length);
+    glyph = LEADING_ACTION_GLYPH.exec(restBody);
   }
-  const named = body.match(/^([^(.;]+?)(?:\s*\(([^)]+)\))?(?:[.;]\s*([\s\S]*))?$/);
-  const name = (named?.[1] ?? body).trim().replace(/[.;]$/, '');
-  return finishActivate(name, named?.[2] ?? '', named?.[3] ?? '');
+
+  const linked = restBody.match(/^\[([^\]]+)\]\(([^)]+)\)\s*(?:\(([^)]+)\))?(?:[.;]\s*([\s\S]*))?$/);
+  if (linked) {
+    return finishActivate(`[${linked[1]}](${linked[2]})`, linked[3] ?? '', linked[4] ?? '', leading);
+  }
+  const bareParen = restBody.match(/^\(([^)]+)\)(?:[.;]\s*([\s\S]*))?$/);
+  if (bareParen) return finishActivate('', bareParen[1], bareParen[2] ?? '', leading);
+  const named = restBody.match(/^([^(.;]+?)(?:\s*\(([^)]+)\))?(?:[.;]\s*([\s\S]*))?$/);
+  const name = (named?.[1] ?? restBody).trim().replace(/[.;]$/, '');
+  return finishActivate(name, named?.[2] ?? '', named?.[3] ?? '', leading);
 }
 
-function finishActivate(name: string, paren: string, restText: string): string {
+function finishActivate(name: string, paren: string, restText: string, leading: string[] = []): string {
   const { symbols, traits } = splitActionTraits(paren);
   const rest = formatClauses(restText);
-  const head = ['**Activate**', symbols, name, traits ? `(${traits})` : ''].filter(Boolean).join(' ');
+  const glyphs = [...leading, symbols].filter(Boolean).join(' ');
+  const head = ['**Activate**', glyphs, name, traits ? `(${traits})` : ''].filter(Boolean).join(' ');
   return rest ? `${head}; ${rest}` : head;
 }
 
@@ -101,7 +119,7 @@ function splitActionTraits(paren: string): { symbols: string; traits: string } {
 }
 
 function formatClauses(rest: string): string {
-  const pattern = new RegExp(`(?:^|\\.\\s+)(${PAIZO_CLAUSE_LABELS.join('|')})\\s*:?\\s+`, 'gi');
+  const pattern = new RegExp(`(?:^|[.;]\\s+)(${PAIZO_CLAUSE_LABELS.join('|')})\\s*:?\\s+`, 'gi');
   return rest
     .trim()
     .replace(pattern, (_match, label: string, offset: number) => {

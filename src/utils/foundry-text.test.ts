@@ -70,6 +70,14 @@ describe('Paizo entry prose', () => {
     expect(out).toContain('**Frequency** three times per day.');
   });
 
+  it('reads a flattened reaction glyph and semicolon clauses', () => {
+    const raw =
+      "Activate actionsymbol5 (concentrate, fortune); Frequency once per day; Trigger You rolled a saving throw of the noted type; Effect Replace the roll with the d20 roll from your ancestor's visitation.";
+    expect(formatPaizoEntryProse(raw)).toBe(
+      "**Activate** `action_symbol_5` (concentrate, fortune); **Frequency** once per day; **Trigger** You rolled a saving throw of the noted type; **Effect** Replace the roll with the d20 roll from your ancestor's visitation."
+    );
+  });
+
   it('labels a Passive line', () => {
     expect(formatPaizoEntryProse('Passive: you gain the feat while the shutter is open.')).toBe(
       '**Passive** you gain the feat while the shutter is open.'

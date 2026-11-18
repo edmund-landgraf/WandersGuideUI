@@ -27,7 +27,7 @@ import {
   type ShopRarity,
   type ShopStockItem,
 } from './shops-generate';
-import { fetchPf2eShopCatalog, isPf2eShopItem, mergeShopCatalog, pf2eTraits, shopAonHref } from './shops-pf2e';
+import { fetchPf2eShopCatalog, isPf2eShopItem, mergeShopCatalog, pf2eTraits, shopAonHref, shopAonIndex } from './shops-pf2e';
 import { ShopPopout } from './shop-popout';
 import { collectShopCards, shopExportHtml } from './shops-export';
 import { ShopsLibrary } from './shops-library';
@@ -63,7 +63,7 @@ function itemCardText(value: string) {
   return toStandard2eProse(compileWgText(value)).trim();
 }
 
-function ShopItemName({ item, traits, markup }: { item: Item; traits: Trait[]; markup: number }) {
+function ShopItemName({ item, traits, markup, aonIndex }: { item: Item; traits: Trait[]; markup: number; aonIndex?: ReadonlyMap<string, string> }) {
   const traitNames = (item.traits ?? [])
     .map((id) => traits.find((trait) => trait.id === id)?.name)
     .filter((name): name is string => Boolean(name));
@@ -72,7 +72,7 @@ function ShopItemName({ item, traits, markup }: { item: Item; traits: Trait[]; m
   return (
     <ShopPopout
       label={item.name}
-      href={shopAonHref(item)}
+      href={shopAonHref(item, aonIndex)}
       cardClassName='w-[360px] max-h-[min(50vh,420px)] overflow-y-auto rounded-xl bg-[#1c1c1c] p-4 text-left text-[#fafafa] shadow-2xl ring-1 ring-white/25'
       titleClassName='font-heading text-base text-[#fafafa]'
     >
@@ -246,6 +246,7 @@ function ShopsPage() {
   const [edited, setEdited] = useState(false);
   const [useGroupings, setUseGroupings] = useState(readGroupingsPreference);
   const [removed, setRemoved] = useState<{ item: ShopStockItem; index: number } | null>(null);
+  const [aonIndex, setAonIndex] = useState<ReadonlyMap<string, string>>(() => new Map());
 
   useEffect(() => {
     let cancelled = false;
@@ -275,6 +276,7 @@ function ShopsPage() {
           setError('The item catalog came back empty.');
           return;
         }
+        setAonIndex(shopAonIndex(pf2eList));
         setItems(combinedItems);
         setTraits(combinedTraits);
         setBooks(sources);
@@ -581,6 +583,7 @@ function ShopsPage() {
                         rarities,
                         size: stockCount,
                         campaignId,
+                        aonIndex,
                       });
                       const save = openedId
                         ? listOwned(SHOP_CONTENT_KIND).then((rows) => {
@@ -773,6 +776,7 @@ function ShopsPage() {
                             stock={stock}
                             traits={traits}
                             markup={markup}
+                            aonIndex={aonIndex}
                             onRemove={(row, index) => {
                               setRemoved({ item: row, index });
                               setStock((current) => current?.filter((item) => item.shopKey !== row.shopKey) ?? []);
@@ -788,6 +792,7 @@ function ShopsPage() {
                       stock={stock}
                       traits={traits}
                       markup={markup}
+                      aonIndex={aonIndex}
                       onRemove={(row, index) => {
                         setRemoved({ item: row, index });
                         setStock((current) => current?.filter((item) => item.shopKey !== row.shopKey) ?? []);
@@ -831,12 +836,14 @@ function ShopStockTable({
   stock,
   traits,
   markup,
+  aonIndex,
   onRemove,
 }: {
   rows: ShopStockItem[];
   stock: ShopStockItem[];
   traits: Trait[];
   markup: number;
+  aonIndex: ReadonlyMap<string, string>;
   onRemove: (row: ShopStockItem, index: number) => void;
 }) {
   return (
@@ -859,7 +866,7 @@ function ShopStockTable({
             <tr className='border-t border-white/10' key={row.shopKey}>
               <td className='px-4 py-3'>{shopLineQuantity(row)} ×</td>
               <td className='px-4 py-3'>
-                <ShopItemName item={row} traits={traits} markup={markup} />
+                <ShopItemName item={row} traits={traits} markup={markup} aonIndex={aonIndex} />
               </td>
               <td className='px-4 py-3'>{row.level}</td>
               <td className='px-4 py-3'>{row.rarity}</td>

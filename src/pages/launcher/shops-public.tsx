@@ -258,7 +258,7 @@ function StockName({ row, homebrew = false }: { row: ShopStockRow; homebrew?: bo
   return (
     <ShopPopout
       label={row.name}
-      href={row.name.trim() ? `https://2e.aonprd.com/Search.aspx?q=${encodeURIComponent(row.name.trim())}` : undefined}
+      href={row.aon}
       cardClassName={homebrew
         ? 'w-[360px] max-h-[min(50vh,420px)] overflow-y-auto bg-[#f7edd4] p-4 text-left text-[#1c140c] shadow-2xl ring-1 ring-[#8a5a22]'
         : 'w-[360px] max-h-[min(50vh,420px)] overflow-y-auto rounded-xl bg-[#1c1c1c] p-4 text-left text-[#fafafa] shadow-2xl ring-1 ring-white/25'}
