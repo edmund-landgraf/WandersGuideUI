@@ -7,6 +7,7 @@ import { getConditionByName } from '@conditions/condition-handler';
 import { compileWgText } from '@pages/phase1/phase1-markdown';
 import { normalizeMarkdownTables, resolveAonHref, toStandard2eProse } from '@utils/foundry-text';
 import { ShopPopout } from './shop-popout';
+import { fetchPf2eEquipmentText } from './shops-pf2e';
 import { readPublic } from '../../syndication/store';
 import { LauncherHeader } from './launcher-header';
 import { asContentType } from './shops-export';
@@ -276,6 +277,7 @@ function shownPrice(price: string, inGp: boolean) {
 }
 
 function StockName({ row, homebrew = false, inGp = false }: { row: ShopStockRow; homebrew?: boolean; inGp?: boolean }) {
+  const description = useShopItemText(row);
   return (
     <ShopPopout
       label={row.name}
@@ -301,15 +303,35 @@ function StockName({ row, homebrew = false, inGp = false }: { row: ShopStockRow;
         {shownPrice(row.price, inGp)}
         {row.bulk ? ` · Bulk ${row.bulk}` : ''}
       </p>
-      {row.description && (
+      {description && (
         <ShopProse
-          text={row.description}
+          text={description}
           homebrew={homebrew}
           className={homebrew ? 'mt-3 text-sm leading-6 text-[#1c140c]' : 'mt-3 text-sm leading-6 text-[#f4f4f5]'}
         />
       )}
     </ShopPopout>
   );
+}
+
+function summaryIsCutOff(text: string) {
+  return /(?:\u2026|\.{3})\s*$/.test(text.trim());
+}
+
+function useShopItemText(row: ShopStockRow) {
+  const [text, setText] = useState(row.description);
+  useEffect(() => {
+    setText(row.description);
+    if (row.source !== 'pf2e' || !summaryIsCutOff(row.description)) return;
+    let cancelled = false;
+    void fetchPf2eEquipmentText(row.id).then((full) => {
+      if (!cancelled && full) setText(full);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [row.description, row.id, row.source]);
+  return text;
 }
 
 function groupLabel(group: string) {

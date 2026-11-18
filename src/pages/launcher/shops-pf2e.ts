@@ -181,6 +181,21 @@ export function pf2eTraits(items: Item[]): Trait[] {
   })) as unknown as Trait[];
 }
 
+const equipmentText = new Map<number, Promise<string>>();
+
+/** Detail text. The list endpoint only returns a summary that ends mid-sentence. */
+export function fetchPf2eEquipmentText(equipmentId: number) {
+  const cached = equipmentText.get(equipmentId);
+  if (cached) return cached;
+  const pending = fetch(`${apiBase()}/api/equipment/${equipmentId}`).then(async (response) => {
+    if (!response.ok) return '';
+    const row = (await response.json()) as { RawText?: string | null; RawMD?: string | null; Summary?: string | null };
+    return (row.RawText || row.RawMD || row.Summary || '').trim();
+  }).catch(() => '');
+  equipmentText.set(equipmentId, pending);
+  return pending;
+}
+
 export async function fetchPf2eShopCatalog() {
   const first = await fetch(`${apiBase()}/api/equipment?limit=500&offset=0`);
   if (!first.ok) throw new Error(`PF2E equipment API returned ${first.status}`);

@@ -27,7 +27,7 @@ import {
   type ShopRarity,
   type ShopStockItem,
 } from './shops-generate';
-import { fetchPf2eShopCatalog, isPf2eShopItem, mergeShopCatalog, pf2eTraits, shopAonHref, shopAonIndex } from './shops-pf2e';
+import { fetchPf2eEquipmentText, fetchPf2eShopCatalog, isPf2eShopItem, mergeShopCatalog, pf2eTraits, shopAonHref, shopAonIndex } from './shops-pf2e';
 import { ShopPopout } from './shop-popout';
 import { collectShopCards, shopExportHtml } from './shops-export';
 import { ShopsLibrary } from './shops-library';
@@ -236,7 +236,8 @@ function ShopsPage() {
   const [exportNote, setExportNote] = useState('');
   const [stockCount, setStockCount] = useState(STOCK_COUNT);
   const [markup, setMarkup] = useState(0);
-  const [pageStyle, setPageStyle] = useState<ShopPageStyle>('default');
+  const [game, setGame] = useState<'pathfinder' | 'starfinder'>('pathfinder');
+  const [pageStyle, setPageStyle] = useState<ShopPageStyle>('homebrew-v3');
   const [shopName, setShopName] = useState('');
   const [shopDescription, setShopDescription] = useState('');
   const [saving, setSaving] = useState(false);
@@ -344,7 +345,11 @@ function ShopsPage() {
       setSettlement(SETTLEMENT_LEVELS.some((row) => row.id === draft.settlement) ? draft.settlement : 'village');
       setRarities((draft.rarities ?? []).filter((row): row is ShopRarity => SHOP_RARITIES.includes(row)));
       setMarkup(draft.markup ?? 0);
-      setPageStyle(draft.style === 'homebrew-v3' ? 'homebrew-v3' : 'default');
+      const starfinderIds = new Set(books.filter((book) => book.group === 'starfinder-core').map((book) => book.id));
+      const savedBooks = draft.books ?? [];
+      const nextGame = savedBooks.length > 0 && savedBooks.every((id) => starfinderIds.has(id)) ? 'starfinder' : 'pathfinder';
+      setGame(nextGame);
+      setPageStyle(draft.style === 'homebrew-v3' || draft.style === 'default' ? draft.style : nextGame === 'starfinder' ? 'default' : 'homebrew-v3');
       setStockCount(draft.size ?? (loaded.length || STOCK_COUNT));
       setShopName(node?.name ?? '');
       setShopDescription(draft.description ?? '');
@@ -500,6 +505,28 @@ function ShopsPage() {
                 </span>
               </label>
               <label className='grid gap-2 text-sm text-muted-foreground'>
+                Game
+                <select
+                  className='rounded-lg bg-card px-3 py-2 text-foreground ring-1 ring-white/15'
+                  value={game}
+                  onChange={(event) => {
+                    const next = event.target.value === 'starfinder' ? 'starfinder' : 'pathfinder';
+                    setGame(next);
+                    setPageStyle(next === 'starfinder' ? 'default' : 'homebrew-v3');
+                    if (next === 'starfinder') {
+                      setEnabledBooks(books.filter((book) => book.group === 'starfinder-core').map((book) => book.id));
+                      setDrawFromPf2e(false);
+                    } else {
+                      setEnabledBooks(books.filter((book) => !DEFAULT_SHOP_EXCLUDED_GROUPS.has(book.group ?? '')).map((book) => book.id));
+                      setDrawFromPf2e(true);
+                    }
+                  }}
+                >
+                  <option value='pathfinder'>Pathfinder</option>
+                  <option value='starfinder'>Starfinder</option>
+                </select>
+              </label>
+              <label className='grid gap-2 text-sm text-muted-foreground'>
                 Style
                 <select
                   className='rounded-lg bg-card px-3 py-2 text-foreground ring-1 ring-white/15'
@@ -576,15 +603,22 @@ function ShopsPage() {
                     type='button'
                     disabled={saving || !shopName.trim()}
                     onClick={() => {
+                      void (async () => {
                       const name = shopName.trim();
                       if (!name || !stock) return;
                       setSaving(true);
                       setSaveNote('');
+                      try {
                       const sources = [
                         ...(drawFromWanderersGuide ? (['wanderers-guide'] as const) : []),
                         ...(drawFromPf2e ? (['pf2e'] as const) : []),
                       ];
-                      const draft = shopDraft(preset, settlement, stock, traits, markup, pageStyle, shopDescription, {
+                      const described = await Promise.all(stock.map(async (item) => {
+                        if (!isPf2eShopItem(item) || !/(?:\u2026|\.{3})\s*$/.test(item.description.trim())) return item;
+                        const full = await fetchPf2eEquipmentText(Math.abs(item.id));
+                        return full ? { ...item, description: full } : item;
+                      }));
+                      const draft = shopDraft(preset, settlement, described, traits, markup, pageStyle, shopDescription, {
                         sources,
                         books: enabledBooks,
                         rarities,
@@ -611,12 +645,18 @@ function ShopsPage() {
                           const url = new URL(location.href);
                           url.searchParams.set('id', node.id);
                           history.replaceState({}, '', url);
+                          window.open(`/shops/view/${encodeURIComponent(node.id)}`, '_blank', 'noopener');
                           setSaveNote(openedId ? 'Saved.' : 'Saved. Open Saved shops to publish it.');
                         })
                         .catch((cause: unknown) => {
                           setSaveNote(cause instanceof Error ? cause.message : 'Could not save this shop.');
                         })
                         .finally(() => setSaving(false));
+                      } catch (cause) {
+                        setSaveNote(cause instanceof Error ? cause.message : 'Could not save this shop.');
+                        setSaving(false);
+                      }
+                      })();
                     }}
                   >
                     {saving ? 'Saving…' : 'Save'}
