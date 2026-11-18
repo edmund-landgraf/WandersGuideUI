@@ -55,16 +55,10 @@ describe('stockShop', () => {
     item({ id: 19, name: 'Adamantine Chunk', group: 'MATERIAL', level: 8, rarity: 'UNCOMMON' }),
   ];
 
-  it('stocks every common good from level 0 through the shop level, including a little armor and weapons', () => {
+  it('stocks mundane goods and leaves weapons, armor, magic, and other specialty stock to their counters', () => {
     const stock = stockShop(catalog, traits, 'general', 1, () => 0);
     expect(stock.map((row) => row.name)).toEqual([
-      'Formula: Arrow',
-      'Formula: Bolts',
       'Formula: Rope',
-      'Formula: Breastplate',
-      'Formula: Gold Ring',
-      'Formula: Healing Potion',
-      'Formula: Longsword',
       'Formula: Winter Cloak',
     ]);
     expect(stock.every((row) => row.shopQuantity >= 1)).toBe(true);
@@ -85,11 +79,7 @@ describe('stockShop', () => {
     expect(raritiesForSettlement('metro20')).toEqual(['COMMON', 'UNCOMMON', 'RARE']);
     const commonOnly = new Set(['COMMON']);
     expect(stockShop(catalog, traits, 'gadget', 2, () => 0, undefined, new Set(), 16, commonOnly)).toEqual([]);
-    expect(stockShop(catalog, traits, 'general', 2, () => 0, undefined, new Set(), 16, new Set(['UNCOMMON'])).map((row) => row.name)).toEqual([
-      'Formula: Clockwork Spy',
-      'Formula: Eye Tattoo',
-      'Formula: Hand Cannon',
-    ]);
+    expect(stockShop(catalog, traits, 'general', 2, () => 0, undefined, new Set(), 16, new Set(['UNCOMMON'])).map((row) => row.name)).toEqual([]);
   });
 
   it('finds gadgets by the Gadget trait after the GADGET item group was folded into GENERAL', () => {

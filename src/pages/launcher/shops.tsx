@@ -248,7 +248,7 @@ function ShopsPage() {
   const [openedId, setOpenedId] = useState<string | null>(null);
   const [campaignId, setCampaignId] = useState<number | null>(null);
   const [edited, setEdited] = useState(false);
-  const [useGroupings, setUseGroupings] = useState(true);
+  const [useGroupings, setUseGroupings] = useState(false);
   const [removed, setRemoved] = useState<{ item: ShopStockItem; index: number } | null>(null);
 
   useEffect(() => {
@@ -351,7 +351,7 @@ function ShopsPage() {
       }
       const lines = loaded.map((item) => asShopLine(item));
       setStock(lines);
-      setUseGroupings(lines.length > 20);
+      setUseGroupings(lines.length > 105);
       setEdited(false);
       setRemoved(null);
       lastStockIds.current = new Set(loaded.map((item) => item.id));
@@ -400,7 +400,7 @@ function ShopsPage() {
                 );
                 lastStockIds.current = new Set(next.map((row) => row.id));
                 setStock(next);
-                setUseGroupings(next.length > 20);
+                setUseGroupings(next.length > 105);
                 setEdited(false);
                 setRemoved(null);
                 setPanel('stock');
@@ -477,9 +477,9 @@ function ShopsPage() {
                   className='w-24 rounded-lg bg-card px-3 py-2 text-foreground ring-1 ring-white/15'
                   type='number'
                   min={1}
-                  max={100}
+                  max={500}
                   value={stockCount}
-                  onChange={(event) => setStockCount(Math.max(1, Math.min(100, Number(event.target.value) || 1)))}
+                  onChange={(event) => setStockCount(Math.max(1, Math.min(500, Number(event.target.value) || 1)))}
                 />
               </label>
               <label className='grid gap-2 text-sm text-muted-foreground'>
@@ -766,7 +766,7 @@ function ShopsPage() {
                   ) : useGroupings ? (
                     <div>
                       {groupShopStock(stock, traits).map((section) => (
-                        <details className='group border-t border-white/10 open:bg-white/[0.02]' key={section.shelf} open>
+                        <details className='group border-t border-white/10 open:bg-white/[0.02]' key={section.shelf}>
                           <summary className='cursor-pointer list-none px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground marker:content-none [&::-webkit-details-marker]:hidden'>
                             <span className='mr-2 inline-block w-3 transition-transform group-open:rotate-90' aria-hidden>▸</span>
                             {section.shelf}

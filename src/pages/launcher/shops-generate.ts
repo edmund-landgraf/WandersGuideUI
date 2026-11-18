@@ -117,11 +117,43 @@ const BLACKSMITH_GROUPS = new Set(['axe', 'brawling', 'club', 'flail', 'hammer',
 const JEWELRY_USAGE = ['circlet', 'necklace', 'ring', 'eyepiece', 'goggle', 'amulet', 'bracelet', 'crown', 'tiara', 'spellheart'];
 const TAILOR_USAGE = ['cloak', 'boot', 'glove', 'belt', 'hat', 'hood', 'robe', 'garment', 'bracer', 'shoe', 'slippers'];
 
+const SPECIALTY_TRAITS = [
+  'magical',
+  'alchemical',
+  'ammunition',
+  'gadget',
+  'potion',
+  'elixir',
+  'oil',
+  'tattoo',
+  'scroll',
+  'snare',
+  'catalyst',
+  'bomb',
+  'poison',
+  'drug',
+  'spellheart',
+  'wand',
+  'staff',
+  'grimoire',
+  'talisman',
+];
+
+/** Rope, tools, clothes, and other mundane goods. Specialty counters keep the rest. */
+function isBasicGood(item: Item, labels: string[]) {
+  if (item.group !== 'GENERAL') return false;
+  if (isAmmunition(item, labels)) return false;
+  if (SPECIALTY_TRAITS.some((name) => hasLabel(labels, name))) return false;
+  const usage = usageText(item);
+  if (JEWELRY_USAGE.some((part) => usage.includes(part))) return false;
+  return true;
+}
+
 function matchesPreset(item: Item, preset: ShopPresetId, names: Map<number, string>) {
   const labels = traitNames(item, names);
   const usage = usageText(item);
   const group = weaponGroup(item);
-  if (preset === 'general') return item.group !== 'RUNE';
+  if (preset === 'general') return isBasicGood(item, labels);
   if (preset === 'magic') return item.group !== 'RUNE' && hasLabel(labels, 'magical');
   if (preset === 'alchemical') return hasLabel(labels, 'alchemical');
   if (preset === 'ammo') return isAmmunition(item, labels);
@@ -155,7 +187,7 @@ function isConsumable(item: Item, labels: string[]) {
 }
 
 function categoryWeight(item: Item, preset: ShopPresetId) {
-  if (preset !== 'general' && preset !== 'lost') return 1;
+  if (preset !== 'lost') return 1;
   if (item.group === 'ARMOR' || item.group === 'SHIELD' || item.group === 'WEAPON') return 5;
   if (item.group === 'MATERIAL') return 1;
   return 10;
