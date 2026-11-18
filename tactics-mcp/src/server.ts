@@ -4,12 +4,13 @@ import { registerCatalog } from "./catalog.js";
 import { registerHomebrew } from "./homebrew-catalog.js";
 import { registerShops } from "./shops-tools.js";
 
-export const TACTICS_MCP_VERSION = "1.0.0";
+export const TACTICS_MCP_VERSION = "1.3.0";
 export const TACTICS_MCP_NAME = "wgui-tactics";
-export const TACTICS_MCP_DESCRIPTION = "Encounter and character data for the GM. Mostly read-only, with scoped writes.";
+export const TACTICS_MCP_DESCRIPTION = "Characters, encounters, and shops for Wanderer's Guide. Includes list_shops, get_shop, search_shop_catalog, and create_shop.";
 
 /** Sent to clients at initialize. Guidance only: no tool behaves differently because of it. */
 export const TACTICS_MCP_INSTRUCTIONS = [
+  "Shops are tools: list_shops, get_shop, get_published_shop, search_shop_catalog, create_shop, create_shop_folder, update_shop, resize_shop, add_shop_item, update_shop_item, remove_shop_item, set_shop_stock, move_shop, delete_shop, publish_shop, unpublish_shop.",
   "Start with get_profile; treat returned ids as authoritative.",
   "Character build: create_character, optional set_books, list_options for ancestry/background/class, set_identity for each, list_open_choices, then choose_many, then spells (list_spell_options, add_spell or set_spells), gear (list_options kind=item, add_inventory_item), and export_character to check.",
   "Builder choices (guidance; you decide the grouping): batch every pick you can already decide from the open list into one choose_many call, and reuse the openChoices it returns instead of calling list_open_choices again.",
@@ -166,8 +167,8 @@ export function createTacticsMcpServer(userId: () => string, scopes: () => strin
     }) as never);
   }) as typeof server.registerTool;
 
+  registerShops(server, userId);
   registerCatalog(server, userId);
   registerHomebrew(server, userId);
-  registerShops(server, userId);
   return server;
 }

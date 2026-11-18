@@ -4,20 +4,20 @@
     "name": "Edmund Landgraf",
     "url": "https://wgui.wandersguide.site"
   },
-  "description": "Encounter and character data for the GM. Mostly read-only, with three scoped writes.",
+  "description": "Characters, encounters, and shops for Wanderer's Guide.",
   "interface": {
     "capabilities": [],
     "category": "Other",
     "defaultPrompt": null,
     "developerName": "Edmund Landgraf",
     "displayName": "Wanderer's Guide",
-    "longDescription": "Encounter and character data for the GM. Mostly read-only, with three scoped writes.",
-    "shortDescription": "Encounter and character data for the GM. Mostly read-only, with three scoped writes.",
+    "longDescription": "Characters, encounters, and shops for Wanderer's Guide. Shop tools include list_shops, get_shop, search_shop_catalog, and create_shop.",
+    "shortDescription": "Characters, encounters, and shops for Wanderer's Guide.",
     "websiteURL": "https://wgui.wandersguide.site",
     "brandColor": "#359fdf",
     "composerIcon": "./assets/icon.png",
     "logo": "./assets/logo.png"
   },
   "name": "dev-6ad10cdde29c8191991c6db6e765b918",
-  "version": "1.2.0"
+  "version": "1.3.0"
 }
