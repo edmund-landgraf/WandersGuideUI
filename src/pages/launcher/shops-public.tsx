@@ -408,6 +408,31 @@ function ShopViewToggles({
   );
 }
 
+function ShopDescription({ text, homebrew }: { text: string; homebrew: boolean }) {
+  const long = text.trim().length > 280 || text.split('\n').length > 4;
+  const body = <ShopProse text={text} homebrew={homebrew} className={homebrew ? 'brew-note' : 'max-w-3xl text-sm leading-6 text-muted-foreground'} />;
+  if (!long) return body;
+  if (homebrew) {
+    return (
+      <details className='border-b border-[#6b3a1f]/30'>
+        <summary className='cursor-pointer py-2 text-center font-serif text-sm uppercase tracking-wide text-[#6b1d14]'>
+          Description
+        </summary>
+        {body}
+      </details>
+    );
+  }
+  return (
+    <details className='group max-w-3xl rounded-xl bg-white/5 ring-1 ring-white/20'>
+      <summary className='cursor-pointer list-none px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground marker:content-none [&::-webkit-details-marker]:hidden'>
+        <span className='mr-2 inline-block w-3 transition-transform group-open:rotate-90' aria-hidden>▸</span>
+        Description
+      </summary>
+      <div className='px-4 pb-4'>{body}</div>
+    </details>
+  );
+}
+
 export function ShopDocument({ name, stock, homebrew, description }: { name: string; stock: ShopStockRow[]; homebrew: boolean; description?: string }) {
   const [useGroupings, setUseGroupings] = useState(readGroupingsPreference);
   const [inGp, setInGp] = useState(() => readFlag(IN_GP_SESSION_KEY, false));
@@ -441,7 +466,7 @@ export function ShopDocument({ name, stock, homebrew, description }: { name: str
                 <h1>{name}</h1>
                 <hr className='brew-rule-thin' />
               </header>
-              {description ? <ShopProse text={description} homebrew className='brew-note' /> : null}
+              {description ? <ShopDescription text={description} homebrew /> : null}
               <div className='mb-4 flex justify-end'>
                 {toggles}
               </div>
@@ -473,7 +498,7 @@ export function ShopDocument({ name, stock, homebrew, description }: { name: str
               <h1 className='font-heading text-4xl text-foreground'>{name}</h1>
               {toggles}
             </div>
-            {description ? <ShopProse text={description} className='max-w-3xl text-sm leading-6 text-muted-foreground' /> : null}
+            {description ? <ShopDescription text={description} homebrew={false} /> : null}
             {sections ? (
               <div className='overflow-hidden rounded-xl bg-white/5 ring-1 ring-white/20'>
                 {sections.map((section) => (

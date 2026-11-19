@@ -16,9 +16,11 @@ import {
   listShopPool,
   SETTLEMENT_LEVELS,
   shopCeiling,
+  type ShopLevelSpread,
   groupShopStock,
   shopLineQuantity,
   SHOP_PRESETS,
+  SHOP_SHELVES,
   SHOP_RARITIES,
   STOCK_COUNT,
   stockShop,
@@ -218,6 +220,12 @@ function ShopAddItem({
 function ShopsPage() {
   const [preset, setPreset] = useState<ShopPresetId>('general');
   const [settlement, setSettlement] = useState<SettlementId>('village');
+  const [levelMin, setLevelMin] = useState(1);
+  const [levelMax, setLevelMax] = useState(2);
+  const [levelSpread, setLevelSpread] = useState<ShopLevelSpread>('bell');
+  const [useSettlement, setUseSettlement] = useState(true);
+  const [generatorTab, setGeneratorTab] = useState<'general' | 'advanced'>('general');
+  const [shelves, setShelves] = useState<string[]>(() => [...SHOP_SHELVES]);
   const [rarities, setRarities] = useState<ShopRarity[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [traits, setTraits] = useState<Trait[]>([]);
@@ -240,6 +248,7 @@ function ShopsPage() {
   const [pageStyle, setPageStyle] = useState<ShopPageStyle>('homebrew-v3');
   const [shopName, setShopName] = useState('');
   const [shopDescription, setShopDescription] = useState('');
+  const [descriptionFull, setDescriptionFull] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveNote, setSaveNote] = useState('');
   const [openedId, setOpenedId] = useState<string | null>(null);
@@ -385,8 +394,7 @@ function ShopsPage() {
               <a className='text-sm text-muted-foreground underline' href='/shops/library'>Saved shops</a>
               </div>
               <p className='mt-3 max-w-xl text-sm leading-6 text-muted-foreground'>
-                Pick a counter and a settlement. Stock runs from level 0 up to that settlement, split into low,
-                mid, and high bands in a city or larger. Rarity follows a weighted mix (mostly common, some uncommon,
+                Pick a counter, a settlement, and a level range. A bell curve puts most items near the middle of that range. An even spread gives every level the same chance. Rarity follows a weighted mix (mostly common, some uncommon,
                 a little rare) unless you check specific rarities. Each line has a quantity, and any shop can roll a
                 formula. Generate again to reshuffle and lean away from the last counter.
               </p>
@@ -396,16 +404,23 @@ function ShopsPage() {
               onSubmit={(event) => {
                 event.preventDefault();
                 if (edited && !window.confirm('Replace the current counter? Added and removed items will be lost.')) return;
+                const ceiling = shopCeiling(settlement);
+                const levelRange = useSettlement
+                  ? { min: Math.min(levelMin, ceiling), max: Math.min(Math.max(levelMin, levelMax), ceiling), spread: levelSpread }
+                  : { min: levelMin, max: Math.max(levelMin, levelMax), spread: levelSpread };
+                const shelfSet = shelves.length === SHOP_SHELVES.length ? undefined : new Set(shelves);
                 const next = stockShop(
                   activeItems,
                   traits,
                   preset,
-                  shopCeiling(settlement),
+                  ceiling,
                   Math.random,
                   undefined,
                   lastStockIds.current,
                   stockCount,
                   new Set(activeShopRarities(rarities, settlement)),
+                  levelRange,
+                  shelfSet,
                 );
                 lastStockIds.current = new Set(next.map((row) => row.id));
                 setStock(next);
@@ -414,6 +429,15 @@ function ShopsPage() {
                 setPanel('stock');
               }}
             >
+              <div className='flex basis-full gap-1 border-b border-white/10' role='tablist' aria-label='Generator'>
+                <button className={`cursor-pointer rounded-t-lg px-4 py-2 text-sm ${generatorTab === 'general' ? 'bg-white/10 text-foreground' : 'text-muted-foreground'}`} type='button' role='tab' aria-selected={generatorTab === 'general'} onClick={() => setGeneratorTab('general')}>
+                  General
+                </button>
+                <button className={`cursor-pointer rounded-t-lg px-4 py-2 text-sm ${generatorTab === 'advanced' ? 'bg-white/10 text-foreground' : 'text-muted-foreground'}`} type='button' role='tab' aria-selected={generatorTab === 'advanced'} onClick={() => setGeneratorTab('advanced')}>
+                  Advanced
+                </button>
+              </div>
+              <div className={generatorTab === 'general' ? 'contents' : 'hidden'}>
               <label className='grid gap-2 text-sm text-muted-foreground'>
                 Preset
                 <select
@@ -429,11 +453,35 @@ function ShopsPage() {
                 </select>
               </label>
               <label className='grid gap-2 text-sm text-muted-foreground'>
-                Settlement level
+                <span className='flex items-center gap-2'>
+                  <input
+                    type='checkbox'
+                    checked={useSettlement}
+                    onChange={(event) => {
+                      const on = event.target.checked;
+                      setUseSettlement(on);
+                      if (on) {
+                        const ceiling = shopCeiling(settlement);
+                        setLevelMax(ceiling);
+                        setLevelMin((current) => Math.min(current, ceiling));
+                      } else {
+                        setLevelMin(1);
+                        setLevelMax(20);
+                      }
+                    }}
+                  />
+                  City size
+                </span>
                 <select
-                  className='rounded-lg bg-card px-3 py-2 text-foreground ring-1 ring-white/15'
+                  className='rounded-lg bg-card px-3 py-2 text-foreground ring-1 ring-white/15 disabled:opacity-40'
                   value={settlement}
-                  onChange={(event) => setSettlement(event.target.value as SettlementId)}
+                  disabled={!useSettlement}
+                  onChange={(event) => {
+                    const next = event.target.value as SettlementId;
+                    setSettlement(next);
+                    setLevelMax(shopCeiling(next));
+                    setLevelMin((current) => Math.min(current, shopCeiling(next)));
+                  }}
                 >
                   {SETTLEMENT_LEVELS.map((choice) => (
                     <option key={choice.id} value={choice.id}>
@@ -537,6 +585,88 @@ function ShopsPage() {
                   <option value='homebrew-v3'>Homebrew V3</option>
                 </select>
               </label>
+              </div>
+              <div className={generatorTab === 'advanced' ? 'grid basis-full gap-4' : 'hidden'} role='tabpanel'>
+                <div className='flex flex-wrap items-end gap-6'>
+                  <label className='grid w-56 gap-2 text-sm text-muted-foreground'>
+                    Min level
+                    <input
+                      className='w-20 rounded-lg bg-card px-3 py-2 text-foreground ring-1 ring-white/15'
+                      type='number'
+                      min={1}
+                      max={20}
+                      value={levelMin}
+                      onChange={(event) => {
+                        const next = Math.max(1, Math.min(20, Number(event.target.value) || 1));
+                        setLevelMin(Math.min(next, levelMax));
+                      }}
+                    />
+                    <input
+                      type='range'
+                      min={1}
+                      max={20}
+                      value={levelMin}
+                      onChange={(event) => setLevelMin(Math.min(Number(event.target.value), levelMax))}
+                    />
+                  </label>
+                  <label className='grid w-56 gap-2 text-sm text-muted-foreground'>
+                    Max level
+                    <input
+                      className='w-20 rounded-lg bg-card px-3 py-2 text-foreground ring-1 ring-white/15'
+                      type='number'
+                      min={1}
+                      max={20}
+                      value={levelMax}
+                      onChange={(event) => {
+                        const next = Math.max(1, Math.min(20, Number(event.target.value) || 1));
+                        setLevelMax(Math.max(next, levelMin));
+                      }}
+                    />
+                    <input
+                      type='range'
+                      min={1}
+                      max={20}
+                      value={levelMax}
+                      onChange={(event) => setLevelMax(Math.max(Number(event.target.value), levelMin))}
+                    />
+                  </label>
+                  {levelMin === levelMax && <p className='text-sm text-foreground'>Level {levelMin} only</p>}
+                  <fieldset className='grid gap-2 text-sm text-muted-foreground'>
+                    <legend>Level spread</legend>
+                    <label className='flex items-center gap-2 text-foreground'>
+                      <input type='radio' name='level-spread' checked={levelSpread === 'bell'} onChange={() => setLevelSpread('bell')} />
+                      Bell curve
+                    </label>
+                    <label className='flex items-center gap-2 text-foreground'>
+                      <input type='radio' name='level-spread' checked={levelSpread === 'equal'} onChange={() => setLevelSpread('equal')} />
+                      Even
+                    </label>
+                  </fieldset>
+                </div>
+                <div className='flex flex-wrap items-center justify-between gap-2'>
+                  <p className='text-sm text-muted-foreground'>Item groups. Leave them all on to use the preset. Turn some off to stock only those groups.</p>
+                  <div className='flex gap-2'>
+                    <button className='shop-action text-xs' type='button' onClick={() => setShelves([...SHOP_SHELVES])}>All</button>
+                    <button className='shop-action text-xs' type='button' onClick={() => setShelves([])}>None</button>
+                  </div>
+                </div>
+                <div className='grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4'>
+                  {SHOP_SHELVES.map((shelf) => (
+                    <label key={shelf} className='flex cursor-pointer items-center gap-2 rounded-lg bg-card px-3 py-2 text-sm text-foreground ring-1 ring-white/15'>
+                      <input
+                        type='checkbox'
+                        checked={shelves.includes(shelf)}
+                        onChange={(event) => {
+                          setShelves((current) => (
+                            event.target.checked ? [...current, shelf] : current.filter((row) => row !== shelf)
+                          ));
+                        }}
+                      />
+                      {shelf}
+                    </label>
+                  ))}
+                </div>
+              </div>
               <button
                 className='rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50'
                 type='submit'
@@ -590,10 +720,15 @@ function ShopsPage() {
                     />
                   </label>
                   <label className='grid min-w-0 gap-2 text-sm text-muted-foreground'>
-                    Description
+                    <span className='flex items-center justify-between gap-2'>
+                      Description
+                      <button className='shop-action text-xs' type='button' onClick={() => setDescriptionFull(true)}>
+                        Full screen
+                      </button>
+                    </span>
                     <textarea
-                      className='max-h-40 min-h-[2.5rem] w-full min-w-0 resize-y rounded-lg bg-card px-3 py-2 text-foreground ring-1 ring-white/15'
-                      rows={2}
+                      className='max-h-64 min-h-24 w-full min-w-0 resize-y rounded-lg bg-card px-3 py-2 text-foreground ring-1 ring-white/15'
+                      rows={4}
                       value={shopDescription}
                       onChange={(event) => setShopDescription(event.target.value)}
                     />
@@ -667,7 +802,12 @@ function ShopsPage() {
               {!loading && !needsSignIn && !error && items.length > 0 && (
                 <p className='basis-full text-xs text-muted-foreground'>
                   {(() => {
-                    const pool = listShopPool(activeItems, traits, preset, shopCeiling(settlement), undefined, new Set(activeShopRarities(rarities, settlement))).length;
+                    const ceiling = shopCeiling(settlement);
+                    const levelRange = useSettlement
+                      ? { min: Math.min(levelMin, ceiling), max: Math.min(Math.max(levelMin, levelMax), ceiling) }
+                      : { min: levelMin, max: Math.max(levelMin, levelMax) };
+                    const shelfSet = shelves.length === SHOP_SHELVES.length ? undefined : new Set(shelves);
+                    const pool = listShopPool(activeItems, traits, preset, ceiling, undefined, new Set(activeShopRarities(rarities, settlement)), levelRange, shelfSet).length;
                     return `Drawing ${Math.min(stockCount, pool)} of ${pool} matching items.`;
                   })()}
                 </p>
@@ -873,6 +1013,24 @@ function ShopsPage() {
           </div>
         </section>
       </main>
+      {descriptionFull && (
+        <div className='fixed inset-0 z-40 flex flex-col bg-background/95 p-6'>
+          <div className='mx-auto flex w-full max-w-4xl flex-1 flex-col gap-3'>
+            <div className='flex items-center justify-between'>
+              <p className='text-sm text-muted-foreground'>Description</p>
+              <button className='shop-action' type='button' onClick={() => setDescriptionFull(false)}>
+                Done
+              </button>
+            </div>
+            <textarea
+              className='min-h-0 w-full flex-1 resize-none rounded-lg bg-card px-4 py-3 text-foreground ring-1 ring-white/15'
+              value={shopDescription}
+              onChange={(event) => setShopDescription(event.target.value)}
+              autoFocus
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,16 +1,31 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 type Point = { left: number; top: number };
 
+const POPOUT_MARGIN = 12;
+const POPOUT_WIDTH = 360;
+
 function placeNear(node: HTMLElement): Point {
   const rect = node.getBoundingClientRect();
-  const width = 360;
-  const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
-  const top = window.innerHeight - rect.bottom < 220
-    ? Math.max(12, rect.top - 280)
+  const maxHeight = Math.min(window.innerHeight * 0.5, 420);
+  const left = Math.max(POPOUT_MARGIN, Math.min(rect.left, window.innerWidth - POPOUT_WIDTH - POPOUT_MARGIN));
+  const roomBelow = window.innerHeight - rect.bottom - POPOUT_MARGIN;
+  const roomAbove = rect.top - POPOUT_MARGIN;
+  const top = roomBelow < maxHeight && roomAbove > roomBelow
+    ? Math.max(POPOUT_MARGIN, rect.top - 6 - Math.min(maxHeight, roomAbove))
     : rect.bottom + 6;
   return { left, top };
+}
+
+function fitInViewport(card: HTMLElement, pos: Point): Point {
+  const rect = card.getBoundingClientRect();
+  const height = Math.min(rect.height, window.innerHeight - POPOUT_MARGIN * 2);
+  const width = Math.min(rect.width, window.innerWidth - POPOUT_MARGIN * 2);
+  return {
+    left: Math.round(Math.max(POPOUT_MARGIN, Math.min(pos.left, window.innerWidth - width - POPOUT_MARGIN))),
+    top: Math.round(Math.max(POPOUT_MARGIN, Math.min(pos.top, window.innerHeight - height - POPOUT_MARGIN))),
+  };
 }
 
 export function ShopPopout({
@@ -27,6 +42,7 @@ export function ShopPopout({
   children: ReactNode;
 }) {
   const anchor = useRef<HTMLElement | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const showTimer = useRef(0);
   const hideTimer = useRef(0);
   const pinned = useRef(false);
@@ -60,6 +76,24 @@ export function ShopPopout({
     setOpen(true);
   };
   useEffect(() => () => clearTimers(), []);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const card = cardRef.current;
+    if (!card) return;
+    const fit = () => {
+      const rect = card.getBoundingClientRect();
+      const next = fitInViewport(card, { left: rect.left, top: rect.top });
+      setPos((current) => (current.left === next.left && current.top === next.top ? current : next));
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(card);
+    window.addEventListener('resize', fit);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', fit);
+    };
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
@@ -132,9 +166,10 @@ export function ShopPopout({
       )}
       {open && createPortal(
         <div
+          ref={cardRef}
           data-shop-popout
           className={cardClassName}
-          style={{ position: 'fixed', zIndex: 40, left: pos.left, top: pos.top }}
+          style={{ position: 'fixed', zIndex: 40, left: pos.left, top: pos.top, maxHeight: `min(420px, calc(100vh - ${POPOUT_MARGIN * 2}px))` }}
           onMouseEnter={clearTimers}
           onMouseLeave={hideSoon}
         >

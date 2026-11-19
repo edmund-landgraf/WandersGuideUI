@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Item, Trait } from '@schemas/content';
-import { activeShopRarities, formatShopPrice, groupShopStock, priceAsGp, raritiesForSettlement, shopShelf, STOCK_COUNT, stockShop } from './shops-generate';
+import { activeShopRarities, formatShopPrice, groupShopStock, levelWeights, priceAsGp, raritiesForSettlement, shopShelf, STOCK_COUNT, stockShop } from './shops-generate';
 
 function item(
   partial: Omit<Partial<Item>, 'meta_data'> &
@@ -27,6 +27,21 @@ const traits = [
   { id: 6, name: 'Tattoo' },
   { id: 7, name: 'Oil' },
 ] as Trait[];
+
+describe('levelWeights', () => {
+  it('peaks at the midpoint of a 3–7 bell curve', () => {
+    const weights = levelWeights(3, 7, 'bell');
+    const at = (level: number) => weights.find((row) => row.level === level)?.weight ?? 0;
+    expect(at(5)).toBeGreaterThan(at(4));
+    expect(at(4)).toBe(at(6));
+    expect(at(4)).toBeGreaterThan(at(3));
+    expect(at(3)).toBe(at(7));
+  });
+
+  it('gives every level the same weight on an even spread', () => {
+    expect(levelWeights(3, 7, 'equal').every((row) => row.weight === 1)).toBe(true);
+  });
+});
 
 describe('stockShop', () => {
   const catalog = [

@@ -12,6 +12,7 @@ export function ShopsLibrary() {
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   const reload = async () => {
     const done = shopTraceStart('library list');
@@ -88,6 +89,33 @@ export function ShopsLibrary() {
             </form>
             {error && <p className='text-sm text-red-300'>{error}</p>}
             {note && <p className='text-sm text-muted-foreground'>{note}</p>}
+            <div className='flex flex-wrap gap-2'>
+              {[{ id: '', name: 'Root' }, ...folders.map((folder) => ({ id: folder.id, name: folder.name }))].map((folder) => (
+                <div
+                  key={folder.id || 'root'}
+                  className={`rounded-lg px-3 py-2 text-sm ring-1 ${dropTarget === folder.id ? 'bg-white/15 ring-white/50' : 'bg-card text-muted-foreground ring-white/15'}`}
+                  onDragOver={(event) => {
+                    if (!event.dataTransfer.types.includes('application/x-wgui-shop')) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'move';
+                    setDropTarget(folder.id);
+                  }}
+                  onDragLeave={() => setDropTarget((current) => (current === folder.id ? null : current))}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    setDropTarget(null);
+                    const shopId = event.dataTransfer.getData('application/x-wgui-shop');
+                    const shop = shops.find((row) => row.id === shopId);
+                    if (!shop) return;
+                    const parentId = folder.id || null;
+                    if ((shop.parent_id ?? null) === parentId) return;
+                    void run(() => moveNode(shop, parentId), parentId ? `Moved to ${folder.name}.` : 'Moved to Root.');
+                  }}
+                >
+                  {folder.name}
+                </div>
+              ))}
+            </div>
             <div className='overflow-x-auto rounded-xl bg-white/5 ring-1 ring-white/20'>
               <table className='w-full text-left text-sm'>
                 <thead className='text-muted-foreground'>
@@ -110,7 +138,17 @@ export function ShopsLibrary() {
                   ) : shops.map((shop) => (
                     <tr className='border-t border-white/10' key={shop.id}>
                       <td className='px-4 py-3'>
-                        <a className='underline' href={`/shops?id=${encodeURIComponent(shop.id)}`}>{shop.name}</a>
+                        <a
+                          className='cursor-grab underline active:cursor-grabbing'
+                          href={`/shops?id=${encodeURIComponent(shop.id)}`}
+                          draggable
+                          onDragStart={(event) => {
+                            event.dataTransfer.setData('application/x-wgui-shop', shop.id);
+                            event.dataTransfer.effectAllowed = 'move';
+                          }}
+                        >
+                          {shop.name}
+                        </a>
                       </td>
                       <td className='px-4 py-3'>
                         <select
@@ -147,20 +185,20 @@ export function ShopsLibrary() {
                         <div className='flex flex-col items-start'>
                           {shop.published ? (
                             <>
-                              <button className='cursor-pointer px-1 py-1 underline disabled:opacity-50' type='button' disabled={busy} onClick={() => void run(() => updateOwnedSnapshot(shop), 'Snapshot updated. The public link is unchanged.')}>
+                              <button className='shop-action' type='button' disabled={busy} onClick={() => void run(() => updateOwnedSnapshot(shop), 'Snapshot updated. The public link is unchanged.')}>
                                 Update
                               </button>
-                              <button className='cursor-pointer px-1 py-1 underline disabled:opacity-50' type='button' disabled={busy} onClick={() => void run(() => unpublishOwned(shop), 'Unpublished. The public link is off.')}>
+                              <button className='shop-action' type='button' disabled={busy} onClick={() => void run(() => unpublishOwned(shop), 'Unpublished. The public link is off.')}>
                                 Unpublish
                               </button>
                             </>
                           ) : (
-                            <button className='cursor-pointer px-1 py-1 underline disabled:opacity-50' type='button' disabled={busy} onClick={() => void run(() => publishOwned(shop), 'Published.')}>
+                            <button className='shop-action' type='button' disabled={busy} onClick={() => void run(() => publishOwned(shop), 'Published.')}>
                               Publish
                             </button>
                           )}
                           <button
-                            className='cursor-pointer px-1 py-1 underline disabled:opacity-50'
+                            className='shop-action'
                             type='button'
                             disabled={busy}
                             onClick={() => {

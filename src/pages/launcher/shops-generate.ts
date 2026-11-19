@@ -62,6 +62,29 @@ export function shopCeiling(settlement: SettlementId) {
   return SETTLEMENT_LEVELS.find((row) => row.id === settlement)?.level ?? SETTLEMENT_LEVELS[0].level;
 }
 
+export type ShopLevelSpread = 'bell' | 'equal';
+
+/** Inclusive level span. The ends swap when min is above max. */
+export function levelSpan(min: number, max: number) {
+  const lo = Math.max(0, Math.min(Math.round(min), Math.round(max)));
+  const hi = Math.max(lo, Math.max(Math.round(min), Math.round(max)));
+  return { min: lo, max: hi };
+}
+
+/** Bell curve peaks at the midpoint. A span of 3–7 puts the most weight on 5. */
+export function levelWeights(min: number, max: number, spread: ShopLevelSpread) {
+  const span = levelSpan(min, max);
+  const levels: number[] = [];
+  for (let level = span.min; level <= span.max; level += 1) levels.push(level);
+  if (spread === 'equal' || levels.length < 3) return levels.map((level) => ({ level, weight: 1 }));
+  const mid = (span.min + span.max) / 2;
+  const sigma = Math.max(0.75, (span.max - span.min) / 4);
+  return levels.map((level) => ({
+    level,
+    weight: Math.exp(-0.5 * ((level - mid) / sigma) ** 2),
+  }));
+}
+
 /** One band through town. City and up split the 0–ceiling span into low, then mid, then high. */
 export function levelProfiles(ceiling: number) {
   const max = Math.max(0, ceiling);
@@ -254,7 +277,7 @@ const SHOP_SHELF_TRAITS: [string, string][] = [
   ['tattoo', 'Tattoos'],
 ];
 
-const SHOP_SHELF_ORDER = [
+export const SHOP_SHELVES = [
   'Armor',
   'Shields',
   'Weapons',
@@ -281,8 +304,11 @@ const SHOP_SHELF_ORDER = [
   'Worn items',
   'Held items',
   'Formulas',
+  'Upgrades',
   'Other',
 ];
+
+const SHOP_SHELF_ORDER = SHOP_SHELVES;
 
 export function shopShelf(item: Item, traits: Trait[]) {
   if (isShopFormula(item)) return 'Formulas';
@@ -328,6 +354,11 @@ export function shopLineQuantity(item: ShopStockItem) {
   return Math.max(1, item.shopQuantity) * Math.max(1, item.packSize);
 }
 
+function matchesShop(item: Item, traits: Trait[], preset: ShopPresetId, names: Map<number, string>, shelves?: ReadonlySet<string>) {
+  if (shelves && shelves.size < SHOP_SHELVES.length) return shelves.has(shopShelf(item, traits));
+  return matchesPreset(item, preset, names);
+}
+
 function inBand(level: number, ceiling: number) {
   return levelProfiles(ceiling).some((band) => level >= band.min && level <= band.max);
 }
@@ -339,14 +370,17 @@ export function listShopPool(
   level: number,
   sourceIds?: ReadonlySet<number>,
   rarities?: ReadonlySet<string>,
+  span?: { min: number; max: number },
+  shelves?: ReadonlySet<string>,
 ) {
   const names = new Map(traits.map((trait) => [trait.id, trait.name.toLowerCase()]));
   const allowed = rarities ?? new Set(raritiesForSettlement('village'));
+  const range = span ? levelSpan(span.min, span.max) : null;
   return items.filter((item) => {
-    if (!sellable(item) || !matchesPreset(item, preset, names)) return false;
+    if (!sellable(item) || !matchesShop(item, traits, preset, names, shelves)) return false;
     if (sourceIds !== undefined && !sourceIds.has(item.content_source_id)) return false;
     if (!allowed.has(item.rarity)) return false;
-    return inBand(item.level, level);
+    return range ? item.level >= range.min && item.level <= range.max : inBand(item.level, level);
   });
 }
 
@@ -387,16 +421,20 @@ export function stockShop(
   avoidIds: ReadonlySet<number> = new Set(),
   count = STOCK_COUNT,
   rarities?: ReadonlySet<string>,
+  levelPick?: { min: number; max: number; spread: ShopLevelSpread },
+  shelves?: ReadonlySet<string>,
 ) {
   const names = new Map(traits.map((trait) => [trait.id, trait.name.toLowerCase()]));
   const allowed = [...(rarities ?? new Set<string>(raritiesForSettlement('village')))] as ShopRarity[];
   const ceiling = Math.max(0, level);
   const bands = levelProfiles(ceiling);
+  const range = levelPick ? levelSpan(levelPick.min, levelPick.max) : null;
+  const weights = range ? levelWeights(range.min, range.max, levelPick?.spread ?? 'bell') : null;
   const eligible = items.filter((item) => {
-    if (!sellable(item) || !matchesPreset(item, preset, names)) return false;
+    if (!sellable(item) || !matchesShop(item, traits, preset, names, shelves)) return false;
     if (sourceIds !== undefined && !sourceIds.has(item.content_source_id)) return false;
     if (!allowed.includes(item.rarity as ShopRarity)) return false;
-    return inBand(item.level, ceiling);
+    return range ? item.level >= range.min && item.level <= range.max : inBand(item.level, ceiling);
   });
   const size = Math.max(0, Math.min(100, Math.round(count)));
   const picked: ShopStockItem[] = [];
@@ -404,15 +442,20 @@ export function stockShop(
   let attempts = 0;
   while (picked.length < size && attempts < size * 12 && eligible.length > 0) {
     attempts += 1;
-    const band = pickOne(bands.map((row) => ({ value: row, weight: row.weight })), rng);
-    if (!band) break;
+    const chosenLevel = weights
+      ? pickOne(weights.map((row) => ({ value: row.level, weight: row.weight })), rng)
+      : null;
+    const band = weights ? null : pickOne(bands.map((row) => ({ value: row, weight: row.weight })), rng);
+    if (!weights && !band) break;
     const rarity = pickOne(
       allowed.map((row) => ({ value: row, weight: rarities ? 1 : RARITY_WEIGHTS[row] ?? 0 })),
       rng,
     );
     if (!rarity) break;
     const choices = eligible.filter((item) => {
-      if (item.level < band.min || item.level > band.max) return false;
+      if (chosenLevel != null) {
+        if (item.level !== chosenLevel) return false;
+      } else if (!band || item.level < band.min || item.level > band.max) return false;
       if (item.rarity !== rarity) return false;
       return !seen.has(String(item.id));
     });

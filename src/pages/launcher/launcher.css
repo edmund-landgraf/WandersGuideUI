@@ -55,6 +55,27 @@ body {
   font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
 }
 
+.shop-action {
+  cursor: pointer;
+  border-radius: 0.25rem;
+  padding: 0.2rem 0.35rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.shop-action:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.shop-action:active {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.shop-action:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 .bg-pattern {
   position: fixed;
   inset: 0;
