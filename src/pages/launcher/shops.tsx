@@ -1,6 +1,7 @@
 import { ENABLED_OAUTH_PROVIDERS, signInWithOAuthProvider } from '@auth/campaign-auth';
 import { fetchContentAll, fetchContentById, fetchContentSources } from '@content/content-store';
 import { StrictMode, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import type { ContentSource, Item, Trait } from '@schemas/content';
 import { supabase } from '../../supabase-client';
@@ -19,6 +20,7 @@ import {
   type ShopLevelSpread,
   groupShopStock,
   shopLineQuantity,
+  shopShelf,
   SHOP_PRESETS,
   SHOP_SHELVES,
   SHOP_RARITIES,
@@ -126,7 +128,6 @@ function ShopAddItem({
       if (!item.name.toLowerCase().includes(needle)) continue;
       if (books.size > 0 && !books.has(item.content_source_id)) continue;
       found.push(item);
-      if (found.length === 8) break;
     }
     return found;
   }, [books, items, query]);
@@ -180,6 +181,7 @@ function ShopAddItem({
       </label>
       <p className='text-xs text-muted-foreground'>
         {books.size > 0 ? 'From checked books.' : 'From the loaded catalog.'}
+        {query.trim().length >= 2 ? ` ${matches.length.toLocaleString()} match${matches.length === 1 ? '' : 'es'}.` : ''}
       </p>
       {open && matches.length > 0 && (
         <ul
@@ -208,6 +210,221 @@ function ShopAddItem({
                   </span>
                 </span>
                 {stocked && <span className='shrink-0 text-xs'>In stock</span>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+const PICKER_CAP = 40;
+
+function ShopAddItemPicker({
+  items,
+  traits,
+  stockKeys,
+  markup,
+  onAdd,
+  onClose,
+}: {
+  items: Item[];
+  traits: Trait[];
+  stockKeys: Set<string>;
+  markup: number;
+  onAdd: (item: Item) => void;
+  onClose: () => void;
+}) {
+  const [tab, setTab] = useState<'search' | 'groups'>('search');
+  const [query, setQuery] = useState('');
+  const [shelves, setShelves] = useState<string[]>([]);
+  const wanderersGuide = useMemo(() => items.filter((item) => !isPf2eShopItem(item)), [items]);
+  const pf2e = useMemo(() => items.filter(isPf2eShopItem), [items]);
+  const shelfSet = useMemo(() => new Set(shelves), [shelves]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const take = (source: Item[]) => {
+    if (tab === 'search') {
+      const needle = query.trim().toLowerCase();
+      if (needle.length < 2) return [];
+      const found: Item[] = [];
+      for (const item of source) {
+        if (!item.name.toLowerCase().includes(needle)) continue;
+        found.push(item);
+        if (found.length >= PICKER_CAP) break;
+      }
+      return found;
+    }
+    if (shelfSet.size === 0) return [];
+    const found: Item[] = [];
+    for (const item of source) {
+      if (!shelfSet.has(shopShelf(item, traits))) continue;
+      found.push(item);
+      if (found.length >= PICKER_CAP) break;
+    }
+    return found;
+  };
+
+  const wgMatches = take(wanderersGuide);
+  const pf2eMatches = take(pf2e);
+
+  const hint = (source: Item[], matches: Item[], offLabel: string) => {
+    if (source.length === 0) return `${offLabel} is off.`;
+    if (tab === 'groups' && shelfSet.size === 0) return 'Pick a group.';
+    if (tab === 'search' && query.trim().length < 2) return 'Type at least two letters.';
+    if (matches.length === 0) return 'No matches.';
+    return '';
+  };
+
+  const choose = (item: Item) => {
+    if (stockKeys.has(String(item.id))) return;
+    onAdd(item);
+  };
+
+  return (
+    <div className='fixed inset-0 z-40 flex items-start justify-center bg-background/80 p-6 pt-16' onClick={onClose}>
+      <section
+        role='dialog'
+        aria-modal='true'
+        aria-labelledby='shop-add-item-title'
+        className='flex max-h-[min(80vh,44rem)] w-full max-w-4xl flex-col rounded-xl bg-card shadow-2xl ring-1 ring-white/20'
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className='flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3'>
+          <h2 id='shop-add-item-title' className='text-base font-semibold'>Add item</h2>
+          <button className='shop-action' type='button' onClick={onClose}>Close</button>
+        </div>
+        <div className='flex gap-1 border-b border-white/10 px-4 pt-2' role='tablist'>
+          <button
+            className={`rounded-t-lg px-3 py-2 text-sm ${tab === 'search' ? 'bg-white/10 text-foreground' : 'text-muted-foreground'}`}
+            type='button'
+            role='tab'
+            aria-selected={tab === 'search'}
+            onClick={() => setTab('search')}
+          >
+            Search
+          </button>
+          <button
+            className={`rounded-t-lg px-3 py-2 text-sm ${tab === 'groups' ? 'bg-white/10 text-foreground' : 'text-muted-foreground'}`}
+            type='button'
+            role='tab'
+            aria-selected={tab === 'groups'}
+            onClick={() => setTab('groups')}
+          >
+            Groups
+          </button>
+        </div>
+        <div className='min-h-0 flex-1 overflow-y-auto p-4'>
+          {tab === 'search' ? (
+            <label className='grid gap-2 text-sm text-muted-foreground'>
+              Search by name
+              <input
+                className='rounded-lg bg-background px-3 py-2 text-foreground ring-1 ring-white/15'
+                autoFocus
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder='Search by name'
+              />
+            </label>
+          ) : (
+            <div className='grid gap-2'>
+              <div className='flex items-center justify-between'>
+                <p className='text-sm text-muted-foreground'>Item groups</p>
+                <button className='shop-action text-xs' type='button' onClick={() => setShelves([...SHOP_SHELVES])}>All</button>
+              </div>
+              <div className='flex flex-wrap gap-2'>
+                {SHOP_SHELVES.map((shelf) => (
+                  <label key={shelf} className='flex items-center gap-2 rounded-lg bg-background px-2 py-1 text-xs text-foreground ring-1 ring-white/15'>
+                    <input
+                      className='size-3.5 accent-sky-400'
+                      type='checkbox'
+                      checked={shelfSet.has(shelf)}
+                      onChange={(event) => {
+                        setShelves((current) => (
+                          event.target.checked ? [...current, shelf] : current.filter((name) => name !== shelf)
+                        ));
+                      }}
+                    />
+                    {shelf}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className='mt-4 grid gap-4 md:grid-cols-2'>
+            <PickerSourceList
+              title='Wanderer’s Guide'
+              hint={hint(wanderersGuide, wgMatches, 'Wanderer’s Guide')}
+              items={wgMatches}
+              stockKeys={stockKeys}
+              markup={markup}
+              onChoose={choose}
+            />
+            <PickerSourceList
+              title='PF2e'
+              hint={hint(pf2e, pf2eMatches, 'PF2e')}
+              items={pf2eMatches}
+              stockKeys={stockKeys}
+              markup={markup}
+              onChoose={choose}
+            />
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PickerSourceList({
+  title,
+  hint,
+  items,
+  stockKeys,
+  markup,
+  onChoose,
+}: {
+  title: string;
+  hint: string;
+  items: Item[];
+  stockKeys: Set<string>;
+  markup: number;
+  onChoose: (item: Item) => void;
+}) {
+  return (
+    <div className='min-h-48 rounded-lg bg-background/60 ring-1 ring-white/10'>
+      <p className='border-b border-white/10 px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground'>
+        {title}
+      </p>
+      {hint ? (
+        <p className='px-3 py-3 text-sm text-muted-foreground'>{hint}</p>
+      ) : (
+        <ul className='max-h-72 overflow-y-auto py-1'>
+          {items.map((item) => {
+            const stocked = stockKeys.has(String(item.id));
+            return (
+              <li key={`${item.id}-${isPf2eShopItem(item) ? 'pf2e' : 'wg'}`}>
+                <button
+                  type='button'
+                  disabled={stocked}
+                  className={`flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left text-sm ${stocked ? 'text-muted-foreground' : 'text-foreground hover:bg-white/10'}`}
+                  onClick={() => onChoose(item)}
+                >
+                  <span>
+                    {item.name}
+                    <span className='ml-2 text-xs text-muted-foreground'>
+                      {item.level} · {item.rarity} · {formatShopOffer(asShopLine(item), markup)}
+                    </span>
+                  </span>
+                  {stocked && <span className='shrink-0 text-xs'>In stock</span>}
+                </button>
               </li>
             );
           })}
@@ -256,6 +473,7 @@ function ShopsPage() {
   const [edited, setEdited] = useState(false);
   const [useGroupings, setUseGroupings] = useState(readGroupingsPreference);
   const [removed, setRemoved] = useState<{ item: ShopStockItem; index: number } | null>(null);
+  const [picking, setPicking] = useState(false);
   const [aonIndex, setAonIndex] = useState<ReadonlyMap<string, string>>(() => new Map());
 
   useEffect(() => {
@@ -934,16 +1152,25 @@ function ShopsPage() {
                 <p className='p-6 text-sm text-muted-foreground'>Generate a shop to fill the counter.</p>
               ) : (
                 <div role='tabpanel'>
-                  <ShopAddItem
-                    items={activeItems}
-                    enabledBooks={[]}
-                    stockIds={new Set(stock.map((row) => row.id))}
-                    markup={markup}
-                    onAdd={(item) => {
-                      setStock((current) => (current?.some((row) => row.shopKey === String(item.id)) ? current : [...(current ?? []), asShopLine(item)]));
-                      setEdited(true);
-                    }}
-                  />
+                  <div className='flex flex-wrap items-start gap-2'>
+                    <div className='min-w-[16rem] flex-1'>
+                      <ShopAddItem
+                        items={activeItems}
+                        enabledBooks={[]}
+                        stockIds={new Set(stock.map((row) => row.id))}
+                        markup={markup}
+                        onAdd={(item) => {
+                          setStock((current) => (current?.some((row) => row.shopKey === String(item.id)) ? current : [...(current ?? []), asShopLine(item)]));
+                          setEdited(true);
+                        }}
+                      />
+                    </div>
+                    <div className='p-4'>
+                      <button className='shop-action mt-6' type='button' onClick={() => setPicking(true)}>
+                        Add item
+                      </button>
+                    </div>
+                  </div>
                   {stock.length === 0 ? (
                     <p className='px-6 pb-6 text-sm text-muted-foreground'>
                       {edited ? 'The counter is empty.' : 'Nothing in this preset matches the catalog.'}
@@ -1013,6 +1240,19 @@ function ShopsPage() {
           </div>
         </section>
       </main>
+      {picking && stock && (
+        <ShopAddItemPicker
+          items={activeItems}
+          traits={traits}
+          stockKeys={new Set(stock.map((row) => row.shopKey))}
+          markup={markup}
+          onAdd={(item) => {
+            setStock((current) => (current?.some((row) => row.shopKey === String(item.id)) ? current : [...(current ?? []), asShopLine(item)]));
+            setEdited(true);
+          }}
+          onClose={() => setPicking(false)}
+        />
+      )}
       {descriptionFull && (
         <div className='fixed inset-0 z-40 flex flex-col bg-background/95 p-6'>
           <div className='mx-auto flex w-full max-w-4xl flex-1 flex-col gap-3'>
@@ -1050,47 +1290,85 @@ function ShopStockTable({
   aonIndex: ReadonlyMap<string, string>;
   onRemove: (row: ShopStockItem, index: number) => void;
 }) {
+  const [menu, setMenu] = useState<{ x: number; y: number; row: ShopStockItem; index: number } | null>(null);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close();
+    };
+    window.addEventListener('click', close);
+    window.addEventListener('contextmenu', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('contextmenu', close);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menu]);
+
   return (
-    <table className='w-full text-left text-sm'>
-      <thead className='text-muted-foreground'>
-        <tr>
-          <th className='px-4 py-3 font-medium'>Qty</th>
-          <th className='px-4 py-3 font-medium'>Name</th>
-          <th className='px-4 py-3 font-medium'>Level</th>
-          <th className='px-4 py-3 font-medium'>Rarity</th>
-          <th className='px-4 py-3 font-medium'>Group</th>
-          <th className='px-4 py-3 font-medium'>Price</th>
-          <th className='px-4 py-3 font-medium'><span className='sr-only'>Remove</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => {
-          const index = stock.findIndex((item) => item.shopKey === row.shopKey);
-          return (
-            <tr className='border-t border-white/10' key={row.shopKey}>
-              <td className='px-4 py-3'>{shopLineQuantity(row)} ×</td>
-              <td className='px-4 py-3'>
-                <ShopItemName item={row} traits={traits} markup={markup} aonIndex={aonIndex} />
-              </td>
-              <td className='px-4 py-3'>{row.level}</td>
-              <td className='px-4 py-3'>{row.rarity}</td>
-              <td className='px-4 py-3'>{isShopFormula(row) ? 'FORMULA' : row.group}</td>
-              <td className='px-4 py-3'>{formatShopOffer(row, markup)}</td>
-              <td className='px-4 py-3 text-right'>
-                <button
-                  className='text-sm text-muted-foreground underline'
-                  type='button'
-                  aria-label={`Remove ${row.name}`}
-                  onClick={() => onRemove(row, index)}
+    <>
+      <table className='w-full text-left text-sm'>
+        <thead className='text-muted-foreground'>
+          <tr>
+            <th className='px-4 py-3 font-medium'>Qty</th>
+            <th className='px-4 py-3 font-medium'>Name</th>
+            <th className='px-4 py-3 font-medium'>Level</th>
+            <th className='px-4 py-3 font-medium'>Rarity</th>
+            <th className='px-4 py-3 font-medium'>Group</th>
+            <th className='px-4 py-3 font-medium'>Price</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const index = stock.findIndex((item) => item.shopKey === row.shopKey);
+            return (
+              <tr className='border-t border-white/10' key={row.shopKey}>
+                <td className='px-4 py-3'>{shopLineQuantity(row)} ×</td>
+                <td
+                  className='px-4 py-3'
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setMenu({ x: event.clientX, y: event.clientY, row, index });
+                  }}
                 >
-                  Remove
-                </button>
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+                  <ShopItemName item={row} traits={traits} markup={markup} aonIndex={aonIndex} />
+                </td>
+                <td className='px-4 py-3'>{row.level}</td>
+                <td className='px-4 py-3'>{row.rarity}</td>
+                <td className='px-4 py-3'>{isShopFormula(row) ? 'FORMULA' : row.group}</td>
+                <td className='px-4 py-3'>{formatShopOffer(row, markup)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {menu && createPortal(
+        <div
+          className='fixed z-50 min-w-32 rounded-lg bg-[#1c1c1c] py-1 shadow-2xl ring-1 ring-white/25'
+          style={{ left: menu.x, top: menu.y }}
+          role='menu'
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <button
+            className='block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-white/10'
+            type='button'
+            role='menuitem'
+            onClick={() => {
+              onRemove(menu.row, menu.index);
+              setMenu(null);
+            }}
+          >
+            Delete
+          </button>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 
@@ -1121,7 +1399,7 @@ function ShopDraftView({ id }: { id: string }) {
   if (error) return <p className='p-8 text-sm text-red-300'>{error}</p>;
   if (page === undefined) return <p className='p-8 text-sm text-muted-foreground'>Loading shop…</p>;
   if (page === null) return <p className='p-8 text-sm text-muted-foreground'>This shop is not available.</p>;
-  return <ShopDocument name={page.name} stock={page.draft.stock} homebrew={page.draft.style === 'homebrew-v3'} description={page.draft.description} />;
+  return <ShopDocument name={page.name} stock={page.draft.stock} homebrew={false} description={page.draft.description} />;
 }
 
 function ShopsApp() {

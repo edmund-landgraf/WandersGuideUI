@@ -138,6 +138,38 @@ export function shopAonIndex(items: Item[]) {
   return index;
 }
 
+/** Older published shops stored stock without Archives URLs. */
+export function shopAonSearchHref(name: string) {
+  const query = name.trim();
+  if (!query) return undefined;
+  return `https://2e.aonprd.com/Search.aspx?q=${encodeURIComponent(query)}`;
+}
+
+export function fillMissingShopAon<T extends { name: string; level: number; aon?: string }>(
+  stock: T[],
+  index: ReadonlyMap<string, string>,
+): T[] {
+  return stock.map((row) => {
+    if (row.aon && !/Search\.aspx/i.test(row.aon)) return row;
+    const exact = index.get(shopAonKey(row));
+    const href = exact ?? shopAonSearchHref(row.name);
+    if (!href || row.aon === href) return row;
+    return { ...row, aon: href };
+  });
+}
+
+let aonIndexPromise: Promise<ReadonlyMap<string, string>> | null = null;
+
+export function loadShopAonIndex() {
+  if (!aonIndexPromise) {
+    aonIndexPromise = fetchPf2eShopCatalog().then(shopAonIndex).catch((cause: unknown) => {
+      aonIndexPromise = null;
+      throw cause;
+    });
+  }
+  return aonIndexPromise;
+}
+
 function ownAonUrl(item: Item) {
   const stored = (item.meta_data as { aon_url?: string } | null | undefined)?.aon_url?.trim();
   if (!stored || /Search\.aspx/i.test(stored) || !/[?&]ID=\d+/i.test(stored)) return undefined;

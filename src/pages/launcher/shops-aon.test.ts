@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Item } from '@schemas/content';
 import { shopDraft } from './shops-syndicate';
-import { shopAonHref, shopAonIndex } from './shops-pf2e';
+import { fillMissingShopAon, shopAonHref, shopAonIndex } from './shops-pf2e';
 
 const ABYSIUM = 'https://2e.aonprd.com/Equipment.aspx?ID=1405';
 
@@ -41,5 +41,17 @@ describe('shop AoN links', () => {
     expect(shopAonHref(guide, index)).toBe(ABYSIUM);
     const draft = shopDraft('general', 'village', [guide], [], 0, 'default', '', { aonIndex: index });
     expect(draft.stock[0].aon).toBe(ABYSIUM);
+  });
+
+  it('fills a published row that was saved without a link', () => {
+    const index = shopAonIndex([pf2e]);
+    const [filled] = fillMissingShopAon([{ name: 'Abysium Chunk', level: 0 }], index);
+    expect(filled.aon).toBe(ABYSIUM);
+    const [kept] = fillMissingShopAon([{ name: 'Abysium Chunk', level: 0, aon: 'https://2e.aonprd.com/Equipment.aspx?ID=1' }], index);
+    expect(kept.aon).toBe('https://2e.aonprd.com/Equipment.aspx?ID=1');
+    const [search] = fillMissingShopAon([{ name: 'Rope', level: 0 }], new Map());
+    expect(search.aon).toBe('https://2e.aonprd.com/Search.aspx?q=Rope');
+    const [upgraded] = fillMissingShopAon([{ name: 'Abysium Chunk', level: 0, aon: search.aon }], index);
+    expect(upgraded.aon).toBe(ABYSIUM);
   });
 });

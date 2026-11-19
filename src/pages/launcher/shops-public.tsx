@@ -7,7 +7,7 @@ import { getConditionByName } from '@conditions/condition-handler';
 import { compileWgText } from '@pages/phase1/phase1-markdown';
 import { normalizeMarkdownTables, resolveAonHref, toStandard2eProse } from '@utils/foundry-text';
 import { ShopPopout } from './shop-popout';
-import { fetchPf2eEquipmentText } from './shops-pf2e';
+import { fetchPf2eEquipmentText, fillMissingShopAon, loadShopAonIndex } from './shops-pf2e';
 import { readPublic } from '../../syndication/store';
 import { LauncherHeader } from './launcher-header';
 import { asContentType } from './shops-export';
@@ -279,6 +279,7 @@ function shownPrice(price: string, inGp: boolean) {
 function StockName({ row, homebrew = false, inGp = false }: { row: ShopStockRow; homebrew?: boolean; inGp?: boolean }) {
   const description = useShopItemText(row);
   return (
+    <span className='inline-flex items-baseline gap-2'>
     <ShopPopout
       label={row.name}
       href={row.aon}
@@ -311,6 +312,18 @@ function StockName({ row, homebrew = false, inGp = false }: { row: ShopStockRow;
         />
       )}
     </ShopPopout>
+    {row.aon && (
+      <a
+        href={row.aon}
+        target='_blank'
+        rel='noreferrer'
+        title='Archives of Nethys'
+        className={homebrew ? 'text-[11px] uppercase tracking-wide text-[#6b1d14] underline' : 'text-[11px] uppercase tracking-wide underline'}
+      >
+        AoN
+      </a>
+    )}
+    </span>
   );
 }
 
@@ -434,9 +447,23 @@ function ShopDescription({ text, homebrew }: { text: string; homebrew: boolean }
 }
 
 export function ShopDocument({ name, stock, homebrew, description }: { name: string; stock: ShopStockRow[]; homebrew: boolean; description?: string }) {
+  const [linked, setLinked] = useState(() => fillMissingShopAon(stock, new Map()));
+  useEffect(() => {
+    setLinked(fillMissingShopAon(stock, new Map()));
+    if (stock.every((row) => row.aon && !/Search\.aspx/i.test(row.aon))) return;
+    let cancelled = false;
+    void loadShopAonIndex()
+      .then((index) => {
+        if (!cancelled) setLinked(fillMissingShopAon(stock, index));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [stock]);
   const [useGroupings, setUseGroupings] = useState(readGroupingsPreference);
   const [inGp, setInGp] = useState(() => readFlag(IN_GP_SESSION_KEY, false));
-  const sections = useGroupings ? groupedStock(stock) : null;
+  const sections = useGroupings ? groupedStock(linked) : null;
   const toggles = (
     <ShopViewToggles
       useGroupings={useGroupings}
@@ -478,7 +505,7 @@ export function ShopDocument({ name, stock, homebrew, description }: { name: str
                   <StockTable stock={section.rows} homebrew inGp={inGp} />
                 </details>
               )) : (
-                <StockTable stock={stock} homebrew inGp={inGp} />
+                <StockTable stock={linked} homebrew inGp={inGp} />
               )}
             </article>
           </div>
@@ -514,7 +541,7 @@ export function ShopDocument({ name, stock, homebrew, description }: { name: str
               </div>
             ) : (
               <div className='overflow-hidden rounded-xl bg-white/5 ring-1 ring-white/20'>
-                <StockTable stock={stock} inGp={inGp} />
+                <StockTable stock={linked} inGp={inGp} />
               </div>
             )}
           </div>

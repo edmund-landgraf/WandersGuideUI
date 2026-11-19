@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { SyndicatedNode } from '../../syndication/nodes';
-import { deleteOwned, insertNode, listOwned, moveNode, patchOwnedDraft, publishOwned, unpublishOwned, updateOwnedSnapshot } from '../../syndication/store';
+import { deleteOwned, insertNode, listOwned, moveNode, patchOwnedDraft, publishOwned, unpublishOwned, updateOwned, updateOwnedSnapshot } from '../../syndication/store';
 import { LauncherHeader } from './launcher-header';
 import { SHOP_CONTENT_KIND, shopPublicUrl, shopTraceStart, type ShopDraft, type ShopPageStyle } from './shops-syndicate';
 
@@ -13,6 +13,8 @@ export function ShopsLibrary() {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
 
   const reload = async () => {
     const done = shopTraceStart('library list');
@@ -89,33 +91,45 @@ export function ShopsLibrary() {
             </form>
             {error && <p className='text-sm text-red-300'>{error}</p>}
             {note && <p className='text-sm text-muted-foreground'>{note}</p>}
-            <div className='flex flex-wrap gap-2'>
-              {[{ id: '', name: 'Root' }, ...folders.map((folder) => ({ id: folder.id, name: folder.name }))].map((folder) => (
-                <div
-                  key={folder.id || 'root'}
-                  className={`rounded-lg px-3 py-2 text-sm ring-1 ${dropTarget === folder.id ? 'bg-white/15 ring-white/50' : 'bg-card text-muted-foreground ring-white/15'}`}
-                  onDragOver={(event) => {
-                    if (!event.dataTransfer.types.includes('application/x-wgui-shop')) return;
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = 'move';
-                    setDropTarget(folder.id);
-                  }}
-                  onDragLeave={() => setDropTarget((current) => (current === folder.id ? null : current))}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    setDropTarget(null);
-                    const shopId = event.dataTransfer.getData('application/x-wgui-shop');
-                    const shop = shops.find((row) => row.id === shopId);
-                    if (!shop) return;
-                    const parentId = folder.id || null;
-                    if ((shop.parent_id ?? null) === parentId) return;
-                    void run(() => moveNode(shop, parentId), parentId ? `Moved to ${folder.name}.` : 'Moved to Root.');
-                  }}
-                >
-                  {folder.name}
-                </div>
-              ))}
-            </div>
+            <FolderTree
+              folders={folders}
+              shops={shops}
+              busy={busy}
+              dropTarget={dropTarget}
+              renamingId={renamingId}
+              renameDraft={renameDraft}
+              onRenameDraft={setRenameDraft}
+              onStartRename={(folder) => {
+                setRenamingId(folder.id);
+                setRenameDraft(folder.name);
+              }}
+              onCancelRename={() => setRenamingId(null)}
+              onCommitRename={(folder) => {
+                const name = renameDraft.trim();
+                if (!name || name === folder.name) {
+                  setRenamingId(null);
+                  return;
+                }
+                void run(async () => {
+                  await updateOwned(folder, { name });
+                  setRenamingId(null);
+                }, 'Folder renamed.');
+              }}
+              onDeleteFolder={(folder) => {
+                const inside = shops.filter((shop) => shop.parent_id === folder.id);
+                const extra = inside.length ? ` ${inside.length} shop${inside.length === 1 ? '' : 's'} inside will be deleted too.` : '';
+                if (!window.confirm(`Delete folder “${folder.name}”?${extra}`)) return;
+                void run(() => deleteOwned(folder.id), 'Folder deleted.');
+              }}
+              onDragTarget={setDropTarget}
+              onDropShop={(folderId, folderName, shopId) => {
+                const shop = shops.find((row) => row.id === shopId);
+                if (!shop) return;
+                const parentId = folderId || null;
+                if ((shop.parent_id ?? null) === parentId) return;
+                void run(() => moveNode(shop, parentId), parentId ? `Moved to ${folderName}.` : 'Moved to Root.');
+              }}
+            />
             <div className='overflow-x-auto rounded-xl bg-white/5 ring-1 ring-white/20'>
               <table className='w-full text-left text-sm'>
                 <thead className='text-muted-foreground'>
@@ -232,6 +246,105 @@ export function ShopsLibrary() {
           </div>
         </section>
       </main>
+    </div>
+  );
+}
+
+function FolderTree({
+  folders,
+  shops,
+  busy,
+  dropTarget,
+  renamingId,
+  renameDraft,
+  onRenameDraft,
+  onStartRename,
+  onCancelRename,
+  onCommitRename,
+  onDeleteFolder,
+  onDragTarget,
+  onDropShop,
+}: {
+  folders: ShopNode[];
+  shops: ShopNode[];
+  busy: boolean;
+  dropTarget: string | null;
+  renamingId: string | null;
+  renameDraft: string;
+  onRenameDraft: (value: string) => void;
+  onStartRename: (folder: ShopNode) => void;
+  onCancelRename: () => void;
+  onCommitRename: (folder: ShopNode) => void;
+  onDeleteFolder: (folder: ShopNode) => void;
+  onDragTarget: (id: string | null) => void;
+  onDropShop: (folderId: string, folderName: string, shopId: string) => void;
+}) {
+  const branches = [{ id: '', name: 'Root', node: null as ShopNode | null }, ...folders.map((folder) => ({ id: folder.id, name: folder.name, node: folder }))];
+  return (
+    <div className='max-w-md rounded-xl bg-white/5 p-3 ring-1 ring-white/20'>
+      <p className='px-2 pb-2 text-xs uppercase tracking-wide text-muted-foreground'>Folders</p>
+      <ul className='grid gap-1'>
+        {branches.map((branch) => {
+          const children = shops.filter((shop) => (shop.parent_id ?? '') === branch.id);
+          return (
+            <li key={branch.id || 'root'}>
+              <div
+                className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ring-1 ${dropTarget === branch.id ? 'bg-white/15 ring-white/50' : 'bg-card ring-white/15'}`}
+                onDragOver={(event) => {
+                  if (!event.dataTransfer.types.includes('application/x-wgui-shop')) return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = 'move';
+                  onDragTarget(branch.id);
+                }}
+                onDragLeave={() => onDragTarget(dropTarget === branch.id ? null : dropTarget)}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  onDragTarget(null);
+                  const shopId = event.dataTransfer.getData('application/x-wgui-shop');
+                  if (shopId) onDropShop(branch.id, branch.name, shopId);
+                }}
+              >
+                <span className='text-muted-foreground' aria-hidden>{children.length ? '▾' : '▸'}</span>
+                {branch.node && renamingId === branch.node.id ? (
+                  <input
+                    className='min-w-0 flex-1 rounded bg-background px-2 py-1 text-foreground ring-1 ring-white/20'
+                    value={renameDraft}
+                    autoFocus
+                    onChange={(event) => onRenameDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') onCommitRename(branch.node!);
+                      if (event.key === 'Escape') onCancelRename();
+                    }}
+                  />
+                ) : (
+                  <span className='min-w-0 flex-1 truncate'>{branch.name}</span>
+                )}
+                <span className='text-xs text-muted-foreground'>{children.length}</span>
+                {branch.node && renamingId === branch.node.id ? (
+                  <>
+                    <button className='text-xs underline' type='button' disabled={busy} onClick={() => onCommitRename(branch.node!)}>Save</button>
+                    <button className='text-xs underline' type='button' onClick={onCancelRename}>Cancel</button>
+                  </>
+                ) : branch.node ? (
+                  <>
+                    <button className='text-xs underline' type='button' disabled={busy} onClick={() => onStartRename(branch.node!)}>Rename</button>
+                    <button className='text-xs underline' type='button' disabled={busy} onClick={() => onDeleteFolder(branch.node!)}>Delete</button>
+                  </>
+                ) : null}
+              </div>
+              {children.length > 0 && (
+                <ul className='ml-6 border-l border-white/15 py-1 pl-3'>
+                  {children.map((shop) => (
+                    <li key={shop.id} className='truncate py-0.5 text-sm text-muted-foreground'>
+                      <a className='underline' href={`/shops?id=${encodeURIComponent(shop.id)}`}>{shop.name}</a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
