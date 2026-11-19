@@ -148,7 +148,7 @@ export function shopAonSearchHref(name: string) {
 export function fillMissingShopAon<T extends { name: string; level: number; aon?: string }>(
   stock: T[],
   index: ReadonlyMap<string, string>,
-): T[] {
+): (T & { aon?: string })[] {
   return stock.map((row) => {
     if (row.aon && !/Search\.aspx/i.test(row.aon)) return row;
     const exact = index.get(shopAonKey(row));
