@@ -41,6 +41,7 @@ export type ShopStockRow = {
   traits: string[];
   description: string;
   source?: ShopSource | null;
+  aon?: string;
 };
 
 export type ShopDraft = {
@@ -77,6 +78,7 @@ export type ShopResult<T> = ShopOk<T> | ShopErr;
 
 type Pf2eEquipmentRow = {
   EquipmentId: number;
+  AonUrl?: string | null;
   Name: string;
   Level: number;
   Rarity: string | null;
@@ -201,6 +203,7 @@ function mapPf2eRow(row: Pf2eEquipmentRow): CatalogItem {
       group: normalize(row.WeaponGroup || row.ArmorGroupText),
       pf2e_traits: row.Traits ?? "",
       shop_source: PF2E_SHOP_SOURCE,
+      aon_url: row.AonUrl?.trim() || undefined,
       unselectable: false,
     },
     content_source_id: hashId(row.SourceBook ?? "PF2E", 0),
@@ -297,6 +300,26 @@ function stripDescriptions(draft: ShopDraft | null) {
   };
 }
 
+/** Only a direct Archives item URL is valid for the shop's AoN link. */
+function directShopAonUrl(item: CatalogItem): string | undefined {
+  const meta = item.meta_data as { aon_url?: string; source?: { url?: string } } | null | undefined;
+  for (const raw of [meta?.aon_url, meta?.source?.url]) {
+    if (!raw) continue;
+    try {
+      const url = new URL(raw);
+      if (url.protocol !== "https:" || url.username || url.password) continue;
+      if (url.hostname === "2e.aonprd.com"
+        && /^\/(?:Equipment|Weapons|Armor|Shields)\.aspx$/i.test(url.pathname)
+        && /^\d+$/.test(url.searchParams.get("ID") ?? "")) return url.href;
+      if (url.hostname === "2e.aonsrd.com"
+        && /^\/(?:treasure|equipment\/[a-z-]+)\/\d+-[a-z0-9-]+\/?$/i.test(url.pathname)) return url.href;
+    } catch {
+      // No link is preferable to a fabricated search URL.
+    }
+  }
+  return undefined;
+}
+
 function toStockRow(item: ShopStockItem, traits: CatalogTrait[], markup: number): ShopStockRow {
   return {
     id: catalogIdOf(item),
@@ -310,6 +333,7 @@ function toStockRow(item: ShopStockItem, traits: CatalogTrait[], markup: number)
     traits: traitLabels(item, traits),
     description: (item.description ?? "").trim(),
     source: catalogSourceOf(item),
+    aon: directShopAonUrl(item),
   };
 }
 
