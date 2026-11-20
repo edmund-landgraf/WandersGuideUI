@@ -2,7 +2,7 @@
 
 The filename keeps the old "95" count. This file is the current catalog. The count in the heading is the one to use.
 
-Generated Nov 3, 2026 from the live `wgui` MCP server tool list, with scopes checked against `READ_TOOLS` / `WRITE_TOOLS` in `src/server.ts`.
+Generated Nov 20, 2026 from the live `wgui` MCP server tool list, with scopes checked against `READ_TOOLS` / `WRITE_TOOLS` in `src/server.ts`.
 
 **112 tools: 48 require `read`, 64 require `write`.** This includes the 7 campaign/encounter create-update tools and 16 shop tools. `tools/list` returns every tool for any token; scope is enforced at call time. The 20 encounter tools marked **GM** require `view: "gm"`. Groups: campaign / encounter / combat (27), character (28), homebrew `wgui_ext_hb_*` (30), shops (16), plus campaign/encounter writes. Supersedes [mcp-tool-directory.md](./mcp-tool-directory.md) (61 tools, Oct 27). See [adr-oauth.md](./adr-oauth.md).
 
@@ -140,7 +140,7 @@ The encounter table has no `notes` column (`EncounterSchema` is name, icon, colo
 
 ## Shops (16: 4 read, 12 write)
 
-Saved shops live in `syndicated_nodes` with `content_kind: shop`. Each stock line has `source` (`wanderers-guide` or `pf2e`). Line keys are `wanderers-guide:{id}`, `pf2e:{id}`, or with `:formula`. The same operations are on `GET/POST/PATCH/DELETE /api/shops`.
+Saved shops live in `syndicated_nodes` with `content_kind: shop`. Each stock line has `source` (`wanderers-guide` or `pf2e`). Line keys are `wanderers-guide:{id}`, `pf2e:{id}`, or with `:formula`. Generated stock is capped by settlement (`village`, `town`, `city`, `metro10`, `metro13`, `metro16`, `metro20`); the default is `village`. Prices are coin strings (pp/gp/sp/cp). The same operations are on `GET/POST/PATCH/DELETE /api/shops`.
 
 | Tool | Scope | What it does / returns | Required params |
 | --- | --- | --- | --- |
@@ -148,14 +148,14 @@ Saved shops live in `syndicated_nodes` with `content_kind: shop`. Each stock lin
 | `get_shop` | read | One owned draft plus stock line keys | `shopId` |
 | `get_published_shop` | read | Snapshot from `syndicated_public` | `token` |
 | `search_shop_catalog` | read | WG and/or PF2E equipment hits with `source` | none (`q`, `source`) |
-| `create_shop` | write | Insert entry; `generate` stocks from catalogs | `name` |
+| `create_shop` | write | Insert entry. `generate` (default true) stocks from catalogs within the settlement level cap. Optional `preset`, `settlement`, `size` (1–100), `sources`, `rarities`, `books`, `markup` | `name` |
 | `create_shop_folder` | write | Root folder | `name` |
-| `update_shop` | write | Rename and patch draft, including `campaignId` | `shopId` |
-| `resize_shop` | write | Regenerate stock to `size` 1–100 | `shopId`, `size` |
-| `add_shop_item` | write | Append one or many catalog items; does not replace stock | `shopId`, plus `items` or `source`+`itemId` |
+| `update_shop` | write | Rename and patch draft, including `campaignId`, `settlement`, `books`, `sources`, and `markup` | `shopId` |
+| `resize_shop` | write | Regenerates stock to `size` 1–100, down-weighting the previous lines, still capped by settlement | `shopId`, `size` |
+| `add_shop_item` | write | Appends catalog items without replacing the rest of the stock. `items` for several refs, or `source` plus `itemId` for one | `shopId`, plus `items` or `source`+`itemId` |
 | `update_shop_item` | write | Quantity and/or price on a line key | `shopId`, `key` |
 | `remove_shop_item` | write | Remove a line key | `shopId`, `key` |
-| `set_shop_stock` | write | Replace from catalog refs or regenerate | `shopId` |
+| `set_shop_stock` | write | Replaces stock from catalog refs (`source` + `id`), or regenerates when `generate` is true. Still capped by settlement | `shopId` |
 | `move_shop` | write | Move into a root folder or to root | `shopId`, `parentId` |
 | `delete_shop` | write | Delete shop or folder | `shopId` |
 | `publish_shop` | write | Publish or refresh the public snapshot | `shopId` |
