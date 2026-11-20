@@ -339,6 +339,7 @@ function toStockRow(item: ShopStockItem, traits: CatalogTrait[], markup: number)
 
 const CATALOG_TTL_MS = 5 * 60 * 1000;
 const REF_CONCURRENCY = 4;
+const REF_LOOKUP_BATCH_SIZE = 20;
 const catalogCache = new Map<string, { at: number; data: { items: CatalogItem[]; traits: CatalogTrait[] } }>();
 const catalogInflight = new Map<string, Promise<ShopResult<{ items: CatalogItem[]; traits: CatalogTrait[] }>>>();
 
@@ -361,8 +362,8 @@ function isFetchFailed(message: string) {
   return /fetch failed/i.test(message);
 }
 
-async function invokeBook(userId: string, name: string, bookId: number) {
-  const body = { content_sources: [bookId] };
+async function invokeBook(userId: string, name: string, bookId: number, id?: number | number[]) {
+  const body = { content_sources: [bookId], ...(id === undefined ? {} : { id }) };
   let result = await invokeFunction(userId, name, body);
   if (!result.ok && isFetchFailed(result.message)) result = await invokeFunction(userId, name, body);
   if (!result.ok) return err(result.code, `${name} failed for book ${bookId}: ${result.message}`);
@@ -707,26 +708,54 @@ async function mapPool<T, R>(rows: T[], size: number, fn: (row: T) => Promise<R>
   return out;
 }
 
-async function findWgItem(userId: string, id: number, books?: number[]): Promise<ShopResult<CatalogItem | null>> {
-  const sourceIds = await sourceIdsFor(userId, books);
-  if (!sourceIds.ok) return sourceIds;
-  const found = await invokeFunction(userId, "find-item", { id, content_sources: sourceIds.data });
-  if (!found.ok) return err(found.code, found.message);
-  return ok(asCatalogItems(found.data)[0] ?? null);
-}
-
-async function traitsByIds(userId: string, items: CatalogItem[], books?: number[]): Promise<ShopResult<CatalogTrait[]>> {
-  const ids = [...new Set(items.flatMap((item) => item.traits ?? []))];
+/**
+ * Resolve only the requested catalog ids, never a whole multi-book catalog.
+ * Each request is scoped to one book and capped at 20 ids. If a book doesn't
+ * contain an id, try the next; stop as soon as all ids have been resolved.
+ */
+async function lookupWgRowsByBook<T extends { id: number }>(
+  userId: string,
+  functionName: "find-item" | "find-trait",
+  ids: number[],
+  books: number[] | undefined,
+  parse: (data: unknown) => T[],
+): Promise<ShopResult<T[]>> {
   if (!ids.length) return ok([]);
   const sourceIds = await sourceIdsFor(userId, books);
   if (!sourceIds.ok) return sourceIds;
-  const traits: CatalogTrait[] = [];
-  for (const id of ids) {
-    const found = await invokeFunction(userId, "find-trait", { id, content_sources: sourceIds.data });
-    if (!found.ok) return err(found.code, found.message);
-    traits.push(...asCatalogTraits(found.data));
+
+  const requested = [...new Set(ids)];
+  const missing = new Set(requested);
+  const matches = new Map<number, T>();
+  for (const bookId of new Set(sourceIds.data)) {
+    const outstanding = [...missing];
+    const chunks: number[][] = [];
+    for (let offset = 0; offset < outstanding.length; offset += REF_LOOKUP_BATCH_SIZE) {
+      chunks.push(outstanding.slice(offset, offset + REF_LOOKUP_BATCH_SIZE));
+    }
+    const pages = await mapPool(chunks, REF_CONCURRENCY, async (chunk) =>
+      invokeBook(userId, functionName, bookId, chunk.length === 1 ? chunk[0] : chunk),
+    );
+    for (const page of pages) {
+      if (!page.ok) return page;
+      for (const row of parse(page.data)) {
+        if (!missing.has(row.id)) continue;
+        matches.set(row.id, row);
+        missing.delete(row.id);
+      }
+    }
+    if (!missing.size) break;
   }
-  return ok(traits);
+  return ok(requested.flatMap((id) => matches.has(id) ? [matches.get(id)!] : []));
+}
+
+async function findWgItems(userId: string, ids: number[], books?: number[]) {
+  return lookupWgRowsByBook(userId, "find-item", ids, books, asCatalogItems);
+}
+
+async function traitsByIds(userId: string, items: CatalogItem[], books?: number[]) {
+  const ids = [...new Set(items.flatMap((item) => item.traits ?? []))];
+  return lookupWgRowsByBook(userId, "find-trait", ids, books, asCatalogTraits);
 }
 
 async function resolveRefs(userId: string, refs: { source: ShopSource; id: number; quantity?: number; price?: string; description?: string; formula?: boolean }[], markup: number, books?: number[]) {
@@ -740,18 +769,14 @@ async function resolveRefs(userId: string, refs: { source: ShopSource; id: numbe
     pf2eTraitRows = pf2e.data.traits;
   }
   const wgRefs = refs.filter((row) => row.source === "wanderers-guide");
-  const wgLookups = await mapPool(wgRefs, REF_CONCURRENCY, async (ref) => {
-    const found = await findWgItem(userId, ref.id, books);
-    return { ref, found };
-  });
-  for (const row of wgLookups) {
-    if (!row.found.ok) return row.found;
-  }
-  const wgItems = wgLookups.flatMap((row) => row.found.ok && row.found.data ? [row.found.data] : []);
+  const foundWg = await findWgItems(userId, wgRefs.map((ref) => ref.id), books);
+  if (!foundWg.ok) return foundWg;
+  const wgItems = foundWg.data;
   const wgTraits = await traitsByIds(userId, wgItems, books);
   if (!wgTraits.ok) return wgTraits;
   const traits = [...wgTraits.data, ...pf2eTraitRows];
-  const wgByRef = new Map(wgLookups.map((row) => [row.ref, row.found.ok ? row.found.data : null]));
+  const wgById = new Map(wgItems.map((item) => [item.id, item]));
+  const wgByRef = new Map(wgRefs.map((ref) => [ref, wgById.get(ref.id) ?? null]));
   const stock: ShopStockRow[] = [];
   for (const ref of refs) {
     const item = ref.source === "pf2e" ? findCatalogItem(pf2eItems, "pf2e", ref.id) : wgByRef.get(ref) ?? undefined;
@@ -814,7 +839,8 @@ export async function setShopStock(userId: string, shopId: string, input: {
 }
 
 export type ShopItemInput = {
-  source: ShopSource;
+  // Omitted for batch requests that supply source on each item in items[].
+  source?: ShopSource;
   id?: number;
   itemId?: number;
   quantity?: number;
@@ -844,7 +870,8 @@ export async function addShopItem(userId: string, shopId: string, input: ShopIte
   if (!refs.length || refs.some((row) => (row.source !== "wanderers-guide" && row.source !== "pf2e") || !Number.isFinite(row.id))) {
     return err("VALIDATION_ERROR", "Each item needs source and id.");
   }
-  const added = await resolveRefs(userId, refs, node.draft.markup, node.draft.books);
+  // The check above guarantees source and id for every row, including items[].
+  const added = await resolveRefs(userId, refs as Array<ShopItemInput & { source: ShopSource; id: number }>, node.draft.markup, node.draft.books);
   if (!added.ok) return added;
   const keys = new Set(added.data.map((row) => lineKey(row.source, row.id, row.group === "FORMULA")));
   const existing = (node.draft.stock ?? []).filter((line) => !keys.has(lineKey(line.source, line.id, line.group === "FORMULA")));
