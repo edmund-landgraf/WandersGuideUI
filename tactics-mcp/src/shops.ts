@@ -805,7 +805,8 @@ export async function setShopStock(userId: string, shopId: string, input: {
 }
 
 export type ShopItemInput = {
-  source: ShopSource;
+  // Omitted for batch requests that supply source on each item in items[].
+  source?: ShopSource;
   id?: number;
   itemId?: number;
   quantity?: number;
@@ -835,7 +836,8 @@ export async function addShopItem(userId: string, shopId: string, input: ShopIte
   if (!refs.length || refs.some((row) => (row.source !== "wanderers-guide" && row.source !== "pf2e") || !Number.isFinite(row.id))) {
     return err("VALIDATION_ERROR", "Each item needs source and id.");
   }
-  const added = await resolveRefs(userId, refs, node.draft.markup, node.draft.books);
+  // The check above guarantees source and id for every row, including items[].
+  const added = await resolveRefs(userId, refs as Array<ShopItemInput & { source: ShopSource; id: number }>, node.draft.markup, node.draft.books);
   if (!added.ok) return added;
   const keys = new Set(added.data.map((row) => lineKey(row.source, row.id, row.group === "FORMULA")));
   const existing = (node.draft.stock ?? []).filter((line) => !keys.has(lineKey(line.source, line.id, line.group === "FORMULA")));
