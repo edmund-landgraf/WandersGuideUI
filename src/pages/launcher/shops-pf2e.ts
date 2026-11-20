@@ -138,23 +138,34 @@ export function shopAonIndex(items: Item[]) {
   return index;
 }
 
-/** Older published shops stored stock without Archives URLs. */
-export function shopAonSearchHref(name: string) {
-  const query = name.trim();
-  if (!query) return undefined;
-  return `https://2e.aonprd.com/Search.aspx?q=${encodeURIComponent(query)}`;
+/**
+ * A direct Archives item URL must identify a specific entry.
+ * A search-results URL is not an item link and must never be labeled "AoN".
+ */
+export function validShopAonUrl(value: string | null | undefined): string | undefined {
+  if (!value?.trim()) return undefined;
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== 'https:' || url.username || url.password) return undefined;
+    if (url.hostname === '2e.aonprd.com'
+      && /^\/(?:Equipment|Weapons|Armor|Shields)\.aspx$/i.test(url.pathname)
+      && /^\d+$/.test(url.searchParams.get('ID') ?? '')) return url.href;
+    if (url.hostname === '2e.aonsrd.com'
+      && /^\/(?:treasure|equipment\/[a-z-]+)\/\d+-[a-z0-9-]+\/?$/i.test(url.pathname)) return url.href;
+  } catch {
+    // Invalid, unsupported, or non-Archives URLs are never labeled AoN.
+  }
+  return undefined;
 }
 
+/** Older published shops can be resolved by exact name + level, not by search. */
 export function fillMissingShopAon<T extends { name: string; level: number; aon?: string }>(
   stock: T[],
   index: ReadonlyMap<string, string>,
 ): (T & { aon?: string })[] {
   return stock.map((row) => {
-    if (row.aon && !/Search\.aspx/i.test(row.aon)) return row;
-    const exact = index.get(shopAonKey(row));
-    const href = exact ?? shopAonSearchHref(row.name);
-    if (!href || row.aon === href) return row;
-    return { ...row, aon: href };
+    const direct = validShopAonUrl(row.aon) ?? validShopAonUrl(index.get(shopAonKey(row)));
+    return row.aon === direct ? row : { ...row, aon: direct };
   });
 }
 
@@ -171,9 +182,8 @@ export function loadShopAonIndex() {
 }
 
 function ownAonUrl(item: Item) {
-  const stored = (item.meta_data as { aon_url?: string } | null | undefined)?.aon_url?.trim();
-  if (!stored || /Search\.aspx/i.test(stored) || !/[?&]ID=\d+/i.test(stored)) return undefined;
-  return stored;
+  const metadata = item.meta_data as { aon_url?: string; source?: { url?: string } } | null | undefined;
+  return validShopAonUrl(metadata?.aon_url) ?? validShopAonUrl(metadata?.source?.url);
 }
 
 export function mergeShopCatalog(wanderersGuide: Item[], pf2e: Item[]) {
