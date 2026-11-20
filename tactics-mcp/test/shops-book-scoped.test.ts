@@ -37,7 +37,7 @@ test("batch shop append resolves items and traits one book at a time, preserving
     snapshot: null,
     published_at: null,
   };
-  const requests: { name: string; book: number; id: number }[] = [];
+  const requests: { name: string; book: number; ids: number[] }[] = [];
   let fetchRetries = 0;
 
   setCharacterFetch((async (input, init) => {
@@ -52,12 +52,14 @@ test("batch shop append resolves items and traits one book at a time, preserving
 
     const functionName = url.split("/functions/v1/")[1];
     assert.ok(functionName === "find-item" || functionName === "find-trait", url);
-    const body = JSON.parse(String(init?.body)) as { id: number; content_sources: number[] };
+    const body = JSON.parse(String(init?.body)) as { id: number | number[]; content_sources: number[] };
     assert.equal(body.content_sources.length, 1, "lookup must be restricted to one book");
     const book = body.content_sources[0];
-    requests.push({ name: functionName, book, id: body.id });
+    const ids = Array.isArray(body.id) ? body.id : [body.id];
+    assert.ok(ids.length <= 20, "each lookup must cap its id batch");
+    requests.push({ name: functionName, book, ids });
 
-    if (functionName === "find-item" && body.id === 101 && book === 11 && fetchRetries++ === 0) {
+    if (functionName === "find-item" && ids.includes(101) && book === 11 && fetchRetries++ === 0) {
       throw new Error("fetch failed");
     }
     const itemRows = [
@@ -68,8 +70,8 @@ test("batch shop append resolves items and traits one book at a time, preserving
     ];
     const traitRows = [{ id: 201, name: "magical", book: 11 }, { id: 202, name: "alchemical", book: 22 }];
     const rows = functionName === "find-item"
-      ? itemRows.filter((item) => item.id === body.id && item.content_source_id === book)
-      : traitRows.filter((trait) => trait.id === body.id && trait.book === book).map(({ id, name }) => ({ id, name }));
+      ? itemRows.filter((item) => ids.includes(item.id) && item.content_source_id === book)
+      : traitRows.filter((trait) => ids.includes(trait.id) && trait.book === book).map(({ id, name }) => ({ id, name }));
     return new Response(JSON.stringify({ data: rows }), { status: 200 });
   }) as typeof fetch);
 
@@ -88,7 +90,7 @@ test("batch shop append resolves items and traits one book at a time, preserving
   assert.equal(stock[2].quantity, 3);
   assert.deepEqual(stock[1].traits, ["alchemical"]);
   assert.deepEqual(stock[2].traits, ["magical"]);
-  assert.equal(requests.filter((call) => call.name === "find-item" && call.id === 101 && call.book === 11).length, 2, "fetch failure should retry once");
-  assert.ok(requests.some((call) => call.name === "find-item" && call.id === 101 && call.book === 22), "should continue to next book");
-  assert.ok(requests.some((call) => call.name === "find-trait" && call.id === 202 && call.book === 22), "traits should also search the right book");
+  assert.equal(requests.filter((call) => call.name === "find-item" && call.ids.includes(101) && call.book === 11).length, 2, "fetch failure should retry once");
+  assert.ok(requests.some((call) => call.name === "find-item" && call.ids.includes(101) && call.book === 22), "should continue to next book");
+  assert.ok(requests.some((call) => call.name === "find-trait" && call.ids.includes(202) && call.book === 22), "traits should also search the right book");
 });
