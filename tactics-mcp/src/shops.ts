@@ -337,8 +337,8 @@ function isFetchFailed(message: string) {
   return /fetch failed/i.test(message);
 }
 
-async function invokeBook(userId: string, name: string, bookId: number) {
-  const body = { content_sources: [bookId] };
+async function invokeBook(userId: string, name: string, bookId: number, id?: number) {
+  const body = { content_sources: [bookId], ...(id === undefined ? {} : { id }) };
   let result = await invokeFunction(userId, name, body);
   if (!result.ok && isFetchFailed(result.message)) result = await invokeFunction(userId, name, body);
   if (!result.ok) return err(result.code, `${name} failed for book ${bookId}: ${result.message}`);
@@ -686,9 +686,15 @@ async function mapPool<T, R>(rows: T[], size: number, fn: (row: T) => Promise<R>
 async function findWgItem(userId: string, id: number, books?: number[]): Promise<ShopResult<CatalogItem | null>> {
   const sourceIds = await sourceIdsFor(userId, books);
   if (!sourceIds.ok) return sourceIds;
-  const found = await invokeFunction(userId, "find-item", { id, content_sources: sourceIds.data });
-  if (!found.ok) return err(found.code, found.message);
-  return ok(asCatalogItems(found.data)[0] ?? null);
+  // Keep each request scoped to a single book. A broad content_sources lookup can
+  // make find-item load too much data even though we only need one catalog id.
+  for (const bookId of new Set(sourceIds.data)) {
+    const found = await invokeBook(userId, "find-item", bookId, id);
+    if (!found.ok) return found;
+    const item = asCatalogItems(found.data).find((row) => row.id === id);
+    if (item) return ok(item);
+  }
+  return ok(null);
 }
 
 async function traitsByIds(userId: string, items: CatalogItem[], books?: number[]): Promise<ShopResult<CatalogTrait[]>> {
@@ -696,13 +702,22 @@ async function traitsByIds(userId: string, items: CatalogItem[], books?: number[
   if (!ids.length) return ok([]);
   const sourceIds = await sourceIdsFor(userId, books);
   if (!sourceIds.ok) return sourceIds;
-  const traits: CatalogTrait[] = [];
-  for (const id of ids) {
-    const found = await invokeFunction(userId, "find-trait", { id, content_sources: sourceIds.data });
-    if (!found.ok) return err(found.code, found.message);
-    traits.push(...asCatalogTraits(found.data));
+  const bookIds = [...new Set(sourceIds.data)];
+  // Limit simultaneous lookups and use a single book per request, just as the
+  // main catalog loader does. Traits can belong to a different book than items.
+  const lookups = await mapPool(ids, REF_CONCURRENCY, async (id) => {
+    for (const bookId of bookIds) {
+      const found = await invokeBook(userId, "find-trait", bookId, id);
+      if (!found.ok) return found;
+      const trait = asCatalogTraits(found.data).find((row) => row.id === id);
+      if (trait) return ok(trait);
+    }
+    return ok(null);
+  });
+  for (const lookup of lookups) {
+    if (!lookup.ok) return lookup;
   }
-  return ok(traits);
+  return ok(lookups.flatMap((lookup) => lookup.ok && lookup.data ? [lookup.data] : []));
 }
 
 async function resolveRefs(userId: string, refs: { source: ShopSource; id: number; quantity?: number; price?: string; description?: string; formula?: boolean }[], markup: number, books?: number[]) {
