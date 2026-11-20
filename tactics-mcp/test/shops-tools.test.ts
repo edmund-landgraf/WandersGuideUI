@@ -39,7 +39,7 @@ function installFetch() {
     if (url.includes("/api/equipment")) {
       return jsonResponse({
         rows: [
-          { EquipmentId: 1, Name: "AoN Rope", Level: 0, Rarity: "common", Traits: "", ItemCategory: "adventuring gear", ItemSubcategory: null, SourceBook: "Core", Summary: "Aon rope", PriceCp: 50, BulkText: "L", WeaponGroup: null, WeaponCategory: null, WeaponType: null, ArmorCategory: null, ArmorGroupText: null, Hands: null, AmmunitionText: null },
+          { EquipmentId: 1, AonUrl: "https://2e.aonprd.com/Equipment.aspx?ID=1234", Name: "AoN Rope", Level: 0, Rarity: "common", Traits: "", ItemCategory: "adventuring gear", ItemSubcategory: null, SourceBook: "Core", Summary: "Aon rope", PriceCp: 50, BulkText: "L", WeaponGroup: null, WeaponCategory: null, WeaponType: null, ArmorCategory: null, ArmorGroupText: null, Hands: null, AmmunitionText: null },
         ],
         total: 1,
         limit: 500,
@@ -65,7 +65,7 @@ function installFetch() {
         return jsonResponse({ status: "error", message: "fetch failed" }, 500);
       }
       const catalog = [
-        { id: 1, name: "WG Rope", level: 0, rarity: "COMMON", group: "GENERAL", price: { gp: 1 }, bulk: "L", traits: [1], description: "wg rope", content_source_id: 1, meta_data: {} },
+        { id: 1, name: "WG Rope", level: 0, rarity: "COMMON", group: "GENERAL", price: { gp: 1 }, bulk: "L", traits: [1], description: "wg rope", content_source_id: 1, meta_data: { source: { url: "https://2e.aonprd.com/Equipment.aspx?ID=2345" } } },
         { id: 2, name: "Lost Lamp", level: 1, rarity: "COMMON", group: "GENERAL", price: { gp: 2 }, bulk: "1", traits: [], description: "lamp", content_source_id: 2, meta_data: {} },
       ];
       let rows = catalog;
@@ -153,6 +153,7 @@ test("create, rename, resize, add and remove shop lines from both catalogs", asy
     const stock = (withBoth.structuredContent as { shop: { draft: { stock: { source: string; id: number }[] } }; stockKeys: string[] }).shop.draft.stock;
     assert.ok(stock.some((row) => row.source === "wanderers-guide" && row.id === 1));
     assert.ok(stock.some((row) => row.source === "pf2e" && row.id === 1));
+    assert.equal((stock.find((row) => row.source === "pf2e") as { aon?: string }).aon, "https://2e.aonprd.com/Equipment.aspx?ID=1234");
     const keys = (withBoth.structuredContent as { stockKeys: string[] }).stockKeys;
     assert.ok(keys.some((key) => key === "wanderers-guide:1" || key === "wanderers-guide:1:formula"));
     assert.ok(keys.includes("pf2e:1"));
@@ -229,6 +230,7 @@ test("set_shop_stock looks up Wanderer's Guide items by id", async () => {
     assert.equal(stock[0].id, 2);
     assert.equal(stock[1].id, 1);
     assert.ok(stock[1].traits.includes("Magical"));
+    assert.equal((stock[1] as { aon?: string }).aon, "https://2e.aonprd.com/Equipment.aspx?ID=2345");
   } finally {
     await close();
   }
