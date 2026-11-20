@@ -128,9 +128,14 @@ export async function handleShopApi(
   }
   if (method === "POST" && parts[3] === "items") {
     if (!need(scopes, "write", res)) return;
-    const source = body?.source as ShopSource;
-    const itemId = Number(body?.itemId ?? body?.id);
-    reply(res, await addShopItem(userId, shopId, { source, itemId, quantity: body?.quantity as number | undefined, price: body?.price as string | undefined, formula: body?.formula as boolean | undefined }), 201);
+    reply(res, await addShopItem(userId, shopId, {
+      source: body?.source as ShopSource,
+      itemId: Number(body?.itemId ?? body?.id),
+      quantity: body?.quantity as number | undefined,
+      price: body?.price as string | undefined,
+      formula: body?.formula as boolean | undefined,
+      items: Array.isArray(body?.items) ? body.items as Parameters<typeof addShopItem>[2]["items"] : undefined,
+    }), 201);
     return;
   }
   if (parts[3] === "items" && parts[4]) {

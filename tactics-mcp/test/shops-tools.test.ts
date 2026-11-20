@@ -7,6 +7,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { setCharacterFetch } from "../src/character-client.js";
 import { startTacticsHttp } from "../src/http.js";
 import { createTacticsMcpServer } from "../src/server.js";
+import { resetShopCatalogCache } from "../src/shops.js";
 import { mintToken, resetTokens } from "../src/tokens.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -49,15 +50,27 @@ function installFetch() {
       return jsonResponse({ status: "success", data: [{ id: 1, name: "Core" }, { id: 2, name: "Lost" }] });
     }
     if (url.endsWith("/find-trait")) {
-      return jsonResponse({ status: "success", data: [{ id: 1, name: "Magical" }] });
+      const traitId = typeof body.id === "number" ? body.id : null;
+      const sources = body.content_sources as number[] | undefined;
+      if (Array.isArray(sources) && sources.length > 1 && traitId == null) {
+        return jsonResponse({ status: "error", message: "fetch failed" }, 500);
+      }
+      const traits = [{ id: 1, name: "Magical" }];
+      return jsonResponse({ status: "success", data: traitId ? traits.filter((row) => row.id === traitId) : traits });
     }
     if (url.endsWith("/find-item")) {
+      const itemId = typeof body.id === "number" ? body.id : null;
       const sources = body.content_sources as number[] | undefined;
+      if (Array.isArray(sources) && sources.length > 1 && itemId == null) {
+        return jsonResponse({ status: "error", message: "fetch failed" }, 500);
+      }
       const catalog = [
-        { id: 1, name: "WG Rope", level: 0, rarity: "COMMON", group: "GENERAL", price: { gp: 1 }, bulk: "L", traits: [], description: "wg rope", content_source_id: 1, meta_data: {} },
+        { id: 1, name: "WG Rope", level: 0, rarity: "COMMON", group: "GENERAL", price: { gp: 1 }, bulk: "L", traits: [1], description: "wg rope", content_source_id: 1, meta_data: {} },
         { id: 2, name: "Lost Lamp", level: 1, rarity: "COMMON", group: "GENERAL", price: { gp: 2 }, bulk: "1", traits: [], description: "lamp", content_source_id: 2, meta_data: {} },
       ];
-      const rows = sources ? catalog.filter((row) => sources.includes(row.content_source_id)) : catalog;
+      let rows = catalog;
+      if (itemId != null) rows = rows.filter((row) => row.id === itemId);
+      if (sources) rows = rows.filter((row) => sources.includes(row.content_source_id));
       return jsonResponse({ status: "success", data: rows });
     }
     if (url.includes("/rest/v1/syndicated_public")) {
@@ -97,6 +110,7 @@ function installFetch() {
 
 before(() => {
   nodes.length = 0;
+  resetShopCatalogCache();
   installFetch();
 });
 
@@ -115,6 +129,7 @@ async function clientFor(scopes: string[]) {
 
 test("create, rename, resize, add and remove shop lines from both catalogs", async () => {
   nodes.length = 0;
+  resetShopCatalogCache();
   const { mcp, close } = await clientFor(["read", "write"]);
   try {
     const created = await mcp.callTool({
@@ -162,6 +177,63 @@ test("create, rename, resize, add and remove shop lines from both catalogs", asy
   }
 });
 
+test("add_shop_item appends many refs without replacing stock", async () => {
+  nodes.length = 0;
+  resetShopCatalogCache();
+  const { mcp, close } = await clientFor(["read", "write"]);
+  try {
+    const created = await mcp.callTool({
+      name: "create_shop",
+      arguments: { name: "Mixed", generate: false, sources: ["wanderers-guide", "pf2e"], books: [1, 2] },
+    });
+    const shopId = (created.structuredContent as { shop: { id: string } }).shop.id;
+    await mcp.callTool({ name: "add_shop_item", arguments: { shopId, source: "wanderers-guide", itemId: 1 } });
+    const batched = await mcp.callTool({
+      name: "add_shop_item",
+      arguments: {
+        shopId,
+        items: [
+          { source: "wanderers-guide", id: 2 },
+          { source: "pf2e", id: 1 },
+        ],
+      },
+    });
+    assert.equal(batched.isError, undefined);
+    const stock = (batched.structuredContent as { shop: { draft: { stock: { source: string; id: number }[] } } }).shop.draft.stock;
+    assert.equal(stock.length, 3);
+    assert.ok(stock.some((row) => row.source === "wanderers-guide" && row.id === 1));
+    assert.ok(stock.some((row) => row.source === "wanderers-guide" && row.id === 2));
+    assert.ok(stock.some((row) => row.source === "pf2e" && row.id === 1));
+  } finally {
+    await close();
+  }
+});
+
+test("set_shop_stock looks up Wanderer's Guide items by id", async () => {
+  nodes.length = 0;
+  resetShopCatalogCache();
+  const { mcp, close } = await clientFor(["read", "write"]);
+  try {
+    const created = await mcp.callTool({
+      name: "create_shop",
+      arguments: { name: "Empty", generate: false, sources: ["wanderers-guide"], books: [1, 2] },
+    });
+    const shopId = (created.structuredContent as { shop: { id: string } }).shop.id;
+    const stocked = await mcp.callTool({
+      name: "set_shop_stock",
+      arguments: { shopId, items: [{ source: "wanderers-guide", id: 2 }, { source: "wanderers-guide", id: 1 }] },
+    });
+    assert.equal(stocked.isError, undefined);
+    const stock = (stocked.structuredContent as { shop: { draft: { stock: { id: number; source: string; traits: string[] }[] } } }).shop.draft.stock;
+    assert.equal(stock.length, 2);
+    assert.equal(stock[0].id, 2);
+    assert.equal(stock[1].id, 1);
+    assert.ok(stock[1].traits.includes("Magical"));
+  } finally {
+    await close();
+  }
+});
+
 test("read-only tokens cannot create shops", async () => {
   const { mcp, close } = await clientFor(["read"]);
   try {
@@ -175,6 +247,7 @@ test("read-only tokens cannot create shops", async () => {
 
 test("HTTP POST /api/shops matches create_shop draft shape", async () => {
   nodes.length = 0;
+  resetShopCatalogCache();
   process.env.TACTICS_MCP_TOKEN_FILE = join(mkdtempSync(join(tmpdir(), "shop-http-")), "tokens.json");
   resetTokens();
   const minted = mintToken({ userId: "user-1", scopes: ["read", "write"] });

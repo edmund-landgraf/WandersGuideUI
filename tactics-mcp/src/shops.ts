@@ -313,21 +313,75 @@ function toStockRow(item: ShopStockItem, traits: CatalogTrait[], markup: number)
   };
 }
 
+const CATALOG_TTL_MS = 5 * 60 * 1000;
+const REF_CONCURRENCY = 4;
+const catalogCache = new Map<string, { at: number; data: { items: CatalogItem[]; traits: CatalogTrait[] } }>();
+const catalogInflight = new Map<string, Promise<ShopResult<{ items: CatalogItem[]; traits: CatalogTrait[] }>>>();
+
+export function resetShopCatalogCache() {
+  catalogCache.clear();
+  catalogInflight.clear();
+}
+
+function asCatalogItems(data: unknown): CatalogItem[] {
+  const rows = Array.isArray(data) ? data : data && typeof data === "object" ? [data] : [];
+  return rows.filter((row): row is CatalogItem => !!row && typeof row === "object" && typeof (row as CatalogItem).id === "number");
+}
+
+function asCatalogTraits(data: unknown): CatalogTrait[] {
+  const rows = Array.isArray(data) ? data : data && typeof data === "object" ? [data] : [];
+  return rows.filter((row): row is CatalogTrait => !!row && typeof row === "object" && typeof (row as CatalogTrait).id === "number");
+}
+
+function isFetchFailed(message: string) {
+  return /fetch failed/i.test(message);
+}
+
+async function invokeBook(userId: string, name: string, bookId: number) {
+  const body = { content_sources: [bookId] };
+  let result = await invokeFunction(userId, name, body);
+  if (!result.ok && isFetchFailed(result.message)) result = await invokeFunction(userId, name, body);
+  if (!result.ok) return err(result.code, `${name} failed for book ${bookId}: ${result.message}`);
+  return result;
+}
+
+async function sourceIdsFor(userId: string, books?: number[]): Promise<ShopResult<number[]>> {
+  if (books?.length) return ok(books);
+  const sources = await invokeFunction(userId, "find-content-source", {});
+  if (!sources.ok) return err(sources.code, sources.message);
+  const rows = Array.isArray(sources.data) ? sources.data : [];
+  return ok(rows.map((row) => Number((row as { id?: unknown }).id)).filter((id) => Number.isFinite(id)));
+}
+
 async function fetchWgCatalog(userId: string, books?: number[]): Promise<ShopResult<{ items: CatalogItem[]; traits: CatalogTrait[] }>> {
-  let sourceIds = books;
-  if (!sourceIds) {
-    const sources = await invokeFunction(userId, "find-content-source", {});
-    if (!sources.ok) return err(sources.code, sources.message);
-    const rows = Array.isArray(sources.data) ? sources.data : [];
-    sourceIds = rows.map((row) => Number((row as { id?: unknown }).id)).filter((id) => Number.isFinite(id));
+  const sourceIds = await sourceIdsFor(userId, books);
+  if (!sourceIds.ok) return sourceIds;
+  const key = `${userId}:${[...sourceIds.data].sort((a, b) => a - b).join(",")}`;
+  const cached = catalogCache.get(key);
+  if (cached && Date.now() - cached.at < CATALOG_TTL_MS) return ok(cached.data);
+  const inflight = catalogInflight.get(key);
+  if (inflight) return inflight;
+  const load = (async () => {
+    const items: CatalogItem[] = [];
+    const traits: CatalogTrait[] = [];
+    for (const bookId of sourceIds.data) {
+      const itemPage = await invokeBook(userId, "find-item", bookId);
+      if (!itemPage.ok) return itemPage;
+      const traitPage = await invokeBook(userId, "find-trait", bookId);
+      if (!traitPage.ok) return traitPage;
+      items.push(...asCatalogItems(itemPage.data));
+      traits.push(...asCatalogTraits(traitPage.data));
+    }
+    const data = { items, traits };
+    catalogCache.set(key, { at: Date.now(), data });
+    return ok(data);
+  })();
+  catalogInflight.set(key, load);
+  try {
+    return await load;
+  } finally {
+    catalogInflight.delete(key);
   }
-  const items = await invokeFunction(userId, "find-item", { content_sources: sourceIds });
-  if (!items.ok) return err(items.code, items.message);
-  const traits = await invokeFunction(userId, "find-trait", { content_sources: sourceIds });
-  if (!traits.ok) return err(traits.code, traits.message);
-  const itemRows = (Array.isArray(items.data) ? items.data : []).filter((row): row is CatalogItem => !!row && typeof row === "object" && typeof (row as CatalogItem).id === "number");
-  const traitRows = (Array.isArray(traits.data) ? traits.data : []).filter((row): row is CatalogTrait => !!row && typeof row === "object" && typeof (row as CatalogTrait).id === "number");
-  return ok({ items: itemRows, traits: traitRows });
 }
 
 export async function fetchPf2eCatalog(): Promise<ShopResult<{ items: CatalogItem[]; traits: CatalogTrait[] }>> {
@@ -615,13 +669,68 @@ export async function resizeShop(userId: string, shopId: string, size: number) {
   return saveNode(userId, node, { draft: generated.data });
 }
 
-async function resolveRefs(userId: string, refs: { source: ShopSource; id: number; quantity?: number; price?: string; description?: string; formula?: boolean }[], markup: number) {
-  const sources = [...new Set(refs.map((row) => row.source))];
-  const catalog = await loadCatalog(userId, sources);
-  if (!catalog.ok) return catalog;
+async function mapPool<T, R>(rows: T[], size: number, fn: (row: T) => Promise<R>): Promise<R[]> {
+  if (!rows.length) return [];
+  const out: R[] = [];
+  let index = 0;
+  async function worker() {
+    while (index < rows.length) {
+      const current = index++;
+      out[current] = await fn(rows[current]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(size, rows.length) }, () => worker()));
+  return out;
+}
+
+async function findWgItem(userId: string, id: number, books?: number[]): Promise<ShopResult<CatalogItem | null>> {
+  const sourceIds = await sourceIdsFor(userId, books);
+  if (!sourceIds.ok) return sourceIds;
+  const found = await invokeFunction(userId, "find-item", { id, content_sources: sourceIds.data });
+  if (!found.ok) return err(found.code, found.message);
+  return ok(asCatalogItems(found.data)[0] ?? null);
+}
+
+async function traitsByIds(userId: string, items: CatalogItem[], books?: number[]): Promise<ShopResult<CatalogTrait[]>> {
+  const ids = [...new Set(items.flatMap((item) => item.traits ?? []))];
+  if (!ids.length) return ok([]);
+  const sourceIds = await sourceIdsFor(userId, books);
+  if (!sourceIds.ok) return sourceIds;
+  const traits: CatalogTrait[] = [];
+  for (const id of ids) {
+    const found = await invokeFunction(userId, "find-trait", { id, content_sources: sourceIds.data });
+    if (!found.ok) return err(found.code, found.message);
+    traits.push(...asCatalogTraits(found.data));
+  }
+  return ok(traits);
+}
+
+async function resolveRefs(userId: string, refs: { source: ShopSource; id: number; quantity?: number; price?: string; description?: string; formula?: boolean }[], markup: number, books?: number[]) {
+  const pf2eRefs = refs.filter((row) => row.source === "pf2e");
+  let pf2eItems: CatalogItem[] = [];
+  let pf2eTraitRows: CatalogTrait[] = [];
+  if (pf2eRefs.length) {
+    const pf2e = await fetchPf2eCatalog();
+    if (!pf2e.ok) return pf2e;
+    pf2eItems = pf2e.data.items;
+    pf2eTraitRows = pf2e.data.traits;
+  }
+  const wgRefs = refs.filter((row) => row.source === "wanderers-guide");
+  const wgLookups = await mapPool(wgRefs, REF_CONCURRENCY, async (ref) => {
+    const found = await findWgItem(userId, ref.id, books);
+    return { ref, found };
+  });
+  for (const row of wgLookups) {
+    if (!row.found.ok) return row.found;
+  }
+  const wgItems = wgLookups.flatMap((row) => row.found.ok && row.found.data ? [row.found.data] : []);
+  const wgTraits = await traitsByIds(userId, wgItems, books);
+  if (!wgTraits.ok) return wgTraits;
+  const traits = [...wgTraits.data, ...pf2eTraitRows];
+  const wgByRef = new Map(wgLookups.map((row) => [row.ref, row.found.ok ? row.found.data : null]));
   const stock: ShopStockRow[] = [];
   for (const ref of refs) {
-    const item = findCatalogItem(catalog.data.items, ref.source, ref.id);
+    const item = ref.source === "pf2e" ? findCatalogItem(pf2eItems, "pf2e", ref.id) : wgByRef.get(ref) ?? undefined;
     if (!item && ref.description) {
       stock.push({
         id: ref.id,
@@ -641,7 +750,7 @@ async function resolveRefs(userId: string, refs: { source: ShopSource; id: numbe
     if (!item) return err("NOT_FOUND", `Item ${ref.source}:${ref.id} not found.`);
     const line = asShopLine(ref.formula ? { ...item, name: item.name.startsWith("Formula: ") ? item.name : `Formula: ${item.name}` } : item);
     if (ref.quantity) line.shopQuantity = ref.quantity;
-    const row = toStockRow(line, catalog.data.traits, markup);
+    const row = toStockRow(line, traits, markup);
     if (ref.price) row.price = ref.price;
     if (ref.description) row.description = ref.description;
     stock.push(row);
@@ -673,25 +782,50 @@ export async function setShopStock(userId: string, shopId: string, input: {
     if (!generated.ok) return generated;
     draft = generated.data;
   } else {
-    const stock = await resolveRefs(userId, input.items, draft.markup);
+    const stock = await resolveRefs(userId, input.items, draft.markup, draft.books);
     if (!stock.ok) return stock;
     draft = { ...draft, stock: stock.data, size: stock.data.length };
   }
   return saveNode(userId, node, { draft });
 }
 
-export async function addShopItem(userId: string, shopId: string, input: { source: ShopSource; itemId: number; quantity?: number; price?: string; formula?: boolean }) {
+export type ShopItemInput = {
+  source: ShopSource;
+  id?: number;
+  itemId?: number;
+  quantity?: number;
+  price?: string;
+  description?: string;
+  formula?: boolean;
+};
+
+function refsFromAdd(input: ShopItemInput & { items?: ShopItemInput[] }) {
+  const rows = input.items?.length ? input.items : [input];
+  return rows.map((row) => ({
+    source: row.source,
+    id: Number(row.id ?? row.itemId),
+    quantity: row.quantity,
+    price: row.price,
+    description: row.description,
+    formula: row.formula,
+  }));
+}
+
+export async function addShopItem(userId: string, shopId: string, input: ShopItemInput & { items?: ShopItemInput[] }) {
   const loaded = await getNode(userId, shopId);
   if (!loaded.ok) return loaded;
   const node = loaded.data;
   if (!node.draft) return err("VALIDATION_ERROR", "Nothing to stock.");
-  const stock = await resolveRefs(userId, [{ source: input.source, id: input.itemId, quantity: input.quantity, price: input.price, formula: input.formula }], node.draft.markup);
-  if (!stock.ok) return stock;
-  const row = stock.data[0];
-  const key = lineKey(row.source, row.id, row.group === "FORMULA");
-  const existing = (node.draft.stock ?? []).filter((line) => lineKey(line.source, line.id, line.group === "FORMULA") !== key);
-  const draft = { ...node.draft, stock: [...existing, row], size: existing.length + 1 };
-  return saveNode(userId, node, { draft });
+  const refs = refsFromAdd(input);
+  if (!refs.length || refs.some((row) => (row.source !== "wanderers-guide" && row.source !== "pf2e") || !Number.isFinite(row.id))) {
+    return err("VALIDATION_ERROR", "Each item needs source and id.");
+  }
+  const added = await resolveRefs(userId, refs, node.draft.markup, node.draft.books);
+  if (!added.ok) return added;
+  const keys = new Set(added.data.map((row) => lineKey(row.source, row.id, row.group === "FORMULA")));
+  const existing = (node.draft.stock ?? []).filter((line) => !keys.has(lineKey(line.source, line.id, line.group === "FORMULA")));
+  const stock = [...existing, ...added.data];
+  return saveNode(userId, node, { draft: { ...node.draft, stock, size: stock.length } });
 }
 
 function matchKey(row: ShopStockRow, key: string) {

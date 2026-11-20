@@ -152,7 +152,7 @@ Saved shops live in `syndicated_nodes` with `content_kind: shop`. Each stock lin
 | `create_shop_folder` | write | Root folder | `name` |
 | `update_shop` | write | Rename and patch draft, including `campaignId` | `shopId` |
 | `resize_shop` | write | Regenerate stock to `size` 1–100 | `shopId`, `size` |
-| `add_shop_item` | write | Add one catalog item; `source` required | `shopId`, `source`, `itemId` |
+| `add_shop_item` | write | Append one or many catalog items; does not replace stock | `shopId`, plus `items` or `source`+`itemId` |
 | `update_shop_item` | write | Quantity and/or price on a line key | `shopId`, `key` |
 | `remove_shop_item` | write | Remove a line key | `shopId`, `key` |
 | `set_shop_stock` | write | Replace from catalog refs or regenerate | `shopId` |

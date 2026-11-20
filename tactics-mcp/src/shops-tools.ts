@@ -130,17 +130,29 @@ export function registerShops(server: McpServer, userId: () => string) {
 
   server.registerTool("add_shop_item", {
     title: "Add shop item",
-    description: "Adds one catalog item. source is required because Wanderer's Guide and PF2E ids overlap.",
+    description: "Appends catalog items without replacing the rest of the stock. Pass items for several refs in one call, or source plus itemId for one. set_shop_stock replaces the whole inventory.",
     annotations: writes,
     inputSchema: {
       shopId: z.string(),
-      source,
-      itemId: z.number().int(),
+      source: source.optional(),
+      itemId: z.number().int().optional(),
       quantity: z.number().int().min(1).optional(),
       price: z.string().optional(),
       formula: z.boolean().optional(),
+      items: z.array(z.object({
+        source,
+        id: z.number().int().optional(),
+        itemId: z.number().int().optional(),
+        quantity: z.number().int().min(1).optional(),
+        price: z.string().optional(),
+        description: z.string().optional(),
+        formula: z.boolean().optional(),
+      })).optional(),
     },
-  }, async (args) => fromResult(await addShopItem(userId(), args.shopId, args), "Item added"));
+  }, async (args) => {
+    const { shopId, ...input } = args;
+    return fromResult(await addShopItem(userId(), shopId, input), input.items?.length ? "Items added" : "Item added");
+  });
 
   server.registerTool("update_shop_item", {
     title: "Update shop item",
