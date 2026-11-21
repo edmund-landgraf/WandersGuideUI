@@ -162,14 +162,19 @@ export function createFoundryRelay({ allowOrigins = [] } = {}) {
       if (row.worldId !== undefined && row.worldId !== worldId) return null;
       const level = row.level == null ? null : row.level;
       if (level !== null && (typeof level !== 'number' || !Number.isFinite(level))) return null;
-      rows.push({
+      const next = {
         id: row.id,
         name: typeof row.name === 'string' ? row.name.slice(0, 200) : '',
         level,
         ancestry: typeof row.ancestry === 'string' ? row.ancestry.slice(0, 200) : null,
         className: typeof row.className === 'string' ? row.className.slice(0, 200) : null,
         worldId,
-      });
+      };
+      if (typeof row.folderId === 'string' && ID_TEXT.test(row.folderId)) {
+        next.folderId = row.folderId;
+        next.folderName = typeof row.folderName === 'string' ? row.folderName.slice(0, 200) : '';
+      }
+      rows.push(next);
     }
     return rows;
   }
