@@ -10,6 +10,31 @@ function fail(error: { message: string } | null): asserts error is null {
   if (error) throw new Error(error.message);
 }
 
+/** The catalog treats a stored session as signed-in. GoTrue may still reject that access token. */
+async function currentUserId() {
+  const stored = await supabase.auth.getSession();
+  let session = stored.data.session;
+  const expiresAt = (session?.expires_at ?? 0) * 1000;
+  if (!session || expiresAt < Date.now() + 60_000) {
+    const refreshed = await supabase.auth.refreshSession();
+    session = refreshed.data.session ?? null;
+  }
+  let user = await supabase.auth.getUser();
+  if (user.error || !user.data.user) {
+    const refreshed = await supabase.auth.refreshSession();
+    if (!refreshed.data.session) {
+      await supabase.auth.signOut({ scope: 'local' });
+      throw new Error('Sign in again to save.');
+    }
+    user = await supabase.auth.getUser();
+  }
+  if (user.error || !user.data.user) {
+    await supabase.auth.signOut({ scope: 'local' });
+    throw new Error('Sign in again to save.');
+  }
+  return user.data.user.id;
+}
+
 export async function listOwned(contentKind: string) {
   const { data, error } = await supabase
     .from(TABLE)
@@ -27,10 +52,7 @@ export async function insertNode<T>(input: {
   parent_id: string | null;
   draft: T | null;
 }) {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  fail(userError);
-  const userId = userData.user?.id;
-  if (!userId) throw new Error('Sign in to save.');
+  const userId = await currentUserId();
   const existing = await listOwned(input.content_kind);
   assertParent(existing, input);
   const { data, error } = await supabase
