@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { findImportedCharacter, foundryRelayRead, planImportWrite, planSinglePc } from './single-pc';
+import { findImportedCharacter, foundryRelayRead, partyFolders, planImportWrite, planSinglePc } from './single-pc';
 
 describe('planSinglePc', () => {
   it('maps name and level and keeps the rest', () => {
@@ -159,5 +159,16 @@ describe('planImportWrite', () => {
     expect(meta.reset_hp).toBe(false);
     expect(meta.foundry.leftovers['items[0].name']).toBe('Longsword');
     expect(meta.foundry.leftovers['items[0].system.rules[0].key']).toBe('FlatModifier');
+  });
+});
+
+describe('partyFolders', () => {
+  it('groups characters that share a folder and skips characters with none', () => {
+    const parties = partyFolders([
+      { id: 'a', name: 'Reed', level: 3, ancestry: null, className: null, worldId: 'w', folderId: 'party', folderName: 'Heroes' },
+      { id: 'b', name: 'Kota', level: 3, ancestry: null, className: null, worldId: 'w', folderId: 'party', folderName: 'Heroes' },
+      { id: 'c', name: 'Solo', level: 1, ancestry: null, className: null, worldId: 'w' },
+    ]);
+    expect(parties).toEqual([{ folderId: 'party', folderName: 'Heroes', actorIds: ['a', 'b'] }]);
   });
 });

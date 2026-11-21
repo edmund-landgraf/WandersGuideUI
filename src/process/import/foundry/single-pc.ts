@@ -11,7 +11,23 @@ export type FoundryListRow = {
   ancestry: string | null;
   className: string | null;
   worldId: string;
+  folderId?: string;
+  folderName?: string;
 };
+
+export type PartyFolder = { folderId: string; folderName: string; actorIds: string[] };
+
+/** Actor folders that contain at least one listed character. Direct members only. */
+export function partyFolders(rows: readonly FoundryListRow[]): PartyFolder[] {
+  const byId = new Map<string, PartyFolder>();
+  for (const row of rows) {
+    if (!row.folderId || !row.id) continue;
+    const existing = byId.get(row.folderId);
+    if (existing) existing.actorIds.push(row.id);
+    else byId.set(row.folderId, { folderId: row.folderId, folderName: row.folderName?.trim() || 'Party', actorIds: [row.id] });
+  }
+  return [...byId.values()];
+}
 
 export type CoverageStatus = 'mapped' | 'included' | 'unresolved' | 'leftover-preserved' | 'dropped';
 
