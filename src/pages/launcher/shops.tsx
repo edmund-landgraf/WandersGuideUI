@@ -35,7 +35,7 @@ import { fetchPf2eEquipmentText, fetchPf2eShopCatalog, isPf2eShopItem, mergeShop
 import { ShopPopout } from './shop-popout';
 import { collectShopCards, shopExportHtml } from './shops-export';
 import { ShopsLibrary } from './shops-library';
-import { readGroupingsPreference, ShopDocument, ShopProse, ShopsPublic, writeGroupingsPreference } from './shops-public';
+import { readGroupingsPreference, ShopDocument, ShopFolderDirectory, ShopProse, ShopsPublic, writeGroupingsPreference } from './shops-public';
 import { SHOP_CONTENT_KIND, shopDraft, shopTrace, shopTraceStart, stockCatalogId, stockSource, type ShopDraft, type ShopPageStyle } from './shops-syndicate';
 import { insertNode, listOwned, updateOwned } from '../../syndication/store';
 import './launcher.css';
@@ -1399,15 +1399,24 @@ function ShopDraftView({ id }: { id: string }) {
   if (error) return <p className='p-8 text-sm text-red-300'>{error}</p>;
   if (page === undefined) return <p className='p-8 text-sm text-muted-foreground'>Loading shop…</p>;
   if (page === null) return <p className='p-8 text-sm text-muted-foreground'>This shop is not available.</p>;
-  return <ShopDocument name={page.name} stock={page.draft.stock} homebrew={false} description={page.draft.description} />;
+  return (
+    <ShopDocument
+      name={page.name}
+      stock={page.draft.stock}
+      homebrew={page.draft.style === 'homebrew-v3'}
+      description={page.draft.description}
+    />
+  );
 }
 
 function ShopsApp() {
   const path = location.pathname.replace(/\/$/, '') || '/';
   const published = path.match(/^\/shops\/s\/([^/]+)$/);
   const view = path.match(/^\/shops\/view\/([^/]+)$/);
+  const folder = path.match(/^\/shops\/folder\/([^/]+)$/);
   if (published) return <ShopsPublic token={decodeURIComponent(published[1])} />;
   if (view) return <ShopDraftView id={decodeURIComponent(view[1])} />;
+  if (folder) return <ShopFolderDirectory id={decodeURIComponent(folder[1])} />;
   if (path === '/shops/library') return <ShopsLibrary />;
   return <ShopsPage />;
 }

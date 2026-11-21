@@ -8,11 +8,12 @@ import { compileWgText } from '@pages/phase1/phase1-markdown';
 import { normalizeMarkdownTables, resolveAonHref, toStandard2eProse } from '@utils/foundry-text';
 import { ShopPopout } from './shop-popout';
 import { fetchPf2eEquipmentText, fillMissingShopAon, loadShopAonIndex } from './shops-pf2e';
-import { readPublic } from '../../syndication/store';
+import { listOwned, readPublic } from '../../syndication/store';
 import { LauncherHeader } from './launcher-header';
 import { asContentType } from './shops-export';
 import { priceAsGp } from './shops-generate';
 import { SHOP_CONTENT_KIND, shopTraceStart, type ShopDraft, type ShopStockRow } from './shops-syndicate';
+import type { SyndicatedNode } from '../../syndication/nodes';
 
 export function prepareShopProse(text: string) {
   return htmlInlineToMarkdown(normalizeMarkdownTables(toStandard2eProse(compileWgText(text))));
@@ -248,6 +249,8 @@ export const HOMEBREW_CSS = `
 }
 .brew-v3 tbody tr:nth-child(even) { background: rgba(139, 90, 40, 0.13); }
 .brew-v3 th:nth-child(1), .brew-v3 td:nth-child(1) { width: 4.2rem; white-space: nowrap; }
+.brew-v3 .brew-dir th:nth-child(1), .brew-v3 .brew-dir td:nth-child(1) { width: auto; white-space: normal; }
+.brew-v3 .brew-dir a { color: #6b1d14; }
 .brew-v3 th:nth-child(2), .brew-v3 td:nth-child(2) { width: auto; }
 .brew-v3 th:nth-child(n+3), .brew-v3 td:nth-child(n+3) { width: 6.2rem; white-space: nowrap; }
 .brew-v3 button {
@@ -606,6 +609,125 @@ function StockTable({ stock, homebrew = false, inGp = false }: { stock: ShopStoc
         ))}
       </tbody>
     </table>
+  );
+}
+
+function levelSpan(stock: ShopStockRow[]) {
+  if (stock.length === 0) return '—';
+  const levels = stock.map((row) => row.level);
+  const low = Math.min(...levels);
+  const high = Math.max(...levels);
+  return low === high ? String(low) : `${low}–${high}`;
+}
+
+function folderUsesHomebrew(shops: Array<SyndicatedNode<ShopDraft>>) {
+  const brew = shops.filter((shop) => (shop.draft?.style ?? 'default') === 'homebrew-v3').length;
+  return brew > 0 && brew >= shops.length - brew;
+}
+
+export function ShopFolderDirectory({ id }: { id: string }) {
+  const [page, setPage] = useState<{ name: string; shops: Array<SyndicatedNode<ShopDraft>> } | null | undefined>(undefined);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    const done = shopTraceStart('folder directory');
+    void listOwned(SHOP_CONTENT_KIND)
+      .then((rows) => {
+        const folder = rows.find((row) => row.id === id && row.kind === 'folder');
+        const shops = (rows as Array<SyndicatedNode<ShopDraft>>)
+          .filter((row) => row.kind === 'entry' && row.parent_id === id)
+          .sort((left, right) => left.name.localeCompare(right.name));
+        done({ id, found: Boolean(folder), shops: shops.length });
+        if (!cancelled) setPage(folder ? { name: folder.name, shops } : null);
+      })
+      .catch((cause: unknown) => {
+        console.error('[wgui shops] folder directory failed', cause);
+        done({ id, failed: true });
+        if (!cancelled) setError(cause instanceof Error ? cause.message : 'Could not open this folder.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+  if (error) return <p className='p-8 text-sm text-red-300'>{error}</p>;
+  if (page === undefined) return <p className='p-8 text-sm text-muted-foreground'>Loading folder…</p>;
+  if (page === null) return <p className='p-8 text-sm text-muted-foreground'>This folder is not available.</p>;
+  const homebrew = folderUsesHomebrew(page.shops);
+  const rows = page.shops.map((shop) => ({
+    id: shop.id,
+    name: shop.name,
+    items: shop.draft?.stock.length ?? 0,
+    levels: levelSpan(shop.draft?.stock ?? []),
+  }));
+  const table = (
+    <table className={homebrew ? undefined : 'w-full text-left text-sm'}>
+      <thead className={homebrew ? undefined : 'text-muted-foreground'}>
+        <tr>
+          <th className={homebrew ? undefined : 'px-4 py-3 font-medium'}>Shop</th>
+          <th className={homebrew ? undefined : 'px-4 py-3 font-medium'}>Items</th>
+          <th className={homebrew ? undefined : 'px-4 py-3 font-medium'}>Levels</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.length === 0 ? (
+          <tr>
+            <td className={homebrew ? undefined : 'px-4 py-3 text-muted-foreground'} colSpan={3}>This folder is empty.</td>
+          </tr>
+        ) : rows.map((row) => (
+          <tr className={homebrew ? undefined : 'border-t border-white/10'} key={row.id}>
+            <td className={homebrew ? undefined : 'px-4 py-3'}>
+              <a className='underline underline-offset-2' href={`/shops/view/${encodeURIComponent(row.id)}`}>
+                {row.name}
+              </a>
+            </td>
+            <td className={homebrew ? undefined : 'px-4 py-3'}>{row.items}</td>
+            <td className={homebrew ? undefined : 'px-4 py-3'}>{row.levels}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+  const note = `${rows.length} shop${rows.length === 1 ? '' : 's'}. This page follows the folder.`;
+
+  if (homebrew) {
+    return (
+      <div className='dark min-h-screen bg-background font-sans text-foreground antialiased'>
+        <div className='bg-pattern' />
+        <main className='relative z-10 min-h-screen bg-radial from-gray-800 to-gray-900'>
+          <LauncherHeader />
+          <style>{HOMEBREW_CSS}</style>
+          <div className='brew-v3'>
+            <article className='brew-sheet'>
+              <header className='brew-masthead'>
+                <hr className='brew-rule-double' />
+                <h1>{page.name}</h1>
+                <hr className='brew-rule-thin' />
+              </header>
+              <p className='brew-note'>{note}</p>
+              <div className='brew-dir'>{table}</div>
+            </article>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className='dark min-h-screen bg-background font-sans text-foreground antialiased'>
+      <div className='bg-pattern' />
+      <main className='relative z-10 min-h-screen bg-radial from-gray-800 to-gray-900'>
+        <LauncherHeader />
+        <section className='px-8 pt-10 pb-16'>
+          <div className='mx-auto grid max-w-6xl gap-6'>
+            <div>
+              <h1 className='font-heading text-4xl text-foreground'>{page.name}</h1>
+              <p className='mt-3 text-sm text-muted-foreground'>{note}</p>
+            </div>
+            <div className='overflow-hidden rounded-xl bg-white/5 ring-1 ring-white/20'>{table}</div>
+          </div>
+        </section>
+      </main>
+    </div>
   );
 }
 
