@@ -50,6 +50,20 @@ import { inferAnimistPrimaryMode } from './animist-mode';
  * Inits the op selection tree based on an entity's op data
  * @param entity - Living entity (character or creature)
  */
+/**
+ * The operation package is limited to the character's enabled books. A background,
+ * ancestry, or class that was already saved can live in a book that is not in that
+ * list (Feybound is Player Core 2). Prefer the package row, and fall back to the
+ * saved record so its boosts and features still run.
+ */
+export function recordInPackage<T extends { id?: number | null }>(
+  rows: T[],
+  stored: T | null | undefined
+): T | undefined {
+  if (!stored || stored.id == null) return undefined;
+  return rows.find((row) => row.id === stored.id) ?? stored;
+}
+
 function defineSelectionTree(entity: LivingEntity) {
   if (entity.operation_data?.selections) {
     setSelections(
@@ -133,10 +147,10 @@ export async function _executeCharacterOperations(data: {
   setVariable('CHARACTER', 'ACTIVE_MODES', character.meta_data?.active_modes ?? [], 'Loaded');
   const modes = content.abilityBlocks.filter((block) => block.type === 'mode');
 
-  const class_ = content.classes.find((c) => c.id === character.details?.class?.id);
-  const class_2 = content.classes.find((c) => c.id === character.details?.class_2?.id);
-  const background = content.backgrounds.find((b) => b.id === character.details?.background?.id);
-  const ancestry = content.ancestries.find((a) => a.id === character.details?.ancestry?.id);
+  const class_ = recordInPackage(content.classes, character.details?.class);
+  const class_2 = recordInPackage(content.classes, character.details?.class_2);
+  const background = recordInPackage(content.backgrounds, character.details?.background);
+  const ancestry = recordInPackage(content.ancestries, character.details?.ancestry);
 
   const baseClassTrainings = Math.max(
     getClassSkillTrainingsNum(class_, character.details?.class_archetype),
