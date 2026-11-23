@@ -529,7 +529,7 @@ function ShopsPage() {
               name: row.name ?? row.slug ?? 'Foundry item',
               level: row.level ?? 0,
               rarity: (row.rarity ?? 'COMMON').toUpperCase(),
-              group: 'FOUNDRY',
+              group: (row.pack ?? '').startsWith('pf2e.') ? 'AON' : (row.wgId ? 'WG' : 'AON'),
               description: '',
               traits: [],
               content_source_id: 0,
@@ -537,6 +537,7 @@ function ShopsPage() {
                 category: row.type === 'ammo' ? 'ammo' : row.category,
                 group: row.itemGroup,
                 foundry: {
+                  catalog: 'FOUNDRY',
                   pack: row.pack,
                   slug: row.slug,
                   type: row.type,

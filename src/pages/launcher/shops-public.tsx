@@ -304,7 +304,7 @@ function StockName({ row, homebrew = false, inGp = false }: { row: ShopStockRow;
       titleClassName={homebrew ? 'font-serif text-lg text-[#6b1d14]' : 'font-heading text-base text-[#fafafa]'}
     >
       <p className={homebrew ? 'text-[11px] uppercase tracking-wide text-[#5c4630]' : 'text-[11px] uppercase tracking-wide text-[#b5b5b5]'}>
-        Level {row.level} · {row.rarity} · {row.group.replaceAll('_', ' ')}
+        Level {row.level} · {row.rarity} · {shelfGroup(row).replaceAll('_', ' ')}
       </p>
       {row.traits.length > 0 && (
         <div className='mt-2 flex flex-wrap gap-1'>
@@ -374,13 +374,20 @@ function withKnownOffer(rows: ShopStockRow[]) {
 }
 
 function groupLabel(group: string) {
+  if (group === 'AON' || group === 'WG') return group;
   return group.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+/** Older Foundry stock was stored as group FOUNDRY. Shelves are the catalog category. */
+function shelfGroup(row: ShopStockRow) {
+  if (row.group !== 'FOUNDRY') return row.group;
+  return row.aon ? 'AON' : 'WG';
 }
 
 function groupedStock(stock: ShopStockRow[]) {
   const buckets = new Map<string, ShopStockRow[]>();
   for (const row of stock) {
-    const key = row.group || 'Other';
+    const key = shelfGroup(row) || 'Other';
     const rows = buckets.get(key);
     if (rows) rows.push(row);
     else buckets.set(key, [row]);
@@ -860,7 +867,7 @@ function StockTable({
               <td><StockName row={row} homebrew inGp={inGp} /></td>
               <td>{row.level}</td>
               <td>{row.rarity}</td>
-              <td>{row.group}</td>
+              <td>{shelfGroup(row)}</td>
               <td>{shownPrice(row.price, inGp)}</td>
               <td>
                 <CartButtons row={row} inCart={qty(row)} onAdd={onAdd} onRemove={() => onRemove(cartLineKey(shopId, row))} />
@@ -892,7 +899,7 @@ function StockTable({
             <td className='px-4 py-3'><StockName row={row} inGp={inGp} /></td>
             <td className='px-4 py-3'>{row.level}</td>
             <td className='px-4 py-3'>{row.rarity}</td>
-            <td className='px-4 py-3'>{row.group}</td>
+            <td className='px-4 py-3'>{shelfGroup(row)}</td>
             <td className='px-4 py-3'>{shownPrice(row.price, inGp)}</td>
             <td className='px-4 py-3'>
               <CartButtons row={row} inCart={qty(row)} onAdd={onAdd} onRemove={() => onRemove(cartLineKey(shopId, row))} />

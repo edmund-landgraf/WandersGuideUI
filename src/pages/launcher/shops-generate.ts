@@ -120,9 +120,10 @@ const FOUNDRY_SHOP_GROUP: Record<string, string> = {
   shield: 'SHIELD',
 };
 
-/** Foundry equipment rows arrive as group FOUNDRY. Presets use the Wanderer's Guide groups. */
+/** Foundry equipment is tagged catalog FOUNDRY. Presets still use the Wanderer's Guide groups. */
 function shopGroup(item: Item) {
-  if (item.group !== 'FOUNDRY') return item.group;
+  const fromFoundry = item.group === 'FOUNDRY' || item.meta_data?.foundry?.catalog === 'FOUNDRY';
+  if (!fromFoundry) return item.group;
   const type = (item.meta_data?.foundry?.type ?? '').toLowerCase();
   return FOUNDRY_SHOP_GROUP[type] ?? 'GENERAL';
 }

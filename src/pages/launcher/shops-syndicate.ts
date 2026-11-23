@@ -37,6 +37,8 @@ export type ShopStockRow = {
   description: string;
   source?: ShopCatalogSource | null;
   aon?: string;
+  /** Present when the line was drawn from the Foundry equipment catalog. */
+  catalog?: string;
 };
 
 export type ShopPageStyle = 'default' | 'homebrew-v3';
@@ -96,6 +98,7 @@ export function shopDraft(
       level: item.level,
       rarity: item.rarity,
       group: isShopFormula(item) ? 'FORMULA' : item.group,
+      catalog: item.meta_data?.foundry?.catalog,
       price: formatShopOffer(asShopLine(item), markup),
       quantity: shopLineQuantity(asShopLine(item)),
       bulk: item.bulk ? String(item.bulk) : '',

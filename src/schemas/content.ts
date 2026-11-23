@@ -201,6 +201,8 @@ export interface Item {
       items?: Record<string, any>[];
       /** Compendium document type, such as weapon or consumable. */
       type?: string;
+      /** Set when the line was drawn from the Foundry equipment catalog. */
+      catalog?: string;
       traits?: string[];
       pack?: string;
       slug?: string;
