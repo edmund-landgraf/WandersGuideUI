@@ -12,7 +12,7 @@ import { listOwned, readPublic } from '../../syndication/store';
 import { LauncherHeader } from './launcher-header';
 import { asContentType, loadShopFoundryLookup, shopStockFoundryManifest, type ShopFoundryLookup } from './shops-export';
 import { cartFoundryTitle, cartLineKey, cartTotalGp, itemCopper, lineGold, readShopCart, writeShopCart, type ShopCartLine } from './shops-cart';
-import { formatCopperOffer, formulaCopper, priceAsGp } from './shops-generate';
+import { formatCopperOffer, formulaCopper, priceAsGp, shelfFromLabels, SHOP_SHELVES } from './shops-generate';
 import { SHOP_CONTENT_KIND, shopTraceStart, type ShopDraft, type ShopStockRow } from './shops-syndicate';
 import type { SyndicatedNode } from '../../syndication/nodes';
 
@@ -304,7 +304,7 @@ function StockName({ row, homebrew = false, inGp = false }: { row: ShopStockRow;
       titleClassName={homebrew ? 'font-serif text-lg text-[#6b1d14]' : 'font-heading text-base text-[#fafafa]'}
     >
       <p className={homebrew ? 'text-[11px] uppercase tracking-wide text-[#5c4630]' : 'text-[11px] uppercase tracking-wide text-[#b5b5b5]'}>
-        Level {row.level} · {row.rarity} · {shelfGroup(row).replaceAll('_', ' ')}
+        Level {row.level} · {row.rarity} · {shelfGroup(row)} · {sourceLabel(row)}
       </p>
       {row.traits.length > 0 && (
         <div className='mt-2 flex flex-wrap gap-1'>
@@ -374,14 +374,20 @@ function withKnownOffer(rows: ShopStockRow[]) {
 }
 
 function groupLabel(group: string) {
-  if (group === 'AON' || group === 'WG') return group;
   return group.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-/** Older Foundry stock was stored as group FOUNDRY. Shelves are the catalog category. */
+/** Armor, Potions, Formulas, and the other generator shelves. AON and Foundry are sources. */
 function shelfGroup(row: ShopStockRow) {
-  if (row.group !== 'FOUNDRY') return row.group;
-  return row.aon ? 'AON' : 'WG';
+  if (row.shelf) return row.shelf;
+  return shelfFromLabels({ name: row.name, group: row.group, traits: row.traits });
+}
+
+/** Foundry catalog, the PF2e database (shown as AON), or Wanderer's Guide. */
+function sourceLabel(row: ShopStockRow) {
+  if (row.catalog === 'FOUNDRY' || row.group === 'FOUNDRY' || row.group === 'AON') return 'Foundry';
+  if (row.source === 'pf2e') return 'AON';
+  return 'WG';
 }
 
 function groupedStock(stock: ShopStockRow[]) {
@@ -392,8 +398,9 @@ function groupedStock(stock: ShopStockRow[]) {
     if (rows) rows.push(row);
     else buckets.set(key, [row]);
   }
+  const rank = new Map(SHOP_SHELVES.map((name, index) => [name, index]));
   return [...buckets.entries()]
-    .sort(([left], [right]) => groupLabel(left).localeCompare(groupLabel(right)))
+    .sort(([left], [right]) => (rank.get(left) ?? 99) - (rank.get(right) ?? 99) || groupLabel(left).localeCompare(groupLabel(right)))
     .map(([group, rows]) => ({
       group,
       rows: [...rows].sort((left, right) => left.name.localeCompare(right.name) || left.level - right.level),
@@ -542,6 +549,35 @@ export function ShopDocument({
   } | null>(null);
   const [foundryCopied, setFoundryCopied] = useState(false);
   const foundryScriptRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (!linked.some((row) => !row.shelf && (row.group === 'AON' || row.group === 'FOUNDRY'))) return;
+    let cancelled = false;
+    void loadShopFoundryLookup().then((lookup) => {
+      if (cancelled || !lookup) return;
+      const byName = new Map(
+        (lookup.foundryItems ?? []).map((row) => [String(row.name ?? '').toLowerCase(), row as typeof row & { type?: string; category?: string | null; traits?: string }]),
+      );
+      setLinked((current) => current.map((row) => {
+        if (row.shelf || (row.group !== 'AON' && row.group !== 'FOUNDRY')) return row;
+        const hit = byName.get(row.name.toLowerCase());
+        const traits = hit?.traits?.split(',').map((trait) => trait.trim()).filter(Boolean) ?? row.traits;
+        return {
+          ...row,
+          catalog: row.catalog ?? 'FOUNDRY',
+          shelf: shelfFromLabels({
+            name: row.name,
+            group: 'FOUNDRY',
+            traits,
+            category: hit?.type === 'ammo' ? 'ammo' : hit?.category ?? undefined,
+            foundryType: hit?.type,
+          }),
+        };
+      }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [linked]);
   const sections = useGroupings ? groupedStock(linked) : null;
   const saveCart = (next: ShopCartLine[]) => {
     writeShopCart(next);
@@ -856,6 +892,7 @@ function StockTable({
             <th>Level</th>
             <th>Rarity</th>
             <th>Group</th>
+            <th>Source</th>
             <th>Price</th>
             <th>Cart</th>
           </tr>
@@ -868,6 +905,7 @@ function StockTable({
               <td>{row.level}</td>
               <td>{row.rarity}</td>
               <td>{shelfGroup(row)}</td>
+              <td>{sourceLabel(row)}</td>
               <td>{shownPrice(row.price, inGp)}</td>
               <td>
                 <CartButtons row={row} inCart={qty(row)} onAdd={onAdd} onRemove={() => onRemove(cartLineKey(shopId, row))} />
@@ -888,6 +926,7 @@ function StockTable({
           <th className='px-4 py-3 font-medium'>Level</th>
           <th className='px-4 py-3 font-medium'>Rarity</th>
           <th className='px-4 py-3 font-medium'>Group</th>
+          <th className='px-4 py-3 font-medium'>Source</th>
           <th className='px-4 py-3 font-medium'>Price</th>
           <th className='px-4 py-3 font-medium'>Cart</th>
         </tr>
@@ -900,6 +939,7 @@ function StockTable({
             <td className='px-4 py-3'>{row.level}</td>
             <td className='px-4 py-3'>{row.rarity}</td>
             <td className='px-4 py-3'>{shelfGroup(row)}</td>
+            <td className='px-4 py-3'>{sourceLabel(row)}</td>
             <td className='px-4 py-3'>{shownPrice(row.price, inGp)}</td>
             <td className='px-4 py-3'>
               <CartButtons row={row} inCart={qty(row)} onAdd={onAdd} onRemove={() => onRemove(cartLineKey(shopId, row))} />

@@ -529,7 +529,7 @@ function ShopsPage() {
               name: row.name ?? row.slug ?? 'Foundry item',
               level: row.level ?? 0,
               rarity: (row.rarity ?? 'COMMON').toUpperCase(),
-              group: (row.pack ?? '').startsWith('pf2e.') ? 'AON' : (row.wgId ? 'WG' : 'AON'),
+              group: 'FOUNDRY',
               description: '',
               traits: [],
               content_source_id: 0,
@@ -1466,7 +1466,7 @@ function ShopStockTable({
                 </td>
                 <td className='px-4 py-3'>{row.level}</td>
                 <td className='px-4 py-3'>{row.rarity}</td>
-                <td className='px-4 py-3'>{isShopFormula(row) ? 'FORMULA' : row.group}</td>
+                <td className='px-4 py-3'>{shopShelf(row, traits)}</td>
                 <td className='px-4 py-3'>{formatShopOffer(row, markup)}</td>
               </tr>
             );

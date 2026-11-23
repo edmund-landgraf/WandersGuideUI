@@ -338,6 +338,28 @@ export const SHOP_SHELVES = [
 
 const SHOP_SHELF_ORDER = SHOP_SHELVES;
 
+/** Shelf for a saved stock row that no longer has the full item record. */
+export function shelfFromLabels(input: { name: string; group?: string; traits?: string[]; category?: string; foundryType?: string }) {
+  if (input.name.startsWith('Formula: ') || input.group === 'FORMULA' || input.group === 'Formulas') return 'Formulas';
+  const stored = input.group ?? '';
+  if (SHOP_SHELVES.includes(stored)) return stored;
+  const group = stored === 'AON' || stored === 'WG' || stored === 'FOUNDRY' ? 'FOUNDRY' : (stored || 'GENERAL');
+  return shopShelf({
+    name: input.name,
+    group,
+    traits: [],
+    usage: '',
+    meta_data: {
+      category: input.category,
+      foundry: {
+        type: input.foundryType,
+        traits: input.traits ?? [],
+        ...(group === 'FOUNDRY' ? { catalog: 'FOUNDRY' } : {}),
+      },
+    },
+  } as unknown as Item, []);
+}
+
 export function shopShelf(item: Item, traits: Trait[]) {
   if (isShopFormula(item)) return 'Formulas';
   const names = new Map(traits.map((trait) => [trait.id, trait.name.toLowerCase()]));

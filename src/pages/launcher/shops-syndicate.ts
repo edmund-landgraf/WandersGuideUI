@@ -2,7 +2,7 @@ import type { Item, Trait } from '@schemas/content';
 import { compileWgText } from '@pages/phase1/phase1-markdown';
 import { toStandard2eProse } from '@utils/foundry-text';
 import { publicPath } from '../../syndication/nodes';
-import { asShopLine, formatShopOffer, isShopFormula, shopLineQuantity, type SettlementId, type ShopPresetId, type ShopRarity } from './shops-generate';
+import { asShopLine, formatShopOffer, isShopFormula, shopLineQuantity, shopShelf, type SettlementId, type ShopPresetId, type ShopRarity } from './shops-generate';
 import { isPf2eShopItem, shopAonHref } from './shops-pf2e';
 
 export const SHOP_CONTENT_KIND = 'shop';
@@ -30,6 +30,8 @@ export type ShopStockRow = {
   level: number;
   rarity: string;
   group: string;
+  /** Shop shelf: Armor, Potions, Formulas, and the rest of the generator categories. */
+  shelf?: string;
   price: string;
   quantity?: number;
   bulk: string;
@@ -98,6 +100,7 @@ export function shopDraft(
       level: item.level,
       rarity: item.rarity,
       group: isShopFormula(item) ? 'FORMULA' : item.group,
+      shelf: shopShelf(item, traits),
       catalog: item.meta_data?.foundry?.catalog,
       price: formatShopOffer(asShopLine(item), markup),
       quantity: shopLineQuantity(asShopLine(item)),
