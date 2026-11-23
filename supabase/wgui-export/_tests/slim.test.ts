@@ -20,6 +20,7 @@ function fullExport() {
       spell_slots: [{ rank: 0, source: 'SUMMONER', amt: 5 }],
       spells: [{ id: 4888, name: 'Tangle Vine' }],
       focus_spells: [{ id: 1, name: 'Boost Eidolon' }],
+      eidolon: { summoner_id: 80, name: 'Fey Eidolon', hp_pool: 16 },
       innate_spells: [],
       raw_data_dump: { variables: { CASTING_SOURCES: { value: [] } }, bonuses: { big: 1 }, history: { big: 2 } },
     },
@@ -41,7 +42,7 @@ Deno.test('slimExport keeps everything the importer reads', () => {
   const slim = slimExport(full) as any;
   assertEquals(slim.version, 4);
   assertEquals(slim.character, full.character);
-  for (const key of ['_README', 'all_sources', 'spell_slots', 'spells', 'focus_spells', 'innate_spells']) {
+  for (const key of ['_README', 'all_sources', 'spell_slots', 'spells', 'focus_spells', 'innate_spells', 'eidolon']) {
     assertEquals(slim.content[key], (full.content as any)[key], key);
   }
   assertEquals(slim.content.raw_data_dump, { variables: full.content.raw_data_dump.variables });

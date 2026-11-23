@@ -84,7 +84,9 @@ The JSON v4 file from `wgui-export-character`, minus the content catalog. For im
 - `content.raw_data_dump.bonuses` and `.history`. `raw_data_dump.variables` stays (the Foundry importer reads `*_IDS`, `CASTING_SOURCES` and `SPELL_SLOTS` from it).
 - `search_tsv` on every row.
 
-Everything else is unchanged: `character` (details, content_sources, operation_data, spells list, companions, inventory, notes), `feats_features`, `spell_sources`, `spell_slots`, `spells`, `focus_spells`, `innate_spells`, `all_sources` and the derived stats. The response adds `slim: { version: 1, dropped: { key: count } }`.
+Everything else is unchanged: `character` (details, content_sources, operation_data, spells list, companions, inventory, notes), `feats_features`, `spell_sources`, `spell_slots`, `spells`, `focus_spells`, `innate_spells`, `all_sources`, the derived stats, and `content.eidolon`.
+
+`content.eidolon` is null unless a selection points at an ability block whose name ends in "Eidolon". It is computed from that block's description (type, tradition, size, ability modifiers, suggested attacks, senses, languages, skills, speed), the summoner's `max_hp` as the shared pool, starting save proficiencies (expert Fortitude and Will, trained Reflex and Perception), and evolution feats selected under an Evolution class feature. `summoner_id` is the character id. `character.companions` is still the saved companion list and stays null when the sheet never added one. The response adds `slim: { version: 1, dropped: { key: count } }`.
 
 | PC | Full | Slim |
 | --- | --- | --- |
