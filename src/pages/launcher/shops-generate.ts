@@ -508,17 +508,38 @@ export function formatShopPrice(price: Item['price'], markup = 0) {
   return parts.length > 0 ? parts.join(' ') : '—';
 }
 
-/** Turn a formatted offer ("2 gp 5 sp for 10") into a bare GP figure ("2.5 for 10"). */
-export function priceAsGp(label: string) {
-  const match = label.match(/^((?:\d+\s+(?:pp|gp|sp|cp)\s*)+)(\s+for\s+\d+)?(\*)?$/i);
-  if (!match) return label;
+type ParsedOffer = { copper: number; pack: number };
+
+function parseOffer(label: string): ParsedOffer | null {
+  const match = label.match(/^((?:\d+\s+(?:pp|gp|sp|cp)\s*)+)(\s+for\s+(\d+))?(\*)?$/i);
+  if (!match) return null;
   const copper = [...match[1].matchAll(/(\d+)\s+(pp|gp|sp|cp)/gi)].reduce((sum, coin) => {
     return sum + Number(coin[1]) * COPPER[coin[2].toLowerCase() as keyof typeof COPPER];
   }, 0);
+  return { copper, pack: Math.max(1, Number(match[3] ?? 1) || 1) };
+}
+
+/** Turn a formatted offer ("2 gp 5 sp for 10") into a bare GP figure ("2.5 for 10"). */
+export function priceAsGp(label: string) {
+  const parsed = parseOffer(label);
+  if (!parsed) return label;
+  const whole = Math.floor(parsed.copper / COPPER.gp);
+  const fraction = String(parsed.copper % COPPER.gp).padStart(2, '0').replace(/0+$/, '');
+  const amount = fraction ? `${whole}.${fraction}` : String(whole);
+  const packed = parsed.pack > 1 ? ` for ${parsed.pack}` : '';
+  const starred = /\*$/.test(label.trim()) ? '*' : '';
+  return `${amount}${packed}${starred}`;
+}
+
+/** Coin total and pack size for a shop offer. Unpriced rows have copper 0. */
+export function offerCopper(label: string): ParsedOffer {
+  return parseOffer(label) ?? { copper: 0, pack: 1 };
+}
+
+export function copperAsGp(copper: number) {
   const whole = Math.floor(copper / COPPER.gp);
   const fraction = String(copper % COPPER.gp).padStart(2, '0').replace(/0+$/, '');
-  const amount = fraction ? `${whole}.${fraction}` : String(whole);
-  return `${amount}${match[2] ?? ''}${match[3] ?? ''}`;
+  return fraction ? `${whole}.${fraction}` : String(whole);
 }
 
 export function formatShopOffer(item: ShopStockItem, markup = 0) {

@@ -1403,6 +1403,7 @@ function ShopDraftView({ id }: { id: string }) {
   if (page === null) return <p className='p-8 text-sm text-muted-foreground'>This shop is not available.</p>;
   return (
     <ShopDocument
+      cartKey={id}
       name={page.name}
       stock={page.draft.stock}
       homebrew={page.draft.style === 'homebrew-v3'}

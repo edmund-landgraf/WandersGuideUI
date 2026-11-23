@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Item, Trait } from '@schemas/content';
-import { activeShopRarities, formatShopPrice, groupShopStock, levelWeights, priceAsGp, raritiesForSettlement, shopShelf, STOCK_COUNT, stockShop } from './shops-generate';
+import { activeShopRarities, copperAsGp, formatShopPrice, groupShopStock, levelWeights, offerCopper, priceAsGp, raritiesForSettlement, shopShelf, STOCK_COUNT, stockShop } from './shops-generate';
 
 function item(
   partial: Omit<Partial<Item>, 'meta_data'> &
@@ -149,6 +149,12 @@ describe('stockShop', () => {
     expect(priceAsGp('1 pp 4 sp')).toBe('10.4');
     expect(priceAsGp('15 sp for 10')).toBe('1.5 for 10');
     expect(priceAsGp('—')).toBe('—');
+    expect(offerCopper('2 gp 5 sp')).toEqual({ copper: 250, pack: 1 });
+    expect(offerCopper('15 sp for 10')).toEqual({ copper: 150, pack: 10 });
+    expect(offerCopper('160 gp*')).toEqual({ copper: 16000, pack: 1 });
+    expect(offerCopper('—')).toEqual({ copper: 0, pack: 1 });
+    expect(copperAsGp(250)).toBe('2.5');
+    expect(copperAsGp(3)).toBe('0.03');
     expect(stockShop(catalog, traits, 'general', 1, () => 0, undefined, new Set(), 2)).toHaveLength(2);
   });
 

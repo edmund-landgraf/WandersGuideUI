@@ -11,6 +11,7 @@ import { fetchPf2eEquipmentText, fillMissingShopAon, loadShopAonIndex } from './
 import { listOwned, readPublic } from '../../syndication/store';
 import { LauncherHeader } from './launcher-header';
 import { asContentType } from './shops-export';
+import { cartLineKey, cartTotalGp, itemCopper, lineGold, readShopCart, writeShopCart, type ShopCartLine } from './shops-cart';
 import { priceAsGp } from './shops-generate';
 import { SHOP_CONTENT_KIND, shopTraceStart, type ShopDraft, type ShopStockRow } from './shops-syndicate';
 import type { SyndicatedNode } from '../../syndication/nodes';
@@ -449,8 +450,21 @@ function ShopDescription({ text, homebrew }: { text: string; homebrew: boolean }
   );
 }
 
-export function ShopDocument({ name, stock, homebrew, description }: { name: string; stock: ShopStockRow[]; homebrew: boolean; description?: string }) {
+export function ShopDocument({
+  cartKey,
+  name,
+  stock,
+  homebrew,
+  description,
+}: {
+  cartKey: string;
+  name: string;
+  stock: ShopStockRow[];
+  homebrew: boolean;
+  description?: string;
+}) {
   const [linked, setLinked] = useState(() => fillMissingShopAon(stock, new Map()));
+  const [cart, setCart] = useState(readShopCart);
   useEffect(() => {
     setLinked(fillMissingShopAon(stock, new Map()));
     if (stock.every((row) => row.aon && !/Search\.aspx/i.test(row.aon))) return;
@@ -467,6 +481,36 @@ export function ShopDocument({ name, stock, homebrew, description }: { name: str
   const [useGroupings, setUseGroupings] = useState(readGroupingsPreference);
   const [inGp, setInGp] = useState(() => readFlag(IN_GP_SESSION_KEY, false));
   const sections = useGroupings ? groupedStock(linked) : null;
+  const saveCart = (next: ShopCartLine[]) => {
+    writeShopCart(next);
+    setCart(next);
+  };
+  const addRow = (row: ShopStockRow) => {
+    const copper = itemCopper(row.price);
+    if (copper <= 0) return;
+    const key = cartLineKey(cartKey, row);
+    const cap = Math.max(1, row.quantity ?? 1);
+    const existing = cart.find((line) => line.key === key);
+    if (existing && existing.qty >= cap) return;
+    if (existing) {
+      saveCart(cart.map((line) => (line.key === key ? { ...line, qty: line.qty + 1 } : line)));
+      return;
+    }
+    saveCart([...cart, { key, shopId: cartKey, shopName: name, name: row.name, qty: 1, copper }]);
+  };
+  const removeKey = (key: string) => {
+    const existing = cart.find((line) => line.key === key);
+    if (!existing) return;
+    if (existing.qty <= 1) {
+      saveCart(cart.filter((line) => line.key !== key));
+      return;
+    }
+    saveCart(cart.map((line) => (line.key === key ? { ...line, qty: line.qty - 1 } : line)));
+  };
+  const table = (rows: ShopStockRow[]) => (
+    <StockTable stock={rows} homebrew={homebrew} inGp={inGp} shopId={cartKey} cart={cart} onAdd={addRow} onRemove={removeKey} />
+  );
+  const strip = <ShopCartStrip homebrew={homebrew} cart={cart} onRemove={removeKey} onClear={() => saveCart([])} />;
   const toggles = (
     <ShopViewToggles
       useGroupings={useGroupings}
@@ -500,15 +544,16 @@ export function ShopDocument({ name, stock, homebrew, description }: { name: str
               <div className='mb-4 flex justify-end'>
                 {toggles}
               </div>
+              {strip}
               {sections ? sections.map((section) => (
                 <details className='border-t border-[#6b3a1f]/30' key={section.group}>
                   <summary className='cursor-pointer py-2 font-serif text-sm uppercase tracking-wide text-[#6b1d14]'>
                     {groupLabel(section.group)} ({section.rows.length})
                   </summary>
-                  <StockTable stock={section.rows} homebrew inGp={inGp} />
+                  {table(section.rows)}
                 </details>
               )) : (
-                <StockTable stock={linked} homebrew inGp={inGp} />
+                table(linked)
               )}
             </article>
           </div>
@@ -529,6 +574,7 @@ export function ShopDocument({ name, stock, homebrew, description }: { name: str
               {toggles}
             </div>
             {description ? <ShopDescription text={description} homebrew={false} /> : null}
+            {strip}
             {sections ? (
               <div className='overflow-hidden rounded-xl bg-white/5 ring-1 ring-white/20'>
                 {sections.map((section) => (
@@ -538,13 +584,13 @@ export function ShopDocument({ name, stock, homebrew, description }: { name: str
                       {groupLabel(section.group)}
                       <span className='ml-2 normal-case tracking-normal'>{section.rows.length}</span>
                     </summary>
-                    <StockTable stock={section.rows} inGp={inGp} />
+                    {table(section.rows)}
                   </details>
                 ))}
               </div>
             ) : (
               <div className='overflow-hidden rounded-xl bg-white/5 ring-1 ring-white/20'>
-                <StockTable stock={linked} inGp={inGp} />
+                {table(linked)}
               </div>
             )}
           </div>
@@ -554,7 +600,60 @@ export function ShopDocument({ name, stock, homebrew, description }: { name: str
   );
 }
 
-function StockTable({ stock, homebrew = false, inGp = false }: { stock: ShopStockRow[]; homebrew?: boolean; inGp?: boolean }) {
+function ShopCartStrip({
+  homebrew,
+  cart,
+  onRemove,
+  onClear,
+}: {
+  homebrew: boolean;
+  cart: ShopCartLine[];
+  onRemove: (key: string) => void;
+  onClear: () => void;
+}) {
+  if (cart.length === 0) {
+    return <p className={homebrew ? 'brew-note' : 'text-sm text-muted-foreground'}>Cart is empty. Total 0 gp.</p>;
+  }
+  return (
+    <div className={homebrew ? 'mb-4 border-b border-[#6b3a1f]/30 pb-3' : 'rounded-xl bg-white/5 p-4 ring-1 ring-white/20'}>
+      <div className='flex flex-wrap items-baseline justify-between gap-2'>
+        <p className={homebrew ? 'font-serif text-sm uppercase tracking-wide text-[#6b1d14]' : 'text-sm font-medium text-foreground'}>
+          Cart · {cartTotalGp(cart)}
+        </p>
+        <button className='underline underline-offset-2' type='button' onClick={onClear}>Clear cart</button>
+      </div>
+      <ul className={homebrew ? 'mt-2 grid gap-1 text-sm' : 'mt-2 grid gap-1 text-sm text-muted-foreground'}>
+        {cart.map((line) => (
+          <li className='flex flex-wrap items-baseline justify-between gap-2' key={line.key}>
+            <span>
+              {line.shopName} · {line.name} × {line.qty} · {lineGold(line)}
+            </span>
+            <button className='underline underline-offset-2' type='button' onClick={() => onRemove(line.key)}>Remove</button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function StockTable({
+  stock,
+  homebrew = false,
+  inGp = false,
+  shopId,
+  cart,
+  onAdd,
+  onRemove,
+}: {
+  stock: ShopStockRow[];
+  homebrew?: boolean;
+  inGp?: boolean;
+  shopId: string;
+  cart: ShopCartLine[];
+  onAdd: (row: ShopStockRow) => void;
+  onRemove: (key: string) => void;
+}) {
+  const qty = (row: ShopStockRow) => cart.find((line) => line.key === cartLineKey(shopId, row))?.qty ?? 0;
   if (homebrew) {
     return (
       <table>
@@ -566,17 +665,21 @@ function StockTable({ stock, homebrew = false, inGp = false }: { stock: ShopStoc
             <th>Rarity</th>
             <th>Group</th>
             <th>Price</th>
+            <th>Cart</th>
           </tr>
         </thead>
         <tbody>
           {stock.map((row) => (
-            <tr key={row.id}>
+            <tr key={`${row.id}:${row.name}`}>
               <td>{row.quantity ?? 1} ×</td>
               <td><StockName row={row} homebrew inGp={inGp} /></td>
               <td>{row.level}</td>
               <td>{row.rarity}</td>
               <td>{row.group}</td>
               <td>{shownPrice(row.price, inGp)}</td>
+              <td>
+                <CartButtons row={row} inCart={qty(row)} onAdd={onAdd} onRemove={() => onRemove(cartLineKey(shopId, row))} />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -594,21 +697,47 @@ function StockTable({ stock, homebrew = false, inGp = false }: { stock: ShopStoc
           <th className='px-4 py-3 font-medium'>Rarity</th>
           <th className='px-4 py-3 font-medium'>Group</th>
           <th className='px-4 py-3 font-medium'>Price</th>
+          <th className='px-4 py-3 font-medium'>Cart</th>
         </tr>
       </thead>
       <tbody>
         {stock.map((row) => (
-          <tr className='border-t border-white/10' key={row.id}>
+          <tr className='border-t border-white/10' key={`${row.id}:${row.name}`}>
             <td className='px-4 py-3'>{row.quantity ?? 1} ×</td>
             <td className='px-4 py-3'><StockName row={row} inGp={inGp} /></td>
             <td className='px-4 py-3'>{row.level}</td>
             <td className='px-4 py-3'>{row.rarity}</td>
             <td className='px-4 py-3'>{row.group}</td>
             <td className='px-4 py-3'>{shownPrice(row.price, inGp)}</td>
+            <td className='px-4 py-3'>
+              <CartButtons row={row} inCart={qty(row)} onAdd={onAdd} onRemove={() => onRemove(cartLineKey(shopId, row))} />
+            </td>
           </tr>
         ))}
       </tbody>
     </table>
+  );
+}
+
+function CartButtons({
+  row,
+  inCart,
+  onAdd,
+  onRemove,
+}: {
+  row: ShopStockRow;
+  inCart: number;
+  onAdd: (row: ShopStockRow) => void;
+  onRemove: () => void;
+}) {
+  const priced = itemCopper(row.price) > 0;
+  if (!priced) return <span>—</span>;
+  return (
+    <span className='inline-flex items-center gap-2 whitespace-nowrap'>
+      <button className='underline underline-offset-2' type='button' onClick={() => onAdd(row)}>Add</button>
+      <button className='underline underline-offset-2 disabled:opacity-40' type='button' disabled={inCart < 1} onClick={onRemove}>Remove</button>
+      {inCart > 0 ? <span>{inCart}</span> : null}
+    </span>
   );
 }
 
@@ -756,7 +885,7 @@ export function ShopsPublic({ token }: { token: string }) {
   const stock = page?.snapshot.stock ?? [];
   const homebrew = page?.snapshot.style === 'homebrew-v3';
 
-  if (page) return <ShopDocument name={page.name} stock={stock} homebrew={homebrew} description={page.snapshot.description} />;
+  if (page) return <ShopDocument cartKey={token} name={page.name} stock={stock} homebrew={homebrew} description={page.snapshot.description} />;
 
   return (
     <div className='dark min-h-screen bg-background font-sans text-foreground antialiased'>
