@@ -10,7 +10,7 @@ describe('recordInPackage', () => {
 
   it('keeps a saved background whose book is not in the package', () => {
     const stored = { id: 1152, name: 'Feybound', operations: [{ id: 'boost' }] };
-    expect(recordInPackage([{ id: 1, name: 'Acolyte' }], stored)).toBe(stored);
+    expect(recordInPackage([{ id: 1, name: 'Acolyte', operations: [] }], stored)).toBe(stored);
   });
 
   it('returns nothing when no identity is saved', () => {
