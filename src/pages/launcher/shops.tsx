@@ -1422,7 +1422,7 @@ function ShopStockTable({
 }
 
 function ShopDraftView({ id }: { id: string }) {
-  const [page, setPage] = useState<{ name: string; draft: ShopDraft } | null | undefined>(undefined);
+  const [page, setPage] = useState<{ name: string; draft: ShopDraft; folder: { id: string; name: string } | null } | null | undefined>(undefined);
   const [error, setError] = useState('');
   useEffect(() => {
     let cancelled = false;
@@ -1431,10 +1431,13 @@ function ShopDraftView({ id }: { id: string }) {
       .then((rows) => {
         const node = rows.find((row) => row.id === id && row.kind === 'entry');
         const draft = node?.draft as ShopDraft | null | undefined;
+        const parent = node?.parent_id
+          ? rows.find((row) => row.id === node.parent_id && row.kind === 'folder')
+          : undefined;
         const found = Boolean(node && draft);
         done({ id, rows: rows.length, found });
         if (cancelled) return;
-        setPage(node && draft ? { name: node.name, draft } : null);
+        setPage(node && draft ? { name: node.name, draft, folder: parent ? { id: parent.id, name: parent.name } : null } : null);
       })
       .catch((cause: unknown) => {
         console.error('[wgui shops] draft view failed', cause);
@@ -1455,6 +1458,7 @@ function ShopDraftView({ id }: { id: string }) {
       stock={page.draft.stock}
       homebrew={page.draft.style === 'homebrew-v3'}
       description={page.draft.description}
+      folder={page.folder}
     />
   );
 }

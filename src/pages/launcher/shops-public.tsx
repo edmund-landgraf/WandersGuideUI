@@ -200,6 +200,14 @@ export const HOMEBREW_CSS = `
   line-height: 1.4;
 }
 .brew-masthead { text-align: center; margin: 0 0 22px; }
+.brew-folder {
+  margin: 0 0 14px;
+  font-family: Cinzel, Palatino, serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.brew-folder a { color: #6b1d14; }
 .brew-rule-double {
   height: 5px;
   border: 0;
@@ -467,12 +475,14 @@ export function ShopDocument({
   stock,
   homebrew,
   description,
+  folder,
 }: {
   cartKey: string;
   name: string;
   stock: ShopStockRow[];
   homebrew: boolean;
   description?: string;
+  folder?: { id: string; name: string } | null;
 }) {
   const [linked, setLinked] = useState(() => withKnownOffer(fillMissingShopAon(stock, new Map())));
   const [cart, setCart] = useState(readShopCart);
@@ -613,6 +623,11 @@ export function ShopDocument({
           <div className='brew-v3'>
             <article className='brew-sheet'>
               <header className='brew-masthead'>
+                {folder ? (
+                  <p className='brew-folder'>
+                    <a href={`/shops/folder/${encodeURIComponent(folder.id)}`}>{folder.name}</a>
+                  </p>
+                ) : null}
                 <hr className='brew-rule-double' />
                 <h1>{name}</h1>
                 <hr className='brew-rule-thin' />
@@ -648,7 +663,14 @@ export function ShopDocument({
         <section className='px-8 pt-10 pb-16'>
           <div className='mx-auto grid max-w-6xl gap-6'>
             <div className='flex flex-wrap items-end justify-between gap-4'>
-              <h1 className='font-heading text-4xl text-foreground'>{name}</h1>
+              <div>
+                {folder ? (
+                  <a className='text-sm underline underline-offset-2' href={`/shops/folder/${encodeURIComponent(folder.id)}`}>
+                    {folder.name}
+                  </a>
+                ) : null}
+                <h1 className='font-heading text-4xl text-foreground'>{name}</h1>
+              </div>
               {toggles}
             </div>
             {description ? <ShopDescription text={description} homebrew={false} /> : null}
