@@ -31,9 +31,14 @@ function parseQuery(url: string) {
   return Object.fromEntries(new URLSearchParams(query.replaceAll("&", "&")));
 }
 
+let failEquipment = false;
+
 function installFetch() {
   setCharacterFetch(async (input, init) => {
     const url = String(input);
+    if (url.includes("/api/equipment") && failEquipment) {
+      throw new TypeError("fetch failed", { cause: new Error("connect ECONNREFUSED 127.0.0.1:3333") });
+    }
     const method = (init?.method ?? "GET").toUpperCase();
     const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {};
     if (url.includes("/api/equipment")) {
@@ -232,6 +237,34 @@ test("set_shop_stock looks up Wanderer's Guide items by id", async () => {
     assert.ok(stock[1].traits.includes("Magical"));
     assert.equal((stock[1] as { aon?: string }).aon, "https://2e.aonprd.com/Equipment.aspx?ID=2345");
   } finally {
+    await close();
+  }
+});
+
+test("search_shop_catalog returns name matches and keeps the other source when PF2E is down", async () => {
+  failEquipment = false;
+  const { mcp, close } = await clientFor(["read"]);
+  try {
+    const found = await mcp.callTool({ name: "search_shop_catalog", arguments: { q: "rope", source: "both" } });
+    assert.equal(found.isError, undefined);
+    const items = (found.structuredContent as { items: { name: string; source: string; id: number }[] }).items;
+    assert.ok(items.some((row) => row.source === "wanderers-guide" && row.name === "WG Rope" && row.id === 1));
+    assert.ok(items.some((row) => row.source === "pf2e" && row.name === "AoN Rope" && row.id === 1));
+
+    failEquipment = true;
+    const degraded = await mcp.callTool({ name: "search_shop_catalog", arguments: { q: "rope", source: "both" } });
+    assert.equal(degraded.isError, undefined);
+    const left = (degraded.structuredContent as { items: { source: string }[]; warnings: string[] });
+    assert.ok(left.items.every((row) => row.source === "wanderers-guide"));
+    assert.match(left.warnings.join(" "), /ECONNREFUSED/);
+
+    const pf2eOnly = await mcp.callTool({ name: "search_shop_catalog", arguments: { q: "rope", source: "pf2e" } });
+    assert.equal(pf2eOnly.isError, true);
+    assert.equal((pf2eOnly.structuredContent as { retryable: boolean; code: string }).retryable, true);
+    assert.equal((pf2eOnly.structuredContent as { code: string }).code, "UPSTREAM_UNAVAILABLE");
+    assert.match(String((pf2eOnly.content as { text: string }[])[0].text), /fetch failed/);
+  } finally {
+    failEquipment = false;
     await close();
   }
 });
