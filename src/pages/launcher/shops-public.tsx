@@ -526,6 +526,7 @@ export function ShopDocument({
   const [useGroupings, setUseGroupings] = useState(readGroupingsPreference);
   const [inGp, setInGp] = useState(() => readFlag(IN_GP_SESSION_KEY, false));
   const [foundryNote, setFoundryNote] = useState('');
+  const [foundryCustomOnUnmatched, setFoundryCustomOnUnmatched] = useState(false);
   const [foundryDraft, setFoundryDraft] = useState<{
     title: string;
     stock: { id?: number; name: string; quantity?: number }[];
@@ -569,6 +570,7 @@ export function ShopDocument({
   const openFoundry = async () => {
     setFoundryCopied(false);
     setFoundryNote('');
+    setFoundryCustomOnUnmatched(false);
     const lookup = await loadShopFoundryLookup();
     const title = cart.length > 0 ? cartFoundryTitle(cart, folder?.name) : name;
     setFoundryDraft({
@@ -579,7 +581,7 @@ export function ShopDocument({
     });
   };
   const foundryScript = foundryDraft
-    ? JSON.stringify(shopStockFoundryManifest(foundryDraft.title, foundryDraft.stock, foundryDraft.when, foundryDraft.lookup, foundryNote), null, 2)
+    ? JSON.stringify(shopStockFoundryManifest(foundryDraft.title, foundryDraft.stock, foundryDraft.when, foundryDraft.lookup, foundryNote, { customOnUnmatched: foundryCustomOnUnmatched }), null, 2)
     : null;
   const toggles = (
     <div className='flex flex-wrap items-center justify-end gap-4'>
@@ -619,6 +621,17 @@ export function ShopDocument({
               setFoundryNote(event.target.value);
             }}
           />
+        </label>
+        <label className='flex items-center gap-2 text-sm text-stone-300'>
+          <input
+            type='checkbox'
+            checked={foundryCustomOnUnmatched}
+            onChange={(event) => {
+              setFoundryCopied(false);
+              setFoundryCustomOnUnmatched(event.target.checked);
+            }}
+          />
+          Make custom items for unmatched lines
         </label>
         <textarea
           ref={foundryScriptRef}

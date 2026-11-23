@@ -56,7 +56,7 @@ export function registerShops(server: McpServer, userId: () => string) {
 
   server.registerTool("get_shop", {
     title: "Get shop",
-    description: "One owned shop draft, including stock and line keys.",
+    description: "One owned shop draft, including stock and line keys. shopUrl is the owner page (/shops?id=). publicUrl is the share page (/shops/s/{token}) when the shop is published, otherwise null.",
     annotations: readOnly,
     inputSchema: { shopId: z.string() },
   }, async (args) => fromResult(await getShop(userId(), args.shopId), "Shop"));
@@ -80,7 +80,7 @@ export function registerShops(server: McpServer, userId: () => string) {
 
   server.registerTool("create_shop", {
     title: "Create shop",
-    description: "Creates one saved shop. sources selects the allowed item sources (wanderers-guide, pf2e, and/or foundry); generate true (default) stocks only from those sources. Foundry is not a separate shop type.",
+    description: "Creates one saved shop. sources selects the allowed item sources (wanderers-guide, pf2e, and/or foundry); generate true (default) stocks only from those sources. Foundry is not a separate shop type. The result includes shopUrl, the owner page to open.",
     annotations: writes,
     inputSchema: {
       name: z.string(),
@@ -88,7 +88,7 @@ export function registerShops(server: McpServer, userId: () => string) {
       generate: z.boolean().optional(),
       preset: preset.optional(),
       settlement: settlement.optional(),
-      size: z.number().int().min(1).max(100).optional(),
+      size: z.number().int().min(1).max(500).optional(),
       sources: z.array(source).optional(),
       rarities: z.array(rarity).optional(),
       books: z.array(z.number().int()).optional(),
@@ -144,7 +144,7 @@ export function registerShops(server: McpServer, userId: () => string) {
       sources: z.array(source).optional(),
       books: z.array(z.number().int()).optional(),
       rarities: z.array(rarity).optional(),
-      size: z.number().int().min(1).max(100).optional(),
+      size: z.number().int().min(1).max(500).optional(),
     },
   }, async (args) => {
     const { shopId, ...patch } = args;
@@ -153,9 +153,9 @@ export function registerShops(server: McpServer, userId: () => string) {
 
   server.registerTool("resize_shop", {
     title: "Resize shop",
-    description: "Regenerates stock to size (1–100), down-weighting the previous lines.",
+    description: "Regenerates stock to size (1–500), down-weighting the previous lines.",
     annotations: writes,
-    inputSchema: { shopId: z.string(), size: z.number().int().min(1).max(100) },
+    inputSchema: { shopId: z.string(), size: z.number().int().min(1).max(500) },
   }, async (args) => fromResult(await resizeShop(userId(), args.shopId, args.size), "Shop resized"));
 
   server.registerTool("add_shop_item", {
@@ -210,7 +210,7 @@ export function registerShops(server: McpServer, userId: () => string) {
     inputSchema: {
       shopId: z.string(),
       generate: z.boolean().optional(),
-      size: z.number().int().min(1).max(100).optional(),
+      size: z.number().int().min(1).max(500).optional(),
       sources: z.array(source).optional(),
       rarities: z.array(rarity).optional(),
       books: z.array(z.number().int()).optional(),
@@ -244,7 +244,7 @@ export function registerShops(server: McpServer, userId: () => string) {
 
   server.registerTool("publish_shop", {
     title: "Publish shop",
-    description: "Publishes the draft snapshot. Calling again refreshes the public snapshot and keeps the token.",
+    description: "Publishes the draft snapshot. Calling again refreshes the public snapshot and keeps the token. shopUrl is the owner page. publicUrl is the share link to give other people.",
     annotations: writes,
     inputSchema: { shopId: z.string() },
   }, async (args) => fromResult(await publishShop(userId(), args.shopId), "Shop published"));

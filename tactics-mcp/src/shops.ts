@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { allFoundryShopEquipment, foundryLevelDisagrees, searchFoundryShopItems } from "./foundry-shop-lookup.js";
 
 import { characterFetch, characterToken, functionsBaseUrl, invokeFunction } from "./character-client.js";
+import { publicAssetOrigin } from "./public-art-url.js";
 import {
   asShopLine,
   catalogIdOf,
@@ -142,7 +143,7 @@ function asRarities(value: unknown): ShopRarity[] | undefined {
 function asSize(value: unknown, fallback = STOCK_COUNT) {
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return fallback;
-  return Math.max(1, Math.min(100, Math.round(n)));
+  return Math.max(1, Math.min(500, Math.round(n)));
 }
 
 function pf2eApi() {
@@ -508,6 +509,16 @@ function findCatalogItem(items: CatalogItem[], source: ShopSource, id: number) {
   return items.find((item) => catalogSourceOf(item) === source && catalogIdOf(item) === id);
 }
 
+/** Owner page (`/shops?id=`) and, when published, the share page (`/shops/s/{token}`). */
+export function shopLinks(node: { id: string; published?: boolean; public_token?: string | null }) {
+  const origin = publicAssetOrigin();
+  const shopUrl = `${origin}/shops?id=${encodeURIComponent(node.id)}`;
+  const publicUrl = node.published && node.public_token
+    ? `${origin}/shops/s/${encodeURIComponent(node.public_token)}`
+    : null;
+  return { shopUrl, publicUrl };
+}
+
 export function summarizeNode(node: ShopNode) {
   const draft = node.draft;
   return {
@@ -523,6 +534,7 @@ export function summarizeNode(node: ShopNode) {
     preset: draft?.preset ?? null,
     stockCount: draft?.stock?.length ?? 0,
     draft: node.kind === "entry" ? stripDescriptions(draft) : null,
+    ...shopLinks(node),
   };
 }
 
@@ -535,7 +547,11 @@ export async function listShops(userId: string) {
 export async function getShop(userId: string, id: string) {
   const node = await getNode(userId, id);
   if (!node.ok) return node;
-  return ok({ shop: node.data, stockKeys: (node.data.draft?.stock ?? []).map((row) => lineKey(row.source, row.id, row.group === "FORMULA")) });
+  return ok({
+    shop: node.data,
+    stockKeys: (node.data.draft?.stock ?? []).map((row) => lineKey(row.source, row.id, row.group === "FORMULA")),
+    ...shopLinks(node.data),
+  });
 }
 
 export async function getPublishedShop(userId: string, token: string) {
@@ -548,7 +564,13 @@ export async function getPublishedShop(userId: string, token: string) {
   const row = asNode(found.data) as unknown as { name?: string; snapshot?: ShopDraft; published_at?: string | null } | null;
   const payload = Array.isArray(found.data) ? (found.data[0] as typeof row) : row;
   if (!payload?.snapshot) return err("NOT_FOUND", "Published shop not found.");
-  return ok({ name: payload.name, snapshot: payload.snapshot, publishedAt: payload.published_at ?? null });
+  const origin = publicAssetOrigin();
+  return ok({
+    name: payload.name,
+    snapshot: payload.snapshot,
+    publishedAt: payload.published_at ?? null,
+    publicUrl: `${origin}/shops/s/${encodeURIComponent(token)}`,
+  });
 }
 
 export async function searchShopCatalog(userId: string, query: string, source: "wanderers-guide" | "pf2e" | "foundry" | "both" = "both") {
@@ -719,7 +741,7 @@ async function saveNode(userId: string, node: ShopNode, patch: Record<string, un
   const updated = await rest(userId, "PATCH", `syndicated_nodes?id=eq.${node.id}&user_id=eq.${userId}`, patch);
   if (!updated.ok) return updated;
   const next = asNode(updated.data) ?? { ...node, ...patch } as ShopNode;
-  return ok({ shop: next });
+  return ok({ shop: next, ...shopLinks(next) });
 }
 
 export async function updateShop(userId: string, shopId: string, patch: {
@@ -932,7 +954,9 @@ export async function setShopStock(userId: string, shopId: string, input: {
     if (!generated.ok) return generated;
     draft = generated.data;
   } else {
-    const stock = await resolveRefs(userId, input.items, draft.markup, draft.books);
+    // Curated refs are not limited to the books used for generation. Katana (foundry:7059)
+    // is in the Foundry lookup but missing when the shop's book list does not include its source.
+    const stock = await resolveRefs(userId, input.items, draft.markup);
     if (!stock.ok) return stock;
     draft = { ...draft, stock: stock.data, size: stock.data.length };
   }
@@ -972,7 +996,7 @@ export async function addShopItem(userId: string, shopId: string, input: ShopIte
     return err("VALIDATION_ERROR", "Each item needs source and id.");
   }
   // The check above guarantees source and id for every row, including items[].
-  const added = await resolveRefs(userId, refs as Array<ShopItemInput & { source: ShopSource; id: number }>, node.draft.markup, node.draft.books);
+  const added = await resolveRefs(userId, refs as Array<ShopItemInput & { source: ShopSource; id: number }>, node.draft.markup);
   if (!added.ok) return added;
   const keys = new Set(added.data.map((row) => lineKey(row.source, row.id, row.group === "FORMULA")));
   const existing = (node.draft.stock ?? []).filter((line) => !keys.has(lineKey(line.source, line.id, line.group === "FORMULA")));

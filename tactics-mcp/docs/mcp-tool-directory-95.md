@@ -145,20 +145,20 @@ Saved shops live in `syndicated_nodes` with `content_kind: shop`. Each stock lin
 | Tool | Scope | What it does / returns | Required params |
 | --- | --- | --- | --- |
 | `list_shops` | read | Owned folders and entries; list omits stock descriptions | none |
-| `get_shop` | read | One owned draft plus stock line keys | `shopId` |
+| `get_shop` | read | One owned draft plus stock line keys. `shopUrl` is `/shops?id=`; `publicUrl` is `/shops/s/{token}` when published | `shopId` |
 | `get_published_shop` | read | Snapshot from `syndicated_public` | `token` |
 | `search_shop_catalog` | read | WG and/or PF2E equipment hits with `source` | none (`q`, `source`) |
-| `create_shop` | write | Insert entry. `generate` (default true) stocks from catalogs within the settlement level cap. Optional `preset`, `settlement`, `size` (1–100), `sources`, `rarities`, `books`, `markup` | `name` |
+| `create_shop` | write | Insert entry and return `shopUrl`. `generate` (default true) stocks from catalogs within the settlement level cap. Optional `preset`, `settlement`, `size` (1–500), `sources`, `rarities`, `books`, `markup` | `name` |
 | `create_shop_folder` | write | Root folder | `name` |
 | `update_shop` | write | Rename and patch draft, including `campaignId`, `settlement`, `books`, `sources`, and `markup` | `shopId` |
-| `resize_shop` | write | Regenerates stock to `size` 1–100, down-weighting the previous lines, still capped by settlement | `shopId`, `size` |
+| `resize_shop` | write | Regenerates stock to `size` 1–500, down-weighting the previous lines, still capped by settlement | `shopId`, `size` |
 | `add_shop_item` | write | Appends catalog items without replacing the rest of the stock. `items` for several refs, or `source` plus `itemId` for one | `shopId`, plus `items` or `source`+`itemId` |
 | `update_shop_item` | write | Quantity and/or price on a line key | `shopId`, `key` |
 | `remove_shop_item` | write | Remove a line key | `shopId`, `key` |
 | `set_shop_stock` | write | Replaces stock from catalog refs (`source` + `id`), or regenerates when `generate` is true. Still capped by settlement | `shopId` |
 | `move_shop` | write | Move into a root folder or to root | `shopId`, `parentId` |
 | `delete_shop` | write | Delete shop or folder | `shopId` |
-| `publish_shop` | write | Publish or refresh the public snapshot | `shopId` |
+| `publish_shop` | write | Publish or refresh the public snapshot. Returns `shopUrl` (owner) and `publicUrl` (share) | `shopId` |
 | `unpublish_shop` | write | Clear published flag | `shopId` |
 
 ## Known write gaps

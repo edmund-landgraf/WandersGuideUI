@@ -80,7 +80,7 @@ export function shopFolderLabel(title: string, when = new Date(), note = '') {
   return clean ? `${label} - ${clean}` : label;
 }
 
-export function shopFoundryManifest(title: string, stock: Item[], when = new Date(), lookup?: ShopFoundryLookup | null, note = '') {
+export function shopFoundryManifest(title: string, stock: Item[], when = new Date(), lookup?: ShopFoundryLookup | null, note = '', options?: ShopFoundryManifestOptions) {
   return shopStockFoundryManifest(
     title,
     stock.map((item) => ({
@@ -96,6 +96,7 @@ export function shopFoundryManifest(title: string, stock: Item[], when = new Dat
     when,
     lookup,
     note,
+    options,
   );
 }
 
@@ -189,7 +190,9 @@ type ShopManifestStock = {
   bulk?: string | null;
 };
 
-const CUSTOM_MISS = new Set<ShopFoundrySkipStatus>(['unresolved', 'ambiguous', 'missing-id']);
+const CUSTOM_MISS = new Set<ShopFoundrySkipStatus>(['unresolved', 'ambiguous', 'missing-id', 'catalog-not-loaded']);
+
+export type ShopFoundryManifestOptions = { customOnUnmatched?: boolean };
 
 function customShopItem(item: ShopManifestStock): ShopFoundryCustomItem {
   const row: ShopFoundryCustomItem = {
@@ -207,7 +210,7 @@ function customShopItem(item: ShopManifestStock): ShopFoundryCustomItem {
   return row;
 }
 
-export function shopStockFoundryManifest(title: string, stock: ShopManifestStock[], when = new Date(), lookup?: ShopFoundryLookup | null, note = '') {
+export function shopStockFoundryManifest(title: string, stock: ShopManifestStock[], when = new Date(), lookup?: ShopFoundryLookup | null, note = '', options?: ShopFoundryManifestOptions) {
   const label = title.trim() || 'Shop';
   const skipped: { id?: number; name: string; status: ShopFoundrySkipStatus }[] = [];
   const items = stock.flatMap((item): (ShopFoundryCatalogItem | ShopFoundryCustomItem)[] => {
@@ -224,7 +227,7 @@ export function shopStockFoundryManifest(title: string, stock: ShopManifestStock
     // equipment list often have no Wanderer's Guide id.
     if (!active) {
       const status: ShopFoundrySkipStatus = !lookup ? 'catalog-not-loaded' : match?.status ?? (item.id === undefined ? 'missing-id' : 'unresolved');
-      if (CUSTOM_MISS.has(status)) return [customShopItem(item)];
+      if (options?.customOnUnmatched && CUSTOM_MISS.has(status)) return [customShopItem(item)];
       skipped.push({ ...(item.id !== undefined ? { id: item.id } : {}), name: item.name, status });
       return [];
     }

@@ -282,7 +282,7 @@ export function stockShop(
     if (!allowed.includes(item.rarity as ShopRarity)) return false;
     return inBand(item.level, ceiling);
   });
-  const size = Math.max(0, Math.min(100, Math.round(count)));
+  const size = Math.max(0, Math.min(500, Math.round(count)));
   const picked: ShopStockItem[] = [];
   const seen = new Set<string>();
   let attempts = 0;

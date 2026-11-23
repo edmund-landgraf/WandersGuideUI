@@ -472,6 +472,7 @@ function ShopsPage() {
   const [exporting, setExporting] = useState(false);
   const [exportNote, setExportNote] = useState('');
   const [foundryNote, setFoundryNote] = useState('');
+  const [foundryCustomOnUnmatched, setFoundryCustomOnUnmatched] = useState(false);
   const [foundryDraft, setFoundryDraft] = useState<{ title: string; stock: ShopStockItem[]; when: Date } | null>(null);
   const [foundryCopied, setFoundryCopied] = useState(false);
   const foundryScriptRef = useRef<HTMLTextAreaElement>(null);
@@ -605,7 +606,7 @@ function ShopsPage() {
       const nextGame = savedBooks.length > 0 && savedBooks.every((id) => starfinderIds.has(id)) ? 'starfinder' : 'pathfinder';
       setGame(nextGame);
       setPageStyle(draft.style === 'homebrew-v3' || draft.style === 'default' ? draft.style : nextGame === 'starfinder' ? 'default' : 'homebrew-v3');
-      setStockCount(draft.size ?? (loaded.length || STOCK_COUNT));
+      setStockCount(Math.max(1, Math.min(500, draft.size ?? (loaded.length || STOCK_COUNT))));
       setShopName(node?.name ?? '');
       setShopDescription(draft.description ?? '');
       setCampaignId(draft.campaignId ?? null);
@@ -969,6 +970,7 @@ function ShopsPage() {
                   const title = shopName.trim() || `${presetLabel} — ${settlementLabel}`;
                   setFoundryCopied(false);
                   setFoundryNote('');
+                  setFoundryCustomOnUnmatched(false);
                   setFoundryDraft({ title, stock, when: new Date() });
                 }}
               >
@@ -1304,7 +1306,7 @@ function ShopsPage() {
         />
       )}
       {foundryDraft !== null && (() => {
-        const foundryScript = JSON.stringify(shopFoundryManifest(foundryDraft.title, foundryDraft.stock, foundryDraft.when, undefined, foundryNote), null, 2);
+        const foundryScript = JSON.stringify(shopFoundryManifest(foundryDraft.title, foundryDraft.stock, foundryDraft.when, undefined, foundryNote, { customOnUnmatched: foundryCustomOnUnmatched }), null, 2);
         return (
         <div className='fixed inset-0 z-40 flex items-center justify-center bg-background/80 p-6'>
           <div className='flex max-h-full w-full max-w-2xl flex-col gap-3 rounded-lg bg-card p-4 ring-1 ring-white/15'>
@@ -1324,6 +1326,17 @@ function ShopsPage() {
                   setFoundryNote(event.target.value);
                 }}
               />
+            </label>
+            <label className='flex items-center gap-2 text-sm text-muted-foreground'>
+              <input
+                type='checkbox'
+                checked={foundryCustomOnUnmatched}
+                onChange={(event) => {
+                  setFoundryCopied(false);
+                  setFoundryCustomOnUnmatched(event.target.checked);
+                }}
+              />
+              Make custom items for unmatched lines
             </label>
             <textarea
               ref={foundryScriptRef}

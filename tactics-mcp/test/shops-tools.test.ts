@@ -171,7 +171,10 @@ test("create, rename, resize, add and remove shop lines from both catalogs", asy
     assert.ok(((resized.structuredContent as { shop: { draft: { stock: unknown[] } } }).shop.draft.stock.length) <= 1);
 
     const published = await mcp.callTool({ name: "publish_shop", arguments: { shopId: shop.id } });
-    const token = (published.structuredContent as { shop: { public_token: string } }).shop.public_token;
+    const publishedBody = published.structuredContent as { shop: { id: string; public_token: string }; shopUrl: string; publicUrl: string };
+    const token = publishedBody.shop.public_token;
+    assert.equal(publishedBody.shopUrl, `https://wgui.wandersguide.site/shops?id=${publishedBody.shop.id}`);
+    assert.equal(publishedBody.publicUrl, `https://wgui.wandersguide.site/shops/s/${token}`);
     const publicShop = await mcp.callTool({ name: "get_published_shop", arguments: { token } });
     assert.equal(publicShop.isError, undefined);
 
