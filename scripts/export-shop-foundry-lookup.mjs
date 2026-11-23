@@ -4,23 +4,17 @@ import { dirname, resolve } from 'node:path';
 
 const output = resolve(process.argv[2] ?? 'public/data/shop-foundry-lookup.json');
 const sql = `
-WITH item_snapshots AS (
-  SELECT DISTINCT ON (s.wg_id) s.id AS snapshot_id, s.wg_id
-  FROM wg_keyword_snapshot s
-  WHERE s.source_table = 'item'
-  ORDER BY s.wg_id, s.id DESC
-)
 SELECT json_build_object(
-  'wgId', i.wg_id,
-  'pack', e.pack,
+  'wgId', m.wg_id,
+  'pack', e.foundry_pack_id,
   'slug', e.pf2e_slug,
   'status', m.status
 )
-FROM item_snapshots i
-JOIN wg_pf2e_catalog_matches m ON m.snapshot_id = i.snapshot_id
-LEFT JOIN pf2e_catalog_entries e ON e.id = m.pf2e_catalog_entry_id
-WHERE m.status IN ('active', 'ambiguous', 'unresolved')
-ORDER BY i.wg_id;
+FROM wg_pf2e_catalog_matches m
+LEFT JOIN pf2e_catalog_entries e ON e.entry_id = m.entry_id
+WHERE m.source_table = 'item'
+  AND m.status IN ('active', 'ambiguous', 'unresolved')
+ORDER BY m.wg_id;
 `;
 
 const raw = execFileSync('docker', ['exec', '-i', 'my-postgres', 'psql', '-U', 'appuser', '-d', 'wgi_rules', '-At', '-c', sql], { encoding: 'utf8' });

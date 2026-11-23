@@ -10,7 +10,7 @@ import { ShopPopout } from './shop-popout';
 import { fetchPf2eEquipmentText, fillMissingShopAon, loadShopAonIndex, priceFromStatBlock } from './shops-pf2e';
 import { listOwned, readPublic } from '../../syndication/store';
 import { LauncherHeader } from './launcher-header';
-import { asContentType, loadShopFoundryLookup, shopStockFoundryManifest } from './shops-export';
+import { asContentType, loadShopFoundryLookup, shopStockFoundryManifest, type ShopFoundryLookup } from './shops-export';
 import { cartFoundryTitle, cartLineKey, cartTotalGp, itemCopper, lineGold, readShopCart, writeShopCart, type ShopCartLine } from './shops-cart';
 import { formatCopperOffer, formulaCopper, priceAsGp } from './shops-generate';
 import { SHOP_CONTENT_KIND, shopTraceStart, type ShopDraft, type ShopStockRow } from './shops-syndicate';
@@ -525,7 +525,13 @@ export function ShopDocument({
   }, [linked]);
   const [useGroupings, setUseGroupings] = useState(readGroupingsPreference);
   const [inGp, setInGp] = useState(() => readFlag(IN_GP_SESSION_KEY, false));
-  const [foundryScript, setFoundryScript] = useState<string | null>(null);
+  const [foundryNote, setFoundryNote] = useState('');
+  const [foundryDraft, setFoundryDraft] = useState<{
+    title: string;
+    stock: { id?: number; name: string; quantity?: number }[];
+    when: Date;
+    lookup: ShopFoundryLookup | null;
+  } | null>(null);
   const [foundryCopied, setFoundryCopied] = useState(false);
   const foundryScriptRef = useRef<HTMLTextAreaElement>(null);
   const sections = useGroupings ? groupedStock(linked) : null;
@@ -562,12 +568,19 @@ export function ShopDocument({
   const strip = <ShopCartStrip homebrew={homebrew} cart={cart} onRemove={removeKey} onClear={() => saveCart([])} />;
   const openFoundry = async () => {
     setFoundryCopied(false);
+    setFoundryNote('');
     const lookup = await loadShopFoundryLookup();
     const title = cart.length > 0 ? cartFoundryTitle(cart, folder?.name) : name;
-    setFoundryScript(JSON.stringify(shopStockFoundryManifest(title, cart.map((line) => ({ id: line.id, name: line.name,
-      quantity: line.qty,
-    })), new Date(), lookup), null, 2));
+    setFoundryDraft({
+      title,
+      stock: cart.map((line) => ({ id: line.id, name: line.name, quantity: line.qty })),
+      when: new Date(),
+      lookup,
+    });
   };
+  const foundryScript = foundryDraft
+    ? JSON.stringify(shopStockFoundryManifest(foundryDraft.title, foundryDraft.stock, foundryDraft.when, foundryDraft.lookup, foundryNote), null, 2)
+    : null;
   const toggles = (
     <div className='flex flex-wrap items-center justify-end gap-4'>
       <ShopViewToggles
@@ -592,9 +605,21 @@ export function ShopDocument({
       <div className='flex max-h-full w-full max-w-2xl flex-col gap-3 rounded-lg bg-[#1c1917] p-4 text-stone-100 ring-1 ring-white/15'>
         <div className='flex items-center justify-between gap-3'>
           <p className='text-sm'>Foundry import script</p>
-          <button className='underline underline-offset-2' type='button' onClick={() => setFoundryScript(null)}>Close</button>
+          <button className='underline underline-offset-2' type='button' onClick={() => setFoundryDraft(null)}>Close</button>
         </div>
         <p className='text-sm text-stone-300'>Copy this and paste it into Foundry’s Import AMBA manifest dialog.</p>
+        <label className='grid gap-1 text-sm text-stone-300'>
+          Optional note
+          <input
+            className='rounded-lg bg-black/40 px-3 py-2 text-stone-100 ring-1 ring-white/15'
+            value={foundryNote}
+            placeholder='Appended to the folder name'
+            onChange={(event) => {
+              setFoundryCopied(false);
+              setFoundryNote(event.target.value);
+            }}
+          />
+        </label>
         <textarea
           ref={foundryScriptRef}
           className='min-h-64 w-full flex-1 resize-y rounded-lg bg-black/40 px-3 py-2 font-mono text-xs text-stone-100 ring-1 ring-white/15'

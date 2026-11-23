@@ -459,7 +459,8 @@ function ShopsPage() {
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportNote, setExportNote] = useState('');
-  const [foundryScript, setFoundryScript] = useState<string | null>(null);
+  const [foundryNote, setFoundryNote] = useState('');
+  const [foundryDraft, setFoundryDraft] = useState<{ title: string; stock: ShopStockItem[]; when: Date } | null>(null);
   const [foundryCopied, setFoundryCopied] = useState(false);
   const foundryScriptRef = useRef<HTMLTextAreaElement>(null);
   const [stockCount, setStockCount] = useState(STOCK_COUNT);
@@ -939,7 +940,8 @@ function ShopsPage() {
                   const settlementLabel = SETTLEMENT_LEVELS.find((row) => row.id === settlement)?.label ?? settlement;
                   const title = shopName.trim() || `${presetLabel} — ${settlementLabel}`;
                   setFoundryCopied(false);
-                  setFoundryScript(JSON.stringify(shopFoundryManifest(title, stock), null, 2));
+                  setFoundryNote('');
+                  setFoundryDraft({ title, stock, when: new Date() });
                 }}
               >
                 Export to Foundry
@@ -1273,14 +1275,28 @@ function ShopsPage() {
           onClose={() => setPicking(false)}
         />
       )}
-      {foundryScript !== null && (
+      {foundryDraft !== null && (() => {
+        const foundryScript = JSON.stringify(shopFoundryManifest(foundryDraft.title, foundryDraft.stock, foundryDraft.when, undefined, foundryNote), null, 2);
+        return (
         <div className='fixed inset-0 z-40 flex items-center justify-center bg-background/80 p-6'>
           <div className='flex max-h-full w-full max-w-2xl flex-col gap-3 rounded-lg bg-card p-4 ring-1 ring-white/15'>
             <div className='flex items-center justify-between gap-3'>
               <p className='text-sm text-foreground'>Foundry import script</p>
-              <button className='shop-action' type='button' onClick={() => setFoundryScript(null)}>Close</button>
+              <button className='shop-action' type='button' onClick={() => setFoundryDraft(null)}>Close</button>
             </div>
             <p className='text-sm text-muted-foreground'>Copy this and paste it into Foundry’s Import AMBA manifest dialog.</p>
+            <label className='grid gap-1 text-sm text-muted-foreground'>
+              Optional note
+              <input
+                className='rounded-lg bg-background px-3 py-2 text-foreground ring-1 ring-white/15'
+                value={foundryNote}
+                placeholder='Appended to the folder name'
+                onChange={(event) => {
+                  setFoundryCopied(false);
+                  setFoundryNote(event.target.value);
+                }}
+              />
+            </label>
             <textarea
               ref={foundryScriptRef}
               className='min-h-64 w-full flex-1 resize-y rounded-lg bg-background px-3 py-2 font-mono text-xs text-foreground ring-1 ring-white/15'
@@ -1301,7 +1317,8 @@ function ShopsPage() {
             </button>
           </div>
         </div>
-      )}
+        );
+      })()}
       {descriptionFull && (
         <div className='fixed inset-0 z-40 flex flex-col bg-background/95 p-6'>
           <div className='mx-auto flex w-full max-w-4xl flex-1 flex-col gap-3'>

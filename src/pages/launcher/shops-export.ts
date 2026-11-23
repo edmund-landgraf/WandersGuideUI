@@ -56,21 +56,36 @@ export function abbreviatedShopName(title: string) {
   return words.map((word) => word[0]).join('').slice(0, 8).toUpperCase();
 }
 
-export function shopFolderLabel(title: string, when = new Date()) {
-  return `${abbreviatedShopName(title)} ${when.getMonth() + 1}-${when.getDate()}`;
+/** Folder notes are free text. Drop path and control characters before they reach Foundry. */
+export function sanitizeShopFolderNote(note: string) {
+  return note
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 40);
 }
 
-export function shopFoundryManifest(title: string, stock: Item[], when = new Date(), lookup?: ShopFoundryLookup | null) {
+export function shopFolderLabel(title: string, when = new Date(), note = '') {
+  const label = `${abbreviatedShopName(title)} ${when.getMonth() + 1}-${when.getDate()}`;
+  const clean = sanitizeShopFolderNote(note);
+  return clean ? `${label} - ${clean}` : label;
+}
+
+export function shopFoundryManifest(title: string, stock: Item[], when = new Date(), lookup?: ShopFoundryLookup | null, note = '') {
   return shopStockFoundryManifest(
     title,
     stock.map((item) => ({ id: item.id, name: item.name, quantity: shopLineQuantity(asShopLine(item)) })),
     when,
     lookup,
+    note,
   );
 }
 
 /** Manifest for a saved shop page, where each row already has a display quantity. */
-export function shopStockFoundryManifest(title: string, stock: { id?: number; name: string; quantity?: number }[], when = new Date(), lookup?: ShopFoundryLookup | null) {
+export function shopStockFoundryManifest(title: string, stock: { id?: number; name: string; quantity?: number }[], when = new Date(), lookup?: ShopFoundryLookup | null, note = '') {
   const label = title.trim() || 'Shop';
   const byId = new Map((lookup?.rows ?? []).map((row) => [row.wgId, row]));
   const skipped: { id?: number; name: string; status: ShopFoundryLookupStatus }[] = [];
@@ -95,7 +110,7 @@ export function shopStockFoundryManifest(title: string, stock: { id?: number; na
     ambaModuleId: 'wgui-shop',
     encounterId: foundryItemSlug(label) || 'shop',
     title: label,
-    folder: shopFolderLabel(label, when),
+    folder: shopFolderLabel(label, when, note),
     items,
     ...(lookup ? { lookupStatus: 'catalog-loaded' as const } : { lookupStatus: 'match-catalog-not-loaded' as const }),
     ...(skipped.length ? { skipped } : {}),

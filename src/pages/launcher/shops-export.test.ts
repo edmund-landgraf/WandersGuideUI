@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Item, Trait } from '@schemas/content';
-import { collectShopCards, foundryItemSlug, renderProse, shopExportHtml, shopFoundryManifest, shopFolderLabel, shopStockFoundryManifest } from './shops-export';
+import { collectShopCards, foundryItemSlug, renderProse, sanitizeShopFolderNote, shopExportHtml, shopFoundryManifest, shopFolderLabel, shopStockFoundryManifest } from './shops-export';
 
 function item(partial: Partial<Item> & Pick<Item, 'id' | 'name'>): Item {
   return {
@@ -58,6 +58,11 @@ describe('shopFoundryManifest', () => {
     expect(manifest.encounterId).toBe('general-store-town');
     expect(manifest.folder).toBe('GST 11-23');
     expect(shopFolderLabel('jh76', new Date(2026, 10, 23))).toBe('jh76 11-23');
+    expect(sanitizeShopFolderNote('  party loot / "night"  ')).toBe('party loot night');
+    expect(shopFolderLabel('jh76', new Date(2026, 10, 23), 'party loot')).toBe('jh76 11-23 - party loot');
+    expect(shopFoundryManifest('General store — Town', [
+      item({ id: 1, name: 'Dagger', meta_data: { quantity: 2, bulk: {} } }),
+    ], new Date(2026, 10, 23), { version: 1, rows: [{ wgId: 1, pack: 'pf2e.equipment-srd', slug: 'dagger', status: 'active' }] }, '  a/b  ').folder).toBe('GST 11-23 - ab');
     expect(manifest.items).toEqual([
       { pack: 'pf2e.equipment-srd', slug: 'dagger', name: 'Dagger', qty: 2 },
     ]);
