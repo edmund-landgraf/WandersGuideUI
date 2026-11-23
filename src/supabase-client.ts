@@ -1,3 +1,4 @@
+import { processLock } from '@supabase/auth-js';
 import { createClient } from '@supabase/supabase-js';
 
 /**
@@ -55,7 +56,10 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
     // Chrome incognito can leave navigator.locks stuck. auth-js then treats a live
     // session as signed-out inside later requests, and find-campaign returns [].
-    lock: async (_name, _acquireTimeout, fn) => await fn(),
+    // A no-op lock is worse: getSession and the OAuth hash parser run at once,
+    // and the loser writes "signed out" over a login that just succeeded.
+    // processLock serializes those calls in this tab without Web Locks.
+    lock: processLock,
   },
 });
 
