@@ -5,7 +5,7 @@ import { connect, createServiceClient, fetchData } from '../_shared/helpers.ts';
 import { HttpError } from '../_shared/http-errors.ts';
 import {
   authorizeCampaign,
-  encounterIncludesCharacter,
+  encounterListedForPlayer,
   mergePlayerDiceRollLog,
   mergePlayerDiceRollState,
   sameNumericId,
@@ -57,7 +57,9 @@ function validateDiceRollLog(value: unknown): asserts value is Record<string, un
 
 /**
  * Campaign members write only dice_roll_state / dice_roll_log. Roster, initiative, and
- * other meta stay off this path. Players can only add or drop log rows they initiated.
+ * other meta stay off this path. A player who can see the encounter may write dice
+ * even when their character is not on that fight. They can only add or drop log rows
+ * they initiated.
  */
 serve(async (req: Request) => {
   return await connect<PatchEncounterDiceBody>(req, async (client, body, token) => {
@@ -85,7 +87,7 @@ serve(async (req: Request) => {
     if (!encounter || !sameNumericId(encounter.campaign_id, campaign_id)) {
       throw new HttpError(403, 'You do not have access to this encounter.', 'ENCOUNTER_FORBIDDEN');
     }
-    if (!access.isGm && !encounterIncludesCharacter(encounter, access.characterIds)) {
+    if (!access.isGm && !encounterListedForPlayer(encounter, access.characterIds)) {
       throw new HttpError(403, 'You do not have access to this encounter.', 'ENCOUNTER_FORBIDDEN');
     }
 

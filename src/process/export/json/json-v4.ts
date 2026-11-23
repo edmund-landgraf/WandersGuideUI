@@ -6,6 +6,7 @@ import { getWeaponStats } from '@items/weapon-handler';
 import { executeOperations } from '@operations/operations.main';
 import { getSpellStats } from '@spells/spell-handler';
 import { isCantrip, isRitual } from '@spells/spell-utils';
+import { buildEidolonExport } from './eidolon';
 import { LivingEntity, SourceValue } from '@schemas/content';
 import { StoreID, VariableListStr, VariableStr } from '@schemas/variables';
 import { displayResistWeak } from '@utils/resist-weaks';
@@ -279,5 +280,13 @@ export async function getJsonV4Content(entity: LivingEntity, inputStoreID?: Stor
     proficiencies: profs,
     attributes: attrs,
     raw_data_dump: rawData,
+    eidolon: isCharacter(entity)
+      ? buildEidolonExport({
+          summonerId: entity.id,
+          maxHp: maxHP,
+          selections: (entity.operation_data?.selections as Record<string, string> | undefined) ?? {},
+          blocks: content.abilityBlocks,
+        })
+      : null,
   };
 }

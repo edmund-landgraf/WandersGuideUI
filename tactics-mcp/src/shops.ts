@@ -73,7 +73,7 @@ export type ShopNode = {
 };
 
 export type ShopOk<T> = { ok: true; data: T };
-export type ShopErr = { ok: false; code: string; message: string };
+export type ShopErr = { ok: false; code: string; message: string; retryable?: boolean };
 export type ShopResult<T> = ShopOk<T> | ShopErr;
 
 type Pf2eEquipmentRow = {
@@ -106,8 +106,8 @@ function restBase() {
   return functionsBaseUrl();
 }
 
-function err(code: string, message: string): ShopErr {
-  return { ok: false, code, message };
+function err(code: string, message: string, retryable = false): ShopErr {
+  return { ok: false, code, message, ...(retryable ? { retryable: true } : {}) };
 }
 
 function ok<T>(data: T): ShopOk<T> {
@@ -145,7 +145,9 @@ function asSize(value: unknown, fallback = STOCK_COUNT) {
 }
 
 function pf2eApi() {
-  return (env("PF2E_SHOP_API") || (env("NODE_ENV") === "production" ? "https://pf2.unwhelm.online" : "http://127.0.0.1:3333")).replace(/\/$/, "");
+  // PM2 does not set NODE_ENV=production. Without PF2E_SHOP_API the old default
+  // was 127.0.0.1:3333, so every catalog fetch threw "fetch failed".
+  return (env("PF2E_SHOP_API") || "https://pf2.unwhelm.online").replace(/\/$/, "");
 }
 
 function hashId(value: string, offset: number) {
@@ -427,8 +429,53 @@ export async function fetchPf2eCatalog(): Promise<ShopResult<{ items: CatalogIte
     const items = [...firstPage.rows, ...pages.flatMap((page) => page.rows)].map(mapPf2eRow);
     return ok({ items, traits: pf2eTraits(items) });
   } catch (error) {
-    return err("FUNCTION_ERROR", error instanceof Error ? error.message : "PF2E equipment API failed.");
+    return upstreamFailure("PF2E equipment API", error);
   }
+}
+
+function upstreamFailure(label: string, error: unknown): ShopErr {
+  const message = error instanceof Error ? error.message : "request failed";
+  const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
+  const detail = cause && cause !== message ? `${message} (${cause})` : message;
+  return err("UPSTREAM_UNAVAILABLE", `${label} at ${pf2eApi()}: ${detail}`, true);
+}
+
+function catalogHit(item: CatalogItem) {
+  return {
+    id: catalogIdOf(item),
+    name: item.name,
+    level: item.level,
+    rarity: item.rarity,
+    group: item.group,
+    source: catalogSourceOf(item),
+  };
+}
+
+async function searchPf2e(query: string): Promise<ShopResult<ReturnType<typeof catalogHit>[]>> {
+  const params = new URLSearchParams({ limit: "40", offset: "0" });
+  if (query.trim()) params.set("name", query.trim());
+  try {
+    const response = await characterFetch(`${pf2eApi()}/api/equipment?${params}`);
+    if (!response.ok) return err("UPSTREAM_UNAVAILABLE", `PF2E equipment API returned ${response.status}`, response.status >= 500);
+    const page = (await response.json()) as { rows?: Pf2eEquipmentRow[] };
+    const items = (page.rows ?? []).map(mapPf2eRow).map(catalogHit);
+    return ok(items);
+  } catch (error) {
+    return upstreamFailure("PF2E equipment search", error);
+  }
+}
+
+async function searchWg(userId: string, query: string): Promise<ShopResult<ReturnType<typeof catalogHit>[]>> {
+  const body: Record<string, unknown> = {};
+  if (query.trim()) body.name = query.trim();
+  const result = await invokeFunction(userId, "find-item", body);
+  if (!result.ok && isFetchFailed(result.message)) {
+    const again = await invokeFunction(userId, "find-item", body);
+    if (!again.ok) return err(again.code, `find-item failed: ${again.message}`, isFetchFailed(again.message));
+    return ok(asCatalogItems(again.data).map(catalogHit));
+  }
+  if (!result.ok) return err(result.code, `find-item failed: ${result.message}`, isFetchFailed(result.message));
+  return ok(asCatalogItems(result.data).map(catalogHit));
 }
 
 async function loadCatalog(userId: string, sources: ShopSource[], books?: number[]) {
@@ -498,21 +545,24 @@ export async function getPublishedShop(userId: string, token: string) {
 
 export async function searchShopCatalog(userId: string, query: string, source: "wanderers-guide" | "pf2e" | "both" = "both") {
   const sources: ShopSource[] = source === "both" ? ["wanderers-guide", "pf2e"] : [source];
-  const catalog = await loadCatalog(userId, sources);
-  if (!catalog.ok) return catalog;
   const needle = query.trim().toLowerCase();
-  const hits = catalog.data.items
-    .filter((item) => !needle || item.name.toLowerCase().includes(needle))
-    .slice(0, 40)
-    .map((item) => ({
-      id: catalogIdOf(item),
-      name: item.name,
-      level: item.level,
-      rarity: item.rarity,
-      group: item.group,
-      source: catalogSourceOf(item),
-    }));
-  return ok({ items: hits });
+  const hits: ReturnType<typeof catalogHit>[] = [];
+  const failures: ShopErr[] = [];
+  if (sources.includes("wanderers-guide")) {
+    const wg = await searchWg(userId, query);
+    if (wg.ok) hits.push(...wg.data.filter((item) => !needle || item.name.toLowerCase().includes(needle)));
+    else failures.push(wg);
+  }
+  if (sources.includes("pf2e")) {
+    const pf2e = await searchPf2e(query);
+    if (pf2e.ok) hits.push(...pf2e.data.filter((item) => !needle || item.name.toLowerCase().includes(needle)));
+    else failures.push(pf2e);
+  }
+  if (!hits.length && failures.length) {
+    return err(failures[0].code, failures.map((failure) => failure.message).join(" "), failures.some((failure) => failure.retryable));
+  }
+  const warnings = failures.map((failure) => failure.message);
+  return ok({ items: hits.slice(0, 40), ...(warnings.length ? { warnings } : {}) });
 }
 
 function emptyDraft(input: Partial<ShopDraft> & { preset?: ShopPresetId; settlement?: SettlementId }): ShopDraft {

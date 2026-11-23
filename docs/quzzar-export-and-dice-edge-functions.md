@@ -84,7 +84,9 @@ The JSON v4 file from `wgui-export-character`, minus the content catalog. For im
 - `content.raw_data_dump.bonuses` and `.history`. `raw_data_dump.variables` stays (the Foundry importer reads `*_IDS`, `CASTING_SOURCES` and `SPELL_SLOTS` from it).
 - `search_tsv` on every row.
 
-Everything else is unchanged: `character` (details, content_sources, operation_data, spells list, companions, inventory, notes), `feats_features`, `spell_sources`, `spell_slots`, `spells`, `focus_spells`, `innate_spells`, `all_sources` and the derived stats. The response adds `slim: { version: 1, dropped: { key: count } }`.
+Everything else is unchanged: `character` (details, content_sources, operation_data, spells list, companions, inventory, notes), `feats_features`, `spell_sources`, `spell_slots`, `spells`, `focus_spells`, `innate_spells`, `all_sources`, the derived stats, and `content.eidolon`.
+
+`content.eidolon` is null unless a selection points at an ability block whose name ends in "Eidolon". It is computed from that block's description (type, tradition, size, ability modifiers, suggested attacks, senses, languages, skills, speed), the summoner's `max_hp` as the shared pool, starting save proficiencies (expert Fortitude and Will, trained Reflex and Perception), and evolution feats selected under an Evolution class feature. `summoner_id` is the character id. `character.companions` is still the saved companion list and stays null when the sheet never added one. The response adds `slim: { version: 1, dropped: { key: count } }`.
 
 | PC | Full | Slim |
 | --- | --- | --- |
@@ -121,7 +123,7 @@ Campaign members write **only** `encounter.meta_data.dice_roll_state` and `dice_
 | Missing `campaign_id` | 400 | `CAMPAIGN_ID_REQUIRED` |
 | Missing `encounter_id` | 400 | `ENCOUNTER_ID_REQUIRED` |
 | Neither dice field sent | 400 | `DICE_PATCH_REQUIRED` |
-| Not a campaign member, or encounter not in that campaign, or player’s PC is not on the fight | 403 | `ENCOUNTER_FORBIDDEN` or `CAMPAIGN_FORBIDDEN` |
+| Not a campaign member, encounter not in that campaign, or the encounter is hidden from this player | 403 | `ENCOUNTER_FORBIDDEN` or `CAMPAIGN_FORBIDDEN` |
 
 Unknown encounter and “not on this fight” use the same 403 so the endpoint cannot probe ids.
 
@@ -129,7 +131,7 @@ Unknown encounter and “not on this fight” use the same 403 so the endpoint c
 
 1. `authorizeCampaign(campaign_id)` — GM if `campaign.user_id === caller`, else a player who owns a character with that `campaign_id`.
 2. Admin-read the encounter by id. Reject unless `encounter.campaign_id` matches the body.
-3. GM: any encounter in the campaign. Player: only if `encounterIncludesCharacter` (a `CHARACTER` combatant whose `character` or `data.id` is one of the caller’s character ids).
+3. GM: any encounter in the campaign. Player: the same rule as `wgui-ext-find-encounter` (`encounterListedForPlayer`). A joined character can write dice on an encounter they can already see, including one their PC is not on. `player_visible: false` still refuses the write. The player merge still limits them to rows they started.
 
 **Write.** Copy `meta_data`, replace only the dice keys that were sent, `update` by encounter id with the service client. Return `{ status: 'success', data: { dice_roll_state, dice_roll_log } }`. Do not return the rest of the encounter.
 

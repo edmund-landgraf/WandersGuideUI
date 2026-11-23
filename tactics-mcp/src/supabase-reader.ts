@@ -375,6 +375,19 @@ async function campaignAccess(userId: string, campaignId: number) {
   return { isGm, characterIds: new Set(mine.map((row) => num(row.id)).filter((id): id is number => id !== undefined)) };
 }
 
+/** Same visibility as wgui-ext encounterListedForPlayer, for dice writes only. */
+function diceListedForPlayer(encounter: Json, characterIds: Set<number>) {
+  const flag = (encounter.meta_data as Json | undefined)?.player_visible;
+  if (flag === false) return false;
+  if (flag === true) return true;
+  const list = ((encounter.combatants as Json | undefined)?.list as Json[] | undefined) ?? [];
+  if (list.some((combatant) => !combatant.type || combatant.type === "CHARACTER")) return true;
+  return list.some((combatant) => {
+    const id = characterIdOf(combatant);
+    return id !== undefined && characterIds.has(id);
+  });
+}
+
 function listedForPlayer(encounter: Json, characterIds: Set<number>) {
   const flag = (encounter.meta_data as Json | undefined)?.player_visible;
   if (flag === false) return false;
@@ -1110,7 +1123,7 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
       const rows = await rest(`encounter?id=eq.${encounterId}&select=id,campaign_id,meta_data,combatants`);
       const encounter = rows[0];
       if (!encounter || num(encounter.campaign_id) !== campaignId) return fail("ENCOUNTER_FORBIDDEN", "You do not have access to this encounter.");
-      if (!access.isGm && !listedForPlayer(encounter, access.characterIds)) return fail("ENCOUNTER_FORBIDDEN", "You do not have access to this encounter.");
+      if (!access.isGm && !diceListedForPlayer(encounter, access.characterIds)) return fail("ENCOUNTER_FORBIDDEN", "You do not have access to this encounter.");
       const meta = { ...((encounter.meta_data as Json | undefined) ?? {}) };
       if (hasState) {
         meta.dice_roll_state = access.isGm ? (patch.diceRollState ?? {}) : mergePlayerDiceRollState(meta.dice_roll_state, patch.diceRollState);

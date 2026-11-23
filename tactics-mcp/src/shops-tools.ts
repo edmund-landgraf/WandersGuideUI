@@ -33,7 +33,7 @@ const settlement = z.enum(["village", "town", "city", "metro10", "metro13", "met
 const rarity = z.enum(["COMMON", "UNCOMMON", "RARE", "UNIQUE"]);
 
 function fromResult(result: ShopResult<unknown>, okText: string) {
-  if (!result.ok) return textResult(result.message, { code: result.code, retryable: false }, true);
+  if (!result.ok) return textResult(result.message, { code: result.code, retryable: result.retryable === true }, true);
   return textResult(okText, result.data as Record<string, unknown>);
 }
 

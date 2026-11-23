@@ -561,22 +561,39 @@ Deno.test({
       assertEquals(stripped.body?.data?.dice_roll_log?.length, 1);
       assertEquals(stripped.body?.data?.dice_roll_log?.[0]?.id, 'gm-roll');
 
-      const outsider = await createSignedInUser();
-      const stray = await seedCharacter(outsider.userId, campaign.id);
+      const bench = await createSignedInUser();
+      const benchCharacter = await seedCharacter(bench.userId, campaign.id);
+      const hidden = await seedEncounter(gm.userId, campaign.id, [character.id]);
+      await admin.from('encounter').update({
+        meta_data: { party_level: 1, player_visible: false },
+      }).eq('id', hidden.id);
       try {
-        const refused = await callFunction(
+        const offRoster = await callFunction(
           'wgui-ext-patch-encounter-dice',
           {
             campaign_id: campaign.id,
             encounter_id: encounter.id,
+            dice_roll_state: { title: 'From the bench', dc: 12, stat: 'PERCEPTION', results: {} },
+          },
+          { token: bench.jwt }
+        );
+        assertEquals(offRoster.body?.status, 'success');
+        assertEquals(offRoster.body?.data?.dice_roll_state?.title, 'From the bench');
+
+        const refused = await callFunction(
+          'wgui-ext-patch-encounter-dice',
+          {
+            campaign_id: campaign.id,
+            encounter_id: hidden.id,
             dice_roll_state: { title: 'nope' },
           },
-          { token: outsider.jwt }
+          { token: bench.jwt }
         );
         assertEquals(refused.status, 403);
       } finally {
-        await admin.from('character').delete().eq('id', stray.id);
-        await admin.auth.admin.deleteUser(outsider.userId);
+        await admin.from('encounter').delete().eq('id', hidden.id);
+        await admin.from('character').delete().eq('id', benchCharacter.id);
+        await admin.auth.admin.deleteUser(bench.userId);
       }
     } finally {
       await admin.from('encounter').delete().eq('id', encounter.id);

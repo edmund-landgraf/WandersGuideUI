@@ -37,7 +37,7 @@ Already in `supabase/wgui-ext/` and `supabase/wgui-export/`.
 | `wgui-ext-join-campaign` | Stock join is `find-campaign({ join_key })` then `update-character({ campaign_id })`. The membership trigger only keeps that write when a join grant exists; the grant upsert is best-effort, so the UI can report success while `campaign_id` stays null. This checks the key and writes with the service role. |
 | `wgui-ext-find-encounter` | Encounter SELECT is owner-only. Stock `find-encounter` returns `[]` for every player. This authorizes GM or a joined PC, then reads the full campaign encounter row. |
 | `wgui-ext-find-campaign-characters` | Character SELECT covers self, public, admin, and campaign owner — not fellow players. Stock `find-character({ campaign_id })` as a player returns only their own PCs, so allies would render from a stale `combatant.data` snapshot. |
-| `wgui-ext-patch-encounter-dice` | Players already write the Phase 1 dice tray. Encounter UPDATE is owner-only, so they cannot use `create-encounter`. This updates only `dice_roll_state` / `dice_roll_log`; players may add or drop log rows they started. |
+| `wgui-ext-patch-encounter-dice` | Players already write the Phase 1 dice tray. Encounter UPDATE is owner-only, so they cannot use `create-encounter`. This updates only `dice_roll_state` / `dice_roll_log`. A player who can see the encounter may add or drop log rows they started, even when their PC is not on that fight. |
 | `wgui-export-character` | Compile JSON v4 or PDF v2 for a character the caller can already read under RLS. Export work lives in Deno so the browser does not ship the compile bundle. |
 
 ## On the current path
