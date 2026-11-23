@@ -52,7 +52,7 @@ describe('shopFoundryManifest', () => {
   it('slugs names and caps quantity for the equipment pack', () => {
     expect(foundryItemSlug("Healer's Gloves")).toBe('healers-gloves');
     const manifest = shopFoundryManifest('General store — Town', [
-      item({ id: 1, name: 'Dagger', meta_data: { quantity: 2 } }),
+      item({ id: 1, name: 'Dagger', meta_data: { quantity: 2, bulk: {} } }),
     ]);
     expect(manifest.ambaModuleId).toBe('wgui-shop');
     expect(manifest.encounterId).toBe('general-store-town');
