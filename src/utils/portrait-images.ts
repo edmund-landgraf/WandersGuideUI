@@ -1,6 +1,20 @@
 import { ImageOption } from '@schemas/index';
 import { cloneDeep } from 'lodash-es';
 
+const generatedPf2ePortraits = [
+  'bugbear-mercenary', 'bugbear-shaman', 'catfolk-oracle', 'fetchling-mystic',
+  'goblin-cartographer', 'grippli-scout', 'hobgoblin-magistrate', 'kobold-alchemist',
+  'leshy-druid', 'ratfolk-scholar', 'azarketi', 'dwarf', 'elf', 'gnome', 'halfling',
+  'kitsune', 'orc', 'shoony', 'tengu', 'vishkanya', 'athamaru', 'awakened-animal-fox',
+  'centaur', 'kholo', 'merfolk', 'minotaur', 'sprite', 'surki', 'tanuki', 'wayang',
+  'anadi', 'automaton', 'conrasu', 'goloma', 'nagaji', 'poppet', 'samsaran',
+  'skeleton', 'strix', 'vanara',
+].map((name) => ({
+  name: name.replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()),
+  url: `/portraits/pf2e-generated/${name}.jpg`,
+  source: 'Generated Pathfinder 2e',
+}));
+
 // TODO: Move this to the db?
 const imageStore: Record<string, ImageOption[]> = {
   general: [
@@ -412,6 +426,7 @@ const imageStore: Record<string, ImageOption[]> = {
       source: 'Paizo, Starfinder',
     },
   ],
+  pf2e_generated: generatedPf2ePortraits,
 };
 
 export function getPortraitImageStore() {
