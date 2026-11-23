@@ -25,6 +25,8 @@ export type ShopFoundryLookup = {
   rows: ShopFoundryLookupRow[];
   /** Formula documents are separate from ordinary item documents. */
   formulas?: ShopFoundryLookupRow[];
+  /** Equipment compendium rows. Used when the stock id is not a Wanderer's Guide item id. */
+  foundryItems?: ShopFoundryLookupRow[];
 };
 
 let shopFoundryLookupPromise: Promise<ShopFoundryLookup | null> | undefined;
@@ -88,14 +90,70 @@ export function shopFoundryManifest(title: string, stock: Item[], when = new Dat
   );
 }
 
+const GRADE_WORDS = 'minor|lesser|moderate|greater|major|true|supreme';
+
+function shopNameKey(name: string) {
+  return name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/** Catalog "X (Greater)" and shop "Greater X" share one key pair. */
+function shopNameKeys(name: string) {
+  const key = shopNameKey(name);
+  const keys = new Set([key]);
+  const lead = new RegExp(`^(${GRADE_WORDS}) (.+)$`).exec(key);
+  if (lead) keys.add(`${lead[2]} ${lead[1]}`);
+  const trail = new RegExp(`^(.+) (${GRADE_WORDS})$`).exec(key);
+  if (trail) keys.add(`${trail[2]} ${trail[1]}`);
+  return [...keys];
+}
+
+const foundryNameIndex = new WeakMap<ShopFoundryLookupRow[], Map<string, ShopFoundryLookupRow | null>>();
+
+function foundryItemsByName(items: ShopFoundryLookupRow[]) {
+  const cached = foundryNameIndex.get(items);
+  if (cached) return cached;
+  const index = new Map<string, ShopFoundryLookupRow | null>();
+  for (const item of items) {
+    if (!item.name || !item.pack || !item.slug) continue;
+    for (const key of shopNameKeys(item.name)) {
+      if (!index.has(key)) index.set(key, item);
+      else {
+        const current = index.get(key);
+        if (!current || current.slug !== item.slug || current.pack !== item.pack) index.set(key, null);
+      }
+    }
+  }
+  foundryNameIndex.set(items, index);
+  return index;
+}
+
+function foundryNameMatch(name: string, items: ShopFoundryLookupRow[]) {
+  const index = foundryItemsByName(items);
+  const hits = shopNameKeys(name)
+    .map((key) => index.get(key))
+    .filter((row): row is ShopFoundryLookupRow => Boolean(row?.pack && row?.slug));
+  const slugs = new Set(hits.map((row) => `${row.pack}:${row.slug}`));
+  return slugs.size === 1 ? hits[0] : undefined;
+}
+
 /**
- * A Wanderer's Guide item id is authoritative. Do not fall back to a display
- * name: formulas and legacy/graded names can otherwise resolve to the wrong
- * document.
+ * A Wanderer's Guide item id is authoritative, including unresolved rows.
+ * Local equipment ids are a different sequence, so those lines use a unique
+ * Foundry equipment name. Formulas stay on the formula lookup.
  */
 export function shopCatalogMatch(item: { id?: number; name: string }, lookup?: ShopFoundryLookup | null) {
-  const rows = /^formula:\s*/i.test(item.name) ? (lookup?.formulas ?? []) : (lookup?.rows ?? []);
-  return item.id === undefined ? undefined : rows.find((row) => row.wgId === item.id);
+  const formula = /^formula:\s*/i.test(item.name);
+  const rows = formula ? (lookup?.formulas ?? []) : (lookup?.rows ?? []);
+  const byId = item.id === undefined ? undefined : rows.find((row) => row.wgId === item.id);
+  if (byId || formula) return byId;
+  const named = foundryNameMatch(item.name, lookup?.foundryItems ?? []);
+  return named ? { ...named, status: 'active' as const } : undefined;
 }
 
 export function shopStockFoundryManifest(title: string, stock: { id?: number; name: string; quantity?: number }[], when = new Date(), lookup?: ShopFoundryLookup | null, note = '') {

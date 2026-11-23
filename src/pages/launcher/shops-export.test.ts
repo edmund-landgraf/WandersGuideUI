@@ -140,6 +140,38 @@ describe('shopFoundryManifest', () => {
     ]);
   });
 
+  it('resolves local equipment ids from the Foundry equipment list', () => {
+    const lookup = {
+      version: 1 as const,
+      rows: [
+        { wgId: 14943, pack: 'pf2e.equipment-srd', slug: null, status: 'unresolved' as const },
+      ],
+      foundryItems: [
+        { wgId: 0, name: 'Cassock of Devotion', pack: 'pf2e.equipment-srd', slug: 'cassock-of-devotion', status: 'active' as const },
+        { wgId: 0, name: 'Crown of the Master (Greater)', pack: 'pf2e.equipment-srd', slug: 'crown-of-the-master-greater', status: 'active' as const },
+        { wgId: 0, name: 'Swarmform Collar', pack: 'pf2e.equipment-srd', slug: 'swarmform-collar', status: 'active' as const },
+        { wgId: 0, name: 'Yiggite Preacher Snakeskin', pack: 'pf2e.equipment-srd', slug: 'yiggite-preacher-snakeskin', status: 'active' as const },
+        { wgId: 0, name: 'Cognitive Mutagen (Moderate)', pack: 'pf2e.equipment-srd', slug: 'cognitive-mutagen-moderate', status: 'active' as const },
+      ],
+    };
+    const manifest = shopStockFoundryManifest('dfas', [
+      { id: 4707, name: 'Cassock of Devotion' },
+      { id: 5727, name: 'Greater Crown of the Master' },
+      { id: 4604, name: 'Swarmform Collar' },
+      { id: 5995, name: 'Yiggite Preacher Snakeskin' },
+      { id: 14943, name: 'Cognitive Mutagen (Moderate) (legacy)' },
+    ], new Date(2026, 10, 23), lookup);
+    expect(manifest.items.map((item) => item.slug)).toEqual([
+      'cassock-of-devotion',
+      'crown-of-the-master-greater',
+      'swarmform-collar',
+      'yiggite-preacher-snakeskin',
+    ]);
+    expect(manifest.skipped).toEqual([
+      { id: 14943, name: 'Cognitive Mutagen (Moderate) (legacy)', status: 'unresolved' },
+    ]);
+  });
+
   it('does not resolve local ids by display-name guessing', () => {
     const lookup = {
       version: 1 as const,
