@@ -1,6 +1,7 @@
 import { ensurePhase1PublicUser, phase1Request } from '@pages/phase1/phase1-api';
 import { Character } from '@schemas/content';
 import { useState } from 'react';
+import { findBuilderCharacter, planBuilderUpdate } from '@import/foundry/builder-delta.mjs';
 import {
   FoundryListRow,
   SinglePcPlan,
@@ -41,6 +42,7 @@ export function FoundryImportDialog({ accessToken, characters, onClose, onImport
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [plans, setPlans] = useState<SinglePcPlan[]>([]);
+  const [links, setLinks] = useState<Record<string, { wgId?: unknown; host?: unknown }>>({});
 
   async function connect() {
     setBusy(true);
@@ -71,7 +73,18 @@ export function FoundryImportDialog({ accessToken, characters, onClose, onImport
       row.id,
     );
     if (!body.actor) throw new Error(`Foundry did not return ${row.name || 'that character'}.`);
-    return planSinglePc(body.actor, body.worldId || row.worldId);
+    const flags = (body.actor as { flags?: Record<string, { wgId?: unknown; host?: unknown }> }).flags?.['foundry-wanderersguide-import'];
+    return { plan: planSinglePc(body.actor, body.worldId || row.worldId), link: flags ?? {} };
+  }
+
+  function matchPlan(plan: SinglePcPlan) {
+    const link = links[plan.actorId];
+    return findBuilderCharacter(characters, {
+      wgId: link?.wgId as number | string | undefined,
+      host: typeof link?.host === 'string' ? link.host : undefined,
+      worldId: plan.worldId,
+      actorId: plan.actorId,
+    });
   }
 
   async function review() {
@@ -83,8 +96,14 @@ export function FoundryImportDialog({ accessToken, characters, onClose, onImport
     setError(null);
     try {
       const next: SinglePcPlan[] = [];
-      for (const row of targets) next.push(await readPlan(row));
+      const nextLinks: Record<string, { wgId?: unknown; host?: unknown }> = {};
+      for (const row of targets) {
+        const read = await readPlan(row);
+        next.push(read.plan);
+        nextLinks[read.plan.actorId] = read.link;
+      }
       setPlans(next);
+      setLinks(nextLinks);
       setStep('review');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not read that character.');
@@ -102,12 +121,27 @@ export function FoundryImportDialog({ accessToken, characters, onClose, onImport
       let created = 0;
       let updated = 0;
       for (const plan of plans) {
-        const decision = planImportWrite(plan, linkedCharacter(characters, plan.worldId, plan.actorId));
-        if (decision.action === 'reject') throw new Error(`${plan.name ?? 'A character'}: ${decision.message}`);
-        if (decision.action === 'update') {
-          await phase1Request('update-character', decision.body, accessToken);
+        const lookup = () => matchPlan(plan);
+        const found = lookup();
+        if (found.action === 'reject') {
+          throw new Error(found.reason === 'host-mismatch'
+            ? `${plan.name ?? 'A character'} is linked to a different Wanderer's Guide server. Nothing was written.`
+            : `The linked Wanderer's Guide character for ${plan.name ?? 'a character'} was not found. Nothing was created.`);
+        }
+        if (found.action === 'update') {
+          const update = planBuilderUpdate(found.character, {
+            name: plan.name,
+            level: plan.level,
+            meta: { worldId: plan.worldId, actorId: plan.actorId },
+          });
+          if (!update.confirm) throw new Error(`${plan.name ?? 'A character'}: nothing writable changed. Session values were not applied.`);
+          if (lookup().action !== 'update') throw new Error('The link changed before confirm. Nothing was created.');
+          await phase1Request('update-character', update.body, accessToken);
           updated += 1;
         } else {
+          if (lookup().action !== 'create') throw new Error(`${plan.name ?? 'A character'} already matches a character. Nothing new was created.`);
+          const decision = planImportWrite(plan, undefined);
+          if (decision.action !== 'create') throw new Error(decision.action === 'reject' ? `${plan.name ?? 'A character'}: ${decision.message}` : 'Nothing was created.');
           await phase1Request<Character>('create-character', decision.body, accessToken);
           created += 1;
         }
@@ -180,14 +214,20 @@ export function FoundryImportDialog({ accessToken, characters, onClose, onImport
         {step === 'review' && plans.length > 0 && (
           <div className='mt-4 space-y-3 text-sm'>
             {plans.map((plan) => {
-              const rejected = planImportWrite(plan, linkedCharacter(characters, plan.worldId, plan.actorId)).action === 'reject';
+              const found = matchPlan(plan);
+              const rejected = found.action === 'reject' || (found.action === 'create' && planImportWrite(plan, undefined).action === 'reject');
+              const verb = found.action === 'update' ? 'update' : 'create';
               return (
                 <div key={plan.actorId}>
                   <p>{plan.counts.mapped} mapped, {plan.counts.included} included, {plan.counts.unresolved} unresolved, {plan.counts['leftover-preserved']} leftover-preserved, {plan.counts.dropped} dropped.</p>
-                  {rejected ? (
+                  {found.action === 'reject' ? (
+                    <p className='mt-2'>{found.reason === 'host-mismatch'
+                      ? `"${plan.name ?? 'This character'}" is linked to a different Wanderer's Guide server. Nothing will be written.`
+                      : `The linked Wanderer's Guide character for "${plan.name ?? 'this character'}" was not found. Nothing will be created.`}</p>
+                  ) : rejected ? (
                     <p className='mt-2'>Import needs a string name and a numeric level to create "{plan.name ?? 'this character'}". The other values stay in the leftovers.</p>
                   ) : (
-                    <p className='mt-2'>Import will {linkedCharacter(characters, plan.worldId, plan.actorId) ? 'update' : 'create'} "{plan.name ?? 'this character'}"{plan.level != null ? `, level ${plan.level}` : ''}. Feats, spells, and gear stay in the leftovers.</p>
+                    <p className='mt-2'>Import will {verb} "{plan.name ?? 'this character'}"{plan.level != null ? `, level ${plan.level}` : ''}. Feats, spells, and gear stay in the leftovers.</p>
                   )}
                 </div>
               );
@@ -203,7 +243,10 @@ export function FoundryImportDialog({ accessToken, characters, onClose, onImport
             <button
               type='button'
               className='toolbar-button'
-              disabled={busy || plans.length === 0 || plans.some((plan) => planImportWrite(plan, linkedCharacter(characters, plan.worldId, plan.actorId)).action === 'reject')}
+              disabled={busy || plans.length === 0 || plans.some((plan) => {
+                const found = matchPlan(plan);
+                return found.action === 'reject' || (found.action === 'create' && planImportWrite(plan, undefined).action === 'reject');
+              })}
               onClick={() => void write()}
             >
               Import

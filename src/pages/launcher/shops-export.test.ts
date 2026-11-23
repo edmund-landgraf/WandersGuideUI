@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Item, Trait } from '@schemas/content';
-import { collectShopCards, renderProse, shopExportHtml } from './shops-export';
+import { collectShopCards, foundryItemSlug, renderProse, shopExportHtml, shopFoundryManifest } from './shops-export';
 
 function item(partial: Partial<Item> & Pick<Item, 'id' | 'name'>): Item {
   return {
@@ -45,5 +45,19 @@ describe('collectShopCards', () => {
     expect(html).toContain('<strong>Ammunition</strong>');
     expect(html).toContain('<hr>');
     expect(html).not.toContain('**');
+  });
+});
+
+describe('shopFoundryManifest', () => {
+  it('slugs names and caps quantity for the equipment pack', () => {
+    expect(foundryItemSlug("Healer's Gloves")).toBe('healers-gloves');
+    const manifest = shopFoundryManifest('General store — Town', [
+      item({ id: 1, name: 'Dagger', meta_data: { quantity: 2 } }),
+    ]);
+    expect(manifest.ambaModuleId).toBe('wgui-shop');
+    expect(manifest.encounterId).toBe('general-store-town');
+    expect(manifest.items).toEqual([
+      { pack: 'pf2e.equipment-srd', slug: 'dagger', name: 'Dagger', qty: 2 },
+    ]);
   });
 });
