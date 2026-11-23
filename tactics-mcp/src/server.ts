@@ -4,13 +4,13 @@ import { registerCatalog } from "./catalog.js";
 import { registerHomebrew } from "./homebrew-catalog.js";
 import { registerShops } from "./shops-tools.js";
 
-export const TACTICS_MCP_VERSION = "1.3.0";
+export const TACTICS_MCP_VERSION = "1.4.0";
 export const TACTICS_MCP_NAME = "wgui-tactics";
-export const TACTICS_MCP_DESCRIPTION = "Characters, encounters, and shops for Wanderer's Guide. Includes list_shops, get_shop, search_shop_catalog, and create_shop.";
+export const TACTICS_MCP_DESCRIPTION = "Characters, encounters, and shops for Wanderer's Guide. Includes Foundry equipment lookup, list_shops, get_shop, search_shop_catalog, and create_shop.";
 
 /** Sent to clients at initialize. Guidance only: no tool behaves differently because of it. */
 export const TACTICS_MCP_INSTRUCTIONS = [
-  "Shops are tools: list_shops, get_shop, get_published_shop, search_shop_catalog, create_shop, create_shop_folder, update_shop, resize_shop, add_shop_item, update_shop_item, remove_shop_item, set_shop_stock, move_shop, delete_shop, publish_shop, unpublish_shop.",
+  "Shops are tools: search_foundry_shop_items for Foundry-only equipment, list_shops, get_shop, get_published_shop, search_shop_catalog, create_shop, create_shop_folder, update_shop, resize_shop, add_shop_item, update_shop_item, remove_shop_item, set_shop_stock, move_shop, delete_shop, publish_shop, unpublish_shop.",
   "add_shop_item accepts items[] to append many catalog refs in one call. set_shop_stock replaces the whole inventory.",
   "Start with get_profile; treat returned ids as authoritative.",
   "Character build: create_character, optional set_books, list_options for ancestry/background/class, set_identity for each, list_open_choices, then choose_many, then spells (list_spell_options, add_spell or set_spells), gear (list_options kind=item, add_inventory_item), and export_character to check.",
@@ -69,6 +69,7 @@ const READ_TOOLS = new Set([
   "get_shop",
   "get_published_shop",
   "search_shop_catalog",
+  "search_foundry_shop_items",
 ]);
 
 const WRITE_TOOLS = new Set([
@@ -125,6 +126,7 @@ const WRITE_TOOLS = new Set([
   "wgui_ext_hb_create_content_update",
   "wgui_ext_hb_delete_content",
   "create_shop",
+  "create_foundry_shop",
   "create_shop_folder",
   "update_shop",
   "resize_shop",

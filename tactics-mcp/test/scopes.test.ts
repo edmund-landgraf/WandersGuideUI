@@ -199,7 +199,7 @@ describe("tactics scopes", { concurrency: 1 }, () => {
       assert.match(instructions ?? "", /5-7 batches/);
 
       const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
-      assert.equal(names.length, 112);
+      assert.equal(names.length, 113);
       for (const name of [...CHARACTER_READS, ...CHARACTER_WRITES, ...CAMPAIGN_READS, ...CAMPAIGN_WRITES, ...SHOP_READS, ...SHOP_WRITES]) assert.ok(names.includes(name), name);
       assert.deepEqual(CHARACTER_READS.map(scopeForTool), CHARACTER_READS.map(() => "read"));
       assert.deepEqual(CHARACTER_WRITES.map(scopeForTool), CHARACTER_WRITES.map(() => "write"));
@@ -208,7 +208,7 @@ describe("tactics scopes", { concurrency: 1 }, () => {
       assert.deepEqual(SHOP_READS.map(scopeForTool), SHOP_READS.map(() => "read"));
       assert.deepEqual(SHOP_WRITES.map(scopeForTool), SHOP_WRITES.map(() => "write"));
       assert.deepEqual(names.filter((name) => scopeForTool(name) === "write"), [...WRITE_TOOLS, ...CAMPAIGN_WRITES, ...CHARACTER_WRITES, ...HOMEBREW_WRITES, ...SHOP_WRITES].sort());
-      assert.equal(names.filter((name) => scopeForTool(name) === "read").length, 48);
+      assert.equal(names.filter((name) => scopeForTool(name) === "read").length, 49);
       assert.equal(scopeForTool("not_a_tool"), null);
 
       const profile = await client.callTool({ name: "get_profile", arguments: {} });

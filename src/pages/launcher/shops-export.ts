@@ -12,8 +12,10 @@ export const SHOP_EXPORT_CAP = 400;
 const FOUNDRY_QTY_MAX = 50;
 
 export type ShopFoundryLookupStatus = 'active' | 'ambiguous' | 'unresolved';
+export type ShopFoundrySkipStatus = ShopFoundryLookupStatus | 'catalog-not-loaded' | 'missing-id' | 'formula-not-cataloged';
 export type ShopFoundryLookupRow = {
   wgId: number;
+  name?: string | null;
   pack?: string | null;
   slug?: string | null;
   status: ShopFoundryLookupStatus;
@@ -21,6 +23,8 @@ export type ShopFoundryLookupRow = {
 export type ShopFoundryLookup = {
   version: 1;
   rows: ShopFoundryLookupRow[];
+  /** Formula documents are separate from ordinary item documents. */
+  formulas?: ShopFoundryLookupRow[];
 };
 
 let shopFoundryLookupPromise: Promise<ShopFoundryLookup | null> | undefined;
@@ -84,17 +88,30 @@ export function shopFoundryManifest(title: string, stock: Item[], when = new Dat
   );
 }
 
-/** Manifest for a saved shop page, where each row already has a display quantity. */
+/**
+ * A Wanderer's Guide item id is authoritative. Do not fall back to a display
+ * name: formulas and legacy/graded names can otherwise resolve to the wrong
+ * document.
+ */
+export function shopCatalogMatch(item: { id?: number; name: string }, lookup?: ShopFoundryLookup | null) {
+  const rows = /^formula:\s*/i.test(item.name) ? (lookup?.formulas ?? []) : (lookup?.rows ?? []);
+  return item.id === undefined ? undefined : rows.find((row) => row.wgId === item.id);
+}
+
 export function shopStockFoundryManifest(title: string, stock: { id?: number; name: string; quantity?: number }[], when = new Date(), lookup?: ShopFoundryLookup | null, note = '') {
   const label = title.trim() || 'Shop';
-  const byId = new Map((lookup?.rows ?? []).map((row) => [row.wgId, row]));
-  const skipped: { id?: number; name: string; status: ShopFoundryLookupStatus }[] = [];
+  const skipped: { id?: number; name: string; status: ShopFoundrySkipStatus }[] = [];
   const items = stock.flatMap((item) => {
-    const match = item.id === undefined ? undefined : byId.get(item.id);
+    const isFormula = /^formula:\s*/i.test(item.name);
+    const match = shopCatalogMatch(item, lookup);
     // The catalog is an allowlist. Never derive a Foundry slug from display
     // text: names can contain legacy notes, grades, or other WG-only labels.
+    if (isFormula && (!lookup || !match || match.status !== 'active' || !match.pack || !match.slug)) {
+      skipped.push({ id: item.id, name: item.name, status: 'formula-not-cataloged' });
+      return [];
+    }
     if (!lookup || item.id === undefined || !match || match.status !== 'active' || !match.pack || !match.slug) {
-      skipped.push({ id: item.id, name: item.name, status: match?.status ?? 'unresolved' });
+      skipped.push({ id: item.id, name: item.name, status: !lookup ? 'catalog-not-loaded' : item.id === undefined ? 'missing-id' : match?.status ?? 'unresolved' });
       return [];
     }
     return [{

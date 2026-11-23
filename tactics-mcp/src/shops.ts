@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { searchFoundryShopItems } from "./foundry-shop-lookup.js";
 
 import { characterFetch, characterToken, functionsBaseUrl, invokeFunction } from "./character-client.js";
 import {
@@ -652,6 +653,29 @@ export async function createShop(userId: string, input: {
   const node = asNode(inserted.data);
   if (!node) return err("INTERNAL_ERROR", "Shop was not created.");
   return ok({ shop: node });
+}
+
+/** Create a shop whose complete stock is restricted to active Foundry-linked rows. */
+export async function createFoundryShop(userId: string, input: {
+  name: string; items: Array<{ wgId: number; quantity?: number; price?: string }>;
+  parentId?: string | null; preset?: ShopPresetId; settlement?: SettlementId; markup?: number;
+  style?: ShopPageStyle; description?: string; campaignId?: number | null;
+}) {
+  if (!Array.isArray(input.items) || input.items.length === 0) return err("VALIDATION_ERROR", "At least one Foundry item is required.");
+  const refs = new Map(input.items.map((row) => [row.wgId, row]));
+  const foundryRows = searchFoundryShopItems("", 200, false).items.filter((row) => row.wgId != null && refs.has(row.wgId));
+  if (foundryRows.length !== refs.size) return err("VALIDATION_ERROR", "Every item must be an active Foundry-linked equipment item.");
+  const catalog = await fetchWgCatalog(userId);
+  if (!catalog.ok) return catalog;
+  const stock = foundryRows.map((row) => {
+    const item = catalog.data.items.find((candidate) => candidate.id === row.wgId);
+    if (!item) return null;
+    const ref = refs.get(row.wgId!);
+    const line = toStockRow({ ...item, shopKey: `wanderers-guide:${item.id}`, shopQuantity: ref?.quantity ?? 1, packSize: 1 }, catalog.data.traits, input.markup ?? 0);
+    return ref?.price ? { ...line, price: ref.price } : line;
+  });
+  if (stock.some((row) => row === null)) return err("VALIDATION_ERROR", "One or more Foundry items are not available in the current catalog.");
+  return createShop(userId, { ...input, generate: false, stock: stock as ShopStockRow[] });
 }
 
 export async function createShopFolder(userId: string, name: string) {

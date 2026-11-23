@@ -450,6 +450,8 @@ function ShopsPage() {
   const [enabledBooks, setEnabledBooks] = useState<number[]>([]);
   const [drawFromWanderersGuide, setDrawFromWanderersGuide] = useState(true);
   const [drawFromPf2e, setDrawFromPf2e] = useState(true);
+  const [drawFromFoundry, setDrawFromFoundry] = useState(false);
+  const [foundryItems, setFoundryItems] = useState<Item[]>([]);
   const [pf2eError, setPf2eError] = useState('');
   const [panel, setPanel] = useState<'stock' | 'books'>('stock');
   const [stock, setStock] = useState<ShopStockItem[] | null>(null);
@@ -506,6 +508,15 @@ function ShopsPage() {
         }
         if (cancelled) return;
         const combinedItems = mergeShopCatalog(itemList, pf2eList);
+        let foundryList: Item[] = [];
+        try {
+          const response = await fetch('/data/shop-foundry-lookup.json');
+          if (response.ok) {
+            const lookup = await response.json() as { foundryItems?: Array<{ wgId?: number; name?: string; level?: number; rarity?: string; pack?: string; slug?: string; status?: string }> };
+            foundryList = (lookup.foundryItems ?? []).filter((row) => row.status === 'active' && Number.isFinite(row.wgId)).map((row) => ({ id: row.wgId as number, name: row.name ?? row.slug ?? 'Foundry item', level: row.level ?? 0, rarity: row.rarity ?? 'COMMON', group: 'FOUNDRY', description: '', traits: [], content_source_id: 0, meta_data: { foundry: { pack: row.pack, slug: row.slug } } } as Item));
+            setFoundryItems(foundryList);
+          }
+        } catch { /* Foundry is optional. */ }
         const combinedTraits = [...traitList, ...pf2eTraits(pf2eList)];
         if (combinedItems.length === 0) {
           setError('The item catalog came back empty.');
@@ -513,7 +524,7 @@ function ShopsPage() {
           return;
         }
         setAonIndex(shopAonIndex(pf2eList));
-        setItems(combinedItems);
+        setItems([...combinedItems, ...foundryList]);
         setTraits(combinedTraits);
         setBooks(sources);
         const defaults = sources
@@ -536,20 +547,23 @@ function ShopsPage() {
 
   const activeItems = useMemo(
     () => items.filter((item) => {
+      if (item.content_source_id === 0) return drawFromFoundry;
       if (isPf2eShopItem(item)) return drawFromPf2e;
       return drawFromWanderersGuide && enabledBooks.includes(item.content_source_id);
     }),
-    [drawFromPf2e, drawFromWanderersGuide, enabledBooks, items],
+    [drawFromFoundry, drawFromPf2e, drawFromWanderersGuide, enabledBooks, items],
   );
   const sourceCounts = useMemo(() => {
     const books = new Set(enabledBooks);
     let wanderersGuide = 0;
     let pf2e = 0;
+    let foundry = 0;
     for (const item of items) {
-      if (isPf2eShopItem(item)) pf2e += 1;
+      if (item.content_source_id === 0) foundry += 1;
+      else if (isPf2eShopItem(item)) pf2e += 1;
       else if (books.has(item.content_source_id)) wanderersGuide += 1;
     }
-    return { wanderersGuide, pf2e };
+    return { wanderersGuide, pf2e, foundry };
   }, [enabledBooks, items]);
 
   useEffect(() => {
@@ -722,6 +736,10 @@ function ShopsPage() {
                   <label className='flex h-10 items-center gap-2 rounded-lg bg-card px-3 text-foreground ring-1 ring-white/15' title={`${sourceCounts.pf2e.toLocaleString()} items`}>
                     <input className='size-4 shrink-0 accent-sky-400' type='checkbox' checked={drawFromPf2e} onChange={(event) => setDrawFromPf2e(event.target.checked)} />
                     PF2E database
+                  </label>
+                  <label className='flex h-10 items-center gap-2 rounded-lg bg-card px-3 text-foreground ring-1 ring-white/15' title={`${sourceCounts.foundry.toLocaleString()} active Foundry items`}>
+                    <input className='size-4 shrink-0 accent-sky-400' type='checkbox' checked={drawFromFoundry} onChange={(event) => setDrawFromFoundry(event.target.checked)} />
+                    Foundry ({sourceCounts.foundry.toLocaleString()})
                   </label>
                 </div>
               </div>

@@ -2,9 +2,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { textResult } from "./character-catalog.js";
+import { searchFoundryShopItems } from "./foundry-shop-lookup.js";
 import {
   addShopItem,
   createShop,
+  createFoundryShop,
   createShopFolder,
   deleteShop,
   getPublishedShop,
@@ -38,6 +40,13 @@ function fromResult(result: ShopResult<unknown>, okText: string) {
 }
 
 export function registerShops(server: McpServer, userId: () => string) {
+  server.registerTool("search_foundry_shop_items", {
+    title: "Search Foundry shop items",
+    description: "Searches the generated active-only Foundry shop lookup. Results include the live Wanderer’s Guide item id, Foundry pack, and slug; unresolved and missing items are never returned.",
+    annotations: readOnly,
+    inputSchema: { q: z.string().optional(), limit: z.number().int().min(1).max(200).optional(), formulas: z.boolean().optional() },
+  }, async (args) => textResult("Foundry shop items", searchFoundryShopItems(args.q ?? "", args.limit ?? 50, args.formulas ?? false)));
+
   server.registerTool("list_shops", {
     title: "List shops",
     description: "Owned shop folders and entries. List rows omit stock descriptions.",
@@ -89,6 +98,18 @@ export function registerShops(server: McpServer, userId: () => string) {
       campaignId: z.number().int().nullable().optional(),
     },
   }, async (args) => fromResult(await createShop(userId(), args), "Shop created"));
+
+  server.registerTool("create_foundry_shop", {
+    title: "Create Foundry-only shop",
+    description: "Creates a saved shop using only active Foundry-linked equipment items. Every item must come from search_foundry_shop_items.",
+    annotations: writes,
+    inputSchema: {
+      name: z.string(),
+      items: z.array(z.object({ wgId: z.number().int(), quantity: z.number().int().min(1).optional(), price: z.string().optional() })).min(1),
+      parentId: z.string().nullable().optional(), preset: preset.optional(), settlement: settlement.optional(), markup: z.number().optional(),
+      style: z.enum(["default", "homebrew-v3"]).optional(), description: z.string().optional(), campaignId: z.number().int().nullable().optional(),
+    },
+  }, async (args) => fromResult(await createFoundryShop(userId(), args), "Foundry-only shop created"));
 
   server.registerTool("create_shop_folder", {
     title: "Create shop folder",

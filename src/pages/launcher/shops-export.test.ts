@@ -87,6 +87,40 @@ describe('shopFoundryManifest', () => {
     ]);
   });
 
+  it('uses live item ids and keeps formulas in their own lookup', () => {
+    const lookup = {
+      version: 1 as const,
+      rows: [
+        { wgId: 18286, name: 'War Saddle', pack: 'pf2e.equipment-srd', slug: 'war-saddle', status: 'active' as const },
+        { wgId: 14255, name: 'Camouflage Suit', pack: 'pf2e.equipment-srd', slug: 'camouflage-suit', status: 'active' as const },
+        { wgId: 14256, name: 'Camouflage Suit (Superb)', pack: 'pf2e.equipment-srd', slug: 'camouflage-suit-superb', status: 'active' as const },
+        { wgId: 14247, name: 'Boastful Hunter', pack: 'pf2e.equipment-srd', slug: 'boastful-hunter', status: 'active' as const },
+        { wgId: 13653, name: 'Fingerprinting Kit', pack: null, slug: null, status: 'unresolved' as const },
+        { wgId: 15079, name: 'Book of Translation (Standard)', pack: null, slug: null, status: 'unresolved' as const },
+        { wgId: 15080, name: 'Book of Translation (Advanced)', pack: null, slug: null, status: 'unresolved' as const },
+      ],
+      formulas: [],
+    };
+    const manifest = shopStockFoundryManifest('dfas', [
+      { id: 5468, name: 'Bloodstride Boots' },
+      { id: 18286, name: 'War Saddle' },
+      { id: 14255, name: 'Formula: Camouflage Suit' },
+      { id: 14247, name: 'Formula: Boastful Hunter' },
+      { id: 13653, name: 'Fingerprinting Kit' },
+      { id: 15079, name: 'Formula: Book of Translation' },
+      { id: 3017, name: 'Rod of Razors' },
+    ], new Date(2026, 10, 23), lookup);
+    expect(manifest.items.map((item) => item.slug)).toEqual(['war-saddle']);
+    expect(manifest.skipped).toEqual([
+      { id: 5468, name: 'Bloodstride Boots', status: 'unresolved' },
+      { id: 14255, name: 'Formula: Camouflage Suit', status: 'formula-not-cataloged' },
+      { id: 14247, name: 'Formula: Boastful Hunter', status: 'formula-not-cataloged' },
+      { id: 13653, name: 'Fingerprinting Kit', status: 'unresolved' },
+      { id: 15079, name: 'Formula: Book of Translation', status: 'formula-not-cataloged' },
+      { id: 3017, name: 'Rod of Razors', status: 'unresolved' },
+    ]);
+  });
+
   it('does not turn a legacy unresolved item into its remaster twin', () => {
     const manifest = shopStockFoundryManifest('Test', [
       { id: 14943, name: 'Cognitive Mutagen (Moderate) (legacy)' },
@@ -104,5 +138,40 @@ describe('shopFoundryManifest', () => {
     expect(manifest.skipped).toEqual([
       { id: 14943, name: 'Cognitive Mutagen (Moderate) (legacy)', status: 'unresolved' },
     ]);
+  });
+
+  it('does not resolve local ids by display-name guessing', () => {
+    const lookup = {
+      version: 1 as const,
+      rows: [
+        { wgId: 14943, pack: 'pf2e.equipment-srd', slug: null, status: 'unresolved' as const },
+      ],
+    };
+    const manifest = shopStockFoundryManifest('dfas', [
+      { id: 338, name: "Beekeeper's Smoker" },
+      { id: 4748, name: 'Cloak of the False Foe' },
+      { id: 5727, name: 'Greater Crown of the Master' },
+      { id: 14943, name: 'Cognitive Mutagen (Moderate) (legacy)' },
+    ], new Date(2026, 10, 23), lookup);
+    expect(manifest.items).toEqual([]);
+    expect(manifest.skipped).toEqual([
+      { id: 338, name: "Beekeeper's Smoker", status: 'unresolved' },
+      { id: 4748, name: 'Cloak of the False Foe', status: 'unresolved' },
+      { id: 5727, name: 'Greater Crown of the Master', status: 'unresolved' },
+      { id: 14943, name: 'Cognitive Mutagen (Moderate) (legacy)', status: 'unresolved' },
+    ]);
+  });
+
+  it('uses a separate active formula lookup for Formula lines', () => {
+    const manifest = shopStockFoundryManifest('Test', [
+      { id: 42, name: 'Formula: Camouflage Suit' },
+      { id: 43, name: 'Formula: Missing Item' },
+    ], new Date(2026, 10, 23), {
+      version: 1,
+      rows: [],
+      formulas: [{ wgId: 42, pack: 'pf2e.equipment-srd', slug: 'camouflage-suit-formula', status: 'active' }],
+    });
+    expect(manifest.items.map((item) => item.slug)).toEqual(['camouflage-suit-formula']);
+    expect(manifest.skipped).toEqual([{ id: 43, name: 'Formula: Missing Item', status: 'formula-not-cataloged' }]);
   });
 });

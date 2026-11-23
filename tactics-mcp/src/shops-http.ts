@@ -1,8 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { searchFoundryShopItems, foundryShopLookupStatus } from "./foundry-shop-lookup.js";
 
 import {
   addShopItem,
   createShop,
+  createFoundryShop,
   createShopFolder,
   deleteShop,
   getPublishedShop,
@@ -80,6 +82,12 @@ export async function handleShopApi(
     reply(res, await searchShopCatalog(userId, query.get("q") ?? "", catalogSource));
     return;
   }
+  if (method === "GET" && path === "/api/shops/foundry-lookup") {
+    if (!need(scopes, "read", res)) return;
+    const formulas = query.get("formulas") === "true";
+    reply(res, { ok: true, data: { ...foundryShopLookupStatus(), ...searchFoundryShopItems(query.get("q") ?? "", Number(query.get("limit") ?? 50), formulas) } });
+    return;
+  }
   if (method === "GET" && parts[0] === "api" && parts[1] === "shops" && parts[2] === "public" && parts[3]) {
     if (!need(scopes, "read", res)) return;
     reply(res, await getPublishedShop(userId, parts[3]));
@@ -89,6 +97,14 @@ export async function handleShopApi(
     if (!need(scopes, "write", res)) return;
     const name = typeof body?.name === "string" ? body.name : "";
     reply(res, await createShop(userId, { ...body, name } as Parameters<typeof createShop>[1]), 201);
+    return;
+  }
+  if (method === "POST" && path === "/api/shops/foundry") {
+    if (!need(scopes, "write", res)) return;
+    reply(res, await createFoundryShop(userId, {
+      ...(body ?? {}), name: typeof body?.name === "string" ? body.name : "",
+      items: Array.isArray(body?.items) ? body.items as Parameters<typeof createFoundryShop>[1]["items"] : [],
+    }), 201);
     return;
   }
   if (method === "POST" && path === "/api/shops/folders") {
