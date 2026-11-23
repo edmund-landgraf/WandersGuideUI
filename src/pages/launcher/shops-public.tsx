@@ -10,8 +10,8 @@ import { ShopPopout } from './shop-popout';
 import { fetchPf2eEquipmentText, fillMissingShopAon, loadShopAonIndex, priceFromStatBlock } from './shops-pf2e';
 import { listOwned, readPublic } from '../../syndication/store';
 import { LauncherHeader } from './launcher-header';
-import { asContentType, shopStockFoundryManifest } from './shops-export';
-import { cartLineKey, cartTotalGp, itemCopper, lineGold, readShopCart, writeShopCart, type ShopCartLine } from './shops-cart';
+import { asContentType, loadShopFoundryLookup, shopStockFoundryManifest } from './shops-export';
+import { cartFoundryTitle, cartLineKey, cartTotalGp, itemCopper, lineGold, readShopCart, writeShopCart, type ShopCartLine } from './shops-cart';
 import { formatCopperOffer, formulaCopper, priceAsGp } from './shops-generate';
 import { SHOP_CONTENT_KIND, shopTraceStart, type ShopDraft, type ShopStockRow } from './shops-syndicate';
 import type { SyndicatedNode } from '../../syndication/nodes';
@@ -203,7 +203,7 @@ export const HOMEBREW_CSS = `
 .brew-folder {
   margin: 0 0 14px;
   font-family: Cinzel, Palatino, serif;
-  font-size: 0.72rem;
+  font-size: 1.15rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
@@ -226,7 +226,7 @@ export const HOMEBREW_CSS = `
   padding: 0;
   border: 0;
   font-family: "IM Fell English", Palatino, serif;
-  font-size: 3rem;
+  font-size: 2.6rem;
   font-weight: 400;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -262,6 +262,9 @@ export const HOMEBREW_CSS = `
 .brew-v3 .brew-dir a { color: #6b1d14; }
 .brew-v3 th:nth-child(2), .brew-v3 td:nth-child(2) { width: auto; }
 .brew-v3 th:nth-child(n+3), .brew-v3 td:nth-child(n+3) { width: 6.2rem; white-space: nowrap; }
+.brew-v3 .brew-cart th:nth-child(1), .brew-v3 .brew-cart td:nth-child(1) { width: auto; white-space: normal; }
+.brew-v3 .brew-cart th:nth-child(n+2), .brew-v3 .brew-cart td:nth-child(n+2) { width: 5.5rem; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+.brew-v3 .brew-cart th:last-child, .brew-v3 .brew-cart td:last-child { width: 5rem; }
 .brew-v3 button {
   color: #6b1d14;
   background: none;
@@ -537,11 +540,12 @@ export function ShopDocument({
     const cap = Math.max(1, row.quantity ?? 1);
     const existing = cart.find((line) => line.key === key);
     if (existing && existing.qty >= cap) return;
+    const folderName = folder?.name.trim() || undefined;
     if (existing) {
-      saveCart(cart.map((line) => (line.key === key ? { ...line, qty: line.qty + 1 } : line)));
+      saveCart(cart.map((line) => (line.key === key ? { ...line, qty: line.qty + 1, ...(folderName ? { folderName } : {}) } : line)));
       return;
     }
-    saveCart([...cart, { key, shopId: cartKey, shopName: name, name: row.name, qty: 1, copper }]);
+    saveCart([...cart, { key, shopId: cartKey, shopName: name, ...(folderName ? { folderName } : {}), name: row.name, id: row.id, qty: 1, copper }]);
   };
   const removeKey = (key: string) => {
     const existing = cart.find((line) => line.key === key);
@@ -556,13 +560,13 @@ export function ShopDocument({
     <StockTable stock={rows} homebrew={homebrew} inGp={inGp} shopId={cartKey} cart={cart} onAdd={addRow} onRemove={removeKey} />
   );
   const strip = <ShopCartStrip homebrew={homebrew} cart={cart} onRemove={removeKey} onClear={() => saveCart([])} />;
-  const openFoundry = () => {
-    const lines = cart.filter((line) => line.shopId === cartKey);
+  const openFoundry = async () => {
     setFoundryCopied(false);
-    setFoundryScript(JSON.stringify(shopStockFoundryManifest(name, lines.map((line) => ({
-      name: line.name,
+    const lookup = await loadShopFoundryLookup();
+    const title = cart.length > 0 ? cartFoundryTitle(cart, folder?.name) : name;
+    setFoundryScript(JSON.stringify(shopStockFoundryManifest(title, cart.map((line) => ({ id: line.id, name: line.name,
       quantity: line.qty,
-    }))), null, 2));
+    })), new Date(), lookup), null, 2));
   };
   const toggles = (
     <div className='flex flex-wrap items-center justify-end gap-4'>
@@ -715,24 +719,66 @@ function ShopCartStrip({
   if (cart.length === 0) {
     return <p className={homebrew ? 'brew-note' : 'text-sm text-muted-foreground'}>Cart is empty. Total 0 gp.</p>;
   }
+  if (homebrew) {
+    return (
+      <div className='mb-4'>
+        <div className='mb-2 flex flex-wrap items-baseline justify-between gap-2'>
+          <p className='font-serif text-sm uppercase tracking-wide text-[#6b1d14]'>Cart · {cartTotalGp(cart)}</p>
+          <button type='button' onClick={onClear}>Clear cart</button>
+        </div>
+        <table className='brew-cart'>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Qty</th>
+              <th>Price</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {cart.map((line) => (
+              <tr key={line.key}>
+                <td>{line.shopName} — {line.name}</td>
+                <td>{line.qty}</td>
+                <td>{lineGold(line)}</td>
+                <td>
+                  <button type='button' onClick={() => onRemove(line.key)}>Remove</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
   return (
-    <div className={homebrew ? 'mb-4 border-b border-[#6b3a1f]/30 pb-3' : 'rounded-xl bg-white/5 p-4 ring-1 ring-white/20'}>
-      <div className='flex flex-wrap items-baseline justify-between gap-2'>
-        <p className={homebrew ? 'font-serif text-sm uppercase tracking-wide text-[#6b1d14]' : 'text-sm font-medium text-foreground'}>
-          Cart · {cartTotalGp(cart)}
-        </p>
+    <div className='rounded-xl bg-white/5 p-4 ring-1 ring-white/20'>
+      <div className='mb-3 flex flex-wrap items-baseline justify-between gap-2'>
+        <p className='text-sm font-medium text-foreground'>Cart · {cartTotalGp(cart)}</p>
         <button className='underline underline-offset-2' type='button' onClick={onClear}>Clear cart</button>
       </div>
-      <ul className={homebrew ? 'mt-2 grid gap-1 text-sm' : 'mt-2 grid gap-1 text-sm text-muted-foreground'}>
-        {cart.map((line) => (
-          <li className='flex flex-wrap items-baseline justify-between gap-2' key={line.key}>
-            <span>
-              {line.shopName} · {line.name} × {line.qty} · {lineGold(line)}
-            </span>
-            <button className='underline underline-offset-2' type='button' onClick={() => onRemove(line.key)}>Remove</button>
-          </li>
-        ))}
-      </ul>
+      <table className='w-full text-left text-sm'>
+        <thead className='text-muted-foreground'>
+          <tr>
+            <th className='pb-2 font-medium'>Item</th>
+            <th className='w-16 pb-2 text-right font-medium tabular-nums'>Qty</th>
+            <th className='w-24 pb-2 text-right font-medium tabular-nums'>Price</th>
+            <th className='w-20 pb-2' />
+          </tr>
+        </thead>
+        <tbody className='text-muted-foreground'>
+          {cart.map((line) => (
+            <tr className='border-t border-white/10' key={line.key}>
+              <td className='py-2 pr-3 text-foreground'>{line.shopName} — {line.name}</td>
+              <td className='py-2 text-right tabular-nums'>{line.qty}</td>
+              <td className='py-2 text-right tabular-nums'>{lineGold(line)}</td>
+              <td className='py-2 text-right'>
+                <button className='underline underline-offset-2' type='button' onClick={() => onRemove(line.key)}>Remove</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

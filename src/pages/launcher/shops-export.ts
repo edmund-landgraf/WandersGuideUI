@@ -9,8 +9,34 @@ import { toStandard2eProse, toWgMarkdownLinks } from '@utils/foundry-text';
 import { asShopLine, formatShopOffer, isShopFormula, shopLineQuantity } from './shops-generate';
 
 export const SHOP_EXPORT_CAP = 400;
-export const FOUNDRY_EQUIPMENT_PACK = 'pf2e.equipment-srd';
 const FOUNDRY_QTY_MAX = 50;
+
+export type ShopFoundryLookupStatus = 'active' | 'ambiguous' | 'unresolved';
+export type ShopFoundryLookupRow = {
+  wgId: number;
+  pack?: string | null;
+  slug?: string | null;
+  status: ShopFoundryLookupStatus;
+};
+export type ShopFoundryLookup = {
+  version: 1;
+  rows: ShopFoundryLookupRow[];
+};
+
+let shopFoundryLookupPromise: Promise<ShopFoundryLookup | null> | undefined;
+
+/** Loads the generated lookup artifact; the browser never connects to Postgres. */
+export function loadShopFoundryLookup(): Promise<ShopFoundryLookup | null> {
+  shopFoundryLookupPromise ??= fetch('/data/shop-foundry-lookup.json', { credentials: 'same-origin' })
+    .then(async (response) => {
+      if (!response.ok) return null;
+      const value = (await response.json()) as Partial<ShopFoundryLookup>;
+      if (value.version !== 1 || !Array.isArray(value.rows)) return null;
+      return value as ShopFoundryLookup;
+    })
+    .catch(() => null);
+  return shopFoundryLookupPromise;
+}
 
 export function foundryItemSlug(name: string) {
   return name
@@ -34,17 +60,35 @@ export function shopFolderLabel(title: string, when = new Date()) {
   return `${abbreviatedShopName(title)} ${when.getMonth() + 1}-${when.getDate()}`;
 }
 
-export function shopFoundryManifest(title: string, stock: Item[], when = new Date()) {
+export function shopFoundryManifest(title: string, stock: Item[], when = new Date(), lookup?: ShopFoundryLookup | null) {
   return shopStockFoundryManifest(
     title,
-    stock.map((item) => ({ name: item.name, quantity: shopLineQuantity(asShopLine(item)) })),
+    stock.map((item) => ({ id: item.id, name: item.name, quantity: shopLineQuantity(asShopLine(item)) })),
     when,
+    lookup,
   );
 }
 
 /** Manifest for a saved shop page, where each row already has a display quantity. */
-export function shopStockFoundryManifest(title: string, stock: { name: string; quantity?: number }[], when = new Date()) {
+export function shopStockFoundryManifest(title: string, stock: { id?: number; name: string; quantity?: number }[], when = new Date(), lookup?: ShopFoundryLookup | null) {
   const label = title.trim() || 'Shop';
+  const byId = new Map((lookup?.rows ?? []).map((row) => [row.wgId, row]));
+  const skipped: { id?: number; name: string; status: ShopFoundryLookupStatus }[] = [];
+  const items = stock.flatMap((item) => {
+    const match = item.id === undefined ? undefined : byId.get(item.id);
+    // The catalog is an allowlist. Never derive a Foundry slug from display
+    // text: names can contain legacy notes, grades, or other WG-only labels.
+    if (!lookup || item.id === undefined || !match || match.status !== 'active' || !match.pack || !match.slug) {
+      skipped.push({ id: item.id, name: item.name, status: match?.status ?? 'unresolved' });
+      return [];
+    }
+    return [{
+      pack: match.pack,
+      slug: match.slug,
+      name: item.name,
+      qty: Math.min(FOUNDRY_QTY_MAX, Math.max(1, item.quantity ?? 1)),
+    }];
+  });
   return {
     schemaVersion: 1 as const,
     source: 'amba' as const,
@@ -52,12 +96,9 @@ export function shopStockFoundryManifest(title: string, stock: { name: string; q
     encounterId: foundryItemSlug(label) || 'shop',
     title: label,
     folder: shopFolderLabel(label, when),
-    items: stock.map((item) => ({
-      pack: FOUNDRY_EQUIPMENT_PACK,
-      slug: foundryItemSlug(item.name),
-      name: item.name,
-      qty: Math.min(FOUNDRY_QTY_MAX, Math.max(1, item.quantity ?? 1)),
-    })),
+    items,
+    ...(lookup ? { lookupStatus: 'catalog-loaded' as const } : { lookupStatus: 'match-catalog-not-loaded' as const }),
+    ...(skipped.length ? { skipped } : {}),
   };
 }
 
