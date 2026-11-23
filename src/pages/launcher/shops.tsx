@@ -513,7 +513,7 @@ function ShopsPage() {
           const response = await fetch('/data/shop-foundry-lookup.json');
           if (response.ok) {
             const lookup = await response.json() as { foundryItems?: Array<{ wgId?: number; name?: string; level?: number; rarity?: string; pack?: string; slug?: string; status?: string }> };
-            foundryList = (lookup.foundryItems ?? []).filter((row) => row.status === 'active' && Number.isFinite(row.wgId)).map((row) => ({ id: row.wgId as number, name: row.name ?? row.slug ?? 'Foundry item', level: row.level ?? 0, rarity: row.rarity ?? 'COMMON', group: 'FOUNDRY', description: '', traits: [], content_source_id: 0, meta_data: { foundry: { pack: row.pack, slug: row.slug } } } as Item));
+            foundryList = (lookup.foundryItems ?? []).filter((row) => row.status === 'active' && Number.isFinite(row.wgId)).map((row) => ({ id: row.wgId as number, name: row.name ?? row.slug ?? 'Foundry item', level: row.level ?? 0, rarity: row.rarity ?? 'COMMON', group: 'FOUNDRY', description: '', traits: [], content_source_id: 0, meta_data: { foundry: { pack: row.pack, slug: row.slug } } } as unknown as Item));
             setFoundryItems(foundryList);
           }
         } catch { /* Foundry is optional. */ }
