@@ -4,13 +4,14 @@ import { registerCatalog } from "./catalog.js";
 import { registerHomebrew } from "./homebrew-catalog.js";
 import { registerShops } from "./shops-tools.js";
 
-export const TACTICS_MCP_VERSION = "1.4.0";
+export const TACTICS_MCP_VERSION = "1.5.0";
 export const TACTICS_MCP_NAME = "wgui-tactics";
 export const TACTICS_MCP_DESCRIPTION = "Characters, encounters, and shops for Wanderer's Guide. Includes Foundry equipment lookup, list_shops, get_shop, search_shop_catalog, and create_shop.";
 
 /** Sent to clients at initialize. Guidance only: no tool behaves differently because of it. */
 export const TACTICS_MCP_INSTRUCTIONS = [
-  "Shops are tools: search_foundry_shop_items for Foundry-only equipment, list_shops, get_shop, get_published_shop, search_shop_catalog, create_shop, create_shop_folder, update_shop, resize_shop, add_shop_item, update_shop_item, remove_shop_item, set_shop_stock, move_shop, delete_shop, publish_shop, unpublish_shop.",
+  "Shops are one shop type with source filters: wanderers-guide, pf2e, and foundry. Use search_foundry_shop_items to discover Foundry mappings, then create_shop or set_shop_stock with sources/items using source=foundry. Foundry is not a separate shop type or endpoint.",
+  "Shop source selection is authoritative: do not mix in items outside the selected sources. A Foundry result's wgId is the item id to use with source=foundry.",
   "add_shop_item accepts items[] to append many catalog refs in one call. set_shop_stock replaces the whole inventory.",
   "Start with get_profile; treat returned ids as authoritative.",
   "Character build: create_character, optional set_books, list_options for ancestry/background/class, set_identity for each, list_open_choices, then choose_many, then spells (list_spell_options, add_spell or set_spells), gear (list_options kind=item, add_inventory_item), and export_character to check.",

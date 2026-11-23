@@ -41,7 +41,7 @@ function fromResult(result: ShopResult<unknown>, okText: string) {
 export function registerShops(server: McpServer, userId: () => string) {
   server.registerTool("search_foundry_shop_items", {
     title: "Search Foundry shop items",
-    description: "Searches the generated active-only Foundry shop lookup. Results include the live Wanderer’s Guide item id, Foundry pack, and slug; unresolved and missing items are never returned.",
+    description: "Searches the active Foundry-backed item source. Use each result's wgId as the item id when adding stock, and include source=foundry; unresolved and missing mappings are never returned.",
     annotations: readOnly,
     inputSchema: { q: z.string().optional(), limit: z.number().int().min(1).max(200).optional(), formulas: z.boolean().optional() },
   }, async (args) => textResult("Foundry shop items", searchFoundryShopItems(args.q ?? "", args.limit ?? 50, args.formulas ?? false)));
@@ -69,7 +69,7 @@ export function registerShops(server: McpServer, userId: () => string) {
 
   server.registerTool("search_shop_catalog", {
     title: "Search shop catalog",
-    description: "Wanderer's Guide and/or PF2E (Archives of Nethys) equipment. Each hit includes source.",
+    description: "Searches the selected shop item source: wanderers-guide, pf2e, foundry, or both (WG+PF2E). Foundry is a source filter, not a separate shop type. Each hit includes source.",
     annotations: readOnly,
     inputSchema: {
       q: z.string().optional(),
@@ -79,7 +79,7 @@ export function registerShops(server: McpServer, userId: () => string) {
 
   server.registerTool("create_shop", {
     title: "Create shop",
-    description: "Creates a saved shop. generate true (default) stocks it from the selected catalogs.",
+    description: "Creates one saved shop. sources selects the allowed item sources (wanderers-guide, pf2e, and/or foundry); generate true (default) stocks only from those sources. Foundry is not a separate shop type.",
     annotations: writes,
     inputSchema: {
       name: z.string(),
@@ -107,7 +107,7 @@ export function registerShops(server: McpServer, userId: () => string) {
 
   server.registerTool("update_shop", {
     title: "Update shop",
-    description: "Rename and patch draft fields including campaignId, books, sources, and markup.",
+    description: "Rename and patch one shop, including campaignId, books, sources, and markup. sources may include wanderers-guide, pf2e, and/or foundry.",
     annotations: writes,
     inputSchema: {
       shopId: z.string(),
