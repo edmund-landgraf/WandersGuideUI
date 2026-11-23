@@ -1002,7 +1002,9 @@ function ShopsPage() {
                           setSaveNote(openedId ? 'Saved.' : 'Saved. Open Saved shops to publish it.');
                         })
                         .catch((cause: unknown) => {
-                          setSaveNote(cause instanceof Error ? cause.message : 'Could not save this shop.');
+                          const message = cause instanceof Error ? cause.message : 'Could not save this shop.';
+                          setSaveNote(message);
+                          if (message === 'Sign in again to save.') setNeedsSignIn(true);
                         })
                         .finally(() => setSaving(false));
                       } catch (cause) {
