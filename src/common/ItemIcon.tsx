@@ -57,6 +57,7 @@ export const getIconMap = (size: string, color: string): Record<ItemIconType, Re
   RUNE: <GiRuneStone color={color} size={size} />,
   UPGRADE: <GiUpgrade color={color} size={size} />,
   MATERIAL: <GiCubes color={color} size={size} />,
+  FOUNDRY: <GiSwapBag color={color} size={size} />,
   UNARMED: <GiFist color={color} size={size} />,
   BOMB: <GiRollingBomb color={color} size={size} />,
   CONTAINER: <GiLightBackpack color={color} size={size} />,
