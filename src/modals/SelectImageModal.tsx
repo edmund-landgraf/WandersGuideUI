@@ -109,11 +109,20 @@ export default function SelectImageModal({
         }}
       >
         <Stack gap={6}>
-          <Box h={140} style={{ overflow: 'hidden', borderRadius: 8 }}>
+          <Box
+            h={140}
+            style={{
+              overflow: 'hidden',
+              borderRadius: 8,
+              aspectRatio: '1 / 1',
+              background: 'var(--mantine-color-dark-8)',
+            }}
+          >
             <Image
               src={option.url}
-              h={140}
-              fit='cover'
+              w='100%'
+              h='100%'
+              fit='contain'
               radius='md'
               loading='lazy'
               decoding='async'
