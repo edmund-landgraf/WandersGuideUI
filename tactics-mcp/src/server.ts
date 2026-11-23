@@ -10,7 +10,7 @@ export const TACTICS_MCP_DESCRIPTION = "Characters, encounters, and shops for Wa
 
 /** Sent to clients at initialize. Guidance only: no tool behaves differently because of it. */
 export const TACTICS_MCP_INSTRUCTIONS = [
-  "Shops are one shop type with source filters: wanderers-guide, pf2e, and foundry. Use search_foundry_shop_items to discover Foundry mappings, then create_shop or set_shop_stock with sources/items using source=foundry. Foundry is not a separate shop type or endpoint.",
+  "Shops are one shop type with source filters: wanderers-guide, pf2e, and foundry. Use search_foundry_shop_items to discover Foundry mappings, then create_shop or set_shop_stock with sources/items using source=foundry. create_foundry_shop saves a shop whose stock is exactly those wgIds. Foundry is not a separate shop type or endpoint.",
   "Shop source selection is authoritative: do not mix in items outside the selected sources. A Foundry result's wgId is the item id to use with source=foundry.",
   "add_shop_item accepts items[] to append many catalog refs in one call. set_shop_stock replaces the whole inventory.",
   "Start with get_profile; treat returned ids as authoritative.",
@@ -127,6 +127,7 @@ const WRITE_TOOLS = new Set([
   "wgui_ext_hb_create_content_update",
   "wgui_ext_hb_delete_content",
   "create_shop",
+  "create_foundry_shop",
   "create_shop_folder",
   "update_shop",
   "resize_shop",

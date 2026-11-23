@@ -38,6 +38,16 @@ import { ShopsLibrary } from './shops-library';
 import { readGroupingsPreference, ShopDocument, ShopFolderDirectory, ShopProse, ShopsPublic, writeGroupingsPreference } from './shops-public';
 import { SHOP_CONTENT_KIND, shopDraft, shopTrace, shopTraceStart, stockCatalogId, stockSource, type ShopDraft, type ShopPageStyle } from './shops-syndicate';
 import { insertNode, listOwned, updateOwned } from '../../syndication/store';
+
+/** Foundry equipment rows often have no Wanderer's Guide id. Keep those ids negative so they never collide with catalog ids. */
+function foundryCatalogId(pack: string | undefined, slug: string | undefined, wgId: number | undefined) {
+  if (Number.isFinite(wgId)) return wgId as number;
+  let hash = 0;
+  const key = `${pack ?? ''}:${slug ?? ''}`;
+  for (let index = 0; index < key.length; index += 1) hash = (Math.imul(hash, 33) + key.charCodeAt(index)) | 0;
+  const id = hash === 0 ? 1 : Math.abs(hash);
+  return -id;
+}
 import './launcher.css';
 
 const BOOK_GROUPS = [
@@ -513,7 +523,7 @@ function ShopsPage() {
           const response = await fetch('/data/shop-foundry-lookup.json');
           if (response.ok) {
             const lookup = await response.json() as { foundryItems?: Array<{ wgId?: number; name?: string; level?: number; rarity?: string; pack?: string; slug?: string; status?: string }> };
-            foundryList = (lookup.foundryItems ?? []).filter((row) => row.status === 'active' && Number.isFinite(row.wgId)).map((row) => ({ id: row.wgId as number, name: row.name ?? row.slug ?? 'Foundry item', level: row.level ?? 0, rarity: row.rarity ?? 'COMMON', group: 'FOUNDRY', description: '', traits: [], content_source_id: 0, meta_data: { foundry: { pack: row.pack, slug: row.slug } } } as unknown as Item));
+            foundryList = (lookup.foundryItems ?? []).filter((row) => row.pack && row.slug).map((row) => ({ id: foundryCatalogId(row.pack, row.slug, row.wgId), name: row.name ?? row.slug ?? 'Foundry item', level: row.level ?? 0, rarity: (row.rarity ?? 'COMMON').toUpperCase(), group: 'FOUNDRY', description: '', traits: [], content_source_id: 0, meta_data: { foundry: { pack: row.pack, slug: row.slug } } } as unknown as Item));
             setFoundryItems(foundryList);
           }
         } catch { /* Foundry is optional. */ }

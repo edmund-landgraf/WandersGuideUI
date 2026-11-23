@@ -172,10 +172,11 @@ export function shopStockFoundryManifest(title: string, stock: { id?: number; na
       skipped.push({ id: item.id, name: item.name, status: !lookup ? 'catalog-not-loaded' : item.id === undefined ? 'missing-id' : match?.status ?? 'unresolved' });
       return [];
     }
+    const foundry = (lookup?.foundryItems ?? []).find((row) => row.pack === match.pack && row.slug === match.slug && row.name?.trim());
     return [{
       pack: match.pack,
       slug: match.slug,
-      name: item.name,
+      name: foundry?.name?.trim() || match.name?.trim() || item.name,
       qty: Math.min(FOUNDRY_QTY_MAX, Math.max(1, item.quantity ?? 1)),
     }];
   });

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { allFoundryShopEquipment, searchFoundryShopItems } from "./foundry-shop-lookup.js";
+import { allFoundryShopEquipment, foundryLevelDisagrees, searchFoundryShopItems } from "./foundry-shop-lookup.js";
 
 import { characterFetch, characterToken, functionsBaseUrl, invokeFunction } from "./character-client.js";
 import {
@@ -486,8 +486,11 @@ async function loadCatalog(userId: string, sources: ShopSource[], books?: number
     const wg = await fetchWgCatalog(userId, books);
     if (!wg.ok) return wg;
     if (sources.includes("foundry")) {
-      const ids = new Set(searchFoundryShopItems("", 200, false).items.map((row) => row.wgId).filter((id): id is number => Number.isFinite(id)));
-      items.push(...wg.data.items.filter((item) => ids.has(item.id)));
+      const byId = new Map(allFoundryShopEquipment().filter((row) => row.wgId != null).map((row) => [row.wgId as number, row]));
+      items.push(...wg.data.items.filter((item) => {
+        const row = byId.get(item.id);
+        return Boolean(row) && !foundryLevelDisagrees(item.level, row?.level);
+      }));
     }
     if (sources.includes("wanderers-guide")) items.push(...wg.data.items);
     traits.push(...wg.data.traits);
@@ -563,7 +566,11 @@ export async function searchShopCatalog(userId: string, query: string, source: "
     const ids = foundry.items.map((row) => row.wgId).filter((id): id is number => Number.isFinite(id));
     const wg = await fetchWgCatalog(userId);
     if (!wg.ok) return wg;
-    return ok(wg.data.items.filter((item) => ids.includes(item.id)).map(catalogHit));
+    const byId = new Map(foundry.items.filter((row) => row.wgId != null).map((row) => [row.wgId as number, row]));
+    return ok(wg.data.items.filter((item) => {
+      const row = byId.get(item.id);
+      return Boolean(row) && !foundryLevelDisagrees(item.level, row?.level);
+    }).map(catalogHit));
   }
   if (sources.includes("pf2e")) {
     const pf2e = await searchPf2e(query);
@@ -681,11 +688,12 @@ export async function createFoundryShop(userId: string, input: {
   const stock = foundryRows.map((row) => {
     const item = catalog.data.items.find((candidate) => candidate.id === row.wgId);
     if (!item) return null;
+    if (foundryLevelDisagrees(item.level, row.level)) return null;
     const ref = refs.get(row.wgId!);
     const line = toStockRow({ ...item, shopKey: `wanderers-guide:${item.id}`, shopQuantity: ref?.quantity ?? 1, packSize: 1 }, catalog.data.traits, input.markup ?? 0);
     return ref?.price ? { ...line, price: ref.price } : line;
   });
-  if (stock.some((row) => row === null)) return err("VALIDATION_ERROR", "One or more Foundry items are not available in the current catalog.");
+  if (stock.some((row) => row === null)) return err("VALIDATION_ERROR", "One or more Foundry items are missing from the catalog or disagree with it on item level.");
   return createShop(userId, { ...input, generate: false, stock: stock as ShopStockRow[] });
 }
 
@@ -854,7 +862,8 @@ async function resolveRefs(userId: string, refs: { source: ShopSource; id: numbe
     pf2eTraitRows = pf2e.data.traits;
   }
   const wgRefs = refs.filter((row) => row.source === "wanderers-guide" || row.source === "foundry");
-  const foundryIds = new Set(searchFoundryShopItems("", 200, false).items.map((row) => row.wgId).filter((id): id is number => Number.isFinite(id)));
+  const foundryById = new Map(allFoundryShopEquipment().filter((row) => row.wgId != null).map((row) => [row.wgId as number, row]));
+  const foundryIds = new Set(foundryById.keys());
   const foundWg = await findWgItems(userId, wgRefs.filter((ref) => ref.source === "wanderers-guide" || foundryIds.has(ref.id)).map((ref) => ref.id), books);
   if (!foundWg.ok) return foundWg;
   const wgItems = foundWg.data;
@@ -862,7 +871,13 @@ async function resolveRefs(userId: string, refs: { source: ShopSource; id: numbe
   if (!wgTraits.ok) return wgTraits;
   const traits = [...wgTraits.data, ...pf2eTraitRows];
   const wgById = new Map(wgItems.map((item) => [item.id, item]));
-  const wgByRef = new Map(wgRefs.map((ref) => [ref, ref.source === "foundry" && !foundryIds.has(ref.id) ? null : wgById.get(ref.id) ?? null]));
+  const wgByRef = new Map(wgRefs.map((ref) => {
+    const item = wgById.get(ref.id) ?? null;
+    if (ref.source !== "foundry") return [ref, item];
+    const foundry = foundryById.get(ref.id);
+    if (!foundry || !item || foundryLevelDisagrees(item.level, foundry.level)) return [ref, null];
+    return [ref, item];
+  }));
   const stock: ShopStockRow[] = [];
   for (const ref of refs) {
     const item = ref.source === "pf2e" ? findCatalogItem(pf2eItems, "pf2e", ref.id) : wgByRef.get(ref) ?? undefined;

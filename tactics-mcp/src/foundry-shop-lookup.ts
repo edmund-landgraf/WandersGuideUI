@@ -66,6 +66,11 @@ export function searchFoundryShopItems(query = "", limit = 50, formulas = false)
   return { loaded: true, source: formulas ? "formulas" : "pf2e.equipment-srd", items: rows };
 }
 
+/** True when the Foundry equipment level and the Wanderer's Guide item level are both known and differ. */
+export function foundryLevelDisagrees(wgLevel: number, foundryLevel: number | null | undefined) {
+  return foundryLevel != null && Number.isFinite(foundryLevel) && wgLevel !== foundryLevel;
+}
+
 /** Every active equipment row with a unique Wanderer's Guide id. Shop creation needs the full set, not a search page. */
 export function allFoundryShopEquipment() {
   const lookup = load();

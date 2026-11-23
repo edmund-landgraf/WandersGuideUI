@@ -5,6 +5,7 @@ import { textResult } from "./character-catalog.js";
 import { searchFoundryShopItems } from "./foundry-shop-lookup.js";
 import {
   addShopItem,
+  createFoundryShop,
   createShop,
   createShopFolder,
   deleteShop,
@@ -97,6 +98,27 @@ export function registerShops(server: McpServer, userId: () => string) {
       campaignId: z.number().int().nullable().optional(),
     },
   }, async (args) => fromResult(await createShop(userId(), args), "Shop created"));
+
+  server.registerTool("create_foundry_shop", {
+    title: "Create Foundry shop",
+    description: "Creates one saved shop whose stock is exactly the given active Foundry equipment rows. Pass each wgId from search_foundry_shop_items. A row whose Foundry level differs from the Wanderer's Guide catalog level is rejected.",
+    annotations: writes,
+    inputSchema: {
+      name: z.string(),
+      items: z.array(z.object({
+        wgId: z.number().int(),
+        quantity: z.number().int().min(1).optional(),
+        price: z.string().optional(),
+      })).min(1),
+      parentId: z.string().nullable().optional(),
+      preset: preset.optional(),
+      settlement: settlement.optional(),
+      markup: z.number().optional(),
+      style: z.enum(["default", "homebrew-v3"]).optional(),
+      description: z.string().optional(),
+      campaignId: z.number().int().nullable().optional(),
+    },
+  }, async (args) => fromResult(await createFoundryShop(userId(), args), "Shop created"));
 
   server.registerTool("create_shop_folder", {
     title: "Create shop folder",

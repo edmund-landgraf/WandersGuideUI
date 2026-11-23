@@ -194,6 +194,19 @@ describe('shopFoundryManifest', () => {
     ]);
   });
 
+  it('writes the Foundry equipment name when it differs from the Wanderer\'s Guide label', () => {
+    const manifest = shopStockFoundryManifest('Test', [
+      { id: 12606, name: 'Wand of Dazzling Rays (4th-level)' },
+    ], new Date(2026, 10, 23), {
+      version: 1,
+      rows: [{ wgId: 12606, name: 'Wand of Dazzling Rays (4th-level)', pack: 'pf2e.equipment-srd', slug: 'wand-of-dazzling-rays-4th-rank', status: 'active' }],
+      foundryItems: [{ wgId: 12606, name: 'Wand of Dazzling Rays (4th-rank)', pack: 'pf2e.equipment-srd', slug: 'wand-of-dazzling-rays-4th-rank', status: 'active' }],
+    });
+    expect(manifest.items).toEqual([
+      { pack: 'pf2e.equipment-srd', slug: 'wand-of-dazzling-rays-4th-rank', name: 'Wand of Dazzling Rays (4th-rank)', qty: 1 },
+    ]);
+  });
+
   it('uses a separate active formula lookup for Formula lines', () => {
     const manifest = shopStockFoundryManifest('Test', [
       { id: 42, name: 'Formula: Camouflage Suit' },

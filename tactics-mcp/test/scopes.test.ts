@@ -24,6 +24,7 @@ const CHARACTER_WRITES = ["add_character_note", "add_companion", "add_inventory_
 const SHOP_READS = ["get_published_shop", "get_shop", "list_shops", "search_shop_catalog"];
 const SHOP_WRITES = [
   "add_shop_item",
+  "create_foundry_shop",
   "create_shop",
   "create_shop_folder",
   "delete_shop",
@@ -94,6 +95,7 @@ function characterArguments(name: string) {
   if (name === "give_money" || name === "take_money") return { characterId: 1, amount: { gp: 1 } };
   if (name === "convert_coins") return { amount: { cp: 1 } };
   if (name === "create_shop" || name === "create_shop_folder") return { name: "Market" };
+  if (name === "create_foundry_shop") return { name: "Market", items: [{ wgId: 1 }] };
   if (name === "search_shop_catalog") return { q: "rope" };
   if (name === "get_published_shop") return { token: "tok" };
   if (name === "resize_shop") return { shopId: "s", size: 10 };
@@ -199,7 +201,7 @@ describe("tactics scopes", { concurrency: 1 }, () => {
       assert.match(instructions ?? "", /5-7 batches/);
 
       const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
-      assert.equal(names.length, 113);
+      assert.equal(names.length, 114);
       for (const name of [...CHARACTER_READS, ...CHARACTER_WRITES, ...CAMPAIGN_READS, ...CAMPAIGN_WRITES, ...SHOP_READS, ...SHOP_WRITES]) assert.ok(names.includes(name), name);
       assert.deepEqual(CHARACTER_READS.map(scopeForTool), CHARACTER_READS.map(() => "read"));
       assert.deepEqual(CHARACTER_WRITES.map(scopeForTool), CHARACTER_WRITES.map(() => "write"));
