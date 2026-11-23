@@ -4,7 +4,6 @@ import { searchFoundryShopItems, foundryShopLookupStatus } from "./foundry-shop-
 import {
   addShopItem,
   createShop,
-  createFoundryShop,
   createShopFolder,
   deleteShop,
   getPublishedShop,
@@ -78,7 +77,7 @@ export async function handleShopApi(
   if (method === "GET" && path === "/api/shops/catalog") {
     if (!need(scopes, "read", res)) return;
     const source = query.get("source");
-    const catalogSource = source === "wanderers-guide" || source === "pf2e" ? source : "both";
+    const catalogSource = source === "wanderers-guide" || source === "pf2e" || source === "foundry" ? source : "both";
     reply(res, await searchShopCatalog(userId, query.get("q") ?? "", catalogSource));
     return;
   }
@@ -97,14 +96,6 @@ export async function handleShopApi(
     if (!need(scopes, "write", res)) return;
     const name = typeof body?.name === "string" ? body.name : "";
     reply(res, await createShop(userId, { ...body, name } as Parameters<typeof createShop>[1]), 201);
-    return;
-  }
-  if (method === "POST" && path === "/api/shops/foundry") {
-    if (!need(scopes, "write", res)) return;
-    reply(res, await createFoundryShop(userId, {
-      ...(body ?? {}), name: typeof body?.name === "string" ? body.name : "",
-      items: Array.isArray(body?.items) ? body.items as Parameters<typeof createFoundryShop>[1]["items"] : [],
-    }), 201);
     return;
   }
   if (method === "POST" && path === "/api/shops/folders") {

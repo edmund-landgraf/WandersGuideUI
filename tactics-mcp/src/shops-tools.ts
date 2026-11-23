@@ -6,7 +6,6 @@ import { searchFoundryShopItems } from "./foundry-shop-lookup.js";
 import {
   addShopItem,
   createShop,
-  createFoundryShop,
   createShopFolder,
   deleteShop,
   getPublishedShop,
@@ -26,7 +25,7 @@ import {
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const writes = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
-const source = z.enum(["wanderers-guide", "pf2e"]);
+const source = z.enum(["wanderers-guide", "pf2e", "foundry"]);
 const preset = z.enum([
   "general", "magic", "alchemical", "ammo", "gadget", "armorer", "blacksmith", "gunsmith",
   "jeweler", "lost", "tailor", "potion", "materials", "tattoo", "runes",
@@ -74,7 +73,7 @@ export function registerShops(server: McpServer, userId: () => string) {
     annotations: readOnly,
     inputSchema: {
       q: z.string().optional(),
-      source: z.enum(["wanderers-guide", "pf2e", "both"]).optional(),
+      source: z.enum(["wanderers-guide", "pf2e", "foundry", "both"]).optional(),
     },
   }, async (args) => fromResult(await searchShopCatalog(userId(), args.q ?? "", args.source ?? "both"), "Catalog"));
 
@@ -98,18 +97,6 @@ export function registerShops(server: McpServer, userId: () => string) {
       campaignId: z.number().int().nullable().optional(),
     },
   }, async (args) => fromResult(await createShop(userId(), args), "Shop created"));
-
-  server.registerTool("create_foundry_shop", {
-    title: "Create Foundry-only shop",
-    description: "Creates a saved shop using only active Foundry-linked equipment items. Every item must come from search_foundry_shop_items.",
-    annotations: writes,
-    inputSchema: {
-      name: z.string(),
-      items: z.array(z.object({ wgId: z.number().int(), quantity: z.number().int().min(1).optional(), price: z.string().optional() })).min(1),
-      parentId: z.string().nullable().optional(), preset: preset.optional(), settlement: settlement.optional(), markup: z.number().optional(),
-      style: z.enum(["default", "homebrew-v3"]).optional(), description: z.string().optional(), campaignId: z.number().int().nullable().optional(),
-    },
-  }, async (args) => fromResult(await createFoundryShop(userId(), args), "Foundry-only shop created"));
 
   server.registerTool("create_shop_folder", {
     title: "Create shop folder",

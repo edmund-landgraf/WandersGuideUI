@@ -126,7 +126,6 @@ const WRITE_TOOLS = new Set([
   "wgui_ext_hb_create_content_update",
   "wgui_ext_hb_delete_content",
   "create_shop",
-  "create_foundry_shop",
   "create_shop_folder",
   "update_shop",
   "resize_shop",

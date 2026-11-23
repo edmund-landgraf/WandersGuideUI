@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { searchFoundryShopItems } from "./foundry-shop-lookup.js";
+import { allFoundryShopEquipment } from "./foundry-shop-lookup.js";
 
 import { characterFetch, characterToken, functionsBaseUrl, invokeFunction } from "./character-client.js";
 import {
@@ -26,7 +26,7 @@ import {
 } from "./shops-generate.js";
 
 export const SHOP_CONTENT_KIND = "shop";
-export type ShopSource = "wanderers-guide" | "pf2e";
+export type ShopSource = "wanderers-guide" | "pf2e" | "foundry";
 export type ShopPageStyle = "default" | "homebrew-v3";
 export type SyndicatedKind = "folder" | "entry";
 
@@ -129,7 +129,7 @@ function isSettlement(value: unknown): value is SettlementId {
 
 function asSources(value: unknown): ShopSource[] {
   if (!Array.isArray(value) || value.length === 0) return ["wanderers-guide", "pf2e"];
-  const next = value.filter((row): row is ShopSource => row === "wanderers-guide" || row === "pf2e");
+  const next = value.filter((row): row is ShopSource => row === "wanderers-guide" || row === "pf2e" || row === "foundry");
   return next.length ? [...new Set(next)] : ["wanderers-guide", "pf2e"];
 }
 
@@ -482,10 +482,14 @@ async function searchWg(userId: string, query: string): Promise<ShopResult<Retur
 async function loadCatalog(userId: string, sources: ShopSource[], books?: number[]) {
   const items: CatalogItem[] = [];
   const traits: CatalogTrait[] = [];
-  if (sources.includes("wanderers-guide")) {
+  if (sources.includes("wanderers-guide") || sources.includes("foundry")) {
     const wg = await fetchWgCatalog(userId, books);
     if (!wg.ok) return wg;
-    items.push(...wg.data.items);
+    if (sources.includes("foundry")) {
+      const ids = new Set(searchFoundryShopItems("", 200, false).items.map((row) => row.wgId).filter((id): id is number => Number.isFinite(id)));
+      items.push(...wg.data.items.filter((item) => ids.has(item.id)));
+    }
+    if (sources.includes("wanderers-guide")) items.push(...wg.data.items);
     traits.push(...wg.data.traits);
   }
   if (sources.includes("pf2e")) {
@@ -544,7 +548,7 @@ export async function getPublishedShop(userId: string, token: string) {
   return ok({ name: payload.name, snapshot: payload.snapshot, publishedAt: payload.published_at ?? null });
 }
 
-export async function searchShopCatalog(userId: string, query: string, source: "wanderers-guide" | "pf2e" | "both" = "both") {
+export async function searchShopCatalog(userId: string, query: string, source: "wanderers-guide" | "pf2e" | "foundry" | "both" = "both") {
   const sources: ShopSource[] = source === "both" ? ["wanderers-guide", "pf2e"] : [source];
   const needle = query.trim().toLowerCase();
   const hits: ReturnType<typeof catalogHit>[] = [];
@@ -553,6 +557,13 @@ export async function searchShopCatalog(userId: string, query: string, source: "
     const wg = await searchWg(userId, query);
     if (wg.ok) hits.push(...wg.data.filter((item) => !needle || item.name.toLowerCase().includes(needle)));
     else failures.push(wg);
+  }
+  if (sources.includes("foundry")) {
+    const foundry = searchFoundryShopItems(query, 200, false);
+    const ids = foundry.items.map((row) => row.wgId).filter((id): id is number => Number.isFinite(id));
+    const wg = await fetchWgCatalog(userId);
+    if (!wg.ok) return wg;
+    return ok(wg.data.items.filter((item) => ids.includes(item.id)).map(catalogHit));
   }
   if (sources.includes("pf2e")) {
     const pf2e = await searchPf2e(query);
@@ -663,7 +674,7 @@ export async function createFoundryShop(userId: string, input: {
 }) {
   if (!Array.isArray(input.items) || input.items.length === 0) return err("VALIDATION_ERROR", "At least one Foundry item is required.");
   const refs = new Map(input.items.map((row) => [row.wgId, row]));
-  const foundryRows = searchFoundryShopItems("", 200, false).items.filter((row) => row.wgId != null && refs.has(row.wgId));
+  const foundryRows = allFoundryShopEquipment().filter((row) => row.wgId != null && refs.has(row.wgId));
   if (foundryRows.length !== refs.size) return err("VALIDATION_ERROR", "Every item must be an active Foundry-linked equipment item.");
   const catalog = await fetchWgCatalog(userId);
   if (!catalog.ok) return catalog;
@@ -842,15 +853,16 @@ async function resolveRefs(userId: string, refs: { source: ShopSource; id: numbe
     pf2eItems = pf2e.data.items;
     pf2eTraitRows = pf2e.data.traits;
   }
-  const wgRefs = refs.filter((row) => row.source === "wanderers-guide");
-  const foundWg = await findWgItems(userId, wgRefs.map((ref) => ref.id), books);
+  const wgRefs = refs.filter((row) => row.source === "wanderers-guide" || row.source === "foundry");
+  const foundryIds = new Set(searchFoundryShopItems("", 200, false).items.map((row) => row.wgId).filter((id): id is number => Number.isFinite(id)));
+  const foundWg = await findWgItems(userId, wgRefs.filter((ref) => ref.source === "wanderers-guide" || foundryIds.has(ref.id)).map((ref) => ref.id), books);
   if (!foundWg.ok) return foundWg;
   const wgItems = foundWg.data;
   const wgTraits = await traitsByIds(userId, wgItems, books);
   if (!wgTraits.ok) return wgTraits;
   const traits = [...wgTraits.data, ...pf2eTraitRows];
   const wgById = new Map(wgItems.map((item) => [item.id, item]));
-  const wgByRef = new Map(wgRefs.map((ref) => [ref, wgById.get(ref.id) ?? null]));
+  const wgByRef = new Map(wgRefs.map((ref) => [ref, ref.source === "foundry" && !foundryIds.has(ref.id) ? null : wgById.get(ref.id) ?? null]));
   const stock: ShopStockRow[] = [];
   for (const ref of refs) {
     const item = ref.source === "pf2e" ? findCatalogItem(pf2eItems, "pf2e", ref.id) : wgByRef.get(ref) ?? undefined;
@@ -941,7 +953,7 @@ export async function addShopItem(userId: string, shopId: string, input: ShopIte
   const node = loaded.data;
   if (!node.draft) return err("VALIDATION_ERROR", "Nothing to stock.");
   const refs = refsFromAdd(input);
-  if (!refs.length || refs.some((row) => (row.source !== "wanderers-guide" && row.source !== "pf2e") || !Number.isFinite(row.id))) {
+  if (!refs.length || refs.some((row) => !["wanderers-guide", "pf2e", "foundry"].includes(row.source as string) || !Number.isFinite(row.id))) {
     return err("VALIDATION_ERROR", "Each item needs source and id.");
   }
   // The check above guarantees source and id for every row, including items[].
