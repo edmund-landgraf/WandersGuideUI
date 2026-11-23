@@ -1,4 +1,5 @@
 import type { Item, Trait } from '@schemas/content';
+import { formatShopPrice } from './shops-generate';
 
 type Pf2eEquipmentRow = {
   EquipmentId: number;
@@ -138,6 +139,28 @@ export function shopAonIndex(items: Item[]) {
   return index;
 }
 
+/** Coin price for an exact name and level. A blank catalog price is omitted. */
+export function shopPriceIndex(items: Item[]) {
+  const index = new Map<string, string>();
+  for (const item of items) {
+    const label = formatShopPrice(item.price);
+    if (label === '—') continue;
+    index.set(shopAonKey(item), label);
+  }
+  return index;
+}
+
+export function fillMissingShopPrices<T extends { name: string; level: number; price: string }>(
+  stock: T[],
+  index: ReadonlyMap<string, string>,
+): T[] {
+  return stock.map((row) => {
+    if (row.price && row.price !== '—') return row;
+    const price = index.get(shopAonKey(row));
+    return price ? { ...row, price } : row;
+  });
+}
+
 /**
  * A direct Archives item URL must identify a specific entry.
  * A search-results URL is not an item link and must never be labeled "AoN".
@@ -169,16 +192,24 @@ export function fillMissingShopAon<T extends { name: string; level: number; aon?
   });
 }
 
-let aonIndexPromise: Promise<ReadonlyMap<string, string>> | null = null;
+let catalogPromise: Promise<Item[]> | null = null;
 
-export function loadShopAonIndex() {
-  if (!aonIndexPromise) {
-    aonIndexPromise = fetchPf2eShopCatalog().then(shopAonIndex).catch((cause: unknown) => {
-      aonIndexPromise = null;
+function loadPf2eShopCatalog() {
+  if (!catalogPromise) {
+    catalogPromise = fetchPf2eShopCatalog().catch((cause: unknown) => {
+      catalogPromise = null;
       throw cause;
     });
   }
-  return aonIndexPromise;
+  return catalogPromise;
+}
+
+export function loadShopAonIndex() {
+  return loadPf2eShopCatalog().then(shopAonIndex);
+}
+
+export function loadShopPriceIndex() {
+  return loadPf2eShopCatalog().then(shopPriceIndex);
 }
 
 function ownAonUrl(item: Item) {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Item } from '@schemas/content';
 import { shopDraft } from './shops-syndicate';
-import { fillMissingShopAon, priceFromStatBlock, shopAonHref, shopAonIndex } from './shops-pf2e';
+import { fillMissingShopAon, fillMissingShopPrices, priceFromStatBlock, shopAonHref, shopAonIndex, shopPriceIndex } from './shops-pf2e';
 
 const ABYSIUM = 'https://2e.aonprd.com/Equipment.aspx?ID=1405';
 
@@ -69,6 +69,16 @@ describe('shop AoN links', () => {
       name: 'Another False Link',
       meta_data: { source: { url: 'https://example.com/Equipment.aspx?ID=44' } } as unknown as Item['meta_data'],
     }))).toBeUndefined();
+  });
+});
+
+describe('catalog prices', () => {
+  it('fills a saved row that was stored without a price', () => {
+    const index = shopPriceIndex([item({ id: -1, name: "Artisan's Toolkit (Sterling)", level: 3, price: { gp: 9 } })]);
+    const [filled] = fillMissingShopPrices([{ name: "Artisan's Toolkit (Sterling)", level: 3, price: '—' }], index);
+    expect(filled.price).toBe('9 gp');
+    const [kept] = fillMissingShopPrices([{ name: "Artisan's Toolkit (Sterling)", level: 3, price: '8 gp' }], index);
+    expect(kept.price).toBe('8 gp');
   });
 });
 

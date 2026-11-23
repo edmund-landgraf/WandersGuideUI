@@ -7,7 +7,7 @@ import { getConditionByName } from '@conditions/condition-handler';
 import { compileWgText } from '@pages/phase1/phase1-markdown';
 import { normalizeMarkdownTables, resolveAonHref, toStandard2eProse } from '@utils/foundry-text';
 import { ShopPopout } from './shop-popout';
-import { fetchPf2eEquipmentText, fillMissingShopAon, loadShopAonIndex, priceFromStatBlock } from './shops-pf2e';
+import { fetchPf2eEquipmentText, fillMissingShopAon, fillMissingShopPrices, loadShopAonIndex, loadShopPriceIndex, priceFromStatBlock } from './shops-pf2e';
 import { listOwned, readPublic } from '../../syndication/store';
 import { LauncherHeader } from './launcher-header';
 import { asContentType, loadShopFoundryLookup, shopStockFoundryManifest, type ShopFoundryLookup } from './shops-export';
@@ -505,11 +505,13 @@ export function ShopDocument({
   const [cart, setCart] = useState(readShopCart);
   useEffect(() => {
     setLinked(withKnownOffer(fillMissingShopAon(stock, new Map())));
-    if (stock.every((row) => row.aon && !/Search\.aspx/i.test(row.aon))) return;
+    const linksReady = stock.every((row) => row.aon && !/Search\.aspx/i.test(row.aon));
+    const pricesReady = stock.every((row) => row.price && row.price !== '—');
+    if (linksReady && pricesReady) return;
     let cancelled = false;
-    void loadShopAonIndex()
-      .then((index) => {
-        if (!cancelled) setLinked(withKnownOffer(fillMissingShopAon(stock, index)));
+    void Promise.all([loadShopAonIndex(), loadShopPriceIndex()])
+      .then(([index, prices]) => {
+        if (!cancelled) setLinked(withKnownOffer(fillMissingShopPrices(fillMissingShopAon(stock, index), prices)));
       })
       .catch(() => undefined);
     return () => {
