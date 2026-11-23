@@ -223,6 +223,23 @@ export function pf2eTraits(items: Item[]): Trait[] {
   })) as unknown as Trait[];
 }
 
+/** Price printed in the stat block for this exact entry, including a parenthetical variant. */
+export function priceFromStatBlock(name: string, text: string) {
+  const decoded = text.replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ');
+  const titles = [...decoded.matchAll(/<title\b[^>]*>\s*([\s\S]*?)\s+Source\b/gi)];
+  const wanted = name.trim().toLowerCase().replace(/\s+/g, ' ');
+  for (let index = 0; index < titles.length; index += 1) {
+    const title = (titles[index][1] ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (title !== wanted) continue;
+    const start = (titles[index].index ?? 0) + titles[index][0].length;
+    const end = titles[index + 1]?.index ?? decoded.length;
+    const price = decoded.slice(start, end).match(/\bPrice\s+([0-9][0-9,]*(?:\s+(?:pp|gp|sp|cp))+(?:\s+[0-9][0-9,]*(?:\s+(?:pp|gp|sp|cp))+)*)/i);
+    if (!price) return null;
+    return price[1].replace(/,/g, '').replace(/\s+/g, ' ').trim();
+  }
+  return null;
+}
+
 const equipmentText = new Map<number, Promise<string>>();
 
 /** Detail text. The list endpoint only returns a summary that ends mid-sentence. */

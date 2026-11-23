@@ -542,6 +542,10 @@ export function copperAsGp(copper: number) {
   return fraction ? `${whole}.${fraction}` : String(whole);
 }
 
+export function formatCopperOffer(copper: number) {
+  return formatShopPrice(copperPrice(copper));
+}
+
 export function formatShopOffer(item: ShopStockItem, markup = 0) {
   const pack = Math.max(1, item.packSize);
   const base = formatShopPrice(item.price, markup);

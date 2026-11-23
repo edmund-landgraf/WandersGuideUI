@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Item } from '@schemas/content';
 import { shopDraft } from './shops-syndicate';
-import { fillMissingShopAon, shopAonHref, shopAonIndex } from './shops-pf2e';
+import { fillMissingShopAon, priceFromStatBlock, shopAonHref, shopAonIndex } from './shops-pf2e';
 
 const ABYSIUM = 'https://2e.aonprd.com/Equipment.aspx?ID=1405';
 
@@ -69,5 +69,20 @@ describe('shop AoN links', () => {
       name: 'Another False Link',
       meta_data: { source: { url: 'https://example.com/Equipment.aspx?ID=44' } } as unknown as Item['meta_data'],
     }))).toBeUndefined();
+  });
+});
+
+describe('stat block prices', () => {
+  const text = `<title level="2" right="Item 2"> Smoke Fan Source Guns &amp; Gears pg. 71 Price 5 gp Bulk L
+<title level="2" right="Item 8"> Smoke Fan (Greater) Source Guns &amp; Gears pg. 71 Price 75 gp Bulk L
+<title level="2" right="Item 3"> Etheric Essence Disruptor (Moderate) Source Guns &amp; Gears pg. 68 Price 70 gp Bulk 1
+<title level="2" right="Item 12"> Etheric Essence Disruptor (Major) Source Guns &amp; Gears pg. 68 Price 1,300 gp Bulk 1`;
+
+  it('reads the price for the named variant', () => {
+    expect(priceFromStatBlock('Smoke Fan', text)).toBe('5 gp');
+    expect(priceFromStatBlock('Smoke Fan (Greater)', text)).toBe('75 gp');
+    expect(priceFromStatBlock('Etheric Essence Disruptor (Moderate)', text)).toBe('70 gp');
+    expect(priceFromStatBlock('Etheric Essence Disruptor (Major)', text)).toBe('1300 gp');
+    expect(priceFromStatBlock('Gecko Pads', text)).toBeNull();
   });
 });

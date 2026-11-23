@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Item, Trait } from '@schemas/content';
-import { collectShopCards, foundryItemSlug, renderProse, shopExportHtml, shopFoundryManifest } from './shops-export';
+import { collectShopCards, foundryItemSlug, renderProse, shopExportHtml, shopFoundryManifest, shopFolderLabel } from './shops-export';
 
 function item(partial: Partial<Item> & Pick<Item, 'id' | 'name'>): Item {
   return {
@@ -53,9 +53,11 @@ describe('shopFoundryManifest', () => {
     expect(foundryItemSlug("Healer's Gloves")).toBe('healers-gloves');
     const manifest = shopFoundryManifest('General store — Town', [
       item({ id: 1, name: 'Dagger', meta_data: { quantity: 2, bulk: {} } }),
-    ]);
+    ], new Date(2026, 10, 23));
     expect(manifest.ambaModuleId).toBe('wgui-shop');
     expect(manifest.encounterId).toBe('general-store-town');
+    expect(manifest.folder).toBe('GST 11-23');
+    expect(shopFolderLabel('jh76', new Date(2026, 10, 23))).toBe('jh76 11-23');
     expect(manifest.items).toEqual([
       { pack: 'pf2e.equipment-srd', slug: 'dagger', name: 'Dagger', qty: 2 },
     ]);

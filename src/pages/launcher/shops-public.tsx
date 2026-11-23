@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { getContentDataFromHref } from '@common/rich_text_input/ContentLinkExtension';
@@ -7,12 +7,12 @@ import { getConditionByName } from '@conditions/condition-handler';
 import { compileWgText } from '@pages/phase1/phase1-markdown';
 import { normalizeMarkdownTables, resolveAonHref, toStandard2eProse } from '@utils/foundry-text';
 import { ShopPopout } from './shop-popout';
-import { fetchPf2eEquipmentText, fillMissingShopAon, loadShopAonIndex } from './shops-pf2e';
+import { fetchPf2eEquipmentText, fillMissingShopAon, loadShopAonIndex, priceFromStatBlock } from './shops-pf2e';
 import { listOwned, readPublic } from '../../syndication/store';
 import { LauncherHeader } from './launcher-header';
-import { asContentType } from './shops-export';
+import { asContentType, shopStockFoundryManifest } from './shops-export';
 import { cartLineKey, cartTotalGp, itemCopper, lineGold, readShopCart, writeShopCart, type ShopCartLine } from './shops-cart';
-import { priceAsGp } from './shops-generate';
+import { formatCopperOffer, formulaCopper, priceAsGp } from './shops-generate';
 import { SHOP_CONTENT_KIND, shopTraceStart, type ShopDraft, type ShopStockRow } from './shops-syndicate';
 import type { SyndicatedNode } from '../../syndication/nodes';
 
@@ -351,6 +351,17 @@ function useShopItemText(row: ShopStockRow) {
   return text;
 }
 
+function withKnownOffer(rows: ShopStockRow[]) {
+  return rows.map((row) => {
+    if (itemCopper(row.price) > 0) return row;
+    if (row.name.startsWith('Formula: ') || row.group === 'FORMULA') {
+      const price = formatCopperOffer(formulaCopper(row.level));
+      return price === '—' ? row : { ...row, price };
+    }
+    return row;
+  });
+}
+
 function groupLabel(group: string) {
   return group.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
@@ -463,23 +474,47 @@ export function ShopDocument({
   homebrew: boolean;
   description?: string;
 }) {
-  const [linked, setLinked] = useState(() => fillMissingShopAon(stock, new Map()));
+  const [linked, setLinked] = useState(() => withKnownOffer(fillMissingShopAon(stock, new Map())));
   const [cart, setCart] = useState(readShopCart);
   useEffect(() => {
-    setLinked(fillMissingShopAon(stock, new Map()));
+    setLinked(withKnownOffer(fillMissingShopAon(stock, new Map())));
     if (stock.every((row) => row.aon && !/Search\.aspx/i.test(row.aon))) return;
     let cancelled = false;
     void loadShopAonIndex()
       .then((index) => {
-        if (!cancelled) setLinked(fillMissingShopAon(stock, index));
+        if (!cancelled) setLinked(withKnownOffer(fillMissingShopAon(stock, index)));
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, [stock]);
+  useEffect(() => {
+    const missing = linked.filter((row) => itemCopper(row.price) <= 0 && row.source === 'pf2e');
+    if (missing.length === 0) return;
+    let cancelled = false;
+    void Promise.all(missing.map(async (row) => {
+      const price = priceFromStatBlock(row.name, await fetchPf2eEquipmentText(row.id));
+      return price ? { id: row.id, name: row.name, price } : null;
+    })).then((found) => {
+      if (cancelled) return;
+      const updates = found.filter((row): row is { id: number; name: string; price: string } => Boolean(row));
+      if (updates.length === 0) return;
+      setLinked((current) => current.map((row) => {
+        if (itemCopper(row.price) > 0) return row;
+        const next = updates.find((item) => item.id === row.id && item.name === row.name);
+        return next ? { ...row, price: next.price } : row;
+      }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [linked]);
   const [useGroupings, setUseGroupings] = useState(readGroupingsPreference);
   const [inGp, setInGp] = useState(() => readFlag(IN_GP_SESSION_KEY, false));
+  const [foundryScript, setFoundryScript] = useState<string | null>(null);
+  const [foundryCopied, setFoundryCopied] = useState(false);
+  const foundryScriptRef = useRef<HTMLTextAreaElement>(null);
   const sections = useGroupings ? groupedStock(linked) : null;
   const saveCart = (next: ShopCartLine[]) => {
     writeShopCart(next);
@@ -511,19 +546,61 @@ export function ShopDocument({
     <StockTable stock={rows} homebrew={homebrew} inGp={inGp} shopId={cartKey} cart={cart} onAdd={addRow} onRemove={removeKey} />
   );
   const strip = <ShopCartStrip homebrew={homebrew} cart={cart} onRemove={removeKey} onClear={() => saveCart([])} />;
+  const openFoundry = () => {
+    const lines = cart.filter((line) => line.shopId === cartKey);
+    setFoundryCopied(false);
+    setFoundryScript(JSON.stringify(shopStockFoundryManifest(name, lines.map((line) => ({
+      name: line.name,
+      quantity: line.qty,
+    }))), null, 2));
+  };
   const toggles = (
-    <ShopViewToggles
-      useGroupings={useGroupings}
-      inGp={inGp}
-      onGroupings={(value) => {
-        writeGroupingsPreference(value);
-        setUseGroupings(value);
-      }}
-      onInGp={(value) => {
-        writeFlag(IN_GP_SESSION_KEY, value);
-        setInGp(value);
-      }}
-    />
+    <div className='flex flex-wrap items-center justify-end gap-4'>
+      <ShopViewToggles
+        useGroupings={useGroupings}
+        inGp={inGp}
+        onGroupings={(value) => {
+          writeGroupingsPreference(value);
+          setUseGroupings(value);
+        }}
+        onInGp={(value) => {
+          writeFlag(IN_GP_SESSION_KEY, value);
+          setInGp(value);
+        }}
+      />
+      <button className='underline underline-offset-2' type='button' onClick={openFoundry}>
+        Export to Foundry
+      </button>
+    </div>
+  );
+  const foundryDialog = foundryScript !== null && (
+    <div className='fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-6'>
+      <div className='flex max-h-full w-full max-w-2xl flex-col gap-3 rounded-lg bg-[#1c1917] p-4 text-stone-100 ring-1 ring-white/15'>
+        <div className='flex items-center justify-between gap-3'>
+          <p className='text-sm'>Foundry import script</p>
+          <button className='underline underline-offset-2' type='button' onClick={() => setFoundryScript(null)}>Close</button>
+        </div>
+        <p className='text-sm text-stone-300'>Copy this and paste it into Foundry’s Import AMBA manifest dialog.</p>
+        <textarea
+          ref={foundryScriptRef}
+          className='min-h-64 w-full flex-1 resize-y rounded-lg bg-black/40 px-3 py-2 font-mono text-xs text-stone-100 ring-1 ring-white/15'
+          readOnly
+          value={foundryScript}
+        />
+        <button
+          className='self-start rounded-lg bg-stone-100 px-4 py-2 text-sm text-stone-900'
+          type='button'
+          onClick={() => {
+            void navigator.clipboard.writeText(foundryScript).then(() => setFoundryCopied(true)).catch(() => {
+              foundryScriptRef.current?.focus();
+              foundryScriptRef.current?.select();
+            });
+          }}
+        >
+          {foundryCopied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+    </div>
   );
 
   if (homebrew) {
@@ -558,6 +635,7 @@ export function ShopDocument({
             </article>
           </div>
         </main>
+        {foundryDialog}
       </div>
     );
   }
@@ -596,6 +674,7 @@ export function ShopDocument({
           </div>
         </section>
       </main>
+      {foundryDialog}
     </div>
   );
 }

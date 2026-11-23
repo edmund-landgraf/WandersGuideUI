@@ -23,7 +23,27 @@ export function foundryItemSlug(name: string) {
     .replace(/^-+|-+$/g, '');
 }
 
-export function shopFoundryManifest(title: string, stock: Item[]) {
+/** One short token stays as written. Several words become their initials. */
+export function abbreviatedShopName(title: string) {
+  const words = (title.trim() || 'Shop').split(/[^A-Za-z0-9]+/).filter(Boolean);
+  if (words.length <= 1) return (words[0] ?? 'Shop').slice(0, 12);
+  return words.map((word) => word[0]).join('').slice(0, 8).toUpperCase();
+}
+
+export function shopFolderLabel(title: string, when = new Date()) {
+  return `${abbreviatedShopName(title)} ${when.getMonth() + 1}-${when.getDate()}`;
+}
+
+export function shopFoundryManifest(title: string, stock: Item[], when = new Date()) {
+  return shopStockFoundryManifest(
+    title,
+    stock.map((item) => ({ name: item.name, quantity: shopLineQuantity(asShopLine(item)) })),
+    when,
+  );
+}
+
+/** Manifest for a saved shop page, where each row already has a display quantity. */
+export function shopStockFoundryManifest(title: string, stock: { name: string; quantity?: number }[], when = new Date()) {
   const label = title.trim() || 'Shop';
   return {
     schemaVersion: 1 as const,
@@ -31,11 +51,12 @@ export function shopFoundryManifest(title: string, stock: Item[]) {
     ambaModuleId: 'wgui-shop',
     encounterId: foundryItemSlug(label) || 'shop',
     title: label,
+    folder: shopFolderLabel(label, when),
     items: stock.map((item) => ({
       pack: FOUNDRY_EQUIPMENT_PACK,
       slug: foundryItemSlug(item.name),
       name: item.name,
-      qty: Math.min(FOUNDRY_QTY_MAX, Math.max(1, shopLineQuantity(asShopLine(item)))),
+      qty: Math.min(FOUNDRY_QTY_MAX, Math.max(1, item.quantity ?? 1)),
     })),
   };
 }
