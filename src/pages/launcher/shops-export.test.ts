@@ -80,11 +80,12 @@ describe('shopFoundryManifest', () => {
         { wgId: 11, pack: 'pf2e.equipment-srd', slug: null, status: 'unresolved' },
       ],
     });
-    expect(manifest.items.map((item) => item.slug)).toEqual(['plate-of-yled']);
-    expect(manifest.skipped).toEqual([
-      { id: 11, name: 'Energized Shield', status: 'unresolved' },
-      { id: 12, name: 'Vine of Roses', status: 'unresolved' },
+    expect(manifest.items.filter((item) => 'slug' in item).map((item) => item.slug)).toEqual(['plate-of-yled']);
+    expect(manifest.items.filter((item) => 'custom' in item)).toEqual([
+      { custom: true, name: 'Energized Shield', qty: 1, wgId: 11 },
+      { custom: true, name: 'Vine of Roses', qty: 1, wgId: 12 },
     ]);
+    expect(manifest.skipped).toBeUndefined();
   });
 
   it('uses live item ids and keeps formulas in their own lookup', () => {
@@ -110,14 +111,12 @@ describe('shopFoundryManifest', () => {
       { id: 15079, name: 'Formula: Book of Translation' },
       { id: 3017, name: 'Rod of Razors' },
     ], new Date(2026, 10, 23), lookup);
-    expect(manifest.items.map((item) => item.slug)).toEqual(['war-saddle']);
+    expect(manifest.items.filter((item) => 'slug' in item).map((item) => item.slug)).toEqual(['war-saddle']);
+    expect(manifest.items.filter((item) => 'custom' in item).map((item) => item.wgId)).toEqual([5468, 13653, 3017]);
     expect(manifest.skipped).toEqual([
-      { id: 5468, name: 'Bloodstride Boots', status: 'unresolved' },
       { id: 14255, name: 'Formula: Camouflage Suit', status: 'formula-not-cataloged' },
       { id: 14247, name: 'Formula: Boastful Hunter', status: 'formula-not-cataloged' },
-      { id: 13653, name: 'Fingerprinting Kit', status: 'unresolved' },
       { id: 15079, name: 'Formula: Book of Translation', status: 'formula-not-cataloged' },
-      { id: 3017, name: 'Rod of Razors', status: 'unresolved' },
     ]);
   });
 
@@ -133,11 +132,10 @@ describe('shopFoundryManifest', () => {
       ],
     });
     expect(manifest.items).toEqual([
+      { custom: true, name: 'Cognitive Mutagen (Moderate) (legacy)', qty: 1, wgId: 14943 },
       { pack: 'pf2e.equipment-srd', slug: 'cognitive-mutagen-moderate', name: 'Cognitive Mutagen (Moderate)', qty: 1 },
     ]);
-    expect(manifest.skipped).toEqual([
-      { id: 14943, name: 'Cognitive Mutagen (Moderate) (legacy)', status: 'unresolved' },
-    ]);
+    expect(manifest.skipped).toBeUndefined();
   });
 
   it('resolves local equipment ids from the Foundry equipment list', () => {
@@ -161,15 +159,51 @@ describe('shopFoundryManifest', () => {
       { id: 5995, name: 'Yiggite Preacher Snakeskin' },
       { id: 14943, name: 'Cognitive Mutagen (Moderate) (legacy)' },
     ], new Date(2026, 10, 23), lookup);
-    expect(manifest.items.map((item) => item.slug)).toEqual([
+    expect(manifest.items.filter((item) => 'slug' in item).map((item) => item.slug)).toEqual([
       'cassock-of-devotion',
       'crown-of-the-master-greater',
       'swarmform-collar',
       'yiggite-preacher-snakeskin',
     ]);
-    expect(manifest.skipped).toEqual([
-      { id: 14943, name: 'Cognitive Mutagen (Moderate) (legacy)', status: 'unresolved' },
+    expect(manifest.items.filter((item) => 'custom' in item)).toEqual([
+      { custom: true, name: 'Cognitive Mutagen (Moderate) (legacy)', qty: 1, wgId: 14943 },
     ]);
+    expect(manifest.skipped).toBeUndefined();
+  });
+
+  it('resolves a cart line with no id when one Foundry equipment name matches', () => {
+    const manifest = shopStockFoundryManifest('Sublime Square — Kerse', [
+      { name: 'Dart Umbrella' },
+      { name: 'Spirit Fan' },
+      { name: 'Beckoning Cat Amulet' },
+      { name: 'Amulet of the Hellcat' },
+      { name: 'Alchemist Goggles' },
+      { name: 'Moisture Harvester' },
+    ], new Date(2026, 10, 23), {
+      version: 1,
+      rows: [
+        { wgId: 13511, name: 'Dart Umbrella', pack: 'pf2e.equipment-srd', slug: 'dart-umbrella', status: 'active' },
+        { wgId: 24170, name: 'Moisture Harvester', pack: null, slug: null, status: 'unresolved' },
+      ],
+      foundryItems: [
+        { wgId: 13511, name: 'Dart Umbrella', pack: 'pf2e.equipment-srd', slug: 'dart-umbrella', status: 'active' },
+        { wgId: 13149, name: 'Spirit Fan', pack: 'pf2e.equipment-srd', slug: 'spirit-fan', status: 'active' },
+        { wgId: 15930, name: 'Beckoning Cat Amulet', pack: 'pf2e.equipment-srd', slug: 'beckoning-cat-amulet', status: 'active' },
+        { wgId: 13958, name: 'Amulet of the Hellcat', pack: 'pf2e.equipment-srd', slug: 'amulet-of-the-hellcat', status: 'active' },
+        { wgId: 16256, name: 'Alchemist Goggles', pack: 'pf2e.equipment-srd', slug: 'alchemist-goggles', status: 'active' },
+      ],
+    });
+    expect(manifest.items.filter((item) => 'slug' in item).map((item) => item.slug)).toEqual([
+      'dart-umbrella',
+      'spirit-fan',
+      'beckoning-cat-amulet',
+      'amulet-of-the-hellcat',
+      'alchemist-goggles',
+    ]);
+    expect(manifest.items.filter((item) => 'custom' in item)).toEqual([
+      { custom: true, name: 'Moisture Harvester', qty: 1 },
+    ]);
+    expect(manifest.skipped).toBeUndefined();
   });
 
   it('does not resolve local ids by display-name guessing', () => {
@@ -185,13 +219,13 @@ describe('shopFoundryManifest', () => {
       { id: 5727, name: 'Greater Crown of the Master' },
       { id: 14943, name: 'Cognitive Mutagen (Moderate) (legacy)' },
     ], new Date(2026, 10, 23), lookup);
-    expect(manifest.items).toEqual([]);
-    expect(manifest.skipped).toEqual([
-      { id: 338, name: "Beekeeper's Smoker", status: 'unresolved' },
-      { id: 4748, name: 'Cloak of the False Foe', status: 'unresolved' },
-      { id: 5727, name: 'Greater Crown of the Master', status: 'unresolved' },
-      { id: 14943, name: 'Cognitive Mutagen (Moderate) (legacy)', status: 'unresolved' },
+    expect(manifest.items).toEqual([
+      { custom: true, name: "Beekeeper's Smoker", qty: 1, wgId: 338 },
+      { custom: true, name: 'Cloak of the False Foe', qty: 1, wgId: 4748 },
+      { custom: true, name: 'Greater Crown of the Master', qty: 1, wgId: 5727 },
+      { custom: true, name: 'Cognitive Mutagen (Moderate) (legacy)', qty: 1, wgId: 14943 },
     ]);
+    expect(manifest.skipped).toBeUndefined();
   });
 
   it('writes the Foundry equipment name when it differs from the Wanderer\'s Guide label', () => {

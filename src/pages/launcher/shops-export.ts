@@ -83,7 +83,16 @@ export function shopFolderLabel(title: string, when = new Date(), note = '') {
 export function shopFoundryManifest(title: string, stock: Item[], when = new Date(), lookup?: ShopFoundryLookup | null, note = '') {
   return shopStockFoundryManifest(
     title,
-    stock.map((item) => ({ id: item.id, name: item.name, quantity: shopLineQuantity(asShopLine(item)) })),
+    stock.map((item) => ({
+      id: item.id,
+      name: item.name,
+      quantity: shopLineQuantity(asShopLine(item)),
+      description: item.description,
+      level: item.level,
+      price: item.price,
+      rarity: item.rarity,
+      bulk: item.bulk,
+    })),
     when,
     lookup,
     note,
@@ -156,22 +165,70 @@ export function shopCatalogMatch(item: { id?: number; name: string }, lookup?: S
   return named ? { ...named, status: 'active' as const } : undefined;
 }
 
-export function shopStockFoundryManifest(title: string, stock: { id?: number; name: string; quantity?: number }[], when = new Date(), lookup?: ShopFoundryLookup | null, note = '') {
+export type ShopFoundryCatalogItem = { pack: string; slug: string; name: string; qty: number };
+export type ShopFoundryCustomItem = {
+  custom: true;
+  name: string;
+  qty: number;
+  wgId?: number;
+  description?: string;
+  level?: number;
+  price?: Item['price'];
+  rarity?: string;
+  bulk?: string;
+};
+
+type ShopManifestStock = {
+  id?: number;
+  name: string;
+  quantity?: number;
+  description?: string;
+  level?: number;
+  price?: Item['price'];
+  rarity?: string;
+  bulk?: string | null;
+};
+
+const CUSTOM_MISS = new Set<ShopFoundrySkipStatus>(['unresolved', 'ambiguous', 'missing-id']);
+
+function customShopItem(item: ShopManifestStock): ShopFoundryCustomItem {
+  const row: ShopFoundryCustomItem = {
+    custom: true,
+    name: item.name,
+    qty: Math.min(FOUNDRY_QTY_MAX, Math.max(1, item.quantity ?? 1)),
+  };
+  if (item.id !== undefined) row.wgId = item.id;
+  const description = item.description?.trim();
+  if (description) row.description = description;
+  if (typeof item.level === 'number' && Number.isFinite(item.level)) row.level = item.level;
+  if (item.price && Object.values(item.price).some((coin) => Number(coin))) row.price = item.price;
+  if (item.rarity?.trim()) row.rarity = item.rarity.trim();
+  if (typeof item.bulk === 'string' && item.bulk.trim()) row.bulk = item.bulk.trim();
+  return row;
+}
+
+export function shopStockFoundryManifest(title: string, stock: ShopManifestStock[], when = new Date(), lookup?: ShopFoundryLookup | null, note = '') {
   const label = title.trim() || 'Shop';
   const skipped: { id?: number; name: string; status: ShopFoundrySkipStatus }[] = [];
-  const items = stock.flatMap((item) => {
+  const items = stock.flatMap((item): (ShopFoundryCatalogItem | ShopFoundryCustomItem)[] => {
     const isFormula = /^formula:\s*/i.test(item.name);
     const match = shopCatalogMatch(item, lookup);
+    const active = Boolean(lookup && match?.status === 'active' && match.pack && match.slug);
     // The catalog is an allowlist. Never derive a Foundry slug from display
     // text: names can contain legacy notes, grades, or other WG-only labels.
-    if (isFormula && (!lookup || !match || match.status !== 'active' || !match.pack || !match.slug)) {
-      skipped.push({ id: item.id, name: item.name, status: 'formula-not-cataloged' });
+    if (isFormula && !active) {
+      skipped.push({ ...(item.id !== undefined ? { id: item.id } : {}), name: item.name, status: 'formula-not-cataloged' });
       return [];
     }
-    if (!lookup || item.id === undefined || !match || match.status !== 'active' || !match.pack || !match.slug) {
-      skipped.push({ id: item.id, name: item.name, status: !lookup ? 'catalog-not-loaded' : item.id === undefined ? 'missing-id' : match?.status ?? 'unresolved' });
+    // A unique Foundry equipment name is enough. Cart lines from a local
+    // equipment list often have no Wanderer's Guide id.
+    if (!active) {
+      const status: ShopFoundrySkipStatus = !lookup ? 'catalog-not-loaded' : match?.status ?? (item.id === undefined ? 'missing-id' : 'unresolved');
+      if (CUSTOM_MISS.has(status)) return [customShopItem(item)];
+      skipped.push({ ...(item.id !== undefined ? { id: item.id } : {}), name: item.name, status });
       return [];
     }
+    if (!match?.pack || !match.slug) return [];
     const foundry = (lookup?.foundryItems ?? []).find((row) => row.pack === match.pack && row.slug === match.slug && row.name?.trim());
     return [{
       pack: match.pack,
