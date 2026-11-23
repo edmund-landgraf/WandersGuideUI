@@ -19,8 +19,8 @@ export function findBuilderCharacter(
 export function planBuilderUpdate(
   character: Pick<Character, 'id' | 'name' | 'level' | 'inventory' | 'meta_data'> & { updated_at?: string },
   proposal: {
-    name?: string;
-    level?: number;
+    name?: string | null;
+    level?: number | null;
     inventory?: { status?: string; column?: unknown[] };
     meta?: Record<string, unknown>;
     [field: string]: unknown;
