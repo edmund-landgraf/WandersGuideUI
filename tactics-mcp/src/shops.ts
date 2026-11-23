@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { allFoundryShopEquipment } from "./foundry-shop-lookup.js";
+import { allFoundryShopEquipment, searchFoundryShopItems } from "./foundry-shop-lookup.js";
 
 import { characterFetch, characterToken, functionsBaseUrl, invokeFunction } from "./character-client.js";
 import {

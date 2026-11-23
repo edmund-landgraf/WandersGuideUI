@@ -22,19 +22,27 @@ ORDER BY m.wg_id;
 
 const foundrySql = `
 SELECT json_build_object(
-  'name', pf2e_name,
-  'pack', foundry_pack_id,
-  'slug', pf2e_slug,
-  'foundryDocumentId', foundry_document_id,
-  'level', level,
-  'rarity', rarity
+  'wgId', match.wg_id,
+  'name', e.pf2e_name,
+  'pack', e.foundry_pack_id,
+  'slug', e.pf2e_slug,
+  'foundryDocumentId', e.foundry_document_id,
+  'level', e.level,
+  'rarity', e.rarity
 )
-FROM pf2e_catalog_entries
-WHERE foundry_pack_id = 'pf2e.equipment-srd'
-  AND foundry_document_id IS NOT NULL
-  AND pf2e_slug IS NOT NULL
-  AND pf2e_slug <> ''
-ORDER BY pf2e_slug;
+FROM pf2e_catalog_entries e
+LEFT JOIN LATERAL (
+  SELECT CASE WHEN count(DISTINCT m.wg_id) = 1 THEN min(m.wg_id) END AS wg_id
+  FROM wg_pf2e_catalog_matches m
+  WHERE m.entry_id = e.entry_id
+    AND m.source_table = 'item'
+    AND m.status = 'active'
+) match ON true
+WHERE e.foundry_pack_id = 'pf2e.equipment-srd'
+  AND e.foundry_document_id IS NOT NULL
+  AND e.pf2e_slug IS NOT NULL
+  AND e.pf2e_slug <> ''
+ORDER BY e.pf2e_slug;
 `;
 
 const formulaSql = `
