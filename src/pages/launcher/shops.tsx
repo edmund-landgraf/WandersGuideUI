@@ -33,7 +33,7 @@ import {
 } from './shops-generate';
 import { fetchPf2eEquipmentText, fetchPf2eShopCatalog, isPf2eShopItem, mergeShopCatalog, pf2eTraits, shopAonHref, shopAonIndex } from './shops-pf2e';
 import { ShopPopout } from './shop-popout';
-import { collectShopCards, shopExportHtml } from './shops-export';
+import { collectShopCards, shopExportHtml, shopFoundryManifest } from './shops-export';
 import { ShopsLibrary } from './shops-library';
 import { readGroupingsPreference, ShopDocument, ShopProse, ShopsPublic, writeGroupingsPreference } from './shops-public';
 import { SHOP_CONTENT_KIND, shopDraft, shopTrace, shopTraceStart, stockCatalogId, stockSource, type ShopDraft, type ShopPageStyle } from './shops-syndicate';
@@ -459,6 +459,9 @@ function ShopsPage() {
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportNote, setExportNote] = useState('');
+  const [foundryScript, setFoundryScript] = useState<string | null>(null);
+  const [foundryCopied, setFoundryCopied] = useState(false);
+  const foundryScriptRef = useRef<HTMLTextAreaElement>(null);
   const [stockCount, setStockCount] = useState(STOCK_COUNT);
   const [markup, setMarkup] = useState(0);
   const [game, setGame] = useState<'pathfinder' | 'starfinder'>('pathfinder');
@@ -926,6 +929,21 @@ function ShopsPage() {
               >
                 {exporting ? 'Exporting…' : 'Export'}
               </button>
+              <button
+                className='rounded-lg bg-card px-4 py-2 text-sm text-foreground ring-1 ring-white/15 disabled:opacity-50'
+                type='button'
+                disabled={!stock || stock.length === 0}
+                onClick={() => {
+                  if (!stock || stock.length === 0) return;
+                  const presetLabel = SHOP_PRESETS.find((row) => row.id === preset)?.label ?? 'Shop';
+                  const settlementLabel = SETTLEMENT_LEVELS.find((row) => row.id === settlement)?.label ?? settlement;
+                  const title = shopName.trim() || `${presetLabel} — ${settlementLabel}`;
+                  setFoundryCopied(false);
+                  setFoundryScript(JSON.stringify(shopFoundryManifest(title, stock), null, 2));
+                }}
+              >
+                Export to Foundry
+              </button>
               {exportNote && <p className='w-full text-sm text-muted-foreground'>{exportNote}</p>}
               {stock && stock.length > 0 && (
                 <div className='grid w-full min-w-0 basis-full items-end gap-3 sm:grid-cols-[12rem_minmax(0,1fr)_auto]'>
@@ -1254,6 +1272,35 @@ function ShopsPage() {
           }}
           onClose={() => setPicking(false)}
         />
+      )}
+      {foundryScript !== null && (
+        <div className='fixed inset-0 z-40 flex items-center justify-center bg-background/80 p-6'>
+          <div className='flex max-h-full w-full max-w-2xl flex-col gap-3 rounded-lg bg-card p-4 ring-1 ring-white/15'>
+            <div className='flex items-center justify-between gap-3'>
+              <p className='text-sm text-foreground'>Foundry import script</p>
+              <button className='shop-action' type='button' onClick={() => setFoundryScript(null)}>Close</button>
+            </div>
+            <p className='text-sm text-muted-foreground'>Copy this and paste it into Foundry’s Import AMBA manifest dialog.</p>
+            <textarea
+              ref={foundryScriptRef}
+              className='min-h-64 w-full flex-1 resize-y rounded-lg bg-background px-3 py-2 font-mono text-xs text-foreground ring-1 ring-white/15'
+              readOnly
+              value={foundryScript}
+            />
+            <button
+              className='self-start rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground'
+              type='button'
+              onClick={() => {
+                void navigator.clipboard.writeText(foundryScript).then(() => setFoundryCopied(true)).catch(() => {
+                  foundryScriptRef.current?.focus();
+                  foundryScriptRef.current?.select();
+                });
+              }}
+            >
+              {foundryCopied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        </div>
       )}
       {descriptionFull && (
         <div className='fixed inset-0 z-40 flex flex-col bg-background/95 p-6'>

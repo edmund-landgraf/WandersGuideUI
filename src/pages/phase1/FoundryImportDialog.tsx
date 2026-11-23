@@ -1,6 +1,7 @@
 import { ensurePhase1PublicUser, phase1Request } from '@pages/phase1/phase1-api';
 import { Character } from '@schemas/content';
 import { useState } from 'react';
+import { findBuilderCharacter, planBuilderUpdate } from '@import/foundry/builder-delta.mjs';
 import {
   FoundryListRow,
   SinglePcPlan,
@@ -39,6 +40,7 @@ export function FoundryImportDialog({ accessToken, characters, onClose, onImport
   const [rows, setRows] = useState<FoundryListRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [plan, setPlan] = useState<SinglePcPlan | null>(null);
+  const [link, setLink] = useState<{ wgId?: unknown; host?: unknown } | null>(null);
 
   async function connect() {
     setBusy(true);
@@ -70,6 +72,8 @@ export function FoundryImportDialog({ accessToken, characters, onClose, onImport
         row.id,
       );
       if (!body.actor) throw new Error('Foundry did not return that character.');
+      const flags = (body.actor as { flags?: Record<string, { wgId?: unknown; host?: unknown }> }).flags?.['foundry-wanderersguide-import'];
+      setLink(flags ?? {});
       setPlan(planSinglePc(body.actor, body.worldId || row.worldId));
       setStep('review');
     } catch (cause) {
@@ -85,12 +89,32 @@ export function FoundryImportDialog({ accessToken, characters, onClose, onImport
     setError(null);
     try {
       await ensurePhase1PublicUser(accessToken);
-      const decision = planImportWrite(plan, linkedCharacter(characters, plan.worldId, plan.actorId));
-      if (decision.action === 'reject') throw new Error(decision.message);
-      if (decision.action === 'update') {
-        await phase1Request('update-character', decision.body, accessToken);
-        onImported(`Updated "${decision.messageName}".`);
+      const lookup = () => findBuilderCharacter(characters, {
+        wgId: link?.wgId as number | string | undefined,
+        host: typeof link?.host === 'string' ? link.host : undefined,
+        worldId: plan.worldId,
+        actorId: plan.actorId,
+      });
+      const found = lookup();
+      if (found.action === 'reject') {
+        throw new Error(found.reason === 'host-mismatch'
+          ? 'This character is linked to a different Wanderer\'s Guide server. Nothing was written.'
+          : 'The linked Wanderer\'s Guide character was not found. Nothing was created.');
+      }
+      if (found.action === 'update') {
+        const update = planBuilderUpdate(found.character, {
+          name: plan.name,
+          level: plan.level,
+          meta: { worldId: plan.worldId, actorId: plan.actorId },
+        });
+        if (!update.confirm) throw new Error('Nothing writable changed. Session values were not applied.');
+        if (lookup().action !== 'update') throw new Error('The link changed before confirm. Nothing was created.');
+        await phase1Request('update-character', update.body, accessToken);
+        onImported(`Updated "${plan.name ?? found.character.name}".`);
       } else {
+        if (lookup().action !== 'create') throw new Error('That actor already matches a character. Nothing new was created.');
+        const decision = planImportWrite(plan, undefined);
+        if (decision.action !== 'create') throw new Error(decision.action === 'reject' ? decision.message : 'Nothing was created.');
         const created = await phase1Request<Character>('create-character', decision.body, accessToken);
         onImported(`Imported "${created.name ?? decision.messageName}".`);
       }

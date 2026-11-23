@@ -9,6 +9,36 @@ import { toStandard2eProse, toWgMarkdownLinks } from '@utils/foundry-text';
 import { asShopLine, formatShopOffer, isShopFormula, shopLineQuantity } from './shops-generate';
 
 export const SHOP_EXPORT_CAP = 400;
+export const FOUNDRY_EQUIPMENT_PACK = 'pf2e.equipment-srd';
+const FOUNDRY_QTY_MAX = 50;
+
+export function foundryItemSlug(name: string) {
+  return name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+export function shopFoundryManifest(title: string, stock: Item[]) {
+  const label = title.trim() || 'Shop';
+  return {
+    schemaVersion: 1 as const,
+    source: 'amba' as const,
+    ambaModuleId: 'wgui-shop',
+    encounterId: foundryItemSlug(label) || 'shop',
+    title: label,
+    items: stock.map((item) => ({
+      pack: FOUNDRY_EQUIPMENT_PACK,
+      slug: foundryItemSlug(item.name),
+      name: item.name,
+      qty: Math.min(FOUNDRY_QTY_MAX, Math.max(1, shopLineQuantity(asShopLine(item)))),
+    })),
+  };
+}
 
 export type ShopExportCard = {
   key: string;

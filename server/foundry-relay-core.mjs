@@ -1,6 +1,7 @@
 // In-memory read relay. No outbound requests. Connection codes and session
 // tokens are compared in memory and are not written to the response or logs.
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { scrubActorFlags } from './foundry-actor-scrub.mjs';
 
 const MAX_BROWSER_BODY = 4_096;
 const MAX_MODULE_BODY = 1_500_000;
@@ -190,8 +191,7 @@ export function createFoundryRelay({ allowOrigins = [] } = {}) {
     const copy = JSON.parse(JSON.stringify(actor));
     const details = copy.system && copy.system.details;
     if (details && typeof details === 'object') delete details.biography;
-    const rules = copy.flags && copy.flags.pf2e && copy.flags.pf2e.rulesSelections;
-    copy.flags = rules === undefined ? {} : { pf2e: { rulesSelections: rules } };
+    scrubActorFlags(copy);
     return copy;
   }
 
