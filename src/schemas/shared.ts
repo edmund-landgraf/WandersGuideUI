@@ -98,7 +98,7 @@ export type SpellSectionType = z.infer<typeof SpellSectionTypeSchema>;
 
 // ─── Item Meta ────────────────────────────────────────────────────────────────
 
-export const ItemGroupSchema = z.enum(['GENERAL', 'WEAPON', 'ARMOR', 'SHIELD', 'RUNE', 'UPGRADE', 'MATERIAL']);
+export const ItemGroupSchema = z.enum(['GENERAL', 'WEAPON', 'ARMOR', 'SHIELD', 'RUNE', 'UPGRADE', 'MATERIAL', 'FOUNDRY']);
 export type ItemGroup = z.infer<typeof ItemGroupSchema>;
 
 export const ItemMetaCategoryWeaponSchema = z.enum(['simple', 'martial', 'advanced', 'unarmed_attack']);
