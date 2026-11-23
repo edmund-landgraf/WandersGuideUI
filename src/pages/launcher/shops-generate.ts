@@ -103,11 +103,28 @@ export function levelProfiles(ceiling: number) {
 }
 
 function traitNames(item: Item, names: Map<number, string>) {
-  return (item.traits ?? []).map((id) => names.get(id) ?? '').filter(Boolean);
+  const fromIds = (item.traits ?? []).map((id) => names.get(id) ?? '').filter(Boolean);
+  const fromFoundry = item.meta_data?.foundry?.traits ?? [];
+  const category = String(item.meta_data?.category ?? '');
+  return [...fromIds, ...fromFoundry, category].filter(Boolean);
 }
 
 function hasLabel(labels: string[], needle: string) {
-  return labels.some((name) => name.includes(needle));
+  const want = needle.toLowerCase();
+  return labels.some((name) => name.toLowerCase().includes(want));
+}
+
+const FOUNDRY_SHOP_GROUP: Record<string, string> = {
+  armor: 'ARMOR',
+  weapon: 'WEAPON',
+  shield: 'SHIELD',
+};
+
+/** Foundry equipment rows arrive as group FOUNDRY. Presets use the Wanderer's Guide groups. */
+function shopGroup(item: Item) {
+  if (item.group !== 'FOUNDRY') return item.group;
+  const type = (item.meta_data?.foundry?.type ?? '').toLowerCase();
+  return FOUNDRY_SHOP_GROUP[type] ?? 'GENERAL';
 }
 
 function usageText(item: Item) {
@@ -118,7 +135,12 @@ function weaponGroup(item: Item) {
   return String(item.meta_data?.group ?? '').toLowerCase();
 }
 
+function mentionsWord(text: string, part: string) {
+  return new RegExp(`\\b${part}\\b`, 'i').test(text);
+}
+
 function isAmmunition(item: Item, labels: string[]) {
+  if ((item.meta_data?.foundry?.type ?? '').toLowerCase() === 'ammo') return true;
   if (hasLabel(labels, 'ammunition')) return true;
   const usage = usageText(item);
   if (usage.includes('ammo') || usage.includes('ammunition')) return true;
@@ -160,9 +182,10 @@ const SPECIALTY_TRAITS = [
 
 /** Rope, tools, clothes, and other mundane goods. Specialty counters keep the rest. */
 function isBasicGood(item: Item, labels: string[]) {
-  if (item.group !== 'GENERAL') return false;
+  if (shopGroup(item) !== 'GENERAL') return false;
   if (isAmmunition(item, labels)) return false;
   if (SPECIALTY_TRAITS.some((name) => hasLabel(labels, name))) return false;
+  if (hasLabel(labels, 'precious')) return false;
   const usage = usageText(item);
   if (JEWELRY_USAGE.some((part) => usage.includes(part))) return false;
   return true;
@@ -171,27 +194,30 @@ function isBasicGood(item: Item, labels: string[]) {
 function matchesPreset(item: Item, preset: ShopPresetId, names: Map<number, string>) {
   const labels = traitNames(item, names);
   const usage = usageText(item);
+  const name = item.name ?? '';
   const group = weaponGroup(item);
+  const kind = shopGroup(item);
+  const worn = (part: string) => usage.includes(part) || mentionsWord(name, part);
   if (preset === 'general') return isBasicGood(item, labels);
-  if (preset === 'magic') return item.group !== 'RUNE' && hasLabel(labels, 'magical');
+  if (preset === 'magic') return kind !== 'RUNE' && hasLabel(labels, 'magical');
   if (preset === 'alchemical') return hasLabel(labels, 'alchemical');
   if (preset === 'ammo') return isAmmunition(item, labels);
   if (preset === 'gadget') return hasLabel(labels, 'gadget');
-  if (preset === 'armorer') return item.group === 'ARMOR' || item.group === 'SHIELD';
+  if (preset === 'armorer') return kind === 'ARMOR' || kind === 'SHIELD';
   if (preset === 'blacksmith') {
-    if (item.group !== 'WEAPON') return false;
+    if (kind !== 'WEAPON') return false;
     if (FIREARM_GROUPS.has(group)) return false;
     return BLACKSMITH_GROUPS.has(group) || group === '';
   }
   if (preset === 'gunsmith') return isAmmunition(item, labels) || FIREARM_GROUPS.has(group) || hasLabel(labels, 'firearm');
-  if (preset === 'jeweler') return JEWELRY_USAGE.some((part) => usage.includes(part)) || hasLabel(labels, 'spellheart');
-  if (preset === 'lost') return item.group !== 'RUNE' && !isAmmunition(item, labels);
-  if (preset === 'tailor') return TAILOR_USAGE.some((part) => usage.includes(part));
+  if (preset === 'jeweler') return JEWELRY_USAGE.some(worn) || hasLabel(labels, 'spellheart');
+  if (preset === 'lost') return kind !== 'RUNE' && !isAmmunition(item, labels);
+  if (preset === 'tailor') return TAILOR_USAGE.some(worn);
   if (preset === 'potion') return hasLabel(labels, 'potion') || hasLabel(labels, 'oil');
   // Catalog trait is "Precious", not "precious material". Most chunks are GENERAL.
-  if (preset === 'materials') return item.group === 'MATERIAL' || hasLabel(labels, 'precious material');
-  if (preset === 'tattoo') return hasLabel(labels, 'tattoo') || usage.includes('tattoo');
-  return item.group === 'RUNE';
+  if (preset === 'materials') return kind === 'MATERIAL' || hasLabel(labels, 'precious');
+  if (preset === 'tattoo') return hasLabel(labels, 'tattoo') || usage.includes('tattoo') || mentionsWord(name, 'tattoo');
+  return kind === 'RUNE';
 }
 
 function sellable(item: Item) {
@@ -207,8 +233,9 @@ function isConsumable(item: Item, labels: string[]) {
 
 function categoryWeight(item: Item, preset: ShopPresetId) {
   if (preset !== 'lost') return 1;
-  if (item.group === 'ARMOR' || item.group === 'SHIELD' || item.group === 'WEAPON') return 5;
-  if (item.group === 'MATERIAL') return 1;
+  const kind = shopGroup(item);
+  if (kind === 'ARMOR' || kind === 'SHIELD' || kind === 'WEAPON') return 5;
+  if (kind === 'MATERIAL') return 1;
   return 10;
 }
 
@@ -319,12 +346,13 @@ export function shopShelf(item: Item, traits: Trait[]) {
   for (const [needle, shelf] of SHOP_SHELF_TRAITS) {
     if (hasLabel(labels, needle) || category.includes(needle)) return shelf;
   }
-  if (item.group === 'ARMOR') return 'Armor';
-  if (item.group === 'SHIELD') return 'Shields';
-  if (item.group === 'WEAPON') return 'Weapons';
-  if (item.group === 'RUNE') return 'Runes';
-  if (item.group === 'MATERIAL') return 'Materials';
-  if (item.group === 'UPGRADE') return 'Upgrades';
+  const kind = shopGroup(item);
+  if (kind === 'ARMOR') return 'Armor';
+  if (kind === 'SHIELD') return 'Shields';
+  if (kind === 'WEAPON') return 'Weapons';
+  if (kind === 'RUNE') return 'Runes';
+  if (kind === 'MATERIAL') return 'Materials';
+  if (kind === 'UPGRADE') return 'Upgrades';
   if (hasLabel(labels, 'wand') || category.includes('wand') || usage.includes('wand')) return 'Wands';
   if (hasLabel(labels, 'staff') || category.includes('staff') || category.includes('stave') || /\bstaff\b|\bstave\b/.test(usage)) return 'Staves';
   if (hasLabel(labels, 'alchemical') || category.includes('alchemical')) return 'Alchemical items';

@@ -28,7 +28,11 @@ SELECT json_build_object(
   'slug', e.pf2e_slug,
   'foundryDocumentId', e.foundry_document_id,
   'level', e.level,
-  'rarity', e.rarity
+  'rarity', e.rarity,
+  'type', e.foundry_type,
+  'category', e.category,
+  'itemGroup', e.item_group,
+  'traits', e.traits
 )
 FROM pf2e_catalog_entries e
 LEFT JOIN LATERAL (
@@ -60,7 +64,7 @@ ORDER BY wg_item_id, pf2e_slug;
 `;
 
 function psql(query) {
-  return execFileSync('docker', ['exec', '-i', 'my-postgres', 'psql', '-U', 'appuser', '-d', 'wgi_rules', '-At', '-c', query], { encoding: 'utf8' })
+  return execFileSync('docker', ['exec', '-i', 'my-postgres', 'psql', '-U', 'appuser', '-d', 'wgi_rules', '-At', '-c', query], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => JSON.parse(line));

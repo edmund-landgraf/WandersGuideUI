@@ -523,8 +523,27 @@ function ShopsPage() {
         try {
           const response = await fetch('/data/shop-foundry-lookup.json');
           if (response.ok) {
-            const lookup = await response.json() as { foundryItems?: Array<{ wgId?: number; name?: string; level?: number; rarity?: string; pack?: string; slug?: string; status?: string }> };
-            foundryList = (lookup.foundryItems ?? []).filter((row) => row.pack && row.slug).map((row) => ({ id: foundryCatalogId(row.pack, row.slug, row.wgId), name: row.name ?? row.slug ?? 'Foundry item', level: row.level ?? 0, rarity: (row.rarity ?? 'COMMON').toUpperCase(), group: 'FOUNDRY', description: '', traits: [], content_source_id: 0, meta_data: { foundry: { pack: row.pack, slug: row.slug } } } as unknown as Item));
+            const lookup = await response.json() as { foundryItems?: Array<{ wgId?: number; name?: string; level?: number; rarity?: string; pack?: string; slug?: string; status?: string; type?: string; category?: string; itemGroup?: string; traits?: string }> };
+            foundryList = (lookup.foundryItems ?? []).filter((row) => row.pack && row.slug).map((row) => ({
+              id: foundryCatalogId(row.pack, row.slug, row.wgId),
+              name: row.name ?? row.slug ?? 'Foundry item',
+              level: row.level ?? 0,
+              rarity: (row.rarity ?? 'COMMON').toUpperCase(),
+              group: 'FOUNDRY',
+              description: '',
+              traits: [],
+              content_source_id: 0,
+              meta_data: {
+                category: row.type === 'ammo' ? 'ammo' : row.category,
+                group: row.itemGroup,
+                foundry: {
+                  pack: row.pack,
+                  slug: row.slug,
+                  type: row.type,
+                  traits: (row.traits ?? '').split(',').map((trait) => trait.trim()).filter(Boolean),
+                },
+              },
+            } as unknown as Item));
             setFoundryItems(foundryList);
           }
         } catch { /* Foundry is optional. */ }

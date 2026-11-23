@@ -70,6 +70,37 @@ describe('stockShop', () => {
     item({ id: 19, name: 'Adamantine Chunk', group: 'MATERIAL', level: 8, rarity: 'UNCOMMON' }),
   ];
 
+  it('matches a Foundry equipment row by compendium type and traits', () => {
+    const rope = item({
+      id: -1,
+      name: 'Rope',
+      group: 'FOUNDRY',
+      level: 0,
+      rarity: 'COMMON',
+      meta_data: { foundry: { type: 'equipment', traits: [] } },
+    });
+    const ring = item({
+      id: -2,
+      name: 'Ring of Climbing',
+      group: 'FOUNDRY',
+      level: 1,
+      rarity: 'COMMON',
+      meta_data: { foundry: { type: 'equipment', traits: ['invested', 'magical'] } },
+    });
+    const sword = item({
+      id: -3,
+      name: 'Longsword',
+      group: 'FOUNDRY',
+      level: 0,
+      rarity: 'COMMON',
+      meta_data: { group: 'sword', foundry: { type: 'weapon', traits: [] } },
+    });
+    expect(stockShop([rope, ring, sword], traits, 'general', 1, () => 0).some((row) => row.name.includes('Rope'))).toBe(true);
+    expect(stockShop([rope, ring, sword], traits, 'general', 1, () => 0).some((row) => row.name.includes('Ring'))).toBe(false);
+    expect(stockShop([ring], traits, 'jeweler', 1, () => 0).some((row) => row.name.includes('Ring'))).toBe(true);
+    expect(stockShop([sword], traits, 'blacksmith', 1, () => 0).some((row) => row.name.includes('Longsword'))).toBe(true);
+  });
+
   it('stocks mundane goods and leaves weapons, armor, magic, and other specialty stock to their counters', () => {
     const stock = stockShop(catalog, traits, 'general', 1, () => 0);
     expect(stock.map((row) => row.name)).toEqual([

@@ -199,6 +199,11 @@ export interface Item {
       splash_damage?: number | null;
       stack_group?: string;
       items?: Record<string, any>[];
+      /** Compendium document type, such as weapon or consumable. */
+      type?: string;
+      traits?: string[];
+      pack?: string;
+      slug?: string;
     };
     cleaning?: {
       updatedAt: string;
