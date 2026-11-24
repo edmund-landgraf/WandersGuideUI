@@ -36,7 +36,17 @@ describe('alignCreatureDefenses', () => {
   it('does not treat a health remainder as useful defenses', () => {
     const remainder = creature('Electric Eel', 16, '');
     const catalog = creature('Electric Eel', 18, '');
-    catalog.meta_data = { calculated_stats: { hp_max: 18, ac: 16, profs: { SAVE_FORT: { total: 7 }, SAVE_REFLEX: { total: 7 }, SAVE_WILL: { total: 4 } } } } as Creature['meta_data'];
+    catalog.meta_data = {
+      calculated_stats: {
+        hp_max: 18,
+        ac: 16,
+        profs: {
+          SAVE_FORT: { total: 7, type: 'T' },
+          SAVE_REFLEX: { total: 7, type: 'T' },
+          SAVE_WILL: { total: 4, type: 'T' },
+        },
+      },
+    } as Creature['meta_data'];
     expect(hasUsefulCalculatedStats(remainder.meta_data?.calculated_stats)).toBe(false);
     expect(creatureDefenseScore(catalog)).toBeGreaterThan(creatureDefenseScore(remainder));
   });
