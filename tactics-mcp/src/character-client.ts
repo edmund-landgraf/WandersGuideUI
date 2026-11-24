@@ -3,7 +3,7 @@ import { createHmac } from "node:crypto";
 export type CharacterRow = Record<string, unknown>;
 
 export type InvokeOk = { ok: true; data: unknown };
-export type InvokeErr = { ok: false; code: string; message: string; data?: unknown };
+export type InvokeErr = { ok: false; code: string; message: string; data?: unknown; retryable?: boolean };
 export type InvokeResult = InvokeOk | InvokeErr;
 
 type FetchFn = typeof fetch;
@@ -71,7 +71,19 @@ export async function invokeFunction(userId: string, name: string, body: Record<
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Character function request failed.";
-    return { ok: false, code: "INTERNAL_ERROR", message };
+    const cause = error instanceof Error ? error.cause : undefined;
+    const causeCode = cause && typeof cause === "object" && "code" in cause ? String((cause as { code: unknown }).code) : "";
+    const causeMessage = cause instanceof Error ? cause.message : "";
+    const diagnostic = [causeCode, causeMessage].filter(Boolean).join(": ");
+    const retryable = /fetch failed|timeout|ECONNRESET|EAI_AGAIN|ENOTFOUND|UND_ERR/i.test(`${message} ${causeCode} ${causeMessage}`);
+    // Function name and the socket error code only. The body and the bearer token stay out of the log.
+    console.error(`[wgui-mcp] ${name} transport error${diagnostic ? ` ${diagnostic}` : ""}`);
+    return {
+      ok: false,
+      code: "INTERNAL_ERROR",
+      message: diagnostic ? `${message} (${diagnostic})` : message,
+      retryable,
+    };
   }
   const text = await response.text();
   let payload: unknown = null;

@@ -15,7 +15,9 @@ import { KNOWN_SCOPES, listTokens, mintToken, normalizeScopes, resolveBearer, re
 const MCP_BODY_BYTES = 64 * 1024;
 const SHOP_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_INFLIGHT = 64;
-const REQUEST_TIMEOUT_MS = 30_000;
+// One builder pass fits in 30s. choose_many still runs the builder again for a dependent
+// wave and once more to report the choices that remain, so the socket has to stay open longer.
+const REQUEST_TIMEOUT_MS = 120_000;
 
 const PUBLIC_PATHS = new Set([
   "/health",
@@ -199,7 +201,10 @@ export function startTacticsHttp() {
     const requestId = randomUUID();
     const started = Date.now();
     const timer = setTimeout(() => {
-      if (!res.headersSent) sendJson(res, 408, { error: "Request timeout", requestId });
+      log(`timeout requestId=${requestId} ${req.method ?? "?"} ${pathOf(req.url ?? "/")} ${REQUEST_TIMEOUT_MS}ms`);
+      if (!res.headersSent) {
+        sendJson(res, 408, { error: "Request timeout", code: "TIMEOUT", retryable: true, requestId });
+      }
       req.destroy();
     }, REQUEST_TIMEOUT_MS);
 

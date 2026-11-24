@@ -4,6 +4,7 @@ import { z } from "zod";
 import { applyCharacterWrite, listCharacterChoices, type OpenChoice } from "./character-choices.js";
 import { planPick, planPicks, selectionsOf, withSelections } from "./character-choose.js";
 import { asRow, guardOf, invokeFunction, type CharacterRow, type InvokeResult } from "./character-client.js";
+import { applyResourcePools, computeResourcePools } from "./character-resources.js";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const writes = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
@@ -36,7 +37,11 @@ export function textResult(text: string, structuredContent: Record<string, unkno
 }
 
 export function fail(result: Extract<InvokeResult, { ok: false }>) {
-  return textResult(result.message, { code: result.code, retryable: result.code === "CONFLICT", ...(result.data ? { data: result.data } : {}) }, true);
+  return textResult(result.message, {
+    code: result.code,
+    retryable: result.retryable === true || result.code === "CONFLICT",
+    ...(result.data ? { data: result.data } : {}),
+  }, true);
 }
 
 export function thrown(error: unknown) {
@@ -432,6 +437,53 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
         character: summary(saved.data),
         openChoices,
         ...(openChoicesError ? { openChoicesError } : {}),
+      });
+    },
+  );
+
+  server.registerTool(
+    "initialize_character",
+    {
+      title: "Fill HP and focus",
+      description: "Sets current HP and focus points to the calculated maximum for a character the caller owns. Call this after a new character's builder choices are finished; create_character leaves hp_current at 1 and focus_point_current at 0, and choose, choose_many, and set_identity do not change those values. Without rest, a character that is no longer at 1 HP and 0 focus is left unchanged. rest true refills an already-played character.",
+      annotations: writes,
+      inputSchema: {
+        characterId: z.number().int(),
+        rest: z.boolean().optional(),
+      },
+    },
+    async (args) => {
+      const loaded = await loadRow(userId(), args.characterId);
+      if (!loaded.ok) return fail(loaded);
+      const forbidden = ownerGuard(loaded.data, userId());
+      if (forbidden) return fail(forbidden);
+      let pools;
+      try {
+        pools = await computeResourcePools(loaded.data);
+      } catch (error) {
+        return thrown(error);
+      }
+      if (!Number.isFinite(pools.maxHp) || pools.maxHp < 1) {
+        return textResult("Hit points are not calculated yet.", { code: "NOT_READY", retryable: false, maxHp: pools.maxHp, maxFocus: pools.maxFocus }, true);
+      }
+      const filled = applyResourcePools(loaded.data, pools, args.rest === true);
+      const spells = filled.character.spells as { focus_point_current?: number };
+      const report = {
+        ...summary(filled.character),
+        hp_current: filled.character.hp_current,
+        focus_point_current: spells.focus_point_current ?? 0,
+        maxHp: pools.maxHp,
+        maxFocus: pools.maxFocus,
+        reason: filled.reason,
+      };
+      if (!filled.changed) {
+        return textResult("Current HP and focus were kept. Pass rest true to refill them.", report);
+      }
+      const saved = await saveRow(userId(), loaded.data, savePatch(filled.character));
+      if (!saved.ok) return fail(saved);
+      return textResult(filled.reason === "rest" ? "Character refilled" : "Character initialized", {
+        ...report,
+        updated_at: saved.data.updated_at ?? null,
       });
     },
   );

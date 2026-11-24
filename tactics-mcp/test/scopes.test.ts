@@ -20,7 +20,7 @@ const WRITE_TOOLS = ["ensure_public_user", "join_campaign", "patch_encounter_dic
 const CAMPAIGN_READS = ["list_campaigns", "get_campaign"];
 const CAMPAIGN_WRITES = ["create_campaign", "update_campaign", "create_encounter", "update_encounter", "set_encounter_campaign"];
 const CHARACTER_READS = ["convert_coins", "export_character", "get_character_notes", "get_character_row", "list_companions", "list_open_choices", "list_options", "list_spell_options"];
-const CHARACTER_WRITES = ["add_character_note", "add_companion", "add_inventory_item", "add_spell", "choose", "choose_many", "create_character", "delete_character", "delete_character_note", "edit_character_note", "give_money", "remove_companion", "remove_inventory_item", "remove_spell", "rename_character_note", "set_books", "set_character_art", "set_character_notes", "set_identity", "set_inventory_item", "set_spells", "take_money", "update_companion", "upload_image"];
+const CHARACTER_WRITES = ["add_character_note", "add_companion", "add_inventory_item", "add_spell", "choose", "choose_many", "create_character", "delete_character", "delete_character_note", "edit_character_note", "give_money", "initialize_character", "remove_companion", "remove_inventory_item", "remove_spell", "rename_character_note", "set_books", "set_character_art", "set_character_notes", "set_identity", "set_inventory_item", "set_spells", "take_money", "update_companion", "upload_image"];
 const SHOP_READS = ["get_published_shop", "get_shop", "list_shops", "search_shop_catalog"];
 const SHOP_WRITES = [
   "add_shop_item",
@@ -71,7 +71,7 @@ function characterArguments(name: string) {
   if (name === "choose") return { characterId: 1, choiceId: "lang-1", optionId: "thalassic" };
   if (name === "choose_many") return { characterId: 1, picks: [{ choiceId: "lang-1", optionId: "thalassic" }] };
   if (name === "list_options") return { kind: "class" };
-  if (name === "export_character" || name === "list_open_choices" || name === "set_books" || name === "delete_character" || name === "list_companions") return { characterId: 1 };
+  if (name === "export_character" || name === "list_open_choices" || name === "set_books" || name === "delete_character" || name === "list_companions" || name === "initialize_character") return { characterId: 1 };
   if (name === "add_companion") return { characterId: 1, creatureId: 1 };
   if (name === "update_companion") return { characterId: 1, index: 0, name: "Scout" };
   if (name === "remove_companion") return { characterId: 1, index: 0 };
@@ -201,7 +201,7 @@ describe("tactics scopes", { concurrency: 1 }, () => {
       assert.match(instructions ?? "", /5-7 batches/);
 
       const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
-      assert.equal(names.length, 114);
+      assert.equal(names.length, 115);
       for (const name of [...CHARACTER_READS, ...CHARACTER_WRITES, ...CAMPAIGN_READS, ...CAMPAIGN_WRITES, ...SHOP_READS, ...SHOP_WRITES]) assert.ok(names.includes(name), name);
       assert.deepEqual(CHARACTER_READS.map(scopeForTool), CHARACTER_READS.map(() => "read"));
       assert.deepEqual(CHARACTER_WRITES.map(scopeForTool), CHARACTER_WRITES.map(() => "write"));

@@ -44,6 +44,9 @@ function fakeChoices(selections: Selections): OpenChoice[] {
     choice("ancestry_lang-2", ["elven", "dwarven", "sylvan"].filter((id) => id !== selections["ancestry_lang-1"])),
   ];
   if (selections["class_feat-1"] === "twin-takedown") all.push(choice("class_feat-1_twin-takedown_style", ["melee", "ranged"]));
+  if (selections.__include_boosts === "yes") {
+    for (let index = 0; index < 22; index += 1) all.push(choice(`boost_${index}`, [`boost-${index}`]));
+  }
   return all.filter((item) => !Object.prototype.hasOwnProperty.call(selections, item.id));
 }
 
@@ -156,6 +159,8 @@ test("choose_many applies several picks, including a dependent one, with one rea
     assert.equal((out.character as Json).id, 1);
     // The whole batch costs one find-character and one update-character.
     assert.deepEqual(h.calls, ["find-character", "update-character"]);
+    // One list for the picks already open, one refresh for the dependent style, one list of what remains.
+    assert.equal(h.builderRuns(), 3);
   } finally {
     await h.close();
   }
@@ -305,6 +310,57 @@ test("choose_many ends in the same state as the same picks sent one by one throu
     assert.equal(count(sequentialCalls, "find-character"), 8);
     assert.equal(count(sequentialCalls, "update-character"), 6);
     assert.deepEqual(h.calls, ["find-character", "update-character"]);
+  } finally {
+    await h.close();
+  }
+});
+
+test("choose_many saves a 22-pick batch of already-open choices in one builder pass", async () => {
+  const picks = Array.from({ length: 22 }, (_, index) => ({ choiceId: `boost_${index}`, optionId: `boost-${index}` }));
+  const h = await harness([ranger(30, { __include_boosts: "yes" })]);
+  try {
+    const result = await h.client.callTool({ name: "choose_many", arguments: { characterId: 30, picks } });
+    assert.equal(result.isError, undefined);
+    const out = result.structuredContent as Json;
+    assert.equal(out.applied, 22);
+    assert.equal(out.failed, 0);
+    assert.equal(out.saved, true);
+    assert.deepEqual(selectionsOf(h.rows.get(30)!), { __include_boosts: "yes", ...Object.fromEntries(picks.map((pick) => [pick.choiceId, pick.optionId])) });
+    assert.deepEqual(h.calls, ["find-character", "update-character"]);
+    // Planning shares one open-choice list; the response lists what is still open.
+    assert.equal(h.builderRuns(), 2);
+    const open = (out.openChoices as OpenChoice[]).map((choice) => choice.id);
+    assert.equal(open.includes("boost_0"), false);
+    assert.equal(open.includes("class_skill-1"), true);
+  } finally {
+    await h.close();
+  }
+});
+
+test("choose_many reports a dropped character save as a retryable transport error", async () => {
+  const h = await harness([ranger(31)]);
+  const token = process.env.WG_ACCESS_TOKEN;
+  try {
+    setCharacterFetch(async (input, init) => {
+      const name = String(input).split("/").pop();
+      if (name === "update-character") {
+        throw new TypeError("fetch failed", { cause: Object.assign(new Error("connect timeout"), { code: "UND_ERR_CONNECT_TIMEOUT" }) });
+      }
+      const body = JSON.parse(String(init?.body ?? "{}")) as Json;
+      const row = h.rows.get(body.id as number);
+      return row ? jsonResponse({ status: "success", data: row }) : jsonResponse({ status: "error", message: "nope" }, 404);
+    });
+    const result = await h.client.callTool({
+      name: "choose_many",
+      arguments: { characterId: 31, picks: [{ choiceId: "class_skill-1", optionId: "nature" }] },
+    });
+    assert.equal(result.isError, true);
+    const out = result.structuredContent as Json;
+    assert.equal(out.code, "INTERNAL_ERROR");
+    assert.equal(out.retryable, true);
+    assert.match(String(out && (result.content as { text: string }[])[0].text), /UND_ERR_CONNECT_TIMEOUT/);
+    assert.equal(JSON.stringify(result).includes(String(token)), false);
+    assert.deepEqual(selectionsOf(h.rows.get(31)!), {});
   } finally {
     await h.close();
   }

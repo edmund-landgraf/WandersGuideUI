@@ -67,26 +67,89 @@ export async function planPick(
   };
 }
 
+function selectionsKey(selections: Selections) {
+  return JSON.stringify(Object.keys(selections).sort().map((key) => [key, selections[key]]));
+}
+
+function copyChoices(choices: OpenChoice[]): OpenChoice[] {
+  return choices.map((choice) => ({ ...choice, options: choice.options.map((option) => ({ ...option })) }));
+}
+
 /**
  * Applies picks in order against an in-memory copy of the character. Each pick is
  * validated against the open choices produced by the picks before it, so a pick may
  * answer a dependent choice that an earlier pick in the same batch opened. A failed
  * pick leaves the selections exactly as they were before it and the batch continues.
  * Returns the final selections and one result per pick; it never writes.
+ *
+ * Picks that are already legal on the current open list share one builder run.
+ * The builder runs again only when a pick re-answers a stored key (so nested
+ * answers are stripped and the choice reopens) or when a pick names a choice the
+ * current list does not have (a dependent choice an earlier pick may have opened).
+ * Taking an option removes that option from other open choices of the same source,
+ * which is the usual sibling exclusion (two boosts, two languages, two skills).
  */
 export async function planPicks(character: Character, picks: ChoicePick[], list: ListChoices) {
   let selections = selectionsOf(character);
   const results: PickResult[] = [];
-  for (const [index, pick] of picks.entries()) {
-    const planned = await planPick(character, selections, pick, list);
-    if (planned.ok) {
-      selections = planned.selections;
-      results.push({ index, choiceId: pick.choiceId, optionId: pick.optionId, status: "applied", replaced: planned.replaced });
-    } else {
-      const { ok: _ok, ...error } = planned;
-      results.push({ index, choiceId: pick.choiceId, optionId: pick.optionId, status: "error", ...error });
+  let cached: { key: string; choices: OpenChoice[] } | null = null;
+
+  async function load(next: Selections): Promise<PickError | null> {
+    const key = selectionsKey(next);
+    if (cached?.key === key) return null;
+    try {
+      cached = { key, choices: copyChoices(await list(withSelections(character, next))) };
+      return null;
+    } catch (error) {
+      cached = null;
+      const message = error instanceof Error ? error.message : "Character operations failed.";
+      return { code: "INTERNAL_ERROR", message, retryable: true };
     }
   }
+
+  for (const [index, pick] of picks.entries()) {
+    const wasAnswered = Object.prototype.hasOwnProperty.call(selections, pick.choiceId);
+    const stripped = Object.fromEntries(
+      Object.entries(selections).filter(([key]) => key !== pick.choiceId && !key.startsWith(`${pick.choiceId}_`)),
+    );
+    const viewed = wasAnswered ? stripped : selections;
+    let failure = await load(viewed);
+    let choice = cached?.choices.find((item) => item.id === pick.choiceId);
+    // A choice opened by an earlier pick in this batch is absent until the builder runs again.
+    if (!failure && !choice && !wasAnswered) {
+      cached = null;
+      failure = await load(viewed);
+      choice = cached?.choices.find((item) => item.id === pick.choiceId);
+    }
+    if (failure) {
+      results.push({ index, choiceId: pick.choiceId, optionId: pick.optionId, status: "error", ...failure });
+      continue;
+    }
+    if (!choice) {
+      results.push({ index, choiceId: pick.choiceId, optionId: pick.optionId, status: "error", code: "NOT_FOUND", message: "That choice is not open.", retryable: false });
+      continue;
+    }
+    if (!choice.options.some((option) => option.id === pick.optionId)) {
+      results.push({ index, choiceId: pick.choiceId, optionId: pick.optionId, status: "error", code: "VALIDATION_ERROR", message: "That option is not legal for this choice.", retryable: false });
+      continue;
+    }
+    const source = choice.source;
+    const optionId = pick.optionId;
+    const replaced = wasAnswered ? selections[pick.choiceId] ?? null : null;
+    selections = { ...stripped, [pick.choiceId]: optionId };
+    results.push({ index, choiceId: pick.choiceId, optionId, status: "applied", replaced });
+    if (cached) {
+      cached = {
+        key: selectionsKey(selections),
+        choices: cached.choices
+          .filter((item) => item.id !== pick.choiceId && !item.id.startsWith(`${pick.choiceId}_`))
+          .map((item) => item.source === source
+            ? { ...item, options: item.options.filter((option) => option.id !== optionId) }
+            : item),
+      };
+    }
+  }
+
   const applied = results.filter((result) => result.status === "applied").length;
   return { selections, results, applied, failed: results.length - applied };
 }
