@@ -453,6 +453,16 @@ function FolderTree({
                         >
                           {shop.name}
                         </a>
+                        {' '}
+                        <a
+                          href={shop.published && shop.public_token ? shopPublicUrl(shop.public_token) : `/shops/view/${encodeURIComponent(shop.id)}`}
+                          target='_blank'
+                          rel='noreferrer'
+                          title={shop.published && shop.public_token ? 'Published link' : 'Preview'}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          (link)
+                        </a>
                       )}
                     </li>
                   ))}
