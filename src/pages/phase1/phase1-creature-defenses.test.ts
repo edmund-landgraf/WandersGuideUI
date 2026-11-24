@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Creature } from '@schemas/content';
-import { alignCreatureDefenses, readStoredDefenses } from './phase1-creature-defenses';
+import { alignCreatureDefenses, creatureDefenseScore, hasUsefulCalculatedStats, readStoredDefenses } from './phase1-creature-defenses';
 
 function creature(name: string, hp: number, source: string): Creature {
   return {
@@ -31,6 +31,14 @@ describe('alignCreatureDefenses', () => {
     const aligned = alignCreatureDefenses(wounded);
     expect(aligned.hp_current).toBe(9);
     expect(readStoredDefenses(aligned).hp).toBe(18);
+  });
+
+  it('does not treat a health remainder as useful defenses', () => {
+    const remainder = creature('Electric Eel', 16, '');
+    const catalog = creature('Electric Eel', 18, '');
+    catalog.meta_data = { calculated_stats: { hp_max: 18, ac: 16, profs: { SAVE_FORT: { total: 7 }, SAVE_REFLEX: { total: 7 }, SAVE_WILL: { total: 4 } } } } as Creature['meta_data'];
+    expect(hasUsefulCalculatedStats(remainder.meta_data?.calculated_stats)).toBe(false);
+    expect(creatureDefenseScore(catalog)).toBeGreaterThan(creatureDefenseScore(remainder));
   });
 
   it('leaves a creature that already has defenses unchanged', () => {

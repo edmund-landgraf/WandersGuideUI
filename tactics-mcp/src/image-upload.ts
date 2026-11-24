@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { characterFetch, invokeFunction } from "./character-client.js";
 import { internalStorageHost, publicStorageObjectUrl } from "./public-art-url.js";
 
@@ -106,6 +107,31 @@ async function readCapped(response: Response) {
     offset += chunk.byteLength;
   }
   return bytes;
+}
+
+/** A generated PNG, JPEG, or WebP on disk. http(s) URLs stay on fetchImageUrl. */
+export async function readImageFile(filePath: string): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; message: string }> {
+  const trimmed = filePath.trim();
+  let path = trimmed;
+  if (trimmed.toLowerCase().startsWith("file:")) {
+    try {
+      path = new URL(trimmed).pathname;
+      if (/^\/[A-Za-z]:/.test(path)) path = path.slice(1);
+      path = decodeURIComponent(path);
+    } catch {
+      return { ok: false, message: "Image file path is not readable." };
+    }
+  }
+  if (!path) return { ok: false, message: "Image file path is empty." };
+  let bytes: Buffer;
+  try {
+    bytes = await readFile(path);
+  } catch {
+    return { ok: false, message: "Image file could not be read." };
+  }
+  if (bytes.byteLength > MAX_IMAGE_BYTES) return { ok: false, message: "Image is larger than 2 MB." };
+  if (!bytes.byteLength) return { ok: false, message: "Image data is empty." };
+  return { ok: true, bytes: new Uint8Array(bytes) };
 }
 
 export async function fetchImageUrl(sourceUrl: string): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; message: string }> {

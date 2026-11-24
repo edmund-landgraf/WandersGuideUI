@@ -437,4 +437,14 @@ test("planPicks leaves selections untouched by a failed pick and reports what a 
   });
   assert.deepEqual(broken.results[0], { index: 0, choiceId: "ancestry_lang-2", optionId: "sylvan", status: "error", code: "INTERNAL_ERROR", message: "builder exploded", retryable: true });
   assert.deepEqual(broken.selections, { "ancestry_lang-1": "elven" });
+
+  let calls = 0;
+  const kept = await planPicks(ranger(21), [{ choiceId: "class_skill-1", optionId: "nature" }], async (row) => {
+    calls += 1;
+    if (calls > 1) throw new Error("fetch failed");
+    return fakeChoices(selectionsOf(row));
+  });
+  assert.equal(kept.applied, 1);
+  assert.equal(kept.results[0].status, "applied");
+  assert.equal(calls, 3);
 });

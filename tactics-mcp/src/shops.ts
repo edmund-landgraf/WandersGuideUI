@@ -413,16 +413,19 @@ async function fetchWgCatalog(userId: string, books?: number[]): Promise<ShopRes
   }
 }
 
+const PF2E_CATALOG_TIMEOUT_MS = 8000;
+
 export async function fetchPf2eCatalog(): Promise<ShopResult<{ items: CatalogItem[]; traits: CatalogTrait[] }>> {
+  const signal = AbortSignal.timeout(PF2E_CATALOG_TIMEOUT_MS);
   try {
-    const first = await characterFetch(`${pf2eApi()}/api/equipment?limit=500&offset=0`, { signal: AbortSignal.timeout(8000) });
-    if (!first.ok) return err("FUNCTION_ERROR", `PF2E equipment API returned ${first.status}`);
+    const first = await characterFetch(`${pf2eApi()}/api/equipment?limit=500&offset=0`, { signal });
+    if (!first.ok) return err("UPSTREAM_UNAVAILABLE", `PF2E equipment API at ${pf2eApi()} returned ${first.status}`, first.status >= 500);
     const firstPage = (await first.json()) as { rows: Pf2eEquipmentRow[]; total: number; limit: number };
     const pageCount = Math.ceil(firstPage.total / firstPage.limit);
     const pages = await Promise.all(
       Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) => {
         const offset = (index + 1) * firstPage.limit;
-        return characterFetch(`${pf2eApi()}/api/equipment?limit=${firstPage.limit}&offset=${offset}`, { signal: AbortSignal.timeout(8000) }).then(async (response) => {
+        return characterFetch(`${pf2eApi()}/api/equipment?limit=${firstPage.limit}&offset=${offset}`, { signal }).then(async (response) => {
           if (!response.ok) throw new Error(`PF2E equipment API returned ${response.status}`);
           return (await response.json()) as { rows: Pf2eEquipmentRow[] };
         });
@@ -436,8 +439,9 @@ export async function fetchPf2eCatalog(): Promise<ShopResult<{ items: CatalogIte
 }
 
 function upstreamFailure(label: string, error: unknown): ShopErr {
-  const message = error instanceof Error ? error.message : "request failed";
-  const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
+  const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+  const message = timedOut ? `timed out after ${PF2E_CATALOG_TIMEOUT_MS / 1000}s` : error instanceof Error ? error.message : "request failed";
+  const cause = !timedOut && error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
   const detail = cause && cause !== message ? `${message} (${cause})` : message;
   return err("UPSTREAM_UNAVAILABLE", `${label} at ${pf2eApi()}: ${detail}`, true);
 }
@@ -627,7 +631,7 @@ function emptyDraft(input: Partial<ShopDraft> & { preset?: ShopPresetId; settlem
   };
 }
 
-async function generateStock(userId: string, draft: ShopDraft, avoidIds?: Set<number>): Promise<ShopResult<ShopDraft>> {
+async function generateStock(userId: string, draft: ShopDraft, avoidIds?: Set<number>): Promise<ShopResult<{ draft: ShopDraft; warning?: string }>> {
   const sources = asSources(draft.sources);
   const catalog = await loadCatalog(userId, sources, draft.books);
   if (!catalog.ok) return catalog;
@@ -651,7 +655,10 @@ async function generateStock(userId: string, draft: ShopDraft, avoidIds?: Set<nu
     asSize(draft.size),
     draft.rarities ? new Set(draft.rarities) : undefined,
   );
-  return ok({ ...draft, size: asSize(draft.size, lines.length), stock: lines.map((line) => toStockRow(line, catalog.data.traits, draft.markup)) });
+  return ok({
+    draft: { ...draft, size: asSize(draft.size, lines.length), stock: lines.map((line) => toStockRow(line, catalog.data.traits, draft.markup)) },
+    ...(catalog.data.warning ? { warning: catalog.data.warning } : {}),
+  });
 }
 
 export async function createShop(userId: string, input: {
@@ -680,10 +687,12 @@ export async function createShop(userId: string, input: {
     return err("VALIDATION_ERROR", error instanceof Error ? error.message : "Invalid folder.");
   }
   let draft = emptyDraft(input);
+  let createWarning: string | undefined;
   if (input.generate !== false && (!input.stock || input.generate)) {
     const generated = await generateStock(userId, draft);
     if (!generated.ok) return generated;
-    draft = generated.data;
+    draft = generated.data.draft;
+    createWarning = generated.data.warning;
   }
   const inserted = await rest(userId, "POST", "syndicated_nodes", {
     user_id: userId,
@@ -697,7 +706,7 @@ export async function createShop(userId: string, input: {
   if (!inserted.ok) return inserted;
   const node = asNode(inserted.data);
   if (!node) return err("INTERNAL_ERROR", "Shop was not created.");
-  return ok({ shop: node });
+  return ok({ shop: node, ...(createWarning ? { warnings: [createWarning] } : {}) });
 }
 
 /** Create a shop whose complete stock is restricted to active Foundry-linked rows. */
@@ -811,7 +820,9 @@ export async function resizeShop(userId: string, shopId: string, size: number) {
   const avoid = new Set((node.draft.stock ?? []).map((row) => row.id));
   const generated = await generateStock(userId, { ...node.draft, size: asSize(size) }, avoid);
   if (!generated.ok) return generated;
-  return saveNode(userId, node, { draft: generated.data });
+  const saved = await saveNode(userId, node, { draft: generated.data.draft });
+  if (!saved.ok || !generated.data.warning) return saved;
+  return ok({ ...saved.data, warnings: [generated.data.warning] });
 }
 
 async function mapPool<T, R>(rows: T[], size: number, fn: (row: T) => Promise<R>): Promise<R[]> {
@@ -954,10 +965,12 @@ export async function setShopStock(userId: string, shopId: string, input: {
     rarities: input.rarities ? asRarities(input.rarities) : node.draft.rarities,
     books: input.books ?? node.draft.books,
   };
+  let stockWarning: string | undefined;
   if (input.generate || !input.items) {
     const generated = await generateStock(userId, draft, new Set((node.draft.stock ?? []).map((row) => row.id)));
     if (!generated.ok) return generated;
-    draft = generated.data;
+    draft = generated.data.draft;
+    stockWarning = generated.data.warning;
   } else {
     // Curated refs are not limited to the books used for generation. Katana (foundry:7059)
     // is in the Foundry lookup but missing when the shop's book list does not include its source.
@@ -965,7 +978,9 @@ export async function setShopStock(userId: string, shopId: string, input: {
     if (!stock.ok) return stock;
     draft = { ...draft, stock: stock.data, size: stock.data.length };
   }
-  return saveNode(userId, node, { draft });
+  const saved = await saveNode(userId, node, { draft });
+  if (!saved.ok || !stockWarning) return saved;
+  return ok({ ...saved.data, warnings: [stockWarning] });
 }
 
 export type ShopItemInput = {

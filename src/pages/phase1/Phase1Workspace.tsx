@@ -2447,6 +2447,17 @@ export function Phase1CampaignPage() {
     mutationFn: () => phase1Request('delete-content', { id: campaignId, type: 'campaign' }),
     onSuccess: () => navigate('/phase1'),
   });
+  const [copyPrompt, setCopyPrompt] = useState<'ask' | 'overwrite' | null>(null);
+  const [copyBusy, setCopyBusy] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const copyAsked = useRef(false);
+  useEffect(() => {
+    const row = campaign.data;
+    if (!session || !row || copyAsked.current) return;
+    if (sameUserId(row.user_id, session.user.id)) return;
+    copyAsked.current = true;
+    setCopyPrompt('ask');
+  }, [campaign.data, session]);
   if (session === undefined) return <LoadingScreen label='Loading session' />;
   if (!session) return <CampaignSignIn variant='phase1' />;
   if (campaign.isLoading || players.isLoading || encounters.isLoading) return <LoadingScreen label='Loading campaign workspace' />;
@@ -2456,8 +2467,140 @@ export function Phase1CampaignPage() {
 
   const campaignData = campaign.data;
   const isGm = sameUserId(campaignData.user_id, session.user.id);
+  async function ownedCampaignsForCopy() {
+    const list = await loadPhase1Campaigns(session!.user.id, session!.access_token);
+    return list.filter((item) => sameUserId(item.user_id, session!.user.id));
+  }
+  async function writeCampaignCopy() {
+    setCopyBusy(true);
+    setCopyError(null);
+    try {
+      const created = await phase1Request<Campaign>('create-campaign', {
+        name: campaignData.name,
+        description: campaignData.description ?? 'A new adventure begins...',
+        notes: campaignData.notes,
+        recommended_options: campaignData.recommended_options,
+        recommended_variants: campaignData.recommended_variants,
+        recommended_content_sources: campaignData.recommended_content_sources,
+        meta_data: { ...campaignData.meta_data, party_ids: [] },
+      });
+      const sourceEncounters = encounters.data ?? [];
+      for (const encounter of sourceEncounters) {
+        const { initiative_log: _initiative, dice_roll_log: _diceLog, dice_roll_state: _diceState, ...meta } = encounter.meta_data;
+        await phase1Request('create-encounter', {
+          id: -1,
+          created_at: '',
+          user_id: '',
+          name: encounter.name,
+          icon: encounter.icon,
+          color: encounter.color,
+          campaign_id: created.id,
+          combatants: {
+            list: encounter.combatants.list.filter((combatant) => combatant.type !== 'CHARACTER'),
+          },
+          meta_data: meta,
+        });
+      }
+      setCopyPrompt(null);
+      await queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] });
+      navigate(`/phase1/campaign/${created.id}`);
+    } catch (error) {
+      if (isCampaignLimitError(error)) {
+        setCopyPrompt('overwrite');
+        setCopyError(null);
+      } else {
+        setCopyError(error instanceof Error ? error.message : 'Could not copy campaign.');
+      }
+    } finally {
+      setCopyBusy(false);
+    }
+  }
+  async function acceptCampaignCopy() {
+    if (copyBusy) return;
+    setCopyBusy(true);
+    setCopyError(null);
+    try {
+      const user = getCachedPublicUser() ?? (await getPublicUser());
+      const free = !hasPatreonAccess(user, 2);
+      const owned = await ownedCampaignsForCopy();
+      if (free && owned.length >= CAMPAIGN_SLOT_CAP) {
+        setCopyPrompt('overwrite');
+        return;
+      }
+    } catch (error) {
+      setCopyError(error instanceof Error ? error.message : 'Could not check your campaigns.');
+      return;
+    } finally {
+      setCopyBusy(false);
+    }
+    await writeCampaignCopy();
+  }
+  async function overwriteAndCopy() {
+    setCopyBusy(true);
+    setCopyError(null);
+    try {
+      const owned = await ownedCampaignsForCopy();
+      for (const existing of owned) {
+        await phase1Request('delete-content', { id: existing.id, type: 'campaign' });
+      }
+    } catch (error) {
+      setCopyError(error instanceof Error ? error.message : 'Could not replace your campaign.');
+      setCopyBusy(false);
+      return;
+    }
+    setCopyBusy(false);
+    await writeCampaignCopy();
+  }
   const ownIds = ownCharacterIds(players.data ?? [], session.user.id);
-  if (!isGm && ownIds.size === 0) return <NoCharacterOnCampaign name={campaignData.name} />;
+  const copyDialogs = (
+    <>
+      {copyPrompt === 'ask' && (
+        <ConfirmDialog
+          title='Copy this campaign?'
+          message={
+            <>
+              Would you like to copy {campaignData.name} and all its encounters and notes to your account?
+              {copyError && <span className='mt-2 block text-p1-danger-soft'>{copyError}</span>}
+            </>
+          }
+          confirmLabel={copyBusy ? 'Copying…' : 'Copy campaign'}
+          confirmDanger={false}
+          onCancel={() => {
+            if (!copyBusy) setCopyPrompt(null);
+          }}
+          onConfirm={() => {
+            if (!copyBusy) void acceptCampaignCopy();
+          }}
+        />
+      )}
+      {copyPrompt === 'overwrite' && (
+        <ConfirmDialog
+          title='Replace your campaign?'
+          message={
+            <>
+              Free accounts can own one campaign. Copying this one will overwrite the campaign already on your account.
+              {copyError && <span className='mt-2 block text-p1-danger-soft'>{copyError}</span>}
+            </>
+          }
+          confirmLabel={copyBusy ? 'Replacing…' : 'Overwrite and copy'}
+          onCancel={() => {
+            if (!copyBusy) setCopyPrompt(null);
+          }}
+          onConfirm={() => {
+            if (!copyBusy) void overwriteAndCopy();
+          }}
+        />
+      )}
+    </>
+  );
+  if (!isGm && ownIds.size === 0) {
+    return (
+      <>
+        <NoCharacterOnCampaign name={campaignData.name} />
+        {copyDialogs}
+      </>
+    );
+  }
   const visible = visibleCampaignEncounters(encounters.data ?? [], campaignId, isGm, ownIds);
   const notePages = visibleNotePages(campaignData, isGm);
   const selectedNote = noteIndex == null ? null : notePages.find((item) => item.index === noteIndex) ?? null;
@@ -2533,8 +2676,16 @@ export function Phase1CampaignPage() {
     if (visible[0]) return <Navigate replace to={`/phase1/campaign/${campaignId}/encounters/${visible[0].id}`} />;
     return <Navigate replace to={`/phase1/campaign/${campaignId}`} />;
   }
-  if (viewingSettings && !isGm) return <PageError error={new Error('Campaign settings are only available to the game master.')} />;
+  if (viewingSettings && !isGm) {
+    return (
+      <>
+        <PageError error={new Error('Campaign settings are only available to the game master.')} />
+        {copyDialogs}
+      </>
+    );
+  }
   return (
+    <>
     <EncounterWorkspace
       campaign={campaignData}
       encounters={visible}
@@ -2569,6 +2720,8 @@ export function Phase1CampaignPage() {
       campaignError={updateCampaign.error ?? patchParty.error ?? resetJoinKey.error ?? kickPlayer.error ?? deleteCampaign.error}
       partyError={patchParty.error}
     />
+    {copyDialogs}
+    </>
   );
 }
 

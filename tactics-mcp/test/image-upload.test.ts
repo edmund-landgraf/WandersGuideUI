@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -122,6 +125,16 @@ test("upload_image posts upload-public-file and the art tools store the returned
   const local = await client.callTool({ name: "upload_image", arguments: { category: "portraits", sourceUrl: "http://127.0.0.1/secret.png" } });
   assert.equal(local.isError, true);
   assert.equal(uploads.length, beforeReject);
+
+  const generated = join(mkdtempSync(join(tmpdir(), "portrait-")), "generated.jpg");
+  writeFileSync(generated, JPEG);
+  const fromFile = await client.callTool({ name: "upload_image", arguments: { category: "portraits", file: generated } });
+  assert.equal(fromFile.isError, undefined);
+  assert.equal(uploads.at(-1)?.type, "jpeg");
+  assert.equal(uploads.at(-1)?.data, JPEG.toString("base64"));
+  const onCharacter = await client.callTool({ name: "set_character_art", arguments: { characterId: 95, portraitFile: generated } });
+  assert.equal(onCharacter.isError, undefined);
+  assert.equal((character.details as { image_url?: string }).image_url, "https://cdn.example/portraits/jpeg");
 
   const fetched = await client.callTool({ name: "upload_image", arguments: { category: "portraits", sourceUrl: "https://images.example/pip.png" } });
   assert.equal(fetched.isError, undefined);

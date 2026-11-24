@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { asRow, invokeFunction } from "./character-client.js";
 import { fail, loadRow, ownerGuard, saveRow, textResult } from "./character-catalog.js";
-import { decodeImageData, durableImageUrl, fetchImageUrl, isBlobUrl, uploadImageBytes, type ImageCategory } from "./image-upload.js";
+import { decodeImageData, durableImageUrl, fetchImageUrl, isBlobUrl, readImageFile, uploadImageBytes, type ImageCategory } from "./image-upload.js";
 import { isSiteRelativeArtPath, publicArtSrc } from "./public-art-url.js";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
@@ -157,15 +157,17 @@ function clampFocus(value: number) {
   return Math.min(100, Math.max(0, value));
 }
 
-async function bytesFromInput(data: string | undefined, sourceUrl: string | undefined) {
-  if (data !== undefined && sourceUrl !== undefined) return { ok: false as const, message: "Pass image data or a source URL, not both." };
+async function bytesFromInput(data: string | undefined, sourceUrl: string | undefined, file: string | undefined) {
+  const given = [data, sourceUrl, file].filter((value) => value !== undefined).length;
+  if (given > 1) return { ok: false as const, message: "Pass image data, a source URL, or a file path, not more than one." };
   if (data !== undefined) return decodeImageData(data);
   if (sourceUrl !== undefined) return fetchImageUrl(sourceUrl);
-  return { ok: false as const, message: "Pass image data or a source URL." };
+  if (file !== undefined) return readImageFile(file);
+  return { ok: false as const, message: "Pass image data, a source URL, or a file path." };
 }
 
-async function uploadInput(userId: string, data: string | undefined, sourceUrl: string | undefined, category: ImageCategory) {
-  const bytes = await bytesFromInput(data, sourceUrl);
+async function uploadInput(userId: string, data: string | undefined, sourceUrl: string | undefined, category: ImageCategory, file?: string) {
+  const bytes = await bytesFromInput(data, sourceUrl, file);
   if (!bytes.ok) return { ok: false as const, code: "VALIDATION_ERROR", message: bytes.message };
   return uploadImageBytes(userId, bytes.bytes, category);
 }
@@ -196,16 +198,17 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
     "upload_image",
     {
       title: "Upload a public image",
-      description: "Uploads a PNG, JPEG, or WebP through upload-public-file, the same call as src/process/upload/image-upload.ts. data is base64 with no data: prefix (a data: URL prefix is stripped). sourceUrl is fetched first. category is portraits or backgrounds, the only buckets that function accepts. The file is stored at <user id>/<id>.<type> in that bucket and the public URL is returned. Images must be 2 MB or smaller. SVG and other types are rejected from the file bytes. The function also requires Patreon tier 1 and returns \"User does not have access\" otherwise.",
+      description: "Uploads a PNG, JPEG, or WebP through upload-public-file, the same call as src/process/upload/image-upload.ts. data is base64 with no data: prefix (a data: URL prefix is stripped). sourceUrl is a public http(s) URL and is fetched first. file is a local path or file:// URL to a generated PNG, JPEG, or WebP. category is portraits or backgrounds, the only buckets that function accepts. The file is stored at <user id>/<id>.<type> in that bucket and the public URL is returned. Images must be 2 MB or smaller. SVG and other types are rejected from the file bytes. The function also requires Patreon tier 1 and returns \"User does not have access\" otherwise.",
       annotations: writes,
       inputSchema: {
         data: z.string().optional(),
         sourceUrl: z.string().optional(),
+        file: z.string().optional(),
         category: z.enum(["portraits", "backgrounds"]),
       },
     },
     async (args) => {
-      const uploaded = await uploadInput(userId(), args.data, args.sourceUrl, args.category);
+      const uploaded = await uploadInput(userId(), args.data, args.sourceUrl, args.category, args.file);
       if (!uploaded.ok) return fail(uploaded);
       return textResult("Image uploaded", { url: uploaded.url, category: uploaded.category, type: uploaded.type });
     },
@@ -215,7 +218,7 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
     "set_character_art",
     {
       title: "Character portrait and background",
-      description: "Sets the portrait and sheet background the character art pickers store. portraitUrl writes details.image_url. backgroundUrl writes details.background_image_url. Pass an http(s) URL, a site-relative path such as /portraits/file.jpg, or null or \"\" to clear that field the way the sheet drops it. A site-relative path is fetched from PUBLIC_ASSET_ORIGIN (default https://wgui.wandersguide.site) and re-uploaded with upload-public-file; if that fails the absolute public URL is stored. portraitData or backgroundData is base64 (no data: prefix) and is uploaded with upload-public-file, portraits or backgrounds, then the returned URL is stored. source URLs belong on upload_image. Other details keys are kept. Only the character owner can write. Saves with expected_updated_at.",
+      description: "Sets the portrait and sheet background the character art pickers store. portraitUrl writes details.image_url. backgroundUrl writes details.background_image_url. Pass an http(s) URL, a site-relative path such as /portraits/file.jpg, or null or \"\" to clear that field the way the sheet drops it. A site-relative path is fetched from PUBLIC_ASSET_ORIGIN (default https://wgui.wandersguide.site) and re-uploaded with upload-public-file; if that fails the absolute public URL is stored. portraitData or backgroundData is base64 (no data: prefix). portraitFile or backgroundFile is a local path or file:// URL to a generated PNG, JPEG, or WebP. Either is uploaded with upload-public-file, portraits or backgrounds, then the returned URL is stored. Other details keys are kept. Only the character owner can write. Saves with expected_updated_at.",
       annotations: writes,
       inputSchema: {
         characterId: z.number().int(),
@@ -223,17 +226,19 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
         backgroundUrl: z.string().nullable().optional(),
         portraitData: z.string().optional(),
         backgroundData: z.string().optional(),
+        portraitFile: z.string().optional(),
+        backgroundFile: z.string().optional(),
       },
     },
     async (args) => {
-      if (args.portraitUrl === undefined && args.backgroundUrl === undefined && args.portraitData === undefined && args.backgroundData === undefined) {
-        return textResult("Pass portraitUrl, backgroundUrl, portraitData, and/or backgroundData.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      if (args.portraitUrl === undefined && args.backgroundUrl === undefined && args.portraitData === undefined && args.backgroundData === undefined && args.portraitFile === undefined && args.backgroundFile === undefined) {
+        return textResult("Pass portraitUrl, backgroundUrl, portraitData, portraitFile, backgroundData, and/or backgroundFile.", { code: "VALIDATION_ERROR", retryable: false }, true);
       }
-      if (args.portraitUrl !== undefined && args.portraitData !== undefined) {
-        return textResult("Pass portraitUrl or portraitData, not both.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      if ([args.portraitUrl, args.portraitData, args.portraitFile].filter((value) => value !== undefined).length > 1) {
+        return textResult("Pass one of portraitUrl, portraitData, or portraitFile.", { code: "VALIDATION_ERROR", retryable: false }, true);
       }
-      if (args.backgroundUrl !== undefined && args.backgroundData !== undefined) {
-        return textResult("Pass backgroundUrl or backgroundData, not both.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      if ([args.backgroundUrl, args.backgroundData, args.backgroundFile].filter((value) => value !== undefined).length > 1) {
+        return textResult("Pass one of backgroundUrl, backgroundData, or backgroundFile.", { code: "VALIDATION_ERROR", retryable: false }, true);
       }
       const portrait = args.portraitUrl === undefined ? null : imageUrl(args.portraitUrl);
       const background = args.backgroundUrl === undefined ? null : imageUrl(args.backgroundUrl);
@@ -258,19 +263,19 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
         if (!durable.ok) return fail(durable);
         backgroundUrl = durable.url;
       }
-      if (args.portraitData !== undefined) {
-        const uploaded = await uploadInput(userId(), args.portraitData, undefined, "portraits");
+      if (args.portraitData !== undefined || args.portraitFile !== undefined) {
+        const uploaded = await uploadInput(userId(), args.portraitData, undefined, "portraits", args.portraitFile);
         if (!uploaded.ok) return fail(uploaded);
         portraitUrl = uploaded.url;
       }
-      if (args.backgroundData !== undefined) {
-        const uploaded = await uploadInput(userId(), args.backgroundData, undefined, "backgrounds");
+      if (args.backgroundData !== undefined || args.backgroundFile !== undefined) {
+        const uploaded = await uploadInput(userId(), args.backgroundData, undefined, "backgrounds", args.backgroundFile);
         if (!uploaded.ok) return fail(uploaded);
         backgroundUrl = uploaded.url;
       }
       const details = detailsOf(loaded.data);
-      if (args.portraitUrl !== undefined || args.portraitData !== undefined) assignUrl(details, "image_url", portraitUrl);
-      if (args.backgroundUrl !== undefined || args.backgroundData !== undefined) assignUrl(details, "background_image_url", backgroundUrl);
+      if (args.portraitUrl !== undefined || args.portraitData !== undefined || args.portraitFile !== undefined) assignUrl(details, "image_url", portraitUrl);
+      if (args.backgroundUrl !== undefined || args.backgroundData !== undefined || args.backgroundFile !== undefined) assignUrl(details, "background_image_url", backgroundUrl);
       const saved = await saveRow(userId(), loaded.data, { details });
       if (!saved.ok) return fail(saved);
       const next = detailsOf(saved.data);

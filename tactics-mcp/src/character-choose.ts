@@ -114,7 +114,7 @@ export async function planPicks(character: Character, picks: ChoicePick[], list:
         }
       }
       cached = null;
-      return { code: "INTERNAL_ERROR", message, retryable: false };
+      return { code: "INTERNAL_ERROR", message, retryable: true };
     }
   }
 
@@ -167,6 +167,11 @@ export async function planPicks(character: Character, picks: ChoicePick[], list:
     // whether every applied pick actually closed. A choice that is still open was ignored.
     cached = null;
     const failure = await load(selections);
+    // The picks already matched an open list. A transport error on this confirmation
+    // lookup, after one retry, must not discard the batch.
+    if (failure?.retryable) {
+      return { selections, results, applied: results.filter((result) => result.status === "applied").length, failed: results.filter((result) => result.status !== "applied").length };
+    }
     if (failure) {
       for (let index = 0; index < results.length; index += 1) {
         const result = results[index];

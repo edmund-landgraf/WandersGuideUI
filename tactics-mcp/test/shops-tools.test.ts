@@ -272,6 +272,33 @@ test("search_shop_catalog returns name matches and keeps the other source when P
   }
 });
 
+test("shop generation keeps Wanderer's Guide stock when the PF2E catalog is down", async () => {
+  nodes.length = 0;
+  resetShopCatalogCache();
+  failEquipment = true;
+  const { mcp, close } = await clientFor(["read", "write"]);
+  try {
+    const created = await mcp.callTool({
+      name: "create_shop",
+      arguments: { name: "Mixed", generate: true, sources: ["wanderers-guide", "pf2e"], books: [1], size: 1 },
+    });
+    assert.equal(created.isError, undefined);
+    const body = created.structuredContent as { shop: { draft: { stock: { source: string }[] } }; warnings: string[] };
+    assert.equal(body.shop.draft.stock[0].source, "wanderers-guide");
+    assert.match(body.warnings.join(" "), /127\.0\.0\.1:3333/);
+
+    const pf2eOnly = await mcp.callTool({
+      name: "create_shop",
+      arguments: { name: "AoN", generate: true, sources: ["pf2e"], size: 1 },
+    });
+    assert.equal(pf2eOnly.isError, true);
+    assert.match(String((pf2eOnly.content as { text: string }[])[0].text), /PF2E equipment API at http:\/\/127\.0\.0\.1:3333/);
+  } finally {
+    failEquipment = false;
+    await close();
+  }
+});
+
 test("read-only tokens cannot create shops", async () => {
   const { mcp, close } = await clientFor(["read"]);
   try {

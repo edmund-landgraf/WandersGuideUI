@@ -67,8 +67,12 @@ export function readStoredDefenses(entity: {
   };
 }
 
-export function hasUsefulCalculatedStats(stats?: { hp_max?: number; ac?: number } | null) {
-  return Boolean(stats && ((typeof stats.hp_max === 'number' && stats.hp_max > 0) || (typeof stats.ac === 'number' && stats.ac > 10)));
+/** AC or a save. A stored hp_max by itself is often only the raw health remainder. */
+export function hasUsefulCalculatedStats(stats?: { hp_max?: number; ac?: number; profs?: Record<string, { total?: number }> } | null) {
+  if (!stats) return false;
+  if (typeof stats.ac === 'number' && stats.ac > 10) return true;
+  const profs = stats.profs ?? {};
+  return (['SAVE_FORT', 'SAVE_REFLEX', 'SAVE_WILL'] as const).some((key) => typeof profs[key]?.total === 'number');
 }
 
 export function creatureDefenseScore(creature: Creature) {
