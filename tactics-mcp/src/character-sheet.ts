@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { asRow, invokeFunction } from "./character-client.js";
 import { fail, loadRow, ownerGuard, saveRow, textResult } from "./character-catalog.js";
-import { decodeImageData, fetchImageUrl, uploadImageBytes, type ImageCategory } from "./image-upload.js";
+import { decodeImageData, durableImageUrl, fetchImageUrl, isBlobUrl, uploadImageBytes, type ImageCategory } from "./image-upload.js";
 import { isSiteRelativeArtPath, publicArtSrc } from "./public-art-url.js";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
@@ -29,8 +29,9 @@ function imageUrl(value: string | null): { ok: true; url: string | undefined; si
   if (value == null) return { ok: true, url: undefined, siteRelative: false };
   const trimmed = value.trim();
   if (!trimmed) return { ok: true, url: undefined, siteRelative: false };
+  if (isBlobUrl(trimmed)) return { ok: false };
   const siteRelative = isSiteRelativeArtPath(trimmed);
-  const candidate = siteRelative ? publicArtSrc(trimmed) : trimmed;
+  const candidate = publicArtSrc(trimmed);
   try {
     const parsed = new URL(candidate);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { ok: false };
@@ -247,6 +248,16 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
       const hostedBackground = await materializeArtUrl(userId(), background, "backgrounds");
       let portraitUrl = hostedPortrait?.ok ? hostedPortrait.url : undefined;
       let backgroundUrl = hostedBackground?.ok ? hostedBackground.url : undefined;
+      if (portraitUrl) {
+        const durable = await durableImageUrl(portraitUrl);
+        if (!durable.ok) return fail(durable);
+        portraitUrl = durable.url;
+      }
+      if (backgroundUrl) {
+        const durable = await durableImageUrl(backgroundUrl);
+        if (!durable.ok) return fail(durable);
+        backgroundUrl = durable.url;
+      }
       if (args.portraitData !== undefined) {
         const uploaded = await uploadInput(userId(), args.portraitData, undefined, "portraits");
         if (!uploaded.ok) return fail(uploaded);
@@ -527,6 +538,11 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
         const uploaded = await uploadInput(userId(), args.imageData, undefined, "backgrounds");
         if (!uploaded.ok) return fail(uploaded);
         imageUrlValue = uploaded.url;
+      }
+      if (imageUrlValue) {
+        const durable = await durableImageUrl(imageUrlValue);
+        if (!durable.ok) return fail(durable);
+        imageUrlValue = durable.url;
       }
       const meta = (loaded.data.meta_data && typeof loaded.data.meta_data === "object" && !Array.isArray(loaded.data.meta_data)
         ? structuredClone(loaded.data.meta_data)

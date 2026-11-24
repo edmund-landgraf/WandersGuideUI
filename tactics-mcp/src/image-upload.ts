@@ -1,4 +1,5 @@
 import { characterFetch, invokeFunction } from "./character-client.js";
+import { internalStorageHost, publicStorageObjectUrl } from "./public-art-url.js";
 
 // upload-public-file rejects a base64 string longer than 3_000_000 characters
 // (supabase/functions/upload-public-file in wanderers-guide, not this repo).
@@ -144,5 +145,40 @@ export async function uploadImageBytes(userId: string, bytes: Uint8Array, catego
   if (typeof record.url !== "string" || !record.url) {
     return { ok: false as const, code: "INTERNAL_ERROR", message: "upload-public-file did not return a url." };
   }
-  return { ok: true as const, url: record.url, type: kind.type, category };
+  const url = publicStorageObjectUrl(record.url);
+  const durable = await durableImageUrl(url);
+  if (!durable.ok) return durable;
+  return { ok: true as const, url: durable.url, type: kind.type, category };
+}
+
+export function isBlobUrl(value: string) {
+  return value.trim().toLowerCase().startsWith("blob:");
+}
+
+function isStorageObjectUrl(value: string) {
+  try {
+    return /\/storage\/v1\/object\//i.test(new URL(value).pathname);
+  } catch {
+    return false;
+  }
+}
+
+/** Storage object URLs must answer with PNG, JPEG, or WebP. Other http(s) URLs are left to the caller. */
+export async function durableImageUrl(url: string): Promise<{ ok: true; url: string } | { ok: false; code: "VALIDATION_ERROR"; message: string }> {
+  if (isBlobUrl(url)) return { ok: false, code: "VALIDATION_ERROR", message: "Temporary blob URLs cannot be stored." };
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { ok: false, code: "VALIDATION_ERROR", message: "Art URL is not a public image link." };
+  }
+  if (internalStorageHost(parsed.hostname) && isStorageObjectUrl(url)) {
+    return { ok: false, code: "VALIDATION_ERROR", message: "Image URL is an internal storage address and has no public origin." };
+  }
+  if (!isStorageObjectUrl(url)) return { ok: true, url };
+  const fetched = await fetchImageUrl(url);
+  if (!fetched.ok) return { ok: false, code: "VALIDATION_ERROR", message: fetched.message };
+  const kind = rejectedType(fetched.bytes);
+  if (!kind.ok) return { ok: false, code: "VALIDATION_ERROR", message: `Public storage URL is not an image. ${kind.message}` };
+  return { ok: true, url };
 }

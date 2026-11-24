@@ -8,14 +8,45 @@
  * `VITE_PUBLIC_ASSET_ORIGIN`. Both default to `https://wgui.wandersguide.site`.
  */
 export const DEFAULT_PUBLIC_ASSET_ORIGIN = 'https://wgui.wandersguide.site';
+/** Public Supabase/Kong origin for `/storage/v1/object/...`. Static files stay on the asset host. */
+export const DEFAULT_PUBLIC_STORAGE_ORIGIN = 'https://amba.wandersguide.site';
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif)$/i;
+const STORAGE_OBJECT = /\/storage\/v1\/object\//i;
 
 export function publicAssetOrigin(): string {
   const configured = String(import.meta.env.VITE_PUBLIC_ASSET_ORIGIN ?? '')
     .trim()
     .replace(/\/$/, '');
   return configured || DEFAULT_PUBLIC_ASSET_ORIGIN;
+}
+
+export function publicStorageOrigin(): string {
+  const configured = String(import.meta.env.VITE_PUBLIC_STORAGE_ORIGIN ?? '')
+    .trim()
+    .replace(/\/$/, '');
+  return configured || DEFAULT_PUBLIC_STORAGE_ORIGIN;
+}
+
+export function internalStorageHost(hostname: string): boolean {
+  const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (!host || host === 'localhost') return false;
+  if (host === 'host.docker.internal' || host.endsWith('.docker.internal')) return true;
+  return !host.includes('.');
+}
+
+export function publicStorageObjectUrl(value: string, origin = publicStorageOrigin()): string {
+  const trimmed = value.trim();
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return trimmed;
+  }
+  if ((url.protocol !== 'http:' && url.protocol !== 'https:') || !STORAGE_OBJECT.test(url.pathname)) return trimmed;
+  if (!internalStorageHost(url.hostname)) return trimmed;
+  const base = origin.trim().replace(/\/$/, '') || DEFAULT_PUBLIC_STORAGE_ORIGIN;
+  return `${base}${url.pathname}${url.search}${url.hash}`;
 }
 
 /** Path the portrait and campaign pickers may store, rooted at `/` on the public host. */
@@ -36,9 +67,16 @@ export function artUploadCategory(value: string): 'portraits' | 'backgrounds' {
 }
 
 /** Absolute http(s) URL for display and for writes. Leaves other values unchanged. */
-export function publicArtSrc(value: string | null | undefined, origin = publicAssetOrigin()): string {
+export function publicArtSrc(
+  value: string | null | undefined,
+  origin = publicAssetOrigin(),
+  storageOrigin = publicStorageOrigin(),
+): string {
   const trimmed = value?.trim() ?? '';
-  if (!trimmed || !isSiteRelativeArtPath(trimmed)) return trimmed;
+  if (!trimmed) return trimmed;
+  const storage = publicStorageObjectUrl(trimmed, storageOrigin);
+  if (storage !== trimmed) return storage;
+  if (!isSiteRelativeArtPath(trimmed)) return trimmed;
   const base = origin.trim().replace(/\/$/, '') || DEFAULT_PUBLIC_ASSET_ORIGIN;
   try {
     const url = new URL(trimmed, `${base}/`);

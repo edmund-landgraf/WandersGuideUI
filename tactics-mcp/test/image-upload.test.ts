@@ -42,6 +42,7 @@ test("image bytes accept png, jpeg, and webp and reject svg", () => {
 
 test("upload_image posts upload-public-file and the art tools store the returned URL", async () => {
   const uploads: Record<string, unknown>[] = [];
+  let nextUploadUrl: string | null = null;
   let character: Record<string, unknown> = {
     id: 95, name: "Pip", user_id: "user-1", updated_at: "t0", details: { ancestry: { name: "Human" } },
   };
@@ -63,7 +64,15 @@ test("upload_image posts upload-public-file and the art tools store the returned
       assert.equal(String(body.data).includes("base64,"), false);
       assert.ok(["png", "jpeg", "webp"].includes(String(body.type)));
       assert.ok(["portraits", "backgrounds"].includes(String(body.category)));
-      return jsonResponse({ status: "success", data: { url: `https://cdn.example/${body.category}/${body.type}` } });
+      const returned = nextUploadUrl ?? `https://cdn.example/${body.category}/${body.type}`;
+      nextUploadUrl = null;
+      return jsonResponse({ status: "success", data: { url: returned } });
+    }
+    if (url === "https://amba.wandersguide.site/storage/v1/object/public/portraits/user-1/a%20b.jpeg") {
+      return new Response(JPEG, { status: 200, headers: { "content-type": "image/jpeg" } });
+    }
+    if (url === "https://amba.wandersguide.site/storage/v1/object/public/backgrounds/user-1/broken.webp") {
+      return new Response("not an image", { status: 200, headers: { "content-type": "text/html" } });
     }
     if (url.endsWith("/find-character")) return jsonResponse({ status: "success", data: character });
     if (url.endsWith("/update-character")) {
@@ -154,6 +163,32 @@ test("upload_image posts upload-public-file and the art tools store the returned
     (campaign.meta_data as { image_url?: string }).image_url,
     "https://wgui.wandersguide.site/portraits/missing.jpg",
   );
+
+  nextUploadUrl = "http://kong:8000/storage/v1/object/public/portraits/user-1/a%20b.jpeg";
+  const kong = await client.callTool({ name: "upload_image", arguments: { category: "portraits", data: JPEG.toString("base64") } });
+  assert.equal(kong.isError, undefined);
+  assert.equal(
+    (kong.structuredContent as { url: string }).url,
+    "https://amba.wandersguide.site/storage/v1/object/public/portraits/user-1/a%20b.jpeg",
+  );
+
+  const storedKong = await client.callTool({
+    name: "set_character_art",
+    arguments: { characterId: 95, portraitUrl: "http://kong:8000/storage/v1/object/public/backgrounds/user-1/broken.webp" },
+  });
+  assert.equal(storedKong.isError, true);
+  assert.match(JSON.stringify(storedKong.content), /not an image|Image must be PNG/);
+
+  const blob = await client.callTool({
+    name: "set_character_art",
+    arguments: { characterId: 95, portraitUrl: "blob:https://amba.wandersguide.site/11111111-1111-1111-1111-111111111111" },
+  });
+  assert.equal(blob.isError, true);
+  assert.equal((character.details as { image_url?: string }).image_url, "https://cdn.example/portraits/jpeg");
+
+  nextUploadUrl = "http://kong:8000/storage/v1/object/public/backgrounds/user-1/broken.webp";
+  const broken = await client.callTool({ name: "upload_image", arguments: { category: "backgrounds", data: WEBP.toString("base64") } });
+  assert.equal(broken.isError, true);
 
   await client.close();
   setCharacterFetch(null);
