@@ -442,27 +442,29 @@ function FolderTree({
                           }}
                         />
                       ) : (
-                        <a
-                          className='underline'
-                          href={`/shops?id=${encodeURIComponent(shop.id)}`}
-                          onContextMenu={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            setMenu({ x: event.clientX, y: event.clientY, shop });
-                          }}
-                        >
-                          {shop.name}
-                        </a>
-                        {' '}
-                        <a
-                          href={shop.published && shop.public_token ? shopPublicUrl(shop.public_token) : `/shops/view/${encodeURIComponent(shop.id)}`}
-                          target='_blank'
-                          rel='noreferrer'
-                          title={shop.published && shop.public_token ? 'Published link' : 'Preview'}
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          (link)
-                        </a>
+                        <>
+                          <a
+                            className='underline'
+                            href={`/shops?id=${encodeURIComponent(shop.id)}`}
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setMenu({ x: event.clientX, y: event.clientY, shop });
+                            }}
+                          >
+                            {shop.name}
+                          </a>
+                          {' '}
+                          <a
+                            href={shop.published && shop.public_token ? shopPublicUrl(shop.public_token) : `/shops/view/${encodeURIComponent(shop.id)}`}
+                            target='_blank'
+                            rel='noreferrer'
+                            title={shop.published && shop.public_token ? 'Published link' : 'Preview'}
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            (link)
+                          </a>
+                        </>
                       )}
                     </li>
                   ))}
