@@ -26,9 +26,9 @@ export function hasDefenseOperations(creature: Creature) {
   });
 }
 
-type DefenseOperation = { data?: { variable?: string; value?: number | string | null } | null };
+type DefenseOperation = { data?: { variable?: string; value?: unknown } | null };
 
-function operationNumber(value: number | string | null | undefined) {
+function operationNumber(value: unknown) {
   const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number.parseInt(value, 10) : NaN;
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -36,15 +36,16 @@ function operationNumber(value: number | string | null | undefined) {
 /** Defenses already written on a creature, for when the live stat engine cannot run. */
 export function readStoredDefenses(entity: {
   hp_current?: number | null;
-  operations?: DefenseOperation[] | null;
+  operations?: readonly unknown[] | null;
   meta_data?: { calculated_stats?: { hp_max?: number; ac?: number; profs?: Record<string, { total?: number }> } | null } | null;
 }) {
   const stats = entity.meta_data?.calculated_stats;
   const profs = stats?.profs;
   const sums = new Map<string, number>();
   for (const operation of entity.operations ?? []) {
-    const variable = operation.data?.variable;
-    const value = operationNumber(operation.data?.value);
+    const data = (operation as DefenseOperation).data;
+    const variable = data?.variable;
+    const value = operationNumber(data?.value);
     if (!variable || value == null) continue;
     sums.set(variable, (sums.get(variable) ?? 0) + value);
   }
@@ -332,6 +333,7 @@ export function alignCreatureDefenses(creature: Creature): Creature {
       ...filled.meta_data,
       calculated_stats: {
         ...filled.meta_data?.calculated_stats,
+        profs: filled.meta_data?.calculated_stats?.profs ?? {},
         ...(typeof hpMax === 'number' ? { hp_max: hpMax } : {}),
       },
     },
