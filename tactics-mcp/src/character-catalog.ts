@@ -405,14 +405,17 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
       const atomic = args.atomic === true;
       const base = { id: loaded.data.id, atomic, applied: planned.applied, failed: planned.failed, results: planned.results };
       if (planned.applied === 0 || (atomic && planned.failed > 0)) {
-        const why = planned.applied === 0 ? "No pick was legal" : "atomic is true and a pick failed";
+        const retryable = planned.results.some((result) => result.status === "error" && result.retryable);
+        const why = planned.applied === 0
+          ? (retryable ? "A pick could not be checked" : "No pick was legal")
+          : "atomic is true and a pick failed";
         return textResult(`${why}; nothing was saved.`, {
           ...base,
           applied: 0,
           results: planned.results.map((result) => (result.status === "applied" ? { ...result, status: "not_saved" as const } : result)),
           saved: false,
-          code: "VALIDATION_ERROR",
-          retryable: planned.results.some((result) => result.status === "error" && result.retryable),
+          code: retryable ? "INTERNAL_ERROR" : "VALIDATION_ERROR",
+          retryable,
         }, true);
       }
       let drafted: CharacterRow;
@@ -445,7 +448,7 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
     "initialize_character",
     {
       title: "Fill HP and focus",
-      description: "Sets current HP and focus points to the calculated maximum for a character the caller owns. Call this after a new character's builder choices are finished; create_character leaves hp_current at 1 and focus_point_current at 0, and choose, choose_many, and set_identity do not change those values. Without rest, a character that is no longer at 1 HP and 0 focus is left unchanged. rest true refills an already-played character.",
+      description: "Sets current HP and focus points to the calculated maximum for a character the caller owns. Call this after a new character's builder choices are finished; create_character leaves hp_current at 1, focus_point_current at 0, and meta_data.reset_hp true. choose, choose_many, and set_identity do not change those values. Without rest, a character whose reset_hp is already false is left unchanged, including one that is at 1 HP with no focus left. rest true refills an already-played character. A successful fill sets reset_hp false.",
       annotations: writes,
       inputSchema: {
         characterId: z.number().int(),

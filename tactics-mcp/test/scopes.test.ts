@@ -17,8 +17,8 @@ import { createTacticsMcpServer, scopeForTool, TACTICS_MCP_DESCRIPTION, TACTICS_
 import { mintToken, normalizeScopes, resetTokens, resolveBearer } from "../src/tokens.js";
 
 const WRITE_TOOLS = ["ensure_public_user", "join_campaign", "patch_encounter_dice", "add_encounter_combatant", "remove_encounter_combatant", "patch_encounter_combatant", "roll_initiative", "set_campaign_art"];
-const CAMPAIGN_READS = ["list_campaigns", "get_campaign"];
-const CAMPAIGN_WRITES = ["create_campaign", "update_campaign", "create_encounter", "update_encounter", "set_encounter_campaign"];
+const CAMPAIGN_READS = ["list_campaigns", "get_campaign", "get_campaign_notes"];
+const CAMPAIGN_WRITES = ["add_campaign_note", "create_campaign", "update_campaign", "create_encounter", "update_encounter", "set_encounter_campaign", "patch_campaign_notes"];
 const CHARACTER_READS = ["convert_coins", "export_character", "get_character_notes", "get_character_row", "list_companions", "list_open_choices", "list_options", "list_spell_options"];
 const CHARACTER_WRITES = ["add_character_note", "add_companion", "add_inventory_item", "add_spell", "choose", "choose_many", "create_character", "delete_character", "delete_character_note", "edit_character_note", "give_money", "initialize_character", "remove_companion", "remove_inventory_item", "remove_spell", "rename_character_note", "set_books", "set_character_art", "set_character_notes", "set_identity", "set_inventory_item", "set_spells", "take_money", "update_companion", "upload_image"];
 const SHOP_READS = ["get_published_shop", "get_shop", "list_shops", "search_shop_catalog"];
@@ -90,7 +90,9 @@ function characterArguments(name: string) {
   if (name === "rename_character_note") return { characterId: 1, pageIndex: 0, title: "Notes" };
   if (name === "delete_character_note") return { characterId: 1, pageIndex: 0 };
   if (name === "upload_image") return { category: "portraits", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" };
-  if (name === "get_campaign" || name === "update_campaign") return { campaignId: 1 };
+  if (name === "get_campaign" || name === "update_campaign" || name === "get_campaign_notes") return { campaignId: 1 };
+  if (name === "patch_campaign_notes") return { campaignId: 1, pageIndex: 0, pageName: "Overview", contents: "x" };
+  if (name === "add_campaign_note") return { campaignId: 1, name: "Overview", contents: "x" };
   if (name === "update_encounter" || name === "set_encounter_campaign") return { encounterId: 1, campaignId: 1 };
   if (name === "give_money" || name === "take_money") return { characterId: 1, amount: { gp: 1 } };
   if (name === "convert_coins") return { amount: { cp: 1 } };
@@ -201,7 +203,7 @@ describe("tactics scopes", { concurrency: 1 }, () => {
       assert.match(instructions ?? "", /5-7 batches/);
 
       const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
-      assert.equal(names.length, 115);
+      assert.equal(names.length, 118);
       for (const name of [...CHARACTER_READS, ...CHARACTER_WRITES, ...CAMPAIGN_READS, ...CAMPAIGN_WRITES, ...SHOP_READS, ...SHOP_WRITES]) assert.ok(names.includes(name), name);
       assert.deepEqual(CHARACTER_READS.map(scopeForTool), CHARACTER_READS.map(() => "read"));
       assert.deepEqual(CHARACTER_WRITES.map(scopeForTool), CHARACTER_WRITES.map(() => "write"));
@@ -210,7 +212,7 @@ describe("tactics scopes", { concurrency: 1 }, () => {
       assert.deepEqual(SHOP_READS.map(scopeForTool), SHOP_READS.map(() => "read"));
       assert.deepEqual(SHOP_WRITES.map(scopeForTool), SHOP_WRITES.map(() => "write"));
       assert.deepEqual(names.filter((name) => scopeForTool(name) === "write"), [...WRITE_TOOLS, ...CAMPAIGN_WRITES, ...CHARACTER_WRITES, ...HOMEBREW_WRITES, ...SHOP_WRITES].sort());
-      assert.equal(names.filter((name) => scopeForTool(name) === "read").length, 49);
+      assert.equal(names.filter((name) => scopeForTool(name) === "read").length, 50);
       assert.equal(scopeForTool("not_a_tool"), null);
 
       const profile = await client.callTool({ name: "get_profile", arguments: {} });

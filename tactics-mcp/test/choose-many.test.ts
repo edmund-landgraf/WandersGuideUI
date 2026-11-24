@@ -35,19 +35,27 @@ function choice(id: string, options: string[]): OpenChoice {
  * - the second language cannot repeat the first
  * An answered choice is not open.
  */
+/** Selections the builder keeps. Monster Hunter closes Nature on the second skill, a different option id. */
+function acceptedSelections(selections: Selections): Selections {
+  const kept = { ...selections };
+  if (kept["class_feat-1"] === "monster-hunter" && kept["class_skill-2"] === "nature") delete kept["class_skill-2"];
+  return kept;
+}
+
 function fakeChoices(selections: Selections): OpenChoice[] {
+  const kept = acceptedSelections(selections);
   const all: OpenChoice[] = [
     choice("class_skill-1", ["acrobatics", "athletics", "nature"]),
-    choice("class_skill-2", ["acrobatics", "athletics", "nature"].filter((id) => id !== selections["class_skill-1"])),
+    choice("class_skill-2", ["acrobatics", "athletics", "nature"].filter((id) => id !== kept["class_skill-1"] && !(kept["class_feat-1"] === "monster-hunter" && id === "nature"))),
     choice("class_feat-1", ["monster-hunter", "twin-takedown"]),
     choice("ancestry_lang-1", ["elven", "dwarven", "sylvan"]),
-    choice("ancestry_lang-2", ["elven", "dwarven", "sylvan"].filter((id) => id !== selections["ancestry_lang-1"])),
+    choice("ancestry_lang-2", ["elven", "dwarven", "sylvan"].filter((id) => id !== kept["ancestry_lang-1"])),
   ];
-  if (selections["class_feat-1"] === "twin-takedown") all.push(choice("class_feat-1_twin-takedown_style", ["melee", "ranged"]));
-  if (selections.__include_boosts === "yes") {
+  if (kept["class_feat-1"] === "twin-takedown") all.push(choice("class_feat-1_twin-takedown_style", ["melee", "ranged"]));
+  if (kept.__include_boosts === "yes") {
     for (let index = 0; index < 22; index += 1) all.push(choice(`boost_${index}`, [`boost-${index}`]));
   }
-  return all.filter((item) => !Object.prototype.hasOwnProperty.call(selections, item.id));
+  return all.filter((item) => !Object.prototype.hasOwnProperty.call(kept, item.id));
 }
 
 function selectionsOf(character: Json): Selections {
@@ -159,8 +167,8 @@ test("choose_many applies several picks, including a dependent one, with one rea
     assert.equal((out.character as Json).id, 1);
     // The whole batch costs one find-character and one update-character.
     assert.deepEqual(h.calls, ["find-character", "update-character"]);
-    // One list for the picks already open, one refresh for the dependent style, one list of what remains.
-    assert.equal(h.builderRuns(), 3);
+    // One list for the picks already open, one refresh for the dependent style, one confirm, one list of what remains.
+    assert.equal(h.builderRuns(), 4);
   } finally {
     await h.close();
   }
@@ -327,8 +335,8 @@ test("choose_many saves a 22-pick batch of already-open choices in one builder p
     assert.equal(out.saved, true);
     assert.deepEqual(selectionsOf(h.rows.get(30)!), { __include_boosts: "yes", ...Object.fromEntries(picks.map((pick) => [pick.choiceId, pick.optionId])) });
     assert.deepEqual(h.calls, ["find-character", "update-character"]);
-    // Planning shares one open-choice list; the response lists what is still open.
-    assert.equal(h.builderRuns(), 2);
+    // Planning shares one open-choice list, then one confirm; the response lists what is still open.
+    assert.equal(h.builderRuns(), 3);
     const open = (out.openChoices as OpenChoice[]).map((choice) => choice.id);
     assert.equal(open.includes("boost_0"), false);
     assert.equal(open.includes("class_skill-1"), true);
@@ -361,6 +369,51 @@ test("choose_many reports a dropped character save as a retryable transport erro
     assert.match(String(out && (result.content as { text: string }[])[0].text), /UND_ERR_CONNECT_TIMEOUT/);
     assert.equal(JSON.stringify(result).includes(String(token)), false);
     assert.deepEqual(selectionsOf(h.rows.get(31)!), {});
+  } finally {
+    await h.close();
+  }
+});
+
+test("choose_many drops a pick the builder rejects even when the local list still offered it", async () => {
+  const h = await harness([ranger(32)]);
+  try {
+    const result = await h.client.callTool({
+      name: "choose_many",
+      arguments: {
+        characterId: 32,
+        picks: [
+          { choiceId: "class_feat-1", optionId: "monster-hunter" },
+          { choiceId: "class_skill-2", optionId: "nature" },
+        ],
+      },
+    });
+    assert.equal(result.isError, undefined);
+    const out = result.structuredContent as Json;
+    assert.equal(out.applied, 1);
+    assert.equal(out.failed, 1);
+    assert.equal((out.results as Json[])[1].code, "VALIDATION_ERROR");
+    assert.deepEqual(selectionsOf(h.rows.get(32)!), { "class_feat-1": "monster-hunter" });
+  } finally {
+    await h.close();
+  }
+});
+
+test("choose_many reports a builder failure as a retryable internal error", async () => {
+  const h = await harness([ranger(33)]);
+  try {
+    setCharacterChoiceRunner(async () => {
+      throw new Error("builder unavailable");
+    });
+    const result = await h.client.callTool({
+      name: "choose_many",
+      arguments: { characterId: 33, picks: [{ choiceId: "class_skill-1", optionId: "nature" }] },
+    });
+    assert.equal(result.isError, true);
+    const out = result.structuredContent as Json;
+    assert.equal(out.code, "INTERNAL_ERROR");
+    assert.equal(out.retryable, true);
+    assert.equal(out.saved, false);
+    assert.deepEqual(selectionsOf(h.rows.get(33)!), {});
   } finally {
     await h.close();
   }

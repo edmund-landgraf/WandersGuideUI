@@ -256,10 +256,13 @@ export function getSpeedValue(id: StoreID, variable: VariableNum, entity: Living
   }
 
   const totalBonusValue = Array.from(finalData.bmap.values()).reduce((acc, bonus) => acc + bonus.value, 0);
+  const raw = finalData.value + totalBonusValue;
+  // A speed the creature does not have stays 0. The 5-foot floor applies only
+  // after a base speed or a bonus actually grants that movement mode.
+  const granted = finalData.value > 0 || raw > 0;
 
   return {
-    // Minimum speed is 5
-    total: Math.max(5, finalData.value + totalBonusValue),
+    total: granted ? Math.max(5, raw) : 0,
     value: finalData.value,
     bonus: totalBonusValue,
     bmap: finalData.bmap,

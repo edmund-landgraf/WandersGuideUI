@@ -181,16 +181,23 @@ async function fetchArtObjectUrl(url: string) {
   return blobToDataUrl(blob);
 }
 
+function ownCreatureArt(fallbackUrl?: string) {
+  const trimmed = fallbackUrl?.trim();
+  if (!trimmed || /aonprd\.com/i.test(trimmed)) return null;
+  const src = resolveImageUrl(trimmed);
+  return { monsterId: null, fullSrc: src, thumbSrc: src };
+}
+
 export async function lookupMonsterArt(name: string, fallbackUrl?: string, size: 'thumb' | 'full' = 'thumb'): Promise<Phase1MonsterArt | null> {
   const trimmedFallback = fallbackUrl?.trim() || undefined;
   const lookupName = normalizeName(name) || name.trim();
   const password = readArtPassword();
+  // A portrait stored on the creature is custom art. Catalog lookup by name is
+  // only for official creatures, which have no image or only an Archives of Nethys link.
+  const own = ownCreatureArt(trimmedFallback);
+  if (own) return own;
 
-  if (!password) {
-    if (!trimmedFallback || /aonprd\.com/i.test(trimmedFallback)) return null;
-    const src = resolveImageUrl(trimmedFallback);
-    return { monsterId: null, fullSrc: src, thumbSrc: src };
-  }
+  if (!password) return null;
 
   if (lookupName) {
     try {
@@ -228,7 +235,5 @@ export async function lookupMonsterArt(name: string, fallbackUrl?: string, size:
     return { monsterId: cached.monsterId ?? fullCached?.monsterId ?? thumbCached?.monsterId ?? null, fullSrc, thumbSrc };
   }
 
-  if (!trimmedFallback || /aonprd\.com/i.test(trimmedFallback)) return null;
-  const src = resolveImageUrl(trimmedFallback);
-  return { monsterId: null, fullSrc: src, thumbSrc: src };
+  return ownCreatureArt(trimmedFallback);
 }

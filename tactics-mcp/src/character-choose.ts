@@ -101,9 +101,20 @@ export async function planPicks(character: Character, picks: ChoicePick[], list:
       cached = { key, choices: copyChoices(await list(withSelections(character, next))) };
       return null;
     } catch (error) {
-      cached = null;
       const message = error instanceof Error ? error.message : "Character operations failed.";
-      return { code: "INTERNAL_ERROR", message, retryable: true };
+      const retryable = /fetch failed|timeout|ECONNRESET|EAI_AGAIN|ENOTFOUND|UND_ERR/i.test(message);
+      if (retryable) {
+        try {
+          cached = { key, choices: copyChoices(await list(withSelections(character, next))) };
+          return null;
+        } catch (again) {
+          cached = null;
+          const retryMessage = again instanceof Error ? again.message : message;
+          return { code: "INTERNAL_ERROR", message: retryMessage, retryable: true };
+        }
+      }
+      cached = null;
+      return { code: "INTERNAL_ERROR", message, retryable: false };
     }
   }
 
@@ -150,6 +161,56 @@ export async function planPicks(character: Character, picks: ChoicePick[], list:
     }
   }
 
+  const original = selectionsOf(character);
+  if (results.some((result) => result.status === "applied")) {
+    // The loop's option filter only drops the same option id. Ask the builder once
+    // whether every applied pick actually closed. A choice that is still open was ignored.
+    cached = null;
+    const failure = await load(selections);
+    if (failure) {
+      for (let index = 0; index < results.length; index += 1) {
+        const result = results[index];
+        if (result.status !== "applied") continue;
+        results[index] = {
+          index: result.index,
+          choiceId: result.choiceId,
+          optionId: result.optionId,
+          status: "error",
+          ...failure,
+        };
+      }
+      selections = original;
+    } else {
+      const stillOpen = new Set((cached?.choices ?? []).map((choice) => choice.id));
+      for (let index = 0; index < results.length; index += 1) {
+        const result = results[index];
+        if (result.status !== "applied" || !stillOpen.has(result.choiceId)) continue;
+        results[index] = {
+          index: result.index,
+          choiceId: result.choiceId,
+          optionId: result.optionId,
+          status: "error",
+          code: "VALIDATION_ERROR",
+          message: "That option is not legal for this choice.",
+          retryable: false,
+        };
+      }
+      selections = replay(original, results);
+    }
+  }
+
   const applied = results.filter((result) => result.status === "applied").length;
   return { selections, results, applied, failed: results.length - applied };
+}
+
+function replay(original: Selections, results: PickResult[]): Selections {
+  let selections = original;
+  for (const result of results) {
+    if (result.status !== "applied") continue;
+    const stripped = Object.fromEntries(
+      Object.entries(selections).filter(([key]) => key !== result.choiceId && !key.startsWith(`${result.choiceId}_`)),
+    );
+    selections = { ...stripped, [result.choiceId]: result.optionId };
+  }
+  return selections;
 }

@@ -22,7 +22,7 @@ function jsonResponse(body: unknown, status = 200) {
 /** Level 4 Human druid, class HP 8, ancestry HP 8, Constitution modifier +1, one focus spell. */
 const DRUID_POOLS = { maxHp: 8 + (8 + 1) * 4, maxFocus: 1 };
 
-function leafDruid(resources: { hp: number; focus: number }) {
+function leafDruid(resources: { hp: number; focus: number; fresh?: boolean }) {
   return {
     id: 151,
     name: "Leaf",
@@ -30,6 +30,7 @@ function leafDruid(resources: { hp: number; focus: number }) {
     user_id: "user-1",
     updated_at: "t0",
     hp_current: resources.hp,
+    meta_data: { reset_hp: resources.fresh !== false },
     content_sources: { enabled: [1] },
     details: { ancestry: { name: "Human" }, class: { name: "Druid" }, class_archetype: { name: "Leaf Order" } },
     operation_data: { selections: {} },
@@ -42,16 +43,17 @@ test("a fresh level 4 druid fills calculated HP and focus, and a later edit keep
   const filled = applyResourcePools(fresh, DRUID_POOLS, false);
   assert.equal(filled.reason, "initialized");
   assert.equal(filled.character.hp_current, 44);
+  assert.equal((filled.character.meta_data as { reset_hp: boolean }).reset_hp, false);
   assert.equal((filled.character.spells as { focus_point_current: number }).focus_point_current, 1);
   assert.equal((filled.character.spells as { slots: { exhausted: boolean }[] }).slots[0].exhausted, true);
 
-  const wounded = leafDruid({ hp: 31, focus: 0 });
+  const wounded = leafDruid({ hp: 1, focus: 0, fresh: false });
   const kept = applyResourcePools(wounded, DRUID_POOLS, false);
   assert.equal(kept.reason, "kept");
-  assert.equal(kept.character.hp_current, 31);
+  assert.equal(kept.character.hp_current, 1);
   assert.equal((kept.character.spells as { focus_point_current: number }).focus_point_current, 0);
 
-  const rested = applyResourcePools(wounded, DRUID_POOLS, true);
+  const rested = applyResourcePools({ ...wounded, hp_current: 31 }, DRUID_POOLS, true);
   assert.equal(rested.reason, "rest");
   assert.equal(rested.character.hp_current, 44);
   assert.equal((rested.character.spells as { focus_point_current: number }).focus_point_current, 1);
@@ -92,6 +94,7 @@ test("initialize_character writes a fresh druid and choose keeps spent resources
   assert.equal(initialized.isError, undefined);
   assert.equal(updates[0].hp_current, 44);
   assert.equal((updates[0].spells as { focus_point_current: number }).focus_point_current, 1);
+  assert.equal((updates[0].meta_data as { reset_hp: boolean }).reset_hp, false);
 
   character = { ...character, hp_current: 31, spells: { ...(character.spells as object), focus_point_current: 0 } };
   const chosen = await client.callTool({ name: "choose", arguments: { characterId: 151, choiceId: "lang-1", optionId: "common" } });

@@ -25,12 +25,19 @@ function spellsOf(character: Record<string, unknown>): SpellsField {
   return { ...(spells as SpellsField) };
 }
 
-/** Wanderer's Guide creates a character at 1 HP and 0 focus. Anything else has been played. */
+function metaOf(character: Record<string, unknown>): Record<string, unknown> {
+  const meta = character.meta_data;
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return {};
+  return { ...(meta as Record<string, unknown>) };
+}
+
+/**
+ * The sheet fills HP while meta_data.reset_hp is not false, then sets it false.
+ * create_character starts with reset_hp true. A character at 1 HP with an empty
+ * focus pool is left alone once that flag is false.
+ */
 export function resourcesLookFresh(character: Record<string, unknown>) {
-  const hp = character.hp_current;
-  const focus = spellsOf(character).focus_point_current;
-  const focusFresh = focus == null || focus === 0;
-  return (hp == null || hp === 1) && focusFresh;
+  return metaOf(character).reset_hp !== false;
 }
 
 export function applyResourcePools(character: Record<string, unknown>, pools: ResourcePools, force: boolean): ResourceFill {
@@ -44,6 +51,7 @@ export function applyResourcePools(character: Record<string, unknown>, pools: Re
       ...character,
       hp_current: maxHp,
       spells: { ...spellsOf(character), focus_point_current: maxFocus },
+      meta_data: { ...metaOf(character), reset_hp: false },
     },
     changed: true,
     reason: force ? "rest" : "initialized",

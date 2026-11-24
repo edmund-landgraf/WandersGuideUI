@@ -16,7 +16,7 @@ import { getFinalHealthValue } from '@variables/variable-helpers';
 import { exportVariableStore, getVariable, importVariableStore } from '@variables/variable-manager';
 import { cloneDeep, uniq, uniqBy } from 'lodash-es';
 import { countAllBuilderChoices, type ChoiceCounts } from './phase1-builder-ops';
-import { creatureDefenseScore, fillMissingDefenses, hasUsefulCalculatedStats } from './phase1-creature-defenses';
+import { creatureDefenseScore, fillMissingDefenses, hasUsefulCalculatedStats, readStoredDefenses } from './phase1-creature-defenses';
 
 export type Phase1EntityCombatant = Combatant & { data: Character | Creature };
 export type PreparedPhase1Entity = {
@@ -127,7 +127,7 @@ export async function hydrateCreatureForCombat(creature: Creature, adjustment?: 
   const { creature: base, replacedFromCatalog } = await hydrateCreatureRecord(creature);
   const applyAdjustment = adjustment ?? (replacedFromCatalog ? creature.details.adjustment : undefined);
   const next = applyAdjustment ? adjustCreature(structuredClone(base), applyAdjustment) : base;
-  return fillCurrentHp(await fillMissingDefenses(next));
+  return fillCurrentHp(next);
 }
 
 async function hydrateCreatureRecord(creature: Creature): Promise<{ creature: Creature; replacedFromCatalog: boolean }> {
@@ -165,12 +165,23 @@ async function hydrateCreatureRecord(creature: Creature): Promise<{ creature: Cr
       meta_data: {
         ...catalog.meta_data,
         ...creature.meta_data,
-        calculated_stats: hasUsefulCalculatedStats(creature.meta_data?.calculated_stats)
-          ? creature.meta_data?.calculated_stats
-          : catalog.meta_data?.calculated_stats,
+        calculated_stats: calculatedStatsForHydration(creature, catalog),
       },
     })),
   };
+}
+
+/** A stored max that is only a health remainder must not hide a catalog row that has AC and saves. */
+function calculatedStatsForHydration(creature: Creature, catalog: Creature) {
+  const encounter = creature.meta_data?.calculated_stats;
+  const fromCatalog = catalog.meta_data?.calculated_stats;
+  const encounterDefenses = readStoredDefenses(creature);
+  const catalogDefenses = readStoredDefenses(catalog);
+  const encounterComplete = (encounterDefenses.ac ?? 0) > 10 && encounterDefenses.fort != null && encounterDefenses.reflex != null && encounterDefenses.will != null;
+  if (encounterComplete) return encounter;
+  const catalogComplete = (catalogDefenses.ac ?? 0) > 10 && catalogDefenses.fort != null && catalogDefenses.reflex != null && catalogDefenses.will != null;
+  if (catalogComplete) return fromCatalog ?? encounter;
+  return hasUsefulCalculatedStats(encounter) ? encounter : fromCatalog;
 }
 
 function fillCurrentHp(creature: Creature, computedMax?: number) {

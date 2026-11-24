@@ -193,6 +193,102 @@ export function registerCampaignWrites(server: McpServer, userId: () => string) 
   );
 
   server.registerTool(
+    "get_campaign_notes",
+    {
+      title: "Campaign notes",
+      description: "Reads campaign note pages through wgui-ext-find-campaign-notes. The GM receives every page. A member receives pages marked shared. Each page includes its index and name. Use the index and name with patch_campaign_notes. This does not return the rest of the campaign row.",
+      annotations: readOnly,
+      inputSchema: { campaignId: z.number().int() },
+    },
+    async (args) => {
+      try {
+        const found = await invokeFunction(userId(), "wgui-ext-find-campaign-notes", { campaign_id: Number(args.campaignId) });
+        if (!found.ok) return fail(found);
+        const data = asRecord(found.data) ?? {};
+        const pages = Array.isArray(data.pages) ? data.pages : [];
+        return textResult(pages.length ? `${pages.length} note pages` : "No notes", { campaignId: Number(args.campaignId), pages });
+      } catch (error) {
+        return thrown(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "patch_campaign_notes",
+    {
+      title: "Update one campaign note",
+      description: "Updates one campaign note page through wgui-ext-patch-campaign-notes. Send pageIndex and the current page name from get_campaign_notes, plus contents and any metadata you are changing. Other pages and other notes fields stay as stored. A player may change contents only on a page that is already shared. This does not send the rest of the notes.",
+      annotations: writes,
+      inputSchema: {
+        campaignId: z.number().int(),
+        pageIndex: z.number().int().nonnegative(),
+        pageName: z.string(),
+        contents: z.unknown().optional(),
+        name: z.string().optional(),
+        icon: z.string().optional(),
+        color: z.string().optional(),
+        shared: z.boolean().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        const patch: Record<string, unknown> = {};
+        if (args.contents !== undefined) patch.contents = args.contents;
+        if (typeof args.name === "string") patch.name = args.name;
+        if (typeof args.icon === "string") patch.icon = args.icon;
+        if (typeof args.color === "string") patch.color = args.color;
+        if (typeof args.shared === "boolean") patch.shared = args.shared;
+        if (!Object.keys(patch).length) return textResult("Send contents or page metadata to update.", { code: "VALIDATION_ERROR", retryable: false }, true);
+        const saved = await invokeFunction(userId(), "wgui-ext-patch-campaign-notes", {
+          campaign_id: Number(args.campaignId),
+          page_index: Number(args.pageIndex),
+          expected_page_name: args.pageName,
+          patch,
+        });
+        if (!saved.ok) return fail(saved);
+        return textResult("Campaign note updated.", asRecord(saved.data) ?? { campaignId: Number(args.campaignId) });
+      } catch (error) {
+        return thrown(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "add_campaign_note",
+    {
+      title: "Add a campaign note",
+      description: "Appends one campaign note page through wgui-ext-patch-campaign-notes. Existing pages and other notes fields stay as stored. Only the GM can add a page. contents is the page body. shared marks the page visible to players.",
+      annotations: writes,
+      inputSchema: {
+        campaignId: z.number().int(),
+        name: z.string(),
+        contents: z.unknown(),
+        icon: z.string().optional(),
+        color: z.string().optional(),
+        shared: z.boolean().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        const saved = await invokeFunction(userId(), "wgui-ext-patch-campaign-notes", {
+          campaign_id: Number(args.campaignId),
+          create: {
+            name: args.name,
+            contents: args.contents,
+            ...(typeof args.icon === "string" ? { icon: args.icon } : {}),
+            ...(typeof args.color === "string" ? { color: args.color } : {}),
+            ...(typeof args.shared === "boolean" ? { shared: args.shared } : {}),
+          },
+        });
+        if (!saved.ok) return fail(saved);
+        return textResult("Campaign note added.", asRecord(saved.data) ?? { campaignId: Number(args.campaignId) });
+      } catch (error) {
+        return thrown(error);
+      }
+    },
+  );
+
+  server.registerTool(
     "create_campaign",
     {
       title: "Create campaign",
@@ -232,7 +328,7 @@ export function registerCampaignWrites(server: McpServer, userId: () => string) 
     "update_campaign",
     {
       title: "Update campaign",
-      description: "Updates name, description, notes, and/or meta_data on a campaign this account owns. meta_data is merged so keys such as image_url from set_campaign_art are kept unless you send a replacement. Posts the existing row to create-campaign (there is no update-campaign). Does not change the join key.",
+      description: "Updates name, description, notes, and/or meta_data on a campaign this account owns. meta_data is merged so keys such as image_url from set_campaign_art are kept unless you send a replacement. Posts the existing row to create-campaign (there is no update-campaign). Does not change the join key. To change one note page, use patch_campaign_notes or add_campaign_note. Sending notes here replaces the notes object and is limited by the request size.",
       annotations: writes,
       inputSchema: {
         campaignId: z.number().int(),

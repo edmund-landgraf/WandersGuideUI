@@ -415,14 +415,14 @@ async function fetchWgCatalog(userId: string, books?: number[]): Promise<ShopRes
 
 export async function fetchPf2eCatalog(): Promise<ShopResult<{ items: CatalogItem[]; traits: CatalogTrait[] }>> {
   try {
-    const first = await characterFetch(`${pf2eApi()}/api/equipment?limit=500&offset=0`);
+    const first = await characterFetch(`${pf2eApi()}/api/equipment?limit=500&offset=0`, { signal: AbortSignal.timeout(8000) });
     if (!first.ok) return err("FUNCTION_ERROR", `PF2E equipment API returned ${first.status}`);
     const firstPage = (await first.json()) as { rows: Pf2eEquipmentRow[]; total: number; limit: number };
     const pageCount = Math.ceil(firstPage.total / firstPage.limit);
     const pages = await Promise.all(
       Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) => {
         const offset = (index + 1) * firstPage.limit;
-        return characterFetch(`${pf2eApi()}/api/equipment?limit=${firstPage.limit}&offset=${offset}`).then(async (response) => {
+        return characterFetch(`${pf2eApi()}/api/equipment?limit=${firstPage.limit}&offset=${offset}`, { signal: AbortSignal.timeout(8000) }).then(async (response) => {
           if (!response.ok) throw new Error(`PF2E equipment API returned ${response.status}`);
           return (await response.json()) as { rows: Pf2eEquipmentRow[] };
         });
@@ -457,7 +457,7 @@ async function searchPf2e(query: string): Promise<ShopResult<ReturnType<typeof c
   const params = new URLSearchParams({ limit: "40", offset: "0" });
   if (query.trim()) params.set("name", query.trim());
   try {
-    const response = await characterFetch(`${pf2eApi()}/api/equipment?${params}`);
+    const response = await characterFetch(`${pf2eApi()}/api/equipment?${params}`, { signal: AbortSignal.timeout(8000) });
     if (!response.ok) return err("UPSTREAM_UNAVAILABLE", `PF2E equipment API returned ${response.status}`, response.status >= 500);
     const page = (await response.json()) as { rows?: Pf2eEquipmentRow[] };
     const items = (page.rows ?? []).map(mapPf2eRow).map(catalogHit);
@@ -496,13 +496,18 @@ async function loadCatalog(userId: string, sources: ShopSource[], books?: number
     if (sources.includes("wanderers-guide")) items.push(...wg.data.items);
     traits.push(...wg.data.traits);
   }
+  let pf2eWarning: string | undefined;
   if (sources.includes("pf2e")) {
     const pf2e = await fetchPf2eCatalog();
-    if (!pf2e.ok) return pf2e;
-    items.push(...pf2e.data.items);
-    traits.push(...pf2e.data.traits);
+    if (!pf2e.ok) {
+      if (!items.length) return pf2e;
+      pf2eWarning = pf2e.message;
+    } else {
+      items.push(...pf2e.data.items);
+      traits.push(...pf2e.data.traits);
+    }
   }
-  return ok({ items, traits });
+  return ok({ items, traits, ...(pf2eWarning ? { warning: pf2eWarning } : {}) });
 }
 
 function findCatalogItem(items: CatalogItem[], source: ShopSource, id: number) {

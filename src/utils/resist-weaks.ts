@@ -12,8 +12,17 @@ export function getResistWeaks(id: StoreID, type: 'RESISTANCES' | 'WEAKNESSES') 
 
   const rwMap = new Map<string, string>();
   for (const rw of rwVar?.value ?? []) {
-    const [key, value] = rw.split(',');
-    let compiledValue = compileExpressions(id, value.trim(), true) ?? '';
+    if (typeof rw !== 'string' || !rw.trim()) continue;
+    const comma = rw.indexOf(',');
+    const key = (comma === -1 ? rw : rw.slice(0, comma)).trim();
+    const rawValue = comma === -1 ? '' : rw.slice(comma + 1).trim();
+    if (!key) continue;
+    // Imported blocks sometimes store the weakness name with no ", amount".
+    if (!rawValue) {
+      if (rwMap.get(key) !== 'REMOVE') rwMap.set(key, '');
+      continue;
+    }
+    let compiledValue = compileExpressions(id, rawValue, true) ?? '';
 
     // Minimum value of 1
     if (compiledValue === '0') {
@@ -52,7 +61,7 @@ export function getResistWeaks(id: StoreID, type: 'RESISTANCES' | 'WEAKNESSES') 
     if (value === 'REMOVE') {
       continue;
     }
-    results.push(toLabel(`${key} ${value}`));
+    results.push(toLabel(value ? `${key} ${value}` : key));
   }
 
   return results;

@@ -551,6 +551,47 @@ function mapCombatant(combatant: Json, characters: Json[]): CombatantRow | null 
   };
 }
 
+function traitIdsOf(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((trait) => {
+    const id = num(trait);
+    return id ? [id] : [];
+  });
+}
+
+async function labelTraitIds(record: EncounterRecord) {
+  const ids: number[] = [];
+  for (const sheet of Object.values(record.sheets)) {
+    for (const group of sheet.groups) {
+      for (const action of group.actions) ids.push(...(action.traitIds ?? []));
+    }
+  }
+  const rows = await contentRows("find-trait", ids);
+  const names = new Map(rows.flatMap((row) => {
+    const id = num(row.id);
+    const name = typeof row.name === "string" ? row.name.trim() : "";
+    return id && name ? [[id, name] as const] : [];
+  }));
+  for (const sheet of Object.values(record.sheets)) {
+    for (const group of sheet.groups) {
+      for (const action of group.actions) {
+        const named = (action.traitIds ?? []).flatMap((id) => {
+          const name = names.get(id);
+          return name ? [name] : [];
+        });
+        const existing = action.traits ?? [];
+        action.traits = [...existing, ...named.filter((name) => !existing.includes(name))];
+        delete action.traitIds;
+      }
+    }
+  }
+}
+
+function traitLabels(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((trait) => typeof trait === "string" && trait.trim() ? [trait.trim()] : []);
+}
+
 function actionCount(value: unknown) {
   if (typeof value === "number") return value;
   if (value === "FREE-ACTION") return 0;
@@ -586,9 +627,13 @@ function abilityRows(entity: Json) {
       type: typeof ability.type === "string" ? ability.type : "",
       name,
       actions: actionCount(ability.actions),
+      actionCost: typeof ability.actions === "string" ? ability.actions : undefined,
+      trigger: typeof ability.trigger === "string" && ability.trigger.trim() ? ability.trigger.trim() : undefined,
       description: typeof ability.description === "string" ? ability.description : undefined,
       level: num(ability.level),
       traits: Array.isArray(ability.traits) ? ability.traits : [],
+      traitIds: traitIdsOf(ability.traits),
+      traitNames: traitLabels(ability.traits),
     }];
   });
 }
@@ -603,7 +648,7 @@ function sheetFor(entity: Json): CombatantSheet {
     groups.push({
       id: "weapon-attacks",
       label: "Weapon Attacks",
-      actions: attacks.map(({ name, actions, description }) => ({ name, actions, description })),
+      actions: attacks.map(({ name, actions, actionCost, trigger, traitNames, traitIds, description }) => ({ name, actions, actionCost, trigger, traits: traitNames, traitIds, description })),
     });
   }
   const featActions = feats.filter((ability) => ability.actions !== null);
@@ -664,6 +709,29 @@ function sheetFor(entity: Json): CombatantSheet {
   };
 }
 
+function damageBonus(damage: Json | undefined) {
+  if (!damage) return 0;
+  const bonus = damage.bonus;
+  if (typeof bonus === "number" && Number.isFinite(bonus)) return bonus;
+  if (bonus && typeof bonus === "object" && typeof (bonus as Json).total === "number") return (bonus as Json).total as number;
+  return 0;
+}
+
+function damageTerms(damage: Json | undefined) {
+  if (!damage) return [];
+  const other = Array.isArray(damage.other) ? damage.other : [];
+  const terms = other.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const row = entry as Json;
+    const dice = `${row.dice ?? ""}${row.die ?? ""}`;
+    const type = typeof row.damageType === "string" ? row.damageType : "";
+    const text = [dice, type].filter(Boolean).join(" ");
+    return text ? [`plus ${text}`] : [];
+  });
+  if (typeof damage.extra === "string" && damage.extra.trim()) terms.push(damage.extra.trim());
+  return terms;
+}
+
 function equippedWeapons(entity: Json) {
   const inventory = entity.inventory as Json | undefined;
   const items = Array.isArray(inventory?.items) ? (inventory.items as Json[]) : [];
@@ -678,13 +746,17 @@ function equippedWeapons(entity: Json) {
       const name = typeof item.name === "string" ? item.name : "";
       if (!name) continue;
       const damage = meta?.damage && typeof meta.damage === "object" ? (meta.damage as Json) : undefined;
-      const dice = damage ? `${damage.dice ?? ""}${damage.die ?? ""}` : "";
+      const bonusTotal = damageBonus(damage);
+      const dice = damage ? `${damage.dice ?? ""}${damage.die ?? ""}${bonusTotal ? `+${bonusTotal}` : ""}` : "";
+      const extra = damageTerms(damage);
       const parts = [
         dice,
         damage?.damageType ? String(damage.damageType) : "",
-        meta?.range != null ? `range ${meta.range}` : "",
-        meta?.reload ? `reload ${meta.reload}` : "",
+        ...extra,
+        meta?.range != null && meta.range !== "" ? `range ${meta.range}` : "",
+        meta?.reload != null && meta.reload !== "" && meta.reload !== "null" ? `reload ${meta.reload}` : "",
         typeof meta?.attack_bonus === "number" ? `item bonus +${meta.attack_bonus}` : "",
+        Array.isArray(item?.traits) ? (item.traits as unknown[]).filter((trait) => typeof trait === "string" && trait).join(", ") : "",
       ].filter(Boolean);
       found.push({ name, actions: 1, description: parts.join(", ") || undefined });
     }
@@ -742,9 +814,12 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
         name: row.name,
         actions: actionCount(row.actions),
         actionCost: typeof row.actions === "string" ? row.actions : undefined,
+        trigger: typeof row.trigger === "string" && row.trigger.trim() ? row.trigger.trim() : undefined,
         description: typeof row.description === "string" ? row.description : undefined,
         level: num(row.level),
         traits: Array.isArray(row.traits) ? row.traits : [],
+        traitIds: traitIdsOf(row.traits),
+        traitNames: traitLabels(row.traits),
       }];
     });
     const attacks = resolved.filter((ability) => ability.type === "action");
@@ -752,7 +827,7 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
     const features = resolved.filter((ability) => ability.type === "class-feature" || ability.type === "physical-feature");
     if (attacks.length) {
       const existing = sheet.groups.find((group) => group.id === "weapon-attacks");
-      const actions = attacks.map(({ name, actions, actionCost, description }) => ({ name, actions, actionCost, description }));
+      const actions = attacks.map(({ name, actions, actionCost, trigger, traitNames, traitIds, description }) => ({ name, actions, actionCost, trigger, traits: traitNames, traitIds, description }));
       if (existing) existing.actions.push(...actions.filter((action) => !existing.actions.some((item) => item.name === action.name)));
       else sheet.groups.push({
         id: "weapon-attacks",
@@ -760,7 +835,7 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
         actions,
       });
     }
-    const featActions = feats.filter((ability) => ability.actionCost !== undefined || ability.actions !== null).map(({ name, actions, actionCost, description }) => ({ name, actions, actionCost, description }));
+    const featActions = feats.filter((ability) => ability.actionCost !== undefined || ability.actions !== null).map(({ name, actions, actionCost, trigger, traitNames, traitIds, description }) => ({ name, actions, actionCost, trigger, traits: traitNames, traitIds, description }));
     if (featActions.length) {
       const existing = sheet.groups.find((group) => group.id === "feats");
       if (existing) existing.actions.push(...featActions.filter((ability) => !existing.actions.some((item) => item.name === ability.name)));
@@ -1048,6 +1123,7 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
       }
       const spellRows = await contentRows("find-spell", [...spellIds]);
       applyCatalog(record, entities, blocks, spellRows, classFeatures);
+      await labelTraitIds(record);
       console.error(`[wgui-mcp] encounter ${record.encounterId} combatants=${record.combatants.length} abilityIds=${blockIds.size} resolved=${blocks.length} custom=${customAbilities} focus=${focusSpells} spellIds=${spellIds.size} spells=${spellRows.length}`);
       if (includeStats) {
         for (const [id, entity] of Object.entries(entities)) {

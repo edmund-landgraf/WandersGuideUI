@@ -74,9 +74,63 @@ function respond(fn: string, result: InvokeResult) {
   return textResult(`${fn}: ${count}`, { data: result.data ?? null });
 }
 
+function sourceTitle(row: Record<string, unknown>, titles: Map<number, string>) {
+  const nested = row.content_source;
+  if (nested && typeof nested === "object" && typeof (nested as { name?: unknown }).name === "string") {
+    return (nested as { name: string }).name;
+  }
+  const id = typeof row.content_source_id === "number" ? row.content_source_id : 0;
+  return titles.get(id) ?? "";
+}
+
+function bookRank(title: string) {
+  const text = title.toLowerCase();
+  if (/monster core|player core|remaster/.test(text)) return 2;
+  if (/bestiary/.test(text)) return 0;
+  return 1;
+}
+
+/** Exact name matches: remaster books before legacy bestiaries, then newer ids. */
+export function preferLatestCreatures(rows: Record<string, unknown>[], titles: Map<number, string>) {
+  const ranked = rows.map((row, index) => ({ row, index }));
+  ranked.sort((left, right) => {
+    const leftName = String(left.row.name ?? "").trim().toLowerCase();
+    const rightName = String(right.row.name ?? "").trim().toLowerCase();
+    if (leftName !== rightName) return left.index - right.index;
+    const leftDeprecated = left.row.deprecated === true ? 1 : 0;
+    const rightDeprecated = right.row.deprecated === true ? 1 : 0;
+    if (leftDeprecated !== rightDeprecated) return leftDeprecated - rightDeprecated;
+    const byBook = bookRank(sourceTitle(right.row, titles)) - bookRank(sourceTitle(left.row, titles));
+    if (byBook !== 0) return byBook;
+    const leftId = typeof left.row.id === "number" ? left.row.id : 0;
+    const rightId = typeof right.row.id === "number" ? right.row.id : 0;
+    return rightId - leftId;
+  });
+  return ranked.map((item) => item.row);
+}
+
+async function sourceTitles(userId: string, rows: Record<string, unknown>[]) {
+  const ids = [...new Set(rows.flatMap((row) => typeof row.content_source_id === "number" ? [row.content_source_id] : []))];
+  const titles = new Map<number, string>();
+  if (!ids.length) return titles;
+  const found = await invokeFunction(userId, "find-content-source", { id: ids });
+  const sources = found.ok && Array.isArray(found.data) ? found.data as Record<string, unknown>[] : [];
+  for (const source of sources) {
+    if (typeof source.id === "number" && typeof source.name === "string") titles.set(source.id, source.name);
+  }
+  return titles;
+}
+
 async function call(userId: () => string, fn: string, body: Record<string, unknown>) {
   try {
-    return respond(fn, await invokeFunction(userId(), fn, body));
+    const result = await invokeFunction(userId(), fn, body);
+    if (result.ok && fn === "find-creature" && typeof body.name === "string" && body.name.trim() && Array.isArray(result.data)) {
+      const rows = result.data.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object");
+      const titles = await sourceTitles(userId(), rows);
+      const ordered = preferLatestCreatures(rows, titles);
+      return respond(fn, { ok: true, data: ordered });
+    }
+    return respond(fn, result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Homebrew call failed.";
     return textResult(message, { code: "INTERNAL_ERROR", retryable: true }, true);
@@ -90,7 +144,7 @@ export function registerHomebrew(server: McpServer, userId: () => string) {
       toolName(findFn),
       {
         title: `Find ${slug}`,
-        description: `Raw ${slug} rows from ${findFn}. Only the filters ${findFn} reads are accepted.${slug === "content-source" ? "" : " Returns official rows too when filters match."}`,
+        description: `Raw ${slug} rows from ${findFn}. Only the filters ${findFn} reads are accepted.${slug === "content-source" ? "" : " Returns official rows too when filters match."}${slug === "creature" ? " Exact name matches are ordered newest source first: a Monster Core or other remaster book comes before a legacy Bestiary, and a deprecated row comes last." : ""}`,
         annotations: readOnly,
         inputSchema: { query: z.object(FIND_FILTERS[slug]).strict().optional() },
       },

@@ -45,10 +45,14 @@ export type CombatantSheet = {
   weaknesses?: string[];
   immunities?: string[];
   abilityModifiers?: Record<string, number>;
-  groups: { id: string; label: string; actions: { name: string; actions?: number | null; actionCost?: string; traits?: string[]; description?: string }[] }[];
+  groups: { id: string; label: string; actions: { name: string; actions?: number | null; actionCost?: string; trigger?: string; traits?: string[]; traitIds?: number[]; description?: string }[] }[];
   feats: { section: "class" | "ancestry" | "general" | "other"; name: string; level?: number; hasAction: boolean }[];
   classFeatures: { name: string; level?: number }[];
   skills: { name: string; modifier?: number; proficiency?: string }[];
+  /** Computed strikes from the character engine. Preferred over the stored weapon-attacks group. */
+  strikes?: { name: string; actions?: number | null; actionCost?: string; trigger?: string; traits?: string[]; description?: string; attack?: string }[];
+  catalogId?: number;
+  contentSourceId?: number;
   spells: { tradition?: string; rank?: number; name: string; spent?: number; max?: number; prepared?: boolean; attack?: number; dc?: number }[];
   inventory?: unknown;
   notes?: string;

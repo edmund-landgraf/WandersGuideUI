@@ -247,9 +247,101 @@ async function fetchPageDefenses(url: string): Promise<ParsedMonsterDefenses | n
   }
 }
 
+function numericSum(creature: Creature, variable: string) {
+  let sum = 0;
+  let found = false;
+  for (const operation of creature.operations ?? []) {
+    if (operation.type !== 'adjValue' && operation.type !== 'addBonusToValue') continue;
+    const data = operation.data as { variable?: string; value?: number | string | null };
+    if (data?.variable !== variable) continue;
+    const value = operationNumber(data.value);
+    if (value == null) continue;
+    sum += value;
+    found = true;
+  }
+  return found ? sum : null;
+}
+
+function constitutionMod(creature: Creature) {
+  for (const operation of creature.operations ?? []) {
+    if (operation.type !== 'setValue') continue;
+    const data = operation.data as { variable?: string; value?: { value?: number } | number | null };
+    if (data?.variable !== 'ATTRIBUTE_CON') continue;
+    const value = operationNumber(typeof data.value === 'number' ? data.value : data.value?.value);
+    if (value != null) return value;
+  }
+  return 0;
+}
+
+function defensesArePresent(creature: Creature) {
+  const stored = readStoredDefenses(creature);
+  const ac = numericSum(creature, 'AC_BONUS') != null || (typeof stored.ac === 'number' && stored.ac > 10);
+  const save = (variable: 'SAVE_FORT' | 'SAVE_REFLEX' | 'SAVE_WILL', total?: number) => numericSum(creature, variable) != null || typeof total === 'number';
+  return ac && save('SAVE_FORT', stored.fort) && save('SAVE_REFLEX', stored.reflex) && save('SAVE_WILL', stored.will);
+}
+
+/**
+ * Catalog rows for creatures such as Electric Eel store the health remainder as if it
+ * were max HP and omit AC and saves. When the source text has the stat block and the
+ * row does not already have those defenses, fill the gaps and raise the bonus so the
+ * health formula lands on the stat-block HP. A row that already has defenses is left
+ * alone, including a current HP that is below maximum.
+ */
+export function alignCreatureDefenses(creature: Creature): Creature {
+  if (creature.details?.adjustment) return creature;
+  if (defensesArePresent(creature)) return creature;
+  const parsed = parseMonsterDefenses(creatureStatBlockText(creature));
+  if (!hasParsedDefenses(parsed)) return creature;
+
+  const ops = [...(creature.operations ?? [])];
+  const missing: ParsedMonsterDefenses = {};
+  if (parsed.ac != null && numericSum(creature, 'AC_BONUS') == null && !(typeof readStoredDefenses(creature).ac === 'number' && readStoredDefenses(creature).ac! > 10)) missing.ac = parsed.ac;
+  if (parsed.fort != null && numericSum(creature, 'SAVE_FORT') == null && readStoredDefenses(creature).fort == null) missing.fort = parsed.fort;
+  if (parsed.reflex != null && numericSum(creature, 'SAVE_REFLEX') == null && readStoredDefenses(creature).reflex == null) missing.reflex = parsed.reflex;
+  if (parsed.will != null && numericSum(creature, 'SAVE_WILL') == null && readStoredDefenses(creature).will == null) missing.will = parsed.will;
+  if (parsed.perception != null && numericSum(creature, 'PERCEPTION') == null && readStoredDefenses(creature).perception == null) missing.perception = parsed.perception;
+
+  const hasBuiltHealth = (creature.operations ?? []).some((operation) => {
+    const variable = (operation.data as { variable?: string } | null)?.variable;
+    return variable === 'MAX_HEALTH_ANCESTRY' || variable === 'MAX_HEALTH_CLASS_PER_LEVEL';
+  });
+  const bonus = numericSum(creature, 'MAX_HEALTH_BONUS');
+  const level = creature.level === -100 ? 0 : creature.level;
+  const projected = (bonus ?? 0) + constitutionMod(creature) * level;
+  let hpCurrent = creature.hp_current;
+  let hpMax = creature.meta_data?.calculated_stats?.hp_max;
+  if (!hasBuiltHealth && parsed.hp != null && bonus != null && parsed.hp > projected) {
+    const previousFull = typeof hpMax === 'number' && hpMax > 0 ? hpMax : bonus;
+    ops.push({
+      ...createDefaultOperation<OperationAdjValue>('adjValue'),
+      data: { variable: 'MAX_HEALTH_BONUS', value: parsed.hp - projected },
+    });
+    if (typeof hpCurrent === 'number' && hpCurrent > 1 && hpCurrent === previousFull) hpCurrent = parsed.hp;
+    hpMax = parsed.hp;
+  }
+
+  const withOps = { ...creature, operations: ops, hp_current: hpCurrent };
+  const filled = hasParsedDefenses(missing) ? applyDefenses(withOps, missing) : withOps;
+  if (hpMax === creature.meta_data?.calculated_stats?.hp_max && hpCurrent === creature.hp_current && filled === withOps && ops.length === (creature.operations?.length ?? 0)) {
+    return creature;
+  }
+  return {
+    ...filled,
+    hp_current: hpCurrent,
+    meta_data: {
+      ...filled.meta_data,
+      calculated_stats: {
+        ...filled.meta_data?.calculated_stats,
+        ...(typeof hpMax === 'number' ? { hp_max: hpMax } : {}),
+      },
+    },
+  };
+}
+
 export async function fillMissingDefenses(creature: Creature): Promise<Creature> {
-  if (hasDefenseOperations(creature) || hasUsefulCalculatedStats(creature.meta_data?.calculated_stats)) return creature;
-  let next = applyParsedDefenses(creature);
+  const aligned = alignCreatureDefenses(creature);
+  if (defensesArePresent(aligned) || hasDefenseOperations(aligned) || hasUsefulCalculatedStats(aligned.meta_data?.calculated_stats)) return aligned;
+  let next = applyParsedDefenses(aligned);
   if (hasDefenseOperations(next) || hasUsefulCalculatedStats(next.meta_data?.calculated_stats)) return next;
 
   const aon = await fetchAoNDefenses(catalogCreatureName(creature.name), creature.level);

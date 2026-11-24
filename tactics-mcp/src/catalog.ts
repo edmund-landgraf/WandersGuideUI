@@ -363,7 +363,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     description: "Every PC fighting, on the bench, or down, with current HP.",
     inputSchema: ids,
   }, async (args, uid) => {
-    const record = await encounter(uid, Number(args.campaignId), Number(args.encounterId));
+    const record = await encounter(uid, Number(args.campaignId), Number(args.encounterId), undefined, true);
     if (!record) return notFound("Encounter not found.");
     const pcs = record.combatants.filter((row) => row.kind === "character").map(summary);
     return textResult(
@@ -377,7 +377,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     description: "Initiative, defenses, conditions, and current HP for every combatant.",
     inputSchema: ids,
   }, async (args, uid) => {
-    const record = await encounter(uid, Number(args.campaignId), Number(args.encounterId));
+    const record = await encounter(uid, Number(args.campaignId), Number(args.encounterId), undefined, true);
     if (!record) return notFound("Encounter not found.");
     const combatants = record.combatants.map(summary);
     return textResult(
@@ -391,7 +391,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     description: "PCs on the bench or down, with current HP.",
     inputSchema: ids,
   }, async (args, uid) => {
-    const record = await encounter(uid, Number(args.campaignId), Number(args.encounterId));
+    const record = await encounter(uid, Number(args.campaignId), Number(args.encounterId), undefined, true);
     if (!record) return notFound("Encounter not found.");
     const edges = record.combatants.filter((row) => row.place !== "fighting" && row.kind === "character").map(summary);
     return textResult(
@@ -456,6 +456,8 @@ export function registerCatalog(server: McpServer, userId: () => string) {
       perception: sheet.perception ?? null,
       senses: sheet.senses ?? [],
       speeds: sheet.speeds ?? {},
+      catalogId: sheet.catalogId ?? null,
+      contentSourceId: sheet.contentSourceId ?? null,
       classDc: sheet.classDc ?? null,
       resistances: sheet.resistances ?? [],
       weaknesses: sheet.weaknesses ?? [],
@@ -480,10 +482,13 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     description: "Entries in one ability group: name, action cost, traits, and description.",
     inputSchema: { ...ids, combatantId: z.string(), group: z.string() },
   }, async (args, uid) => {
-    const found = await one(uid, args);
+    const found = await one(uid, args, true, true);
     if (!found) return notFound("Encounter not found.");
     if ("missing" in found) return notFound("Combatant not found.");
     const group = found.sheet.groups.find((item) => item.id === args.group || item.label === args.group);
+    const strikes = found.sheet.strikes ?? [];
+    const weaponGroup = args.group === "weapon-attacks" || group?.id === "weapon-attacks";
+    if (weaponGroup && strikes.length) return textResult(group?.label ?? "Weapon Attacks", { actions: strikes, catalogId: found.sheet.catalogId ?? null, contentSourceId: found.sheet.contentSourceId ?? null });
     if (!group) return notFound("Ability group not found.");
     return textResult(group.label, { actions: group.actions });
   }, userId);
@@ -516,10 +521,14 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     description: "Skill name, modifier, and proficiency.",
     inputSchema: { ...ids, combatantId: z.string() },
   }, async (args, uid) => {
-    const found = await one(uid, args);
+    const found = await one(uid, args, true, true);
     if (!found) return notFound("Encounter not found.");
     if ("missing" in found) return notFound("Combatant not found.");
-    return textResult("Skills.", { skills: found.sheet.skills });
+    const skills = found.sheet.skills ?? [];
+    return textResult(skills.length ? "Skills." : "No trained skills on this combatant.", {
+      skills,
+      ...(skills.length ? {} : { limitation: "No trained skill proficiencies were found in stored stats or the character engine." }),
+    });
   }, userId);
 
   registerEncounterTool(server, "get_spells", {
