@@ -1,7 +1,7 @@
 import type { Campaign, Character, Encounter } from '@schemas/content';
 import { needsRehostForCopy } from '@upload/image-upload';
 import { stageCampaignCopyAssets, type CampaignCopyArtMap } from './phase1-campaign-copy-art';
-import { asRecordList, loadEncountersForCampaignCopy, ownCharacterIds, phase1Request, sameUserId } from './phase1-api';
+import { asRecordList, loadEncountersForCampaignCopy, phase1Request } from './phase1-api';
 
 export type CampaignArtCopyAction = 'none' | 'keep' | 'rehost';
 
@@ -102,10 +102,10 @@ type AtomicCopyResponse = {
 };
 
 export async function executeCampaignCopy(options: ExecuteCampaignCopyOptions): Promise<ExecuteCampaignCopyResult> {
-  const { source, campaignId, accessToken, userId, players, dryRun = false } = options;
+  const { source, campaignId, accessToken, userId, dryRun = false } = options;
   if (dryRun) {
     const encounters = await loadEncountersForCampaignCopy(
-      campaignId, accessToken, userId, sameUserId(source.user_id, userId), ownCharacterIds(players, userId)
+      campaignId, accessToken
     );
     return { plan: buildCampaignCopyPlan(source, encounters) };
   }

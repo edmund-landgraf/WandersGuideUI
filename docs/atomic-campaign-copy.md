@@ -29,3 +29,13 @@ Regression coverage: `npx vitest run src/pages/phase1/phase1-campaign-copy-art.t
 ```sh
 psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -v test_user_id=YOUR_TEST_USER_UUID -f supabase/tests/wgui-campaign-copy-art.sql
 ```
+
+## Copy authorization (#71)
+
+Apply `supabase/wgui-campaign-copy-permission.sql` **after** the #73 and #75 migrations and before the new edge worker and frontend. Existing campaigns are private by default. The campaign owner can opt in from Phase 1 Campaign Settings → Game Config → Campaign copying. This explicitly grants full copy access (including hidden encounters and GM-only notes) to authenticated users who can already read the campaign. Normal player encounter visibility is unchanged. Grant records are separate from player-editable campaign metadata and are not inherited by duplicated campaigns. Revocation prevents future copies, not copies already created. The edge checks readability and copy permission; the transaction also checks current ownership/consent and locks the source/permission rows against revocation during commit. Direct browser calls cannot write the grant table or invoke its service-only RPCs. Reapply #71 last if reapplying earlier migrations.
+
+```sh
+docker exec -i wanderers-guide-db-1 psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/wgui-campaign-copy-permission.sql
+npm run stack:restart
+npm run test:wgui-ext
+```
