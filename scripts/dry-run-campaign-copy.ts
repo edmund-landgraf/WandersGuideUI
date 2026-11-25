@@ -4,8 +4,9 @@
  * Requires SUPABASE_URL, SUPABASE_ANON_KEY and CAMPAIGN_COPY_TOKEN in the environment.
  * CAMPAIGN_COPY_USER_ID is optional and checked against the authenticated user.
  */
-import type { Campaign, Encounter } from '../src/schemas/content';
+import type { Campaign } from '../src/schemas/content';
 import { buildCampaignCopyPlan } from '../src/pages/phase1/phase1-campaign-copy-plan';
+import { parseCopyEncounterManifest } from '../src/pages/phase1/phase1-campaign-copy-manifest';
 
 const USAGE = [
   'Usage: npm run dry-run:campaign-copy -- <positive integer campaignId>',
@@ -110,11 +111,8 @@ async function main(args: string[]) {
 
   // The server enforces owner/copy consent. Do not call ordinary play-filtered
   // reads as a fallback or request the roster, which is not needed for a plan.
-  const encounters = await readFunction(cfg, 'wgui-ext-find-encounter', { campaign_id: cfg.campaignId, for_campaign_copy: true });
-  if (!Array.isArray(encounters) || encounters.some(row => {
-    const r = record(row);
-    return !r || Number(r.campaign_id) !== cfg.campaignId || typeof r.name !== 'string';
-  })) throw new Error('Could not verify the campaign copy encounter list.');
+  const encounters = parseCopyEncounterManifest(await readFunction(cfg, 'wgui-ext-find-encounter',
+    { campaign_id: cfg.campaignId, for_campaign_copy: true, copy_manifest: true }),cfg.campaignId);
 
   const campaignData = await readFunction(cfg, 'find-campaign', { id: cfg.campaignId });
   const rows = Array.isArray(campaignData) ? campaignData : [campaignData];
@@ -123,7 +121,7 @@ async function main(args: string[]) {
     throw new Error('Campaign was not found or is not visible to this token.');
   }
 
-  const plan = buildCampaignCopyPlan(source as unknown as Campaign, encounters as Encounter[]);
+  const plan = buildCampaignCopyPlan(source as unknown as Campaign, encounters);
   console.log(redact(JSON.stringify({ campaign: source.name, ...plan, sourceArtUrl: safeArtworkUrl(plan.sourceArtUrl) }, null, 2)));
 }
 

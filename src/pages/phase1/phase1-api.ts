@@ -1,5 +1,6 @@
 import type { Campaign, Character, Encounter } from '@schemas/content';
 import { supabase, supabaseInvokeHeaders } from '../../supabase-client';
+import { parseCopyEncounterManifest } from './phase1-campaign-copy-manifest';
 
 type ApiEnvelope<T> = { status: 'success' | 'fail' | 'error'; data?: T; message?: string };
 
@@ -314,11 +315,9 @@ export function setCampaignCopyPermission(campaignId: number, enabled: boolean, 
 
 /** Copy reads must fail closed; a play-filtered list is not a copy permission. */
 export async function loadEncountersForCampaignCopy(campaignId: number, accessToken?: string): Promise<Encounter[]> {
-  const rows = await phase1Request<Encounter[]>('wgui-ext-find-encounter', { campaign_id: campaignId, for_campaign_copy: true }, accessToken);
-  if (!Array.isArray(rows) || rows.some((row) => !encounterBelongsToCampaign(row, campaignId))) {
-    throw new Error('Could not verify the campaign copy encounter list.');
-  }
-  return rows;
+  const manifest = await phase1Request<unknown>('wgui-ext-find-encounter',
+    { campaign_id: campaignId, for_campaign_copy: true, copy_manifest: true }, accessToken);
+  return parseCopyEncounterManifest(manifest,campaignId);
 }
 
 export async function loadPhase1CampaignEncounters(campaignId: number, accessToken?: string, userId?: string): Promise<Encounter[]> {

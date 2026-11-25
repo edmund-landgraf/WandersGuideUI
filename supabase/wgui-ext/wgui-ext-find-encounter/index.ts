@@ -10,6 +10,7 @@ interface FindCampaignEncountersBody {
   id?: number | number[];
   /** Duplicate a campaign to your account: full encounter list, explicit owner-approved copy permission. */
   for_campaign_copy?: boolean;
+  copy_manifest?: boolean;
 }
 
 type StatEntity = {
@@ -90,9 +91,24 @@ serve(async (req: Request) => {
 
     const admin = createServiceClient();
     const forCopy = body?.for_campaign_copy === true;
-    const access = forCopy
-      ? await authorizeCampaignCopy(client, admin, token, campaign_id)
-      : await authorizeCampaign(client, admin, token, campaign_id);
+    if (forCopy) {
+      if (ids.length) throw new HttpError(400, 'Full-copy reads cannot filter encounter IDs.', 'INVALID_COPY_FILTER');
+      const access = await authorizeCampaignCopy(client, admin, token, campaign_id);
+      const { data, error } = await admin.rpc('wgui_copy_campaign_encounters', {
+        p_user_id: access.userId, p_source_id: campaign_id,
+      });
+      if (error?.code === '42501') throw new HttpError(403, 'Campaign copying is not permitted.', 'CAMPAIGN_COPY_FORBIDDEN');
+      if (error || !data || data.campaignId !== campaign_id || !Array.isArray(data.encounters) ||
+          !Number.isSafeInteger(data.encounterCount) || data.encounterCount !== data.encounters.length ||
+          data.encounters.some((row: Encounter) => !sameNumericId(row.campaign_id, campaign_id))) {
+        throw new HttpError(503, 'Complete campaign encounter list could not be confirmed. Retry the read.', 'COPY_READ_INCOMPLETE');
+      }
+      const encounters = data.encounters.map(withResolvedHitPoints);
+      // Legacy consumers still get a complete array. New clients require a counted manifest.
+      return { status: 'success', data: body?.copy_manifest === true
+        ? { campaignId: campaign_id, encounterCount: data.encounterCount, encounters } : encounters };
+    }
+    const access = await authorizeCampaign(client, admin, token, campaign_id);
 
     const results = await fetchData<Encounter>(admin, 'encounter', [
       { column: 'campaign_id', value: campaign_id },
@@ -104,7 +120,7 @@ serve(async (req: Request) => {
     const scoped = results.filter((encounter) => sameNumericId(encounter.campaign_id, campaign_id));
 
     const visible =
-      access.isGm || forCopy
+      access.isGm
         ? scoped
         : scoped.filter((encounter) => encounterListedForPlayer(encounter, access.characterIds));
 
