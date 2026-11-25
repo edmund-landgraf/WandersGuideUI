@@ -448,3 +448,30 @@ test("planPicks leaves selections untouched by a failed pick and reports what a 
   assert.equal(kept.results[0].status, "applied");
   assert.equal(calls, 3);
 });
+
+
+test("choose_many reports a dropped response body without replaying the character save", async () => {
+  const h = await harness([ranger(34)]);
+  try {
+    setCharacterFetch(async (input, init) => {
+      const name = String(input).split("/").pop()!;
+      h.calls.push(name);
+      const body = JSON.parse(String(init?.body ?? "{}")) as Json;
+      const row = h.rows.get(body.id as number);
+      if (name === "update-character" && row) {
+        // Server committed the write, but the network died while returning the body.
+        h.rows.set(body.id as number, { ...row, ...body, updated_at: `${row.updated_at}+` });
+        return new Response(new ReadableStream({ start(controller) {
+          controller.error(new TypeError("terminated", { cause: Object.assign(new Error("socket reset"), { code: "ECONNRESET" }) }));
+        } }));
+      }
+      return row ? jsonResponse({ status: "success", data: row }) : jsonResponse({ status: "error", message: "nope" }, 404);
+    });
+    const result = await h.client.callTool({ name: "choose_many", arguments: { characterId: 34, picks: [{ choiceId: "class_skill-1", optionId: "nature" }] } });
+    assert.equal(result.isError, true);
+    assert.equal((result.structuredContent as Json).retryable, true);
+    assert.match(JSON.stringify(result), /ECONNRESET/);
+    assert.equal(count(h.calls, "update-character"), 1, "an ambiguous write must not be replayed");
+    assert.equal(selectionsOf(h.rows.get(34)!)["class_skill-1"], "nature");
+  } finally { await h.close(); }
+});
