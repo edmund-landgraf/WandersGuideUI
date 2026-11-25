@@ -24,6 +24,10 @@ const FOUNDRY_ORIGIN_PRESETS = [
 
 const FOUNDRY_ORIGIN_CUSTOM = '__custom__';
 
+type FoundryOriginPreset =
+  | (typeof FOUNDRY_ORIGIN_PRESETS)[number]['value']
+  | typeof FOUNDRY_ORIGIN_CUSTOM;
+
 type Props = {
   accessToken: string | undefined;
   characters: Character[];
@@ -43,7 +47,7 @@ function linkedCharacter(characters: Character[], worldId: string, actorId: stri
 
 export function FoundryImportDialog({ accessToken, characters, onClose, onImported }: Props) {
   const [step, setStep] = useState<Step>('connect');
-  const [originPreset, setOriginPreset] = useState(FOUNDRY_ORIGIN_PRESETS[0].value);
+  const [originPreset, setOriginPreset] = useState<FoundryOriginPreset>(FOUNDRY_ORIGIN_PRESETS[0].value);
   const [customOrigin, setCustomOrigin] = useState('');
   const [codeVisible, setCodeVisible] = useState(false);
   const origin = originPreset === FOUNDRY_ORIGIN_CUSTOM ? customOrigin : originPreset;
@@ -192,7 +196,7 @@ export function FoundryImportDialog({ accessToken, characters, onClose, onImport
                 className='settings-input mt-1 h-9 w-full'
                 value={originPreset}
                 onChange={(event) => {
-                  const next = event.target.value;
+                  const next = event.target.value as FoundryOriginPreset;
                   setOriginPreset(next);
                   if (next !== FOUNDRY_ORIGIN_CUSTOM) setCustomOrigin('');
                 }}
