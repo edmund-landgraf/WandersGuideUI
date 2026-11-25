@@ -27,4 +27,4 @@ jobs:
       - run: npm ci --prefix tactics-mcp
       - name: Run regression tests for issues 53–59
         working-directory: tactics-mcp
-        run: npx --no-install tsx --test test/encounter-writes.test.ts test/campaign-note-payload.test.ts test/stat-block.test.ts test/creature-remaster.test.ts
+        run: npx --no-install tsx --test test/encounter-writes.test.ts test/campaign-note-payload.test.ts test/stat-block.test.ts test/creature-remaster.test.ts test/monster-core-2-import.test.ts
