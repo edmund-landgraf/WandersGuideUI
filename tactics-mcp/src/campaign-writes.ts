@@ -142,10 +142,13 @@ async function saveCampaign(userId: string, row: CharacterRow) {
   return { ok: true as const, data: next };
 }
 
-async function saveEncounter(userId: string, row: CharacterRow) {
-  const saved = await invokeFunction(userId, "create-encounter", row);
+async function saveEncounter(userId: string, row: CharacterRow, patch: Record<string, unknown>) {
+  const revision = asRecord(row.meta_data)?.encounter_revision ?? 0;
+  if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) throw new Error('Invalid encounter revision. Reload before saving.');
+  const saved = await invokeFunction(userId, "wgui-ext-save-encounter", { encounter_id:row.id, encounter_revision:revision, patch });
   if (!saved.ok) return saved;
-  const next = firstRow(saved.data) ?? row;
+  const next = firstRow(saved.data);
+  if (!next || next.id !== row.id || asRecord(next.meta_data)?.encounter_revision !== revision + 1) throw new Error("Encounter save could not be confirmed. Reload before retrying.");
   const owned = ownedEncounter(next, userId);
   if (!owned.ok) return owned;
   return { ok: true as const, data: next };
@@ -403,7 +406,7 @@ export function registerCampaignWrites(server: McpServer, userId: () => string) 
     "update_encounter",
     {
       title: "Update encounter",
-      description: "Updates name, description, and/or meta_data on an encounter this account owns. Description is stored on meta_data.description. The encounter table has no notes column, so there is no notes argument. meta_data is merged so dice logs and other keys stay unless you send a replacement. Posts the existing row to create-encounter. Does not change campaign_id; use set_encounter_campaign to attach or detach. An encounter the caller cannot see is NOT_FOUND because find-encounter hides it.",
+      description: "Updates name, description, and/or meta_data on an encounter this account owns. Description is stored on meta_data.description. The encounter table has no notes column, so there is no notes argument. meta_data is merged so dice logs and other keys stay unless you send a replacement. Saves only changed fields with an encounter revision check. Does not change campaign_id; use set_encounter_campaign to attach or detach. An encounter the caller cannot see is NOT_FOUND because find-encounter hides it.",
       annotations: writes,
       inputSchema: {
         encounterId: z.number().int(),
@@ -417,12 +420,14 @@ export function registerCampaignWrites(server: McpServer, userId: () => string) 
         const loaded = await loadEncounter(userId(), Number(args.encounterId));
         if (!loaded.ok) return fail(loaded);
         const current = loaded.data as CharacterRow;
-        const next: CharacterRow = { ...current };
-        if (typeof args.name === "string") next.name = args.name;
-        const metaPatch = asRecord(args.meta_data) ?? {};
+        const patch: Record<string, unknown> = {};
+        if (typeof args.name === "string") patch.name = args.name;
+        const metaPatch = { ...(asRecord(args.meta_data) ?? {}) };
+        delete metaPatch.encounter_revision;
         if (typeof args.description === "string") metaPatch.description = args.description;
-        if (Object.keys(metaPatch).length) next.meta_data = mergeObject(current.meta_data, metaPatch);
-        const saved = await saveEncounter(userId(), next);
+        if (Object.keys(metaPatch).length) patch.meta_data = mergeObject(current.meta_data, metaPatch);
+        if (!Object.keys(patch).length) return textResult("No encounter changes.", { encounter: encounterSummary(current) });
+        const saved = await saveEncounter(userId(), current,patch);
         if (!saved.ok) return fail(saved);
         return textResult("Encounter updated.", { encounter: encounterSummary(saved.data) });
       } catch (error) {
@@ -435,7 +440,7 @@ export function registerCampaignWrites(server: McpServer, userId: () => string) 
     "set_encounter_campaign",
     {
       title: "Move encounter",
-      description: "Attach a standalone encounter this account owns to a campaign this account owns, or detach it (campaignId null) so it is standalone again. Posts the existing row to create-encounter with the new campaign_id.",
+      description: "Attach a standalone encounter this account owns to a campaign this account owns, or detach it (campaignId null) so it is standalone again. Saves only campaign_id with an encounter revision check.",
       annotations: writes,
       inputSchema: {
         encounterId: z.number().int(),
@@ -453,7 +458,7 @@ export function registerCampaignWrites(server: McpServer, userId: () => string) 
           if (!campaign.ok) return fail(campaign);
           campaignId = Number(args.campaignId);
         }
-        const saved = await saveEncounter(userId(), { ...current, campaign_id: campaignId });
+        const saved = await saveEncounter(userId(),current,{campaign_id:campaignId});
         if (!saved.ok) return fail(saved);
         return textResult(campaignId == null ? "Encounter detached." : "Encounter attached.", { encounter: encounterSummary(saved.data) });
       } catch (error) {

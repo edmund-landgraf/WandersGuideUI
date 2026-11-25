@@ -338,3 +338,51 @@ Deno.test({
     }
   },
 });
+
+Deno.test({
+  name: 'wgui revision save: owner CAS, stale browser/dice rejection, stock update contract',
+  ignore: skip,
+  async fn() {
+    const gm = await user();
+    const outsider = await user();
+    const camp = await campaign(gm.id);
+    const seeded = await admin.from('encounter').insert({
+      user_id: gm.id,campaign_id:camp.id,name:'revision fixture',icon:'combat',color:'#359fdf',
+      meta_data:{description:'keep'},combatants:{list:[]},
+    }).select().single();
+    if (seeded.error || !seeded.data) throw seeded.error ?? new Error('fixture seed failed');
+    const encounter = seeded.data;
+    try {
+      const save = (jwt: string,revision:number,patch:Record<string,unknown>) => call('wgui-ext-save-encounter',{
+        encounter_id:encounter.id,encounter_revision:revision,patch,
+      },jwt);
+      const denied = await save(outsider.jwt,0,{name:'Denied'});
+      assertEquals(denied.status,403);
+      const changed = await save(gm.jwt,0,{name:'Renamed'});
+      assertEquals(changed.status,200);
+      assertEquals(changed.body.data.meta_data.encounter_revision,1);
+      assertEquals(changed.body.data.meta_data.description,'keep');
+      assertEquals((await save(gm.jwt,0,{combatants:{list:[]}})).status,409);
+      const staleDice = await call('wgui-ext-patch-encounter-dice',{
+        campaign_id:camp.id,encounter_id:encounter.id,encounter_revision:0,dice_roll_log:[],
+      },gm.jwt);
+      assertEquals(staleDice.status,409);
+      // Real upstream handler must preserve a current revision and reject stale snapshots.
+      const stock = await call('create-encounter',{...changed.body.data,name:'Stock current'},gm.jwt);
+      assertEquals(stock.body.status,'success');
+      const current = await admin.from('encounter').select('*').eq('id',encounter.id).single();
+      assertEquals(current.data?.name,'Stock current');
+      assertEquals(current.data?.meta_data?.encounter_revision,2);
+      const staleStock = await call('create-encounter',{...changed.body.data,name:'Stale stock'},gm.jwt);
+      assertEquals(staleStock.body.status === 'success',false);
+      const after = await admin.from('encounter').select('name,meta_data').eq('id',encounter.id).single();
+      assertEquals(after.data?.name,'Stock current');
+      assertEquals(after.data?.meta_data?.encounter_revision,2);
+    } finally {
+      await admin.from('encounter').delete().eq('id',encounter.id);
+      await admin.from('campaign').delete().eq('id',camp.id);
+      await admin.auth.admin.deleteUser(gm.id);
+      await admin.auth.admin.deleteUser(outsider.id);
+    }
+  },
+});

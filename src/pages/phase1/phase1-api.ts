@@ -1,6 +1,7 @@
 import type { Campaign, Character, Encounter } from '@schemas/content';
 import { supabase, supabaseInvokeHeaders } from '../../supabase-client';
 import { parseCopyEncounterManifest } from './phase1-campaign-copy-manifest';
+import { encounterSaveBody, verifyEncounterSave, type EncounterSavePatch } from './phase1-encounter-revision';
 
 type ApiEnvelope<T> = { status: 'success' | 'fail' | 'error'; data?: T; message?: string };
 
@@ -49,6 +50,11 @@ export async function phase1Request<T>(functionName: string, body: Record<string
   if (!envelope) throw new Error(functionName + ': empty response');
   if (envelope.status !== 'success')   throw new Error(functionName + ': ' + (envelope.message || 'request failed'));
   return envelope.data as T;
+}
+
+/** Existing encounters are never saved through the stock create endpoint. */
+export async function savePhase1Encounter(row: Encounter, patch?: EncounterSavePatch): Promise<Encounter> {
+  return verifyEncounterSave(row,await phase1Request<unknown>('wgui-ext-save-encounter',encounterSaveBody(row,patch)));
 }
 
 function isMissingEdgeFunction(error: unknown, functionName: string): boolean {
