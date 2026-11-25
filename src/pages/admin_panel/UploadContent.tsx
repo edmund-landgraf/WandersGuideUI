@@ -1,4 +1,4 @@
-import { Button, Center, Group, Progress, Select, Text, Title, rem } from '@mantine/core';
+import { Center, Group, Progress, Select, Text, Title, rem } from '@mantine/core';
 import { IconUpload, IconPhoto, IconX } from '@tabler/icons-react';
 import { Dropzone, FileWithPath } from '@mantine/dropzone';
 import BlurBox from '@common/BlurBox';
@@ -9,12 +9,10 @@ import { showNotification } from '@mantine/notifications';
 import { AbilityBlockType, ContentType } from '@schemas/content';
 import { fetchContentSources, defineDefaultSources } from '@content/content-store';
 import { getSpellByName } from '@upload/foundry-utils';
-import { downloadMonsterCore2Files } from '@upload/monster-core-2-pack';
 
 export default function UploadContent() {
   const [contentType, setContentType] = useState<ContentType | AbilityBlockType | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [downloading, setDownloading] = useState(false);
   const [showUploadStats, setShowUploadStats] = useState(false);
 
   const [sourceId, setSourceId] = useState<number | undefined>(undefined);
@@ -32,33 +30,18 @@ export default function UploadContent() {
     if (!contentType) return;
     if (uploading) return;
     resetUploadStats();
-    setUploading(true);
-    setShowUploadStats(true);
-    try {
+    setTimeout(async () => {
+      setUploading(true);
+      setShowUploadStats(true);
       await uploadContentList(sourceId, contentType, files);
-      showNotification({ title: 'Upload finished', message: 'Review the counts for imported, existing, and failed files.', autoClose: 6000 });
-    } catch (error) {
-      showNotification({ title: 'Upload interrupted', message: String(error), color: 'red', autoClose: false });
-    } finally {
       setUploading(false);
-    }
+      showNotification({
+        title: 'Upload Complete',
+        message: 'Files have been uploaded.',
+        autoClose: 3000,
+      });
+    }, 1000);
   };
-
-  const selectedSource = data?.find(source => source.id === sourceId);
-  const canImportMonsterCore2 = contentType === 'creature' && selectedSource?.name === 'Monster Core 2' && selectedSource.user_id === null;
-
-  async function importMonsterCore2() {
-    if (!canImportMonsterCore2 || uploading || downloading) return;
-    setDownloading(true);
-    try {
-      const files = await downloadMonsterCore2Files();
-      await startUpload(files);
-    } catch (error) {
-      showNotification({ title: 'Monster Core 2 download failed', message: String(error), color: 'red', autoClose: false });
-    } finally {
-      setDownloading(false);
-    }
-  }
 
   // Passively poll upload stats
   const { data: uploadStats } = useQuery({
@@ -78,7 +61,6 @@ export default function UploadContent() {
   let totalUploaded = 0;
   let totalErrors = 0;
   let totalMissing = 0;
-  let totalSkipped = 0;
   if (uploadStats) {
     for (const sourceMap of uploadStats.uploads.values()) {
       totalUploaded = [...sourceMap.values()].reduce((acc, cur) => acc + cur, totalUploaded);
@@ -88,8 +70,7 @@ export default function UploadContent() {
     }
     totalMissing = [...uploadStats.missingSources.values()].reduce((acc, cur) => acc + cur, totalMissing);
     total = uploadStats.total;
-    totalSkipped = uploadStats.skipped;
-    totalFound = totalUploaded + totalErrors + totalMissing + totalSkipped;
+    totalFound = totalUploaded + totalErrors + totalMissing;
   }
 
   return (
@@ -104,7 +85,6 @@ export default function UploadContent() {
               label: source.name,
             }))}
             searchable
-            disabled={uploading || downloading}
             onChange={async (value) => {
               if (!value) return;
               setSourceId(parseInt(value));
@@ -125,7 +105,6 @@ export default function UploadContent() {
               ] satisfies { value: ContentType | AbilityBlockType; label: string }[]
             }
             value={contentType}
-            disabled={uploading || downloading}
             onChange={(value) => {
               setContentType(value as ContentType | AbilityBlockType);
               setShowUploadStats(false);
@@ -133,12 +112,6 @@ export default function UploadContent() {
           />
         </Group>
       </Center>
-
-      {canImportMonsterCore2 && (
-        <Center p='sm'>
-          <Button onClick={importMonsterCore2} loading={downloading || uploading}>Import missing Monster Core 2 creatures (PF2e 8.7.1)</Button>
-        </Center>
-      )}
 
       {showUploadStats && totalFound > 0 && (
         <Progress.Root size='xl'>
@@ -152,34 +125,14 @@ export default function UploadContent() {
           >
             <Progress.Label>Missing Source - {totalMissing}</Progress.Label>
           </Progress.Section>
-          <Progress.Section animated={totalFound !== total} value={Math.ceil((totalSkipped / total) * 100)} color='gray'>
-            <Progress.Label>Existing - {totalSkipped}</Progress.Label>
-          </Progress.Section>
           <Progress.Section animated={totalFound !== total} value={Math.ceil((totalUploaded / total) * 100)}>
             <Progress.Label>Uploaded - {totalUploaded}</Progress.Label>
           </Progress.Section>
         </Progress.Root>
       )}
 
-      {showUploadStats && (uploadStats?.failedFiles?.length ?? 0) > 0 && (
-        <div style={{ maxHeight: 260, overflowY: 'auto', padding: 12 }}>
-          <Text fw={600} size='sm'>Files requiring review ({uploadStats!.failedFiles.length})</Text>
-          {uploadStats!.failedFiles.map((failure, index) => (
-            <Text size='xs' key={index}>{failure.file}: {failure.reason}</Text>
-          ))}
-          <Button size='xs' variant='light' onClick={() => {
-            const blob = new Blob([JSON.stringify(uploadStats!.failedFiles, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const anchor = document.createElement('a');
-            anchor.href = url; anchor.download = 'creature-import-failures.json'; anchor.click();
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
-          }}>Export failure report</Button>
-        </div>
-      )}
-
       {contentType ? (
         <Dropzone
-          disabled={uploading || downloading}
           onDrop={(files) => startUpload(files)}
           onReject={(files) => console.log('rejected files', files)}
           maxSize={3 * 1024 ** 2}
