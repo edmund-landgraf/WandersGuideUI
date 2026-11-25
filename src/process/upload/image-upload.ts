@@ -16,6 +16,43 @@ export async function uploadImage(file: File, category: string): Promise<string>
  * value is a public storage URL. If that fetch or upload cannot run, the stored
  * value is the absolute public URL instead. Absolute http(s) links are unchanged.
  */
+const STORAGE_OBJECT = /\/storage\/v1\/object\//i;
+
+/** Hosted or site-relative art must be re-uploaded under the copier's account. */
+export function needsRehostForCopy(value: string | null | undefined): boolean {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return false;
+  if (isSiteRelativeArtPath(trimmed)) return true;
+  const resolved = publicArtSrc(trimmed);
+  return STORAGE_OBJECT.test(trimmed) || STORAGE_OBJECT.test(resolved);
+}
+
+/**
+ * Campaign art for a copy: site-relative paths and hosted storage URLs are fetched and
+ * uploaded again; public http(s) links are kept as stored.
+ */
+export async function rehostCampaignArtUrl(raw: string | null | undefined): Promise<string> {
+  const trimmed = raw?.trim() ?? '';
+  if (!trimmed) return '';
+  if (isSiteRelativeArtPath(trimmed)) return persistPublicArtUrl(trimmed, 'backgrounds');
+  if (!needsRehostForCopy(trimmed)) return trimmed;
+  const fetchUrl = publicArtSrc(trimmed);
+  if (!/^https?:\/\//i.test(fetchUrl)) return trimmed;
+  try {
+    const response = await fetch(fetchUrl, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' });
+    if (!response.ok) return trimmed;
+    const blob = await response.blob();
+    const header = blob.type.split(';')[0]?.trim().toLowerCase() ?? '';
+    const type = header === 'image/png' || header === 'image/jpeg' || header === 'image/webp' ? header : '';
+    if (!type) return trimmed;
+    const extension = type === 'image/jpeg' ? 'jpg' : type.split('/')[1];
+    const uploaded = await uploadImage(new File([blob], `campaign-art.${extension}`, { type }), 'backgrounds');
+    return uploaded || trimmed;
+  } catch {
+    return trimmed;
+  }
+}
+
 export async function persistPublicArtUrl(raw: string, category?: string): Promise<string> {
   const trimmed = raw.trim();
   if (!trimmed) return '';

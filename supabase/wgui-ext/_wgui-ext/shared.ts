@@ -161,6 +161,42 @@ export async function authorizeCampaign(
   return { userId, campaign, isGm, characterIds };
 }
 
+/**
+ * Membership for normal play, or the same campaign row the stock `find-campaign` call the
+ * UI already made. Copying a campaign to your account reuses that read: notes and folders
+ * come straight off the campaign row, and encounters need the same gate rather than
+ * requiring a PC on the roster.
+ */
+export async function authorizeCampaignRead(
+  client: SupabaseClient<any, 'public', any>,
+  admin: SupabaseClient<any, 'public', any>,
+  token: string,
+  campaignId: number
+): Promise<CampaignAccess> {
+  try {
+    return await authorizeCampaign(client, admin, token, campaignId);
+  } catch (error) {
+    if (!(error instanceof HttpError) || (error as HttpError).code !== 'CAMPAIGN_FORBIDDEN') {
+      throw error;
+    }
+  }
+
+  const userId = await requireCallerId(client, token);
+  const { data, error } = await client.from('campaign').select('id').eq('id', campaignId).maybeSingle();
+  if (error || !data) {
+    throw new HttpError(403, 'You do not have access to this campaign.', 'CAMPAIGN_FORBIDDEN');
+  }
+
+  const campaigns = await fetchData<Campaign>(admin, 'campaign', [{ column: 'id', value: campaignId }]);
+  const campaign = campaigns[0];
+  if (!campaign) {
+    throw new HttpError(403, 'You do not have access to this campaign.', 'CAMPAIGN_FORBIDDEN');
+  }
+
+  const isGm = sameUserId(campaign.user_id, userId);
+  return { userId, campaign, isGm, characterIds: new Set<number>() };
+}
+
 /** The character id a combatant refers to, from either the id field or the sheet snapshot. */
 export function combatantCharacterId(combatant: CombatantLike): number | null {
   if (combatant.type && combatant.type !== 'CHARACTER') return null;
