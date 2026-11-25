@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd /home/administrator/node-sites/WandersGuideUI
+# SQL migrations are never applied implicitly. Deploy required migrations before --with-edge.
+with_edge=0
+case "${1:-}" in
+  "") ;;
+  --with-edge) with_edge=1 ;;
+  *) echo "Usage: $0 [--with-edge]" >&2; exit 2 ;;
+esac
+if [ "$#" -gt 1 ]; then echo "Usage: $0 [--with-edge]" >&2; exit 2; fi
 
 files=(
   docs/local-upstream-patches.md
@@ -39,5 +47,11 @@ npm install
 npm run build
 # Videos are gitignored and stay outside dist/. `serve -s` only sees files under dist/.
 ln -sfn ../videos dist/videos
+if [ "$with_edge" = 1 ]; then
+  # Fail closed if the overlay cannot be restarted; never report a complete API deploy.
+  npm run stack:restart
+else
+  echo "Frontend-only deployment. For edge changes, apply required SQL first and run with --with-edge."
+fi
 pm2 restart wgui --update-env
 pm2 save
