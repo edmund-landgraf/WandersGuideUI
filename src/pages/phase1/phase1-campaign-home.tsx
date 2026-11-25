@@ -1719,7 +1719,7 @@ function RosterArt({ name, imageUrl, onOpen }: { name: string; imageUrl?: string
     staleTime: Number.POSITIVE_INFINITY,
   });
   // The creature's own picture is what the GM row shows. The art service only fills a gap.
-  const src = rosterArtSrc(portrait || art.data?.thumbSrc || '');
+  const src = rosterArtSrc(art.data?.thumbSrc || portrait || '');
   useEffect(() => { setFailed(false); }, [src]);
   if (src && !failed) {
     return (
@@ -1730,10 +1730,10 @@ function RosterArt({ name, imageUrl, onOpen }: { name: string; imageUrl?: string
         aria-label={`View full image of ${name}`}
         onClick={(event) => {
           event.stopPropagation();
-          const full = rosterArtSrc(portrait || art.data?.fullSrc || src);
+          const full = rosterArtSrc(art.data?.fullSrc || src);
           onOpen(name, full);
           void lookupMonsterArt(name, portrait || undefined, 'full').then((result) => {
-            const next = rosterArtSrc(portrait || result?.fullSrc || '');
+            const next = rosterArtSrc(result?.fullSrc || '');
             if (next) onOpen(name, next);
           });
         }}

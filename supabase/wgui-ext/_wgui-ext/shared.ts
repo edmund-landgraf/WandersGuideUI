@@ -161,12 +161,7 @@ export async function authorizeCampaign(
   return { userId, campaign, isGm, characterIds };
 }
 
-/**
- * Membership for normal play, or the same campaign row the stock `find-campaign` call the
- * UI already made. Copying a campaign to your account reuses that read: notes and folders
- * come straight off the campaign row, and encounters need the same gate rather than
- * requiring a PC on the roster.
- */
+/** Ordinary readable campaign access. This is NOT permission to duplicate its private content. */
 export async function authorizeCampaignRead(
   client: SupabaseClient<any, 'public', any>,
   admin: SupabaseClient<any, 'public', any>,
@@ -195,6 +190,33 @@ export async function authorizeCampaignRead(
 
   const isGm = sameUserId(campaign.user_id, userId);
   return { userId, campaign, isGm, characterIds: new Set<number>() };
+}
+
+/** Explicit owner opt-in is kept outside campaign metadata (which player endpoints can patch). */
+export async function campaignCopyEnabled(
+  admin: SupabaseClient<any, 'public', any>,
+  access: CampaignAccess
+): Promise<boolean> {
+  const { data, error } = await admin.from('wgui_campaign_copy_permission')
+    .select('owner_id').eq('campaign_id', access.campaign.id).maybeSingle();
+  if (error) throw new HttpError(503, 'Campaign copy permission could not be checked.', 'COPY_PERMISSION_UNAVAILABLE');
+  return !!data && sameUserId(data.owner_id, access.campaign.user_id);
+}
+
+export async function authorizeCampaignCopy(
+  client: SupabaseClient<any, 'public', any>,
+  admin: SupabaseClient<any, 'public', any>,
+  token: string,
+  campaignId: number
+): Promise<CampaignAccess> {
+  if (!Number.isSafeInteger(campaignId) || campaignId <= 0) {
+    throw new HttpError(400, 'A valid campaign_id is required.', 'CAMPAIGN_ID_REQUIRED');
+  }
+  const access = await authorizeCampaignRead(client, admin, token, campaignId);
+  if (!access.isGm && !(await campaignCopyEnabled(admin, access))) {
+    throw new HttpError(403, 'The game master has not enabled campaign copying.', 'CAMPAIGN_COPY_FORBIDDEN');
+  }
+  return access;
 }
 
 /** The character id a combatant refers to, from either the id field or the sheet snapshot. */

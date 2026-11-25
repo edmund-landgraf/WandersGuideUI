@@ -471,7 +471,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     description: "Weapon attacks, feats with actions, basic actions, skill actions, speciality basics, exploration, and downtime, with counts.",
     inputSchema: { ...ids, combatantId: z.string() },
   }, async (args, uid) => {
-    const found = await one(uid, args);
+    const found = await one(uid, args, true, true);
     if (!found) return notFound("Encounter not found.");
     if ("missing" in found) return notFound("Combatant not found.");
     return textResult("Ability groups.", { groups: found.sheet.groups.map((group) => ({ id: group.id, label: group.label, count: group.actions.length })) });
@@ -488,7 +488,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     const group = found.sheet.groups.find((item) => item.id === args.group || item.label === args.group);
     const strikes = found.sheet.strikes;
     const weaponGroup = args.group === "weapon-attacks" || group?.id === "weapon-attacks";
-    if (weaponGroup && strikes?.length) return textResult(group?.label ?? "Weapon Attacks", { actions: strikes, catalogId: found.sheet.catalogId ?? null, contentSourceId: found.sheet.contentSourceId ?? null });
+    if (weaponGroup && strikes !== undefined) return textResult(group?.label ?? "Weapon Attacks", { actions: group?.actions ?? strikes, catalogId: found.sheet.catalogId ?? null, contentSourceId: found.sheet.contentSourceId ?? null, sourceNotice: "Computed from stored creature mechanics; absent catalog damage terms cannot be reconstructed from this projection." });
     if (!group) return notFound("Ability group not found.");
     return textResult(group.label, { actions: group.actions });
   }, userId);
@@ -539,8 +539,11 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     const found = await one(uid, args, true);
     if (!found) return notFound("Encounter not found.");
     if ("missing" in found) return notFound("Combatant not found.");
+    const details = found.sheet.details;
+    const liveCasting = details && typeof details === "object" && "reader" in details && details.reader === "focus-scan" ? details : undefined;
     return textResult("Spells.", {
       spells: found.sheet.spells,
+      ...(liveCasting ? { liveCasting } : {}),
     });
   }, userId);
 

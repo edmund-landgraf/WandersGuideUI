@@ -796,6 +796,10 @@ export type LivingEntity = z.infer<typeof LivingEntitySchema>;
 // ─── Creature ─────────────────────────────────────────────────────────────────
 
 export const CreatureSchema = LivingEntitySchema.extend({
+  // Preserve catalog provenance through content-cache validation.
+  meta_data: LivingEntityMetaSchema.extend({
+    source: z.object({ book: z.string().optional(), page: z.string().optional(), url: z.string().optional() }).optional(),
+  }).nullable(),
   id: z.number(),
   created_at: z.string(),
   updated_at: z.string().optional(),

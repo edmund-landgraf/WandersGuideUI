@@ -1,5 +1,5 @@
-import { createHmac } from "node:crypto";
 import { isEncounterStrike } from "./encounter-actions.js";
+import { createHmac } from "node:crypto";
 
 import { invokeFunction, type InvokeResult } from "./character-client.js";
 import { mergePlayerDiceRollLog, mergePlayerDiceRollState } from "./dice-merge.js";
@@ -1140,7 +1140,6 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
           Object.assign(row, stats.row);
         }
       }
-      // Resolve trait IDs after computed projections have been merged too.
       await labelTraitIds(record);
       return record;
     },

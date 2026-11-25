@@ -27,6 +27,9 @@ import { performAutoContentLinking } from './auto-content-linking';
 import { convertCastToActionCost } from '@utils/actions';
 import { convertFoundryCreatureToGranularCreature, convertGranularCreature } from './creature-import';
 import { cloneDeep } from 'lodash-es';
+import { fetchContent } from '@content/content-store';
+import { Creature } from '@schemas/content';
+import { matchesFoundryPublication, foundryPublicationTitle } from './foundry-publication';
 import { displayThrowingError } from '@utils/notifications';
 
 // https://raw.githubusercontent.com/foundryvtt/pf2e/master/static/icons/equipment/adventuring-gear/alchemists-lab.webp
@@ -37,6 +40,7 @@ const REQUIRE_REMASTER = false;
 
 let uploadStats: {
   total: number;
+  skipped: number;
   missingSources: Map<string, number>;
   uploads: Map<string, Map<string, number>>;
   failedUploads: Map<string, Map<string, number>>;
@@ -44,6 +48,7 @@ let uploadStats: {
 function emptyUploadStats() {
   return {
     total: 0,
+    skipped: 0,
     missingSources: new Map<string, number>(),
     uploads: new Map<string, Map<string, number>>(),
     failedUploads: new Map<string, Map<string, number>>(),
@@ -62,7 +67,7 @@ export async function uploadContentList(sourceId: number, type: ContentType | Ab
   uploadStats.total = files.length;
 
   const source = await findContentSource(sourceId);
-  if (!source || !source.foundry_id) {
+  if (!source || (!source.foundry_id && !(type === 'creature' && source.user_id === null))) {
     showNotification({
       id: 'unsupported-source',
       title: `Unsupported Source`,
@@ -74,10 +79,18 @@ export async function uploadContentList(sourceId: number, type: ContentType | Ab
   }
 
   const addedIds = new Set<number>();
-  for (let file of files) {
-    const result = await uploadContent(source, type, file);
-    if (result.success && result.id) {
-      addedIds.add(result.id);
+  // Read fresh source-scoped rows once; never overwrite or duplicate an existing creature.
+  const existing = type === 'creature' ? new Set((await fetchContent<Creature>('creature', { content_sources: [source.id] }, { skipCache: true, dontStore: true })).map(row => row.name.trim().toLowerCase())) : undefined;
+  for (const file of files) {
+    try {
+      const result = await uploadContent(source, type, file, existing);
+      if (result.success && result.id) addedIds.add(result.id);
+    } catch (error) {
+      console.error('Import failed:', file.name, error);
+      if (!uploadStats.failedUploads.has(type)) uploadStats.failedUploads.set(type, new Map());
+      const key = source.foundry_id ?? source.name;
+      const counts = uploadStats.failedUploads.get(type)!;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
 
@@ -119,22 +132,18 @@ export async function uploadContentList(sourceId: number, type: ContentType | Ab
   console.groupEnd();
 }
 
-async function uploadContent(source: ContentSource, type: string, file: FileWithPath): Promise<UploadResult> {
-  const jsonUrl = URL.createObjectURL(file);
-
-  const res = await fetch(jsonUrl);
-  const json = (await res.json()) as Record<string, any>;
-
-  const foundryId = source.foundry_id;
-  const foundFoundryId = (json.system?.publication?.title ||
-    json.system?.details?.publication?.title ||
-    json.system?.source?.value ||
-    json.system?.details?.source?.value) as string;
-
-  if (foundFoundryId !== foundryId) {
-    return {
-      success: false,
-    };
+async function uploadContent(source: ContentSource, type: string, file: FileWithPath, existing?: Set<string>): Promise<UploadResult> {
+  const json = JSON.parse(await file.text()) as Record<string, any>;
+  const foundryId = source.foundry_id ?? source.name;
+  if (!matchesFoundryPublication(source, json, type === 'creature')) {
+    uploadStats.missingSources.set(foundryId, (uploadStats.missingSources.get(foundryId) ?? 0) + 1);
+    return { success: false };
+  }
+  const nameKey = typeof json.name === 'string' ? json.name.trim().toLowerCase() : '';
+  if (type === 'creature' && json.type === 'npc' && nameKey && existing?.has(nameKey)) {
+    // Count skipped rows separately from actual writes.
+    uploadStats.skipped++;
+    return { success: true };
   }
 
   if (REQUIRE_REMASTER) {
@@ -173,6 +182,7 @@ async function uploadContent(source: ContentSource, type: string, file: FileWith
   }
 
   if (result?.success) {
+    if (type === 'creature' && nameKey) existing?.add(nameKey);
     // Increase upload count
     if (!uploadStats.uploads.has(type)) {
       uploadStats.uploads.set(type, new Map<string, number>());
@@ -542,6 +552,8 @@ async function uploadCreature(source: ContentSource, json: Record<string, any>):
   try {
     const granularCreature = convertFoundryCreatureToGranularCreature(json);
     const creature = await convertGranularCreature(source, granularCreature);
+    creature.meta_data = { ...creature.meta_data, source: { book: source.name, url: source.url ?? undefined } };
+    console.log('Imported publication:', foundryPublicationTitle(json));
     console.log('Conversion Pipeline: ', json, 'vvv', granularCreature, 'vvv', creature);
 
     const createdCreature = await upsertCreature(creature);

@@ -50,7 +50,7 @@ export function calculatePreparedEntityStatus({ entity, content, storeId, kind }
   const speeds = getAllSpeedVariables(storeId)
     .map((variable) => ({ name: variable.name, value: getSpeedValue(storeId, variable, entity).total }))
     .filter((speed) => speed.value > 0);
-  const landSpeed = speeds.find((speed) => speed.name === 'SPEED') ?? speeds[0];
+  const landSpeed = speeds.find((speed) => speed.name === 'SPEED');
   let recallKnowledge: Phase1CreatureStatus['recallKnowledge'] = null;
 
   if (kind === 'CREATURE') {
