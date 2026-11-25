@@ -539,8 +539,11 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     const found = await one(uid, args, true);
     if (!found) return notFound("Encounter not found.");
     if ("missing" in found) return notFound("Combatant not found.");
+    const details = found.sheet.details;
+    const liveCasting = details && typeof details === "object" && "reader" in details && details.reader === "focus-scan" ? details : undefined;
     return textResult("Spells.", {
       spells: found.sheet.spells,
+      ...(liveCasting ? { liveCasting } : {}),
     });
   }, userId);
 

@@ -6606,7 +6606,7 @@ function EntityIcon({ type, name, imageUrl, expandable }: { type: Combatant['typ
     enabled: preview && type === 'CREATURE' && Boolean(name?.trim() || portrait),
     staleTime: Number.POSITIVE_INFINITY,
   });
-  const src = type === 'CREATURE' ? (art.data?.thumbSrc || portrait || undefined) : portrait || undefined;
+  const src = type === 'CREATURE' ? (art.data?.thumbSrc || (!art.isFetched ? portrait : undefined)) : portrait || undefined;
   const fullSrc = type === 'CREATURE' ? (full.data?.fullSrc || art.data?.fullSrc || src) : portrait || undefined;
   const [failed, setFailed] = useState(false);
   useEffect(() => { setFailed(false); }, [src]);

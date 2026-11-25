@@ -29,6 +29,15 @@ jobs:
         working-directory: tactics-mcp
         run: npx --no-install tsx --test test/encounter-writes.test.ts test/campaign-note-payload.test.ts test/stat-block.test.ts test/creature-remaster.test.ts test/monster-core-2-import.test.ts
 
+      - name: Run full MCP suite
+        working-directory: tactics-mcp
+        run: npm test
+      - name: Run frontend unit tests
+        env:
+          VITE_SUPABASE_URL: https://fixture.invalid
+          VITE_SUPABASE_KEY: fixture
+        run: npm test
+
       - name: Verify production build
         env:
           VITE_SUPABASE_URL: https://fixture.invalid

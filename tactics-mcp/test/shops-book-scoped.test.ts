@@ -51,6 +51,7 @@ test("batch shop append resolves items and traits one book at a time, preserving
     }
 
     const functionName = url.split("/functions/v1/")[1];
+    if (functionName === "find-content-source") return Response.json({ data: [{ id: 11 }, { id: 22 }] });
     assert.ok(functionName === "find-item" || functionName === "find-trait", url);
     const body = JSON.parse(String(init?.body)) as { id: number | number[]; content_sources: number[] };
     assert.equal(body.content_sources.length, 1, "lookup must be restricted to one book");

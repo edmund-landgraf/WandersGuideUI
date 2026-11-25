@@ -125,7 +125,7 @@ async function preparePhase1EntityNow(combatant: Phase1EntityCombatant, freshCre
     const maxHp = Math.max(computedMax || 0, storedMax || 0);
     creature = freshCreature && maxHp > 0
       ? { ...creature, hp_current: maxHp, hp_temp: 0 }
-      : typeof existingHp === 'number' && Number.isFinite(existingHp)
+      : typeof existingHp === 'number' && Number.isFinite(existingHp) && existingHp >= 0
         ? { ...creature, hp_current: existingHp }
         : fillCurrentHp(creature, computedMax);
     return { entity: creature, content, storeId, kind: 'CREATURE' };
@@ -202,7 +202,7 @@ function calculatedStatsForHydration(creature: Creature, catalog: Creature) {
   return hasUsefulCalculatedStats(encounter) ? encounter : fromCatalog;
 }
 
-function fillCurrentHp(creature: Creature, computedMax?: number) {
+export function fillCurrentHp(creature: Creature, computedMax?: number, initialize = false) {
   const stored = creature.meta_data?.calculated_stats?.hp_max;
   const maxHp = typeof computedMax === 'number' && computedMax > 0
     ? computedMax
@@ -211,8 +211,7 @@ function fillCurrentHp(creature: Creature, computedMax?: number) {
       : 0;
   if (maxHp <= 0) return creature;
   const current = creature.hp_current;
-  if (typeof current === 'number' && current > 1 && current <= maxHp) return creature;
-  if (typeof current === 'number' && current > 1) return creature;
+  if (!initialize && typeof current === 'number' && Number.isFinite(current) && current >= 0) return creature;
   return { ...creature, hp_current: maxHp };
 }
 

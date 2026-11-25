@@ -506,6 +506,7 @@ function CreatureThumb({ name }: { name: string }) {
   });
   const src = art.data?.thumbSrc;
   const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [src]);
   if (!src || failed) {
     return (
       <span className='grid h-9 w-9 shrink-0 place-items-center border border-p1-border bg-p1-inset text-p1-faint' aria-hidden>

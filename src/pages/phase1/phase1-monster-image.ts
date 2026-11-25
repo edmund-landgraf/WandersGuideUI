@@ -41,8 +41,10 @@ async function searchCreatures(path: '/api/monsters' | '/api/npcs', name: string
 function pickMonsterRow(rows: MonsterRow[], name: string) {
   const needle = normalizeName(name);
   const exact = rows.filter((row) => normalizeName(row.Name ?? '') === needle);
-  const pool = exact.length ? exact : rows;
-  return pool.find((row) => row.ImageUrl) ?? null;
+  const ids = new Set(exact.map((row) => row.MonsterId).filter((id) => Number.isSafeInteger(id) && id !== 0));
+  if (ids.size !== 1) return null;
+  return exact.find((row) => row.MonsterId === [...ids][0] && row.ImageUrl)
+    ?? exact.find((row) => row.MonsterId === [...ids][0]) ?? null;
 }
 
 function resolveImageUrl(imageUrl: string) {
@@ -51,9 +53,28 @@ function resolveImageUrl(imageUrl: string) {
   return imageUrl;
 }
 
-function hostedMonsterImage(monsterId: number, size: 'thumb' | 'full') {
+export function monsterArtPath(monsterId: number, size: 'thumb' | 'full' = 'full') {
+  if (!Number.isSafeInteger(monsterId) || monsterId === 0) throw new Error('Invalid monster art ID');
   const suffix = size === 'thumb' ? '/image/thumb' : '/image';
-  return `${pathfinderApiOrigin()}/api/monsters/${monsterId}${suffix}`;
+  const resource = monsterId < 0 ? `user-monsters/${-monsterId}` : `monsters/${monsterId}`;
+  return `/api/${resource}${suffix}`;
+}
+
+function hostedMonsterImage(monsterId: number, size: 'thumb' | 'full') {
+  return `${pathfinderApiOrigin()}${monsterArtPath(monsterId, size)}`;
+}
+
+/** Recognize a stored PF2 endpoint (including the historical signed canonical route). */
+export function storedMonsterArtId(value?: string): number | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value, 'https://pf2.unwhelm.online');
+    if (/^https?:\/\//i.test(value) && url.origin !== 'https://pf2.unwhelm.online' && url.origin !== pathfinderApiOrigin()) return null;
+    const match = /\/api\/(user-monsters|monsters)\/(-?\d+)\/image(?:\/thumb)?\/?$/.exec(url.pathname);
+    if (!match) return null;
+    const id = Number(match[2]);
+    return Number.isSafeInteger(id) && id !== 0 ? (match[1] === 'user-monsters' ? -Math.abs(id) : id) : null;
+  } catch { return null; }
 }
 
 export function monsterArtUrl(monsterId: number, size: 'thumb' | 'full' = 'full') {
@@ -109,6 +130,7 @@ export function unlockMonsterArt(password: string) {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password: trimmed }),
+    redirect: 'error',
   })
     .then((response) => {
       if (!response.ok) {
@@ -173,8 +195,15 @@ async function blobToDataUrl(blob: Blob) {
   });
 }
 
-async function fetchArtObjectUrl(url: string) {
-  const response = await fetch(url, { credentials: 'include' });
+async function fetchArtObjectUrl(url: string, password: string) {
+  let response = await fetch(url, { credentials: 'include' });
+  if (response.status === 401 || response.status === 403) {
+    // The server-side art session may expire while the remembered password is still valid.
+    artUnlock = null;
+    unlockedPassword = '';
+    if (!(await unlockMonsterArt(password))) return null;
+    response = await fetch(url, { credentials: 'include' });
+  }
   if (!response.ok) return null;
   const blob = await response.blob();
   if (!blob.type.startsWith('image/')) return null;
@@ -183,57 +212,81 @@ async function fetchArtObjectUrl(url: string) {
 
 function ownCreatureArt(fallbackUrl?: string) {
   const trimmed = fallbackUrl?.trim();
-  if (!trimmed || /aonprd\.com/i.test(trimmed)) return null;
+  if (!trimmed || /aonprd\.com/i.test(trimmed) || storedMonsterArtId(trimmed) != null) return null;
   const src = resolveImageUrl(trimmed);
   return { monsterId: null, fullSrc: src, thumbSrc: src };
+}
+
+/** Validate a public portrait with the same browser image loading rules as the renderer (no CORS requirement). */
+async function portraitLoads(src: string): Promise<boolean> {
+  if (typeof Image === 'undefined' || typeof window === 'undefined') return true;
+  return new Promise((resolve) => {
+    const image = new Image();
+    const finish = (ok: boolean) => { window.clearTimeout(timeout); image.onload = null; image.onerror = null; resolve(ok); };
+    const timeout = window.setTimeout(() => finish(false), 5000);
+    image.onload = () => finish(true);
+    image.onerror = () => finish(false);
+    image.referrerPolicy = 'no-referrer';
+    image.src = src;
+  });
 }
 
 export async function lookupMonsterArt(name: string, fallbackUrl?: string, size: 'thumb' | 'full' = 'thumb'): Promise<Phase1MonsterArt | null> {
   const trimmedFallback = fallbackUrl?.trim() || undefined;
   const lookupName = normalizeName(name) || name.trim();
   const password = readArtPassword();
-  // A portrait stored on the creature is custom art. Catalog lookup by name is
-  // only for official creatures, which have no image or only an Archives of Nethys link.
+  const explicitId = storedMonsterArtId(trimmedFallback);
   const own = ownCreatureArt(trimmedFallback);
-  if (own) return own;
+  if (own && await portraitLoads(own.thumbSrc)) return own;
 
   if (!password) return null;
 
-  if (lookupName) {
-    try {
+  // Stored PF2 art endpoints identify the creature directly. Never send the art
+  // password to an arbitrary stored URL; unlock and fetch through the configured API.
+  let monsterId = explicitId;
+  const cacheKey = explicitId != null ? `id:${explicitId}` : lookupName;
+  try {
+    if (monsterId == null && lookupName) {
       const monsters = await searchCreatures('/api/monsters', lookupName);
       const npcs = monsters.some((row) => normalizeName(row.Name ?? '') === lookupName)
         ? []
         : await searchCreatures('/api/npcs', lookupName);
-      const pick = pickMonsterRow([...monsters, ...npcs], lookupName) ?? [...monsters, ...npcs].find((row) => row.MonsterId);
-      if (pick?.MonsterId && password) {
-        const unlocked = await unlockMonsterArt(password);
-        if (!unlocked) clearArtPassword();
-      }
-      if (pick?.MonsterId) {
-        const src = await fetchArtObjectUrl(hostedMonsterImage(pick.MonsterId, size));
-        if (src) {
-          writeCachedArt(lookupName, size, { monsterId: pick.MonsterId, src });
-          const fullCached = readCachedArt(lookupName, 'full');
-          const thumbCached = readCachedArt(lookupName, 'thumb');
-          const fullSrc = size === 'full' ? src : fullCached?.src ?? src;
-          const thumbSrc = size === 'thumb' ? src : thumbCached?.src ?? src;
-          return { monsterId: pick.MonsterId, fullSrc, thumbSrc };
-        }
-      }
-    } catch {
-      // Fall back to the entity image URL when PathfinderUtil is unavailable.
+      const pick = pickMonsterRow([...monsters, ...npcs], lookupName);
+      monsterId = pick?.MonsterId ?? null;
+      // Do not guess from partial or ambiguous names, including stale name-only cache entries.
+      if (monsterId == null) return null;
     }
+    if (monsterId != null) {
+      const unlocked = await unlockMonsterArt(password);
+      if (!unlocked) {
+        clearArtPassword();
+        return null;
+      }
+      const src = await fetchArtObjectUrl(hostedMonsterImage(monsterId, size), password);
+      if (src) {
+        writeCachedArt(cacheKey, size, { monsterId, src });
+        const fullCached = readCachedArt(cacheKey, 'full');
+        const thumbCached = readCachedArt(cacheKey, 'thumb');
+        return {
+          monsterId,
+          fullSrc: size === 'full' ? src : fullCached?.monsterId === monsterId ? fullCached.src : src,
+          thumbSrc: size === 'thumb' ? src : thumbCached?.monsterId === monsterId ? thumbCached.src : src,
+        };
+      }
+    }
+  } catch {
+    // A verified cached image may still be available during an API outage.
   }
 
-  const cached = lookupName ? readCachedArt(lookupName, size) : null;
-  if (cached) {
-    const fullCached = readCachedArt(lookupName, 'full');
-    const thumbCached = readCachedArt(lookupName, 'thumb');
-    const fullSrc = size === 'full' ? cached.src : fullCached?.src ?? cached.src;
-    const thumbSrc = size === 'thumb' ? cached.src : thumbCached?.src ?? cached.src;
-    return { monsterId: cached.monsterId ?? fullCached?.monsterId ?? thumbCached?.monsterId ?? null, fullSrc, thumbSrc };
+  const cached = cacheKey ? readCachedArt(cacheKey, size) : null;
+  if (cached && monsterId != null && cached.monsterId === monsterId) {
+    const fullCached = readCachedArt(cacheKey, 'full');
+    const thumbCached = readCachedArt(cacheKey, 'thumb');
+    return {
+      monsterId,
+      fullSrc: size === 'full' ? cached.src : fullCached?.monsterId === monsterId ? fullCached.src : cached.src,
+      thumbSrc: size === 'thumb' ? cached.src : thumbCached?.monsterId === monsterId ? thumbCached.src : cached.src,
+    };
   }
-
-  return ownCreatureArt(trimmedFallback);
+  return null;
 }
