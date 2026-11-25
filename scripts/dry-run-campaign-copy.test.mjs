@@ -35,7 +35,7 @@ function noSecrets(result) {
 
 test('dry-run CLI: actual process, authenticated identity, no writes or credential logs', async t => {
   const requests = [];
-  let authStatus = 200, encounterStatus = 200, wrongCampaign = false;
+  let authStatus = 200, encounterStatus = 200, wrongCampaign = false, empty = false, incomplete = false, disconnect = false;
   const server = createServer(async (req,res) => {
     const parts = [];
     for await (const part of req) parts.push(part);
@@ -46,8 +46,12 @@ test('dry-run CLI: actual process, authenticated identity, no writes or credenti
       res.statusCode = authStatus;
       res.end(JSON.stringify(authStatus === 200 ? { id:userId } : { message:token }));
     } else if (req.url === '/functions/v1/wgui-ext-find-encounter') {
+      if (disconnect) { req.socket.destroy(); return; }
       res.statusCode = encounterStatus;
-      res.end(JSON.stringify(encounterStatus === 200 ? { status:'success',data:[{ id:1,campaign_id:wrongCampaign?99:41,name:'Fixture encounter' }] } : { message:token }));
+      res.end(JSON.stringify(encounterStatus === 200 ? { status:'success',data:{
+        campaignId:41, encounterCount:incomplete?2:empty?0:1,
+        encounters:empty?[]:[{ id:1,campaign_id:wrongCampaign?99:41,name:'Fixture encounter' }]
+      } } : { message:token }));
     } else if (req.url === '/functions/v1/find-campaign') {
       res.end(JSON.stringify({ status:'success',data:[{ id:41,name:'Fixture campaign',notes:{pages:[{}]},meta_data:{image_url:'/backgrounds/banner.webp',encounter_folders:[{}]} }] }));
     } else { res.statusCode = 500; res.end('{}'); }
@@ -90,7 +94,7 @@ test('dry-run CLI: actual process, authenticated identity, no writes or credenti
       noSecrets(result);
       assert.deepEqual(requests.map(r=>[r.method,r.path,r.body]),[
         ['GET','/auth/v1/user',undefined],
-        ['POST','/functions/v1/wgui-ext-find-encounter',{campaign_id:41,for_campaign_copy:true}],
+        ['POST','/functions/v1/wgui-ext-find-encounter',{campaign_id:41,for_campaign_copy:true,copy_manifest:true}],
         ['POST','/functions/v1/find-campaign',{id:41}],
       ]);
       for (const req of requests) { assert.equal(req.auth,'Bearer '+token); assert.equal(req.apikey,anon); }
@@ -106,7 +110,23 @@ test('dry-run CLI: actual process, authenticated identity, no writes or credenti
       encounterStatus=200; wrongCampaign=true;
       result=await run(['41'],environment(base));
       assert.equal(result.code,1); assert.match(result.stderr,/verify.*encounter list/); noSecrets(result);
-      assert.deepEqual(requests.map(r=>r.path),['/auth/v1/user','/functions/v1/wgui-ext-find-encounter']);
+      assert.deepEqual(requests.splice(0).map(r=>r.path),['/auth/v1/user','/functions/v1/wgui-ext-find-encounter']);
+      wrongCampaign=false;
+    });
+    await t.test('confirmed empty is success, incomplete/server/network failures are not', async () => {
+      empty=true;
+      let result=await run(['41'],environment(base));
+      assert.equal(result.code,0); assert.equal(JSON.parse(result.stdout).encounterCount,0);
+      empty=false; requests.length=0; incomplete=true;
+      result=await run(['41'],environment(base));
+      assert.equal(result.code,1); assert.equal(result.stdout,''); assert.match(result.stderr,/verify.*encounter list/);
+      incomplete=false; requests.length=0; encounterStatus=500;
+      result=await run(['41'],environment(base));
+      assert.equal(result.code,1); assert.equal(result.stdout,''); assert.match(result.stderr,/500/); noSecrets(result);
+      encounterStatus=200; requests.length=0; disconnect=true;
+      result=await run(['41'],environment(base));
+      assert.equal(result.code,1); assert.equal(result.stdout,''); assert.match(result.stderr,/connection failed/); noSecrets(result);
+      assert(requests.every(r=>['/auth/v1/user','/functions/v1/wgui-ext-find-encounter'].includes(r.path)));
     });
   } finally {
     await new Promise(resolve=>server.close(resolve));

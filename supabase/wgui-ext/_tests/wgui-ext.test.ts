@@ -329,6 +329,10 @@ Deno.test({
       assertEquals(ownerRead.body.data.map((e: {id: number}) => e.id).sort((x:number,y:number)=>x-y),
         [onFight.id,prepFight.id].sort((x,y)=>x-y));
       assertEquals((await copy(gm.jwt)).body?.status, 'success');
+      const counted = await callFunction('wgui-ext-find-encounter',
+        { campaign_id: campaign.id, for_campaign_copy: true, copy_manifest: true }, { token: gm.jwt });
+      assertEquals(counted.body?.data?.encounterCount, 2);
+      assertEquals(counted.body?.data?.encounters?.length, 2);
 
       assertEquals((await permission(gm.jwt, true)).body?.status, 'success');
       const memberRead = await find(player.jwt);
@@ -340,7 +344,7 @@ Deno.test({
         { campaign_id: campaign.id, operation_id: operationId, prepare: true }, { token: player.jwt });
       assertEquals(prepared.body?.status, 'success');
       const committed = await callFunction('wgui-ext-copy-campaign',
-        { campaign_id: campaign.id, operation_id: operationId, art_map: {} }, { token: player.jwt });
+        { campaign_id: campaign.id, operation_id: operationId, art_map: {}, expected_encounter_ids: prepared.body.data.encounterIds }, { token: player.jwt });
       copiedId = committed.body?.data?.created?.id;
       assertEquals(committed.body?.status, 'success');
       assert(copiedId != null);
@@ -368,7 +372,7 @@ Deno.test({
       assertEquals((await permission(gm.jwt, false)).body?.status, 'success');
       // A successful prepare is not a capability token: commit must recheck consent.
       const revokedCommit = await callFunction('wgui-ext-copy-campaign',
-        { campaign_id: campaign.id, operation_id: revokeOperation, art_map: {} }, { token: player.jwt });
+        { campaign_id: campaign.id, operation_id: revokeOperation, art_map: {}, expected_encounter_ids: [onFight.id,prepFight.id].sort((a,b)=>a-b) }, { token: player.jwt });
       assert(revokedCommit.status >= 400);
       assert(revokedCommit.body?.status !== 'success');
       assert((await find(player.jwt)).status >= 400);

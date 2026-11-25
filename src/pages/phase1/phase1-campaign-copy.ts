@@ -3,6 +3,7 @@ import { campaignCopyAssetAction, migrateCampaignCopyAsset, stageCampaignCopyAss
 import { asRecordList, loadEncountersForCampaignCopy, phase1Request } from './phase1-api';
 
 import { buildCampaignCopyPlan, type CampaignCopyPlan } from './phase1-campaign-copy-plan';
+import { parseCopyPreparation, validCopyReceipt } from './phase1-campaign-copy-manifest';
 export { buildCampaignCopyPlan, campaignArtCopyAction } from './phase1-campaign-copy-plan';
 export type { CampaignCopyPlan, CampaignArtCopyAction } from './phase1-campaign-copy-plan';
 
@@ -74,6 +75,7 @@ function finishCopy(key: string) {
 type AtomicCopyResponse = {
   created: Campaign;
   encounterNames: string[];
+  encounterCount: number;
 };
 
 export async function executeCampaignCopy(options: ExecuteCampaignCopyOptions): Promise<ExecuteCampaignCopyResult> {
@@ -89,27 +91,28 @@ export async function executeCampaignCopy(options: ExecuteCampaignCopyOptions): 
   const operation = pendingCopy(key);
   // Prepare from the authoritative database, not the player-filtered encounter
   // API. A committed operation returns its receipt before any further staging.
-  const prepared = await phase1Request<AtomicCopyResponse | { assets: string[] }>('wgui-ext-copy-campaign', {
+  const prepared = await phase1Request<unknown>('wgui-ext-copy-campaign', {
     campaign_id: campaignId, operation_id: operation.id, prepare: true,
   }, accessToken);
   let result: AtomicCopyResponse;
-  if ('created' in prepared) {
-    result = prepared;
+  let expectedCount: number | undefined;
+  if (prepared && typeof prepared === 'object' && 'created' in prepared) {
+    result = prepared as AtomicCopyResponse;
   } else {
-    if (!Array.isArray(prepared.assets) || prepared.assets.some((ref) => typeof ref !== 'string')) {
-      throw new Error('Campaign artwork manifest could not be confirmed.');
-    }
+    const manifest = parseCopyPreparation(prepared,campaignId);
+    expectedCount = manifest.encounterIds.length;
     operation.artMap ??= {};
-    await stageCampaignCopyAssets(prepared.assets, operation.artMap, () => rememberCopy(key, operation),
+    await stageCampaignCopyAssets(manifest.assets, operation.artMap, () => rememberCopy(key, operation),
       (ref) => migrateCampaignCopyAsset(ref, { accessToken }));
     // Send only references in the latest manifest. SQL checks all artwork on the
     // actual rows being inserted and aborts if a source edit introduced a new URL.
-    const artMap = Object.fromEntries(prepared.assets.map((ref) => [ref, operation.artMap![ref]]));
+    const artMap = Object.fromEntries(manifest.assets.map((ref) => [ref, operation.artMap![ref]]));
     result = await phase1Request<AtomicCopyResponse>('wgui-ext-copy-campaign', {
       campaign_id: campaignId, operation_id: operation.id, art_map: artMap,
+      expected_encounter_ids: manifest.encounterIds,
     }, accessToken);
   }
-  if (!result?.created?.id || !Array.isArray(result.encounterNames)) {
+  if (!validCopyReceipt(result,expectedCount)) {
     throw new Error('Campaign copy result could not be confirmed. Retry to recover the same operation.');
   }
   const plan = {

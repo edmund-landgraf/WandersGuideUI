@@ -64,3 +64,18 @@ npm run dry-run:campaign-copy -- 41
 Use `VITE_SUPABASE_URL` / `VITE_SUPABASE_KEY` as equivalent environment aliases. Use HTTPS for remote stacks (HTTP is accepted for loopback development). Optional `VITE_PUBLIC_ASSET_ORIGIN` and `VITE_PUBLIC_STORAGE_ORIGIN` match the deployment artwork settings. `npm run dry-run:campaign-copy -- --help` prints the full usage without contacting the API. Exit codes: 0 = successful plan/help, 2 = invalid argument/configuration or optional identity mismatch, 1 = authentication/read/authorization failure. The plan reports counts, encounter names and planned banner action (none, keep, rehost, blocked); artwork query strings, credentials and embedded image bytes are omitted. It does not fetch or upload artwork or create a copy. The full-copy read endpoint requires the owner or a readable, explicitly copy-enabled campaign. No fallback to play-filtered reads. Run `npm run test:campaign-copy-cli` for isolated subprocess tests using a local HTTP fixture server.
 
 Both CLI npm scripts build through `node scripts/build-campaign-copy-cli.mjs`. This helper resolves esbuild from the installed dependencies (including Vite's nested dependency) and calls its JavaScript API. It does not require a globally installed executable, npm's `.bin` shim, `npx`, or a separate registry download. If the installed dependency is missing, run `npm ci --include=dev`.
+
+## Complete encounter enumeration (#72)
+
+Apply `supabase/wgui-campaign-copy-completeness.sql` **after #71** before restarting the edge overlay and deploying the frontend/CLI. Full-copy reads use a scalar database JSON aggregate (not a paginated REST row query); the explicit count and sorted unique IDs prove completeness, including zero encounters. Ordinary play reads are unchanged. Prepare returns a counted encounter-ID manifest alongside artwork. Commit takes the prepared IDs, reads a fresh database snapshot, and refuses stale sets before creating a target. The transaction also verifies the inserted row count and rolls back on a short insert. A recovered receipt includes its encounter count. Old array-only responses or uncounted prepares fail closed in new clients; deploy server first. Legacy full-copy list callers still receive a complete array. Do not automatically retry writes; failed reads can be retried manually. Reapply this migration last if reapplying earlier copy migrations.
+
+```sh
+docker exec -i wanderers-guide-db-1 psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/wgui-campaign-copy-completeness.sql
+npm run stack:restart
+npm run test:wgui-ext
+npm run test:campaign-copy-cli
+npx vitest run src/pages/phase1/phase1-campaign-copy-manifest.test.ts
+psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -v test_user_id=YOUR_TEST_USER_UUID -f supabase/tests/wgui-campaign-copy-completeness.sql
+```
+
+The isolated SQL test covers 1001+ encounters, stale manifests, suppressed inserts, rollback and successful full copies. Large aggregate responses may hit transport/memory limits; such failures must abort rather than return partial success.
