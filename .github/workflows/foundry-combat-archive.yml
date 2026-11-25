@@ -4,7 +4,7 @@ on:
     paths:
       - 'supabase/wgui-foundry-combat-archive.sql'
       - 'supabase/wgui-ext/**'
-      - 'supabase/tests/wgui-foundry-combat-archive*.sql'
+      - 'supabase/tests/wgui-foundry-combat-archive*'
       - '.github/workflows/foundry-combat-archive.yml'
 permissions:
   contents: read
@@ -46,3 +46,4 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f supabase/wgui-foundry-combat-archive.sql
           psql -v ON_ERROR_STOP=1 -f supabase/wgui-foundry-combat-archive.sql
           psql -v ON_ERROR_STOP=1 -f supabase/tests/wgui-foundry-combat-archive.sql
+          bash supabase/tests/wgui-foundry-combat-archive-concurrency.sh

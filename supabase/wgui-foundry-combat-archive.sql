@@ -71,6 +71,7 @@ declare
   export text := p_archive->>'exportId';
   receipt_id uuid;
   log_count integer;
+  log_bytes bigint;
   legacy jsonb;
 begin
   if p_user_id is null or p_campaign_id is null or p_encounter_id is null
@@ -102,8 +103,8 @@ begin
       then e.meta_data::jsonb #> '{foundry,combat_logs}' else '[]'::jsonb end
   ) as l(v) where v->>'worldId' = world and v->>'exportId' = export limit 1;
   if found and legacy <> p_archive then raise exception 'Archive conflict' using errcode = '23505'; end if;
-  select count(*) into log_count from public.wgui_foundry_combat_archive where encounter_id = p_encounter_id;
-  if log_count >= 100 then raise exception 'Archive capacity reached' using errcode = '54000'; end if;
+  select count(*), coalesce(sum(octet_length(archive::text)),0) into log_count, log_bytes from public.wgui_foundry_combat_archive where encounter_id = p_encounter_id;
+  if log_count >= 100 or log_bytes + octet_length(p_archive::text) > 1048576 then raise exception 'Archive capacity reached' using errcode = '54000'; end if;
   insert into public.wgui_foundry_combat_archive(encounter_id, world_id, export_id, archive)
     values (p_encounter_id, world, export, p_archive) returning receipt into receipt_id;
   -- The trigger merges the new canonical row into the current metadata. Do not
