@@ -9,8 +9,9 @@ import { CampaignSignIn } from '@auth/CampaignSignIn';
 import { signOut } from '@auth/campaign-auth';
 import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
-import { phase1Request, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, encounterMasksCombatants, loadCampaignCopyPermission, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
+import { phase1Request, savePhase1Encounter, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, encounterMasksCombatants, loadCampaignCopyPermission, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
 import { executeCampaignCopy } from './phase1-campaign-copy';
+import { encounterRevision } from './phase1-encounter-revision';
 import { isEnemyCreature, playerAllyRoundLog, playerEnemyLabel, playerVisibleCombatants } from './phase1-player-combat';
 import { clearCombatantDrag, hasCombatantDrag, readCombatantDrag, writeCombatantDrag } from './combatant-drag';
 import { TacticsPublisher } from './tactics/TacticsPublisher';
@@ -41,6 +42,7 @@ import { isContentStackOpen, useContentLinks } from './phase1-content-links';
 import { getBestShield, getItemHealth } from '@items/inv-utils';
 import { toGmNotes } from '@pages/character_sheet/panels/gm-notes';
 import { lookupMonsterArt, type Phase1MonsterArt } from './phase1-monster-image';
+import { encounterStatusSignature } from './phase1-encounter-status-key';
 import { Icon } from '@common/Icon';
 import { parseIconValue } from '@common/IconDisplay';
 import { addConditionWithSpawns, compiledConditions, removeConditionWithSpawns } from '@conditions/condition-handler';
@@ -53,12 +55,12 @@ import { GiDiceTwentyFacesTwenty } from '@common/game-icons-inline';
 import { Phase1CssThemeToggle } from './Phase1CssThemeToggle';
 import { Phase1ThemeToggle } from './Phase1ThemeToggle';
 import { rollDie } from '@utils/random';
-import { buildInitiativeRoundLog, combatantDisplayName, formatInitiativeRoll, InitiativeRollModal, isCombatantOut, nextInitiativeRoundNumber, overlayInitiativeLogs, setRoundLogEntryNote, sortCombatantsByInitiative, type InitiativeRollChoice } from './phase1-initiative';
+import { buildInitiativeRoundLog, combatantDisplayName, formatInitiativeRoll, InitiativeRollModal, isCombatantOut, nextInitiativeRoundNumber, setRoundLogEntryNote, sortCombatantsByInitiative, type InitiativeRollChoice } from './phase1-initiative';
 import { toLabel } from '@utils/strings';
 import { sign } from '@utils/numbers';
 import { DiceCheckResultToast, DiceCheckRollModal, DiceRollColorKey, DiceRollLogPanel } from './phase1-dice-rolls';
 import { Dice3dOverlay, dice3dThrowsFromCheckLog, dice3dThrowsFromInitiativeRound, diceCheckOverlayTitle, diceRollLogKey, initiativeRoundDiceKey, type Dice3dThrow } from './phase1-dice-3d';
-import { adoptServerDiceLogs, buildDiceRollLog, checkStatLabel, DICE_CHECK_OPTIONS, DICE_CHECK_VALUES, defaultStatForCombatant, degreeOfSuccess, filterCombatantsBySide, formatCheckRoll, gmDiceAudience, loadAllCheckOptions, loadCheckOptions, outcomeLabel, outcomeRowClass, overlayDiceRollMeta, playerPartyDiceCombatants, playerVisibleDiceRollLog, setDiceRollLogEntryNote } from './phase1-dice-check';
+import { buildDiceRollLog, checkStatLabel, DICE_CHECK_OPTIONS, DICE_CHECK_VALUES, defaultStatForCombatant, degreeOfSuccess, filterCombatantsBySide, formatCheckRoll, gmDiceAudience, loadAllCheckOptions, loadCheckOptions, outcomeLabel, outcomeRowClass, playerPartyDiceCombatants, playerVisibleDiceRollLog, setDiceRollLogEntryNote } from './phase1-dice-check';
 import { findAmbaChallenge, challengeCheckEntries, mapAmbaChallengeStat, mergeEncounterMeta, readAmbaChallenges } from './phase1-amba-challenges';
 import { encounterDisplayName, encounterNamesMatch } from './phase1-encounter-title';
 import { nextEncounterName } from './phase1-encounter-name';
@@ -2015,9 +2017,6 @@ export function Phase1StandaloneEncounterPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const encounterSaveChain = useRef(Promise.resolve<void>(undefined));
-  const initiativeLogsRef = useRef(new Map<number, InitiativeRoundLog[]>());
-  const diceLogsRef = useRef(new Map<number, DiceRollLog[]>());
-  const diceStatesRef = useRef(new Map<number, DiceRollState | undefined>());
   const encountersKey = ['phase1-standalone-encounters', session?.user.id] as const;
   const playersKey = ['phase1-standalone-characters', session?.user.id] as const;
   const encounters = useQuery({
@@ -2025,11 +2024,7 @@ export function Phase1StandaloneEncounterPage() {
     enabled,
     queryFn: async () => {
       const result = await phase1Request<Encounter[]>('find-encounter', { user_id: session!.user.id });
-      const fetched = overlayInitiativeLogs((result ?? []).filter((item) => item.campaign_id == null), initiativeLogsRef.current);
-      if (queryClient.isMutating({ mutationKey: ['phase1-update-standalone-encounter'] }) === 0) {
-        adoptServerDiceLogs(fetched, diceLogsRef.current);
-      }
-      return overlayDiceRollMeta(fetched, diceLogsRef.current, diceStatesRef.current);
+      return (result ?? []).filter((item) => item.campaign_id == null);
     },
   });
   const players = useQuery({
@@ -2037,34 +2032,32 @@ export function Phase1StandaloneEncounterPage() {
     enabled,
     queryFn: () => phase1Request<Character[]>('find-character', { user_id: session!.user.id }),
   });
-  const updateEncounter = useMutation<boolean, Error, Encounter, { previous?: Encounter[] }>({
+  const updateEncounter = useMutation<Encounter, Error, Encounter, { previous?: Encounter[] }>({
     mutationKey: ['phase1-update-standalone-encounter'],
     mutationFn: (encounter) => {
-      const result = encounterSaveChain.current.then(() => phase1Request<boolean>('create-encounter', { ...encounter }));
+      const result = encounterSaveChain.current.then(() => savePhase1Encounter(encounter));
       encounterSaveChain.current = result.then(() => undefined, () => undefined);
       return result;
     },
     onMutate: async (encounter) => {
       await queryClient.cancelQueries({ queryKey: encountersKey });
       const previous = queryClient.getQueryData<Encounter[]>(encountersKey);
-      if (encounter.meta_data.initiative_log !== undefined) {
-        initiativeLogsRef.current.set(encounter.id, encounter.meta_data.initiative_log);
-      }
-      if (encounter.meta_data.dice_roll_log !== undefined) {
-        diceLogsRef.current.set(encounter.id, encounter.meta_data.dice_roll_log);
-      }
-      if ('dice_roll_state' in encounter.meta_data) {
-        diceStatesRef.current.set(encounter.id, encounter.meta_data.dice_roll_state);
-      }
       queryClient.setQueryData<Encounter[]>(encountersKey, (current = []) => current.map((item) => item.id === encounter.id ? encounter : item));
       return { previous };
     },
-    onError: (_error, _encounter, context) => {
-      if (context?.previous) queryClient.setQueryData(encountersKey, context.previous);
+    onError: (error, encounter, context) => {
+      const previous = context?.previous?.find(row => row.id === encounter.id);
+      if (previous) queryClient.setQueryData<Encounter[]>(encountersKey, (current = []) =>
+        current.map(row => row.id === encounter.id ? previous : row));
+      showNotification({title:'Encounter save rejected',message:error.message + ' Server state will reload; repeat the edit if needed.',color:'red'});
+    },
+    onSuccess: (saved) => {
+      queryClient.setQueryData<Encounter[]>(encountersKey, (current = []) =>
+        current.map(row => row.id === saved.id ? saved : row));
     },
     onSettled: () => {
       if (queryClient.isMutating({ mutationKey: ['phase1-update-standalone-encounter'] }) > 1) return;
-      queryClient.invalidateQueries({ queryKey: encountersKey });
+      return queryClient.invalidateQueries({ queryKey: encountersKey });
     },
   });
   const updateCharacter = useMutation<unknown, Error, { id: number; spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }, { previous?: Character[] }>({
@@ -2172,9 +2165,6 @@ export function Phase1CampaignPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const encounterSaveChain = useRef(Promise.resolve<void>(undefined));
-  const initiativeLogsRef = useRef(new Map<number, InitiativeRoundLog[]>());
-  const diceLogsRef = useRef(new Map<number, DiceRollLog[]>());
-  const diceStatesRef = useRef(new Map<number, DiceRollState | undefined>());
   const campaignKey = ['phase1-campaign', campaignId, session?.user.id] as const;
   const encountersKey = ['phase1-encounters', campaignId, session?.user.id] as const;
   const playersKey = ['phase1-players', campaignId, session?.user.id] as const;
@@ -2214,55 +2204,50 @@ export function Phase1CampaignPage() {
     enabled,
     refetchInterval: 4000,
     queryFn: async () => {
-      const fetched = overlayInitiativeLogs(await loadPhase1CampaignEncounters(campaignId, session!.access_token, session!.user.id), initiativeLogsRef.current);
-      const diceWriteInFlight = queryClient.isMutating({ mutationKey: ['phase1-patch-encounter-dice', campaignId] }) > 0
-        || queryClient.isMutating({ mutationKey: ['phase1-update-encounter', campaignId] }) > 0;
-      if (!diceWriteInFlight) adoptServerDiceLogs(fetched, diceLogsRef.current);
-      return overlayDiceRollMeta(fetched, diceLogsRef.current, diceStatesRef.current);
+      return loadPhase1CampaignEncounters(campaignId, session!.access_token, session!.user.id);
     },
   });
-  const updateEncounter = useMutation<boolean, Error, Encounter, { previous?: Encounter[] }>({
+  const updateEncounter = useMutation<Encounter, Error, Encounter, { previous?: Encounter[] }>({
     mutationKey: ['phase1-update-encounter', campaignId],
     mutationFn: (encounter) => {
-      const result = encounterSaveChain.current.then(() => phase1Request<boolean>('create-encounter', { ...encounter }));
+      const result = encounterSaveChain.current.then(() => savePhase1Encounter(encounter));
       encounterSaveChain.current = result.then(() => undefined, () => undefined);
       return result;
     },
     onMutate: async (encounter) => {
       await queryClient.cancelQueries({ queryKey: encountersKey });
       const previous = queryClient.getQueryData<Encounter[]>(encountersKey);
-      if (encounter.meta_data.initiative_log !== undefined) {
-        initiativeLogsRef.current.set(encounter.id, encounter.meta_data.initiative_log);
-      }
-      if (encounter.meta_data.dice_roll_log !== undefined) {
-        diceLogsRef.current.set(encounter.id, encounter.meta_data.dice_roll_log);
-      }
-      if ('dice_roll_state' in encounter.meta_data) {
-        diceStatesRef.current.set(encounter.id, encounter.meta_data.dice_roll_state);
-      }
       queryClient.setQueryData<Encounter[]>(encountersKey, (current = []) => current.map((item) => item.id === encounter.id ? encounter : item));
       return { previous };
     },
-    onError: (_error, _encounter, context) => {
-      if (context?.previous) queryClient.setQueryData(encountersKey, context.previous);
+    onError: (error, encounter, context) => {
+      const previous = context?.previous?.find(row => row.id === encounter.id);
+      if (previous) queryClient.setQueryData<Encounter[]>(encountersKey, (current = []) =>
+        current.map(row => row.id === encounter.id ? previous : row));
+      showNotification({title:'Encounter save rejected',message:error.message + ' Server state will reload; repeat the edit if needed.',color:'red'});
+    },
+    onSuccess: (saved) => {
+      queryClient.setQueryData<Encounter[]>(encountersKey, (current = []) =>
+        current.map(row => row.id === saved.id ? saved : row));
     },
     onSettled: () => {
       if (queryClient.isMutating({ mutationKey: ['phase1-update-encounter', campaignId] }) > 1) return;
-      queryClient.invalidateQueries({ queryKey: encountersKey });
+      return queryClient.invalidateQueries({ queryKey: encountersKey });
     },
   });
   const patchEncounterDice = useMutation<
-    { dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] },
+    { dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[]; encounter_revision: number },
     Error,
-    { encounterId: number; campaignId: number; dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] },
+    { encounterId: number; campaignId: number; encounterRevision: number; dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] },
     { previous?: Encounter[] }
   >({
     mutationKey: ['phase1-patch-encounter-dice', campaignId],
     mutationFn: (patch) => {
       const result = encounterSaveChain.current.then(() =>
-        phase1Request<{ dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] }>('wgui-ext-patch-encounter-dice', {
+        phase1Request<{ dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[]; encounter_revision: number }>('wgui-ext-patch-encounter-dice', {
           campaign_id: patch.campaignId,
           encounter_id: patch.encounterId,
+          encounter_revision: patch.encounterRevision,
           ...('dice_roll_state' in patch ? { dice_roll_state: patch.dice_roll_state } : {}),
           ...('dice_roll_log' in patch ? { dice_roll_log: patch.dice_roll_log } : {}),
         })
@@ -2273,12 +2258,6 @@ export function Phase1CampaignPage() {
     onMutate: async (patch) => {
       await queryClient.cancelQueries({ queryKey: encountersKey });
       const previous = queryClient.getQueryData<Encounter[]>(encountersKey);
-      if (patch.dice_roll_log !== undefined) {
-        diceLogsRef.current.set(patch.encounterId, patch.dice_roll_log);
-      }
-      if ('dice_roll_state' in patch) {
-        diceStatesRef.current.set(patch.encounterId, patch.dice_roll_state);
-      }
       queryClient.setQueryData<Encounter[]>(encountersKey, (current = []) =>
         current.map((item) =>
           item.id !== patch.encounterId
@@ -2295,12 +2274,13 @@ export function Phase1CampaignPage() {
       );
       return { previous };
     },
-    onError: (_error, _patch, context) => {
-      if (context?.previous) queryClient.setQueryData(encountersKey, context.previous);
+    onError: (error, patch, context) => {
+      const previous = context?.previous?.find(row => row.id === patch.encounterId);
+      if (previous) queryClient.setQueryData<Encounter[]>(encountersKey, (current = []) =>
+        current.map(row => row.id === patch.encounterId ? previous : row));
+      showNotification({title:'Dice save rejected',message:error.message + ' Server state will reload; repeat the edit if needed.',color:'red'});
     },
     onSuccess: (data, patch) => {
-      if (data.dice_roll_log !== undefined) diceLogsRef.current.set(patch.encounterId, data.dice_roll_log);
-      if ('dice_roll_state' in data) diceStatesRef.current.set(patch.encounterId, data.dice_roll_state);
       queryClient.setQueryData<Encounter[]>(encountersKey, (current = []) =>
         current.map((item) =>
           item.id !== patch.encounterId
@@ -2309,6 +2289,7 @@ export function Phase1CampaignPage() {
                 ...item,
                 meta_data: {
                   ...item.meta_data,
+                  encounter_revision: data.encounter_revision,
                   ...(data.dice_roll_log !== undefined ? { dice_roll_log: data.dice_roll_log } : {}),
                   ...('dice_roll_state' in data ? { dice_roll_state: data.dice_roll_state } : {}),
                 },
@@ -2318,7 +2299,7 @@ export function Phase1CampaignPage() {
     },
     onSettled: () => {
       if (queryClient.isMutating({ mutationKey: ['phase1-patch-encounter-dice', campaignId] }) > 1) return;
-      queryClient.invalidateQueries({ queryKey: encountersKey });
+      return queryClient.invalidateQueries({ queryKey: encountersKey });
     },
   });
 
@@ -2735,7 +2716,7 @@ function partyMemberId(value: unknown): number | null {
 }
 
 function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, viewingSettings, isGm, sessionUserId, onUpdateEncounter, onAddAllPcsToEncounters, onPatchEncounterDice, onUpdateCharacter, onUpdateCampaign, onPatchParty, onResetJoinKey, onKickPlayer, onDeleteCampaign, onDeleteNote, onDeleteAllNotes, onDeleteEncounter, onDeleteAllEncounters, onCreateNote, onAddEncounterNote, onCreateEncounter, rosterSaving, campaignSaving, rosterError, diceError, campaignError, partyError }: {
-  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onPatchEncounterDice?: (patch: { encounterId: number; campaignId: number; dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] }) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onPatchParty?: (partyIds: number[]) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteAllNotes?: () => void; onDeleteEncounter: (id: number) => void; onDeleteAllEncounters?: () => Promise<void> | void; onCreateNote: (name: string) => void; onAddEncounterNote?: (encounter: Encounter) => void; onCreateEncounter: (name: string) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; diceError?: Error | null; campaignError: Error | null; partyError?: Error | null;
+  campaign: Campaign | null; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onPatchEncounterDice?: (patch: { encounterId: number; campaignId: number; encounterRevision: number; dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] }) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onPatchParty?: (partyIds: number[]) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteAllNotes?: () => void; onDeleteEncounter: (id: number) => void; onDeleteAllEncounters?: () => Promise<void> | void; onCreateNote: (name: string) => void; onAddEncounterNote?: (encounter: Encounter) => void; onCreateEncounter: (name: string) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; diceError?: Error | null; campaignError: Error | null; partyError?: Error | null;
 }) {
   const standalone = campaign == null;
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -2789,23 +2770,17 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   }, [selectedEncounter, combatants, encounters, players]);
   const selectedEncounterRef = useRef(selectedEncounter);
   const initiativeLogRef = useRef<InitiativeRoundLog[]>(selectedEncounter?.meta_data.initiative_log ?? []);
-  const initiativeLogEncounterIdRef = useRef(selectedEncounter?.id ?? null);
+  const initiativeLogEncounterRef = useRef(selectedEncounter);
   const diceLogRef = useRef<DiceRollLog[]>(selectedEncounter?.meta_data.dice_roll_log ?? []);
   const diceStateRef = useRef<DiceRollState | undefined>(selectedEncounter?.meta_data.dice_roll_state);
   selectedEncounterRef.current = selectedEncounter;
-  if (selectedEncounter && selectedEncounter.id !== initiativeLogEncounterIdRef.current) {
-    initiativeLogEncounterIdRef.current = selectedEncounter.id;
-    initiativeLogRef.current = selectedEncounter.meta_data.initiative_log ?? [];
-    diceLogRef.current = selectedEncounter.meta_data.dice_roll_log ?? [];
-    diceStateRef.current = selectedEncounter.meta_data.dice_roll_state;
-  } else if (selectedEncounter?.meta_data.initiative_log && selectedEncounter.meta_data.initiative_log.length >= initiativeLogRef.current.length) {
-    initiativeLogRef.current = selectedEncounter.meta_data.initiative_log;
-  }
-  if (selectedEncounter?.meta_data.dice_roll_log && (selectedEncounter.meta_data.dice_roll_log.length === 0 || selectedEncounter.meta_data.dice_roll_log.length >= diceLogRef.current.length)) {
-    diceLogRef.current = selectedEncounter.meta_data.dice_roll_log;
-  }
-  if (selectedEncounter?.meta_data.dice_roll_state) {
-    diceStateRef.current = selectedEncounter.meta_data.dice_roll_state;
+  // An authoritative snapshot (including rollback/refresh) may have fewer log
+  // entries. Never carry local longer logs into a new revision.
+  if (selectedEncounter !== initiativeLogEncounterRef.current) {
+    initiativeLogEncounterRef.current = selectedEncounter;
+    initiativeLogRef.current = selectedEncounter?.meta_data.initiative_log ?? [];
+    diceLogRef.current = selectedEncounter?.meta_data.dice_roll_log ?? [];
+    diceStateRef.current = selectedEncounter?.meta_data.dice_roll_state;
   }
   const selected = combatants.find((item) => item._id === selectedId) ?? null;
   const statuses = useCombatantStatuses(selectedEncounter?.id ?? null, combatants);
@@ -2896,6 +2871,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     onPatchEncounterDice?.({
       encounterId: encounter.id,
       campaignId: campaign.id,
+      encounterRevision: encounterRevision(encounter),
       ...('dice_roll_state' in metaPatch ? { dice_roll_state } : {}),
       ...('dice_roll_log' in metaPatch ? { dice_roll_log } : {}),
     });
@@ -3235,6 +3211,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
       onPatchEncounterDice({
         encounterId: encounter.id,
         campaignId: campaign.id,
+        encounterRevision: encounterRevision(encounter),
         dice_roll_log: [],
       });
       return;
@@ -4072,13 +4049,9 @@ function stampCreatureDefenses<T extends LivingEntity>(entity: T, status: Phase1
 }
 
 function useCombatantStatuses(encounterId: number | null, combatants: PopulatedCombatant[]) {
-  const signature = combatants.map((combatant) => (
-    isHazardCombatant(combatant)
-      ? `${combatant._id}:hazard:${combatant.hazard_state?.hp_current ?? ''}:${combatant.hazard_state?.disabled ?? false}`
-      : `${combatant._id}:${combatant.data?.hp_current}:${combatant.data?.hp_temp}:${JSON.stringify(combatant.data?.details?.conditions ?? [])}`
-  )).join('|');
+  const signature = encounterStatusSignature(combatants);
   return useQuery({
-    queryKey: ['phase1-encounter-statuses', 'isolated-store', 'keep-encounter-ops', encounterId, signature],
+    queryKey: ['phase1-encounter-statuses', 'isolated-store', 'entity-content-v2', encounterId, signature],
     enabled: encounterId !== null && combatants.length > 0,
     queryFn: async () => {
       const result: CombatantStatusMap = {};
@@ -4093,7 +4066,7 @@ function useCombatantStatuses(encounterId: number | null, combatants: PopulatedC
       }
       return result;
     },
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: 30_000,
   });
 }
 export function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, viewingSettings, isGm = false, railOpen, onToggleRail }: { label?: string; section?: 'campaigns' | 'characters' | 'encounters' | 'homebrew'; campaignId?: number | null; encounterId?: number | null; noteIndex?: number | null; viewingSettings?: boolean; isGm?: boolean; railOpen?: boolean; onToggleRail?: () => void }) {
@@ -6606,7 +6579,7 @@ function EntityIcon({ type, name, imageUrl, expandable }: { type: Combatant['typ
     enabled: preview && type === 'CREATURE' && Boolean(name?.trim() || portrait),
     staleTime: Number.POSITIVE_INFINITY,
   });
-  const src = type === 'CREATURE' ? (art.data?.thumbSrc || portrait || undefined) : portrait || undefined;
+  const src = type === 'CREATURE' ? (art.data?.thumbSrc || (!art.isFetched ? portrait : undefined)) : portrait || undefined;
   const fullSrc = type === 'CREATURE' ? (full.data?.fullSrc || art.data?.fullSrc || src) : portrait || undefined;
   const [failed, setFailed] = useState(false);
   useEffect(() => { setFailed(false); }, [src]);
@@ -6846,11 +6819,12 @@ function EncounterListRow({ encounter, onOpen, onChanged }: { encounter: Encount
     setBusy(true);
     setActionError(null);
     try {
-      await phase1Request('create-encounter', { ...encounter, name: nextName });
+      await savePhase1Encounter(encounter,{name:nextName});
       setPendingRename(false);
       onChanged();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Could not rename encounter.');
+      onChanged();
     } finally {
       setBusy(false);
     }

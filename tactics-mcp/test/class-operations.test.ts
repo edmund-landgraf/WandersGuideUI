@@ -50,12 +50,13 @@ async function readClass(classId: number, options: { level?: number; active?: bo
     if (endpoint === "encounter") return Response.json([{ id: 2, campaign_id: 1,
       combatants: { list: [{ _id: "audit", type: "CHARACTER", character: 1 }] } }]);
     if (options.live) {
-      assert.ok(["ability_block", "find-class", "find-ability-block", "find-spell"].includes(String(endpoint)));
+      assert.ok(["ability_block", "find-class", "find-ability-block", "find-spell", "find-trait"].includes(String(endpoint)));
       return originalFetch(input, init);
     }
     if (endpoint === "ability_block") return Response.json(fixture.features.filter((row) =>
       row.traits.includes(classRow.trait_id) && (row.level === null || row.level <= level)));
     const ids: number[] = JSON.parse(String(init?.body)).id;
+    if (endpoint === "find-trait") return Response.json({ data: ids.map(id => ({ id, name: `Fixture trait ${id}` })) });
     if (endpoint === "find-class") return Response.json({ data: [classRow] });
     if (endpoint === "find-ability-block") return Response.json({ data: [...fixture.features, ...fixture.blocks].filter((row) => ids.includes(row.id)) });
     if (endpoint === "find-spell") {

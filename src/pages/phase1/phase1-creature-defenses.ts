@@ -155,7 +155,7 @@ export function applyDefenses(creature: Creature, parsed: ParsedMonsterDefenses)
   return {
     ...creature,
     operations: ops,
-    hp_current: creature.hp_current && creature.hp_current > 1 ? creature.hp_current : parsed.hp ?? creature.hp_current,
+    hp_current: creature.hp_current ?? parsed.hp ?? creature.hp_current,
     meta_data: {
       ...creature.meta_data,
       calculated_stats: {
@@ -313,15 +313,15 @@ export function alignCreatureDefenses(creature: Creature): Creature {
   const bonus = numericSum(creature, 'MAX_HEALTH_BONUS');
   const level = creature.level === -100 ? 0 : creature.level;
   const projected = (bonus ?? 0) + constitutionMod(creature) * level;
-  let hpCurrent = creature.hp_current;
+  const hpCurrent = creature.hp_current;
   let hpMax = creature.meta_data?.calculated_stats?.hp_max;
   if (!hasBuiltHealth && parsed.hp != null && bonus != null && parsed.hp > projected) {
-    const previousFull = typeof hpMax === 'number' && hpMax > 0 ? hpMax : bonus;
     ops.push({
       ...createDefaultOperation<OperationAdjValue>('adjValue'),
       data: { variable: 'MAX_HEALTH_BONUS', value: parsed.hp - projected },
     });
-    if (typeof hpCurrent === 'number' && hpCurrent > 1 && hpCurrent === previousFull) hpCurrent = parsed.hp;
+    // A current HP equal to the old (short) maximum is still live combat state.
+    // Fresh catalog additions initialize explicitly through initializeCreatureForEncounter.
     hpMax = parsed.hp;
   }
 

@@ -3,6 +3,7 @@ import { serve } from 'std/server';
 import type { Encounter } from '../_shared/content';
 import { connect, createServiceClient, fetchData } from '../_shared/helpers.ts';
 import { HttpError } from '../_shared/http-errors.ts';
+import { encounterRevision, requireRevision } from '../_wgui-ext/encounter-command.ts';
 import {
   authorizeCampaign,
   encounterListedForPlayer,
@@ -14,6 +15,7 @@ import {
 interface PatchEncounterDiceBody {
   campaign_id?: number;
   encounter_id?: number;
+  encounter_revision?: number;
   dice_roll_state?: Record<string, unknown> | null;
   dice_roll_log?: unknown[];
 }
@@ -92,7 +94,11 @@ serve(async (req: Request) => {
     }
 
     const currentMeta = (encounter.meta_data ?? {}) as Record<string, unknown>;
-    const nextMeta = { ...currentMeta };
+    const revision = encounterRevision(encounter);
+    // Legacy clients omit the revision; even then the read/write pair must be atomic.
+    if (body?.encounter_revision !== undefined && requireRevision(body) !== revision)
+      throw new HttpError(409,'Encounter changed in another browser. Reload it and retry.','ENCOUNTER_REVISION_CONFLICT');
+    const nextMeta = { ...currentMeta, encounter_revision: revision + 1 };
     if (hasState) {
       const incoming = body!.dice_roll_state == null ? {} : (body!.dice_roll_state as Record<string, unknown>);
       nextMeta.dice_roll_state = access.isGm
@@ -110,12 +116,19 @@ serve(async (req: Request) => {
           );
     }
 
-    const { error } = await admin.from('encounter').update({ meta_data: nextMeta }).eq('id', encounter_id);
+    let update = admin.from('encounter').update({ meta_data: nextMeta }).eq('id', encounter_id).eq('campaign_id',campaign_id);
+    update = Object.prototype.hasOwnProperty.call(currentMeta,'encounter_revision')
+      ? update.eq('meta_data->>encounter_revision',String(revision))
+      : update.is('meta_data->>encounter_revision',null);
+    const { data,error } = await update.select('id');
+    if (error?.code === '40001' || (!error && data?.length !== 1))
+      throw new HttpError(409,'Encounter changed in another browser. Reload it and retry.','ENCOUNTER_REVISION_CONFLICT');
     if (error) throw error;
 
     return {
       status: 'success',
       data: {
+        encounter_revision: revision + 1,
         dice_roll_state: nextMeta.dice_roll_state,
         dice_roll_log: nextMeta.dice_roll_log ?? [],
       },

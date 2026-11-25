@@ -39,3 +39,4 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f supabase/wgui-encounter-revision-guard.sql
           psql -v ON_ERROR_STOP=1 -f supabase/tests/wgui-encounter-revision-guard.sql
           bash supabase/tests/wgui-encounter-revision-guard-concurrency.sh
+          psql -v ON_ERROR_STOP=1 -f supabase/tests/wgui-encounter-revision-save.sql

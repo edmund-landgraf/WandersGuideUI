@@ -82,6 +82,14 @@ test("campaign and encounter tools create, merge meta_data, attach, detach, and 
       if (body.id === otherEncounter.id) return jsonResponse({ status: "success", data: otherEncounter });
       return jsonResponse({ status: "success", data: [] });
     }
+    if (url.endsWith("/wgui-ext-save-encounter")) {
+      const revision = (encounter.meta_data as Record<string, unknown>)?.encounter_revision ?? 0;
+      assert.equal(body.encounter_id,encounter.id);
+      assert.equal(body.encounter_revision,revision);
+      const patch = body.patch as Record<string,unknown>;
+      encounter = {...encounter,...patch,meta_data:{...((patch.meta_data ?? encounter.meta_data) as object),encounter_revision:Number(revision)+1}};
+      return jsonResponse({status:"success",data:encounter});
+    }
     if (url.endsWith("/create-encounter")) {
       encounter = {
         ...encounter,
@@ -171,21 +179,25 @@ test("campaign and encounter tools create, merge meta_data, attach, detach, and 
     arguments: { encounterId: 20, name: "Night Ambush", description: "On the road." },
   });
   assert.equal(updatedEncounter.isError, undefined);
-  const encounterUpdate = calls.filter((item) => item.url.endsWith("/create-encounter") && item.body.id === 20).at(-1);
-  assert.equal(encounterUpdate?.body.name, "Night Ambush");
-  assert.equal((encounterUpdate?.body.meta_data as { description?: string }).description, "On the road.");
-  assert.deepEqual((encounterUpdate?.body.meta_data as { dice_roll_log?: unknown }).dice_roll_log, [{ title: "keep" }]);
-  assert.equal(encounterUpdate?.body.campaign_id, null);
+  const encounterUpdate = calls.filter((item) => item.url.endsWith("/wgui-ext-save-encounter") && item.body.encounter_id === 20).at(-1);
+  const updatePatch = encounterUpdate?.body.patch as Record<string,unknown>;
+  assert.equal(updatePatch.name, "Night Ambush");
+  assert.equal((updatePatch.meta_data as { description?: string }).description, "On the road.");
+  assert.deepEqual((updatePatch.meta_data as { dice_roll_log?: unknown }).dice_roll_log, [{ title: "keep" }]);
+  assert.equal(updatePatch.campaign_id,undefined);
+  assert.equal(updatePatch.combatants,undefined);
 
   const attached = await client.callTool({ name: "set_encounter_campaign", arguments: { encounterId: 20, campaignId: 10 } });
   assert.equal(attached.isError, undefined);
-  const attachCall = calls.filter((item) => item.url.endsWith("/create-encounter") && item.body.id === 20).at(-1);
-  assert.equal(attachCall?.body.campaign_id, 10);
+  const attachCall = calls.filter((item) => item.url.endsWith("/wgui-ext-save-encounter") && item.body.encounter_id === 20).at(-1);
+  assert.deepEqual(attachCall?.body.patch,{campaign_id:10});
+  assert.equal(attachCall?.body.encounter_revision,1);
 
   const detached = await client.callTool({ name: "set_encounter_campaign", arguments: { encounterId: 20, campaignId: null } });
   assert.equal(detached.isError, undefined);
-  const detachCall = calls.filter((item) => item.url.endsWith("/create-encounter") && item.body.id === 20).at(-1);
-  assert.equal(detachCall?.body.campaign_id, null);
+  const detachCall = calls.filter((item) => item.url.endsWith("/wgui-ext-save-encounter") && item.body.encounter_id === 20).at(-1);
+  assert.deepEqual(detachCall?.body.patch,{campaign_id:null});
+  assert.equal(detachCall?.body.encounter_revision,2);
 
   const hiddenEncounter = await client.callTool({ name: "update_encounter", arguments: { encounterId: 404, name: "Missing" } });
   assert.equal(hiddenEncounter.isError, true);

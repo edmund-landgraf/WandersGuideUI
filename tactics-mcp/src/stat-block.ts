@@ -1,3 +1,4 @@
+import { isEncounterStrike } from "./encounter-actions.js";
 import type { CombatantKind, CombatantRow, CombatantSheet } from "./reader.js";
 
 export type StatBlock = {
@@ -52,9 +53,6 @@ export async function readPreparedStatBlock(prepared: import("../../src/pages/ph
     const { collectCreatureAbilities } = await import("../../src/pages/phase1/phase1-abilities.ts");
     const traits = new Map((prepared.content.traits ?? []).map((trait) => [trait.id, trait.name]));
     const abilities = collectCreatureAbilities(prepared.entity as never, prepared.content.abilityBlocks ?? [], prepared.storeId, traits);
-    const isStrike = (ability: typeof abilities[number]) => ability.source === "Weapon" ||
-      /^(?:\*\*)?(?:melee|ranged)(?:\*\*)?\s+(?:strike\s+|[+−-]|\()/i.test(ability.description?.trim() ?? "") ||
-      /^strike$/i.test(ability.name);
     const project = (ability: typeof abilities[number]) => ({
       name: ability.name,
       actions: ability.actions === "ONE-ACTION" ? 1 : ability.actions === "TWO-ACTIONS" ? 2 : ability.actions === "THREE-ACTIONS" ? 3 : ability.actions === "FREE-ACTION" ? 0 : null,
@@ -66,8 +64,8 @@ export async function readPreparedStatBlock(prepared: import("../../src/pages/ph
       requirements: ability.requirements ?? undefined,
       frequency: ability.frequency ?? undefined,
     });
-    strikes = abilities.filter(isStrike).map(project);
-    const specials = abilities.filter((ability) => !isStrike(ability)).map(project);
+    strikes = abilities.filter(isEncounterStrike).map(project);
+    const specials = abilities.filter((ability) => !isEncounterStrike(ability)).map(project);
     creatureActions = [
       ...(strikes.length ? [{ id: "weapon-attacks", label: "Weapon Attacks", actions: strikes }] : []),
       ...(specials.length ? [{ id: "special-actions", label: "Special Actions", actions: specials }] : []),

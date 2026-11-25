@@ -50,7 +50,7 @@ export type CombatantSheet = {
   classFeatures: { name: string; level?: number }[];
   skills: { name: string; modifier?: number; proficiency?: string }[];
   /** Computed strikes from the character engine. Preferred over the stored weapon-attacks group. */
-  strikes?: { name: string; actions?: number | null; actionCost?: string; trigger?: string; traits?: string[]; description?: string; attack?: string }[];
+  strikes?: { name: string; actions?: number | null; actionCost?: string; trigger?: string; traits?: string[]; traitIds?: number[]; description?: string; attack?: string }[];
   catalogId?: number;
   contentSourceId?: number;
   spells: { tradition?: string; rank?: number; name: string; spent?: number; max?: number; prepared?: boolean; attack?: number; dc?: number }[];

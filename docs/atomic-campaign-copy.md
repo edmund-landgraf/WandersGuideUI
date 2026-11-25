@@ -79,3 +79,12 @@ psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -v test_user_id=YOUR_TEST_USER_UUID
 ```
 
 The isolated SQL test covers 1001+ encounters, stale manifests, suppressed inserts, rollback and successful full copies. Large aggregate responses may hit transport/memory limits; such failures must abort rather than return partial success.
+
+## VPS deploy script (#77)
+
+The current atomic and permission-gated campaign copy supersedes the original non-atomic fallback and service-role image proxy proposed in #77. Do not restore either. After applying the required migrations in order on the intended database, from the WGUI checkout run:
+
+```sh
+bash scripts/vps-pull-build.sh --with-edge
+````
+This pulls/builds WGUI, recreates the functions overlay and restarts Kong using the existing stack script, then restarts the WGUI PM2 process. The no-argument invocation is explicitly frontend-only. No SQL is applied automatically. A failed build or overlay restart aborts the script; verify the running frontend and functions separately. Use the read-only CLI to check copy completeness and run a disposable campaign copy smoke test after deployment.

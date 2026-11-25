@@ -135,7 +135,7 @@ export function campaignArtCopyOutcome(source: string, destination?: string, sta
     const action = campaignCopyAssetAction(source);
     if (action.kind === 'keep') return destination === action.url ? 'kept' : 'unverified';
     return staged && Object.prototype.hasOwnProperty.call(staged, source) && staged[source] === destination &&
-      destination !== action.url ? 'rehosted' : 'unverified';
+      destination !== source && destination !== action.url ? 'rehosted' : 'unverified';
   } catch { return 'unverified'; }
 }
 
