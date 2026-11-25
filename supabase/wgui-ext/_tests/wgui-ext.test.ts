@@ -312,6 +312,7 @@ Deno.test({
       { campaign_id: campaign.id, operation_id: crypto.randomUUID(), prepare }, { token: jwt });
     const permission = (jwt: string, enabled: boolean) => callFunction('wgui-ext-campaign-copy-permission',
       { campaign_id: campaign.id, enabled }, { token: jwt });
+    let copiedId: number | undefined;
     try {
       const normal = await callFunction('wgui-ext-find-encounter', { campaign_id: campaign.id }, { token: player.jwt });
       assertEquals(normal.body?.status, 'success');
@@ -334,6 +335,22 @@ Deno.test({
       assertEquals(memberRead.body?.status, 'success');
       assertEquals(memberRead.body.data.length, 2);
       assertEquals((await copy(player.jwt)).body?.status, 'success');
+      const operationId = crypto.randomUUID();
+      const prepared = await callFunction('wgui-ext-copy-campaign',
+        { campaign_id: campaign.id, operation_id: operationId, prepare: true }, { token: player.jwt });
+      assertEquals(prepared.body?.status, 'success');
+      const committed = await callFunction('wgui-ext-copy-campaign',
+        { campaign_id: campaign.id, operation_id: operationId, art_map: {} }, { token: player.jwt });
+      copiedId = committed.body?.data?.created?.id;
+      assertEquals(committed.body?.status, 'success');
+      assert(copiedId != null);
+      assertEquals(committed.body.data.encounterNames.length, 2);
+      const copiedPermission = await callFunction('wgui-ext-campaign-copy-permission',
+        { campaign_id: copiedId }, { token: player.jwt });
+      assertEquals(copiedPermission.body?.data, { enabled: false, canCopy: true });
+      const revokeOperation = crypto.randomUUID();
+      assertEquals((await callFunction('wgui-ext-copy-campaign',
+        { campaign_id: campaign.id, operation_id: revokeOperation, prepare: true }, { token: player.jwt })).body?.status, 'success');
       // A non-member can copy only if the normal caller-scoped campaign read permits it.
       const visitorClient = createClient(SUPABASE_URL, ANON_KEY, {
         ...NO_BG_REFRESH, global: { headers: { Authorization: 'Bearer ' + visitor.jwt } },
@@ -349,6 +366,11 @@ Deno.test({
         assert((await copy(visitor.jwt)).status >= 400);
       }
       assertEquals((await permission(gm.jwt, false)).body?.status, 'success');
+      // A successful prepare is not a capability token: commit must recheck consent.
+      const revokedCommit = await callFunction('wgui-ext-copy-campaign',
+        { campaign_id: campaign.id, operation_id: revokeOperation, art_map: {} }, { token: player.jwt });
+      assert(revokedCommit.status >= 400);
+      assert(revokedCommit.body?.status !== 'success');
       assert((await find(player.jwt)).status >= 400);
       assert((await copy(player.jwt, false)).status >= 400);
       const stillNormal = await callFunction('wgui-ext-find-encounter', { campaign_id: campaign.id }, { token: player.jwt });
@@ -357,6 +379,10 @@ Deno.test({
       await admin.from('encounter').delete().in('id', [onFight.id, prepFight.id]);
       await admin.from('character').delete().eq('id', character.id);
       await admin.from('campaign').delete().eq('id', campaign.id);
+      if (copiedId != null) {
+        await admin.from('encounter').delete().eq('campaign_id', copiedId);
+        await admin.from('campaign').delete().eq('id', copiedId);
+      }
       for (const user of [gm, player, visitor]) await admin.auth.admin.deleteUser(user.userId);
     }
   },

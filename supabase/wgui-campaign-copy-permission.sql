@@ -57,7 +57,7 @@ begin
   if not found then
     raise exception 'Campaign copy not permitted' using errcode = '42501';
   end if;
-  if source_row.user_id::text <> p_user_id::text then
+  if source_row.user_id::text is distinct from p_user_id::text then
     perform 1 from public.wgui_campaign_copy_permission
       where campaign_id = p_source_id and owner_id::text = source_row.user_id::text
       for share;
