@@ -773,7 +773,7 @@ async function addAttacks(
         unselectable: existingItem?.item.meta_data?.unselectable ?? true,
         quantity: 1,
         range: attack.misc?.range ?? range ?? undefined,
-        reload: attack.misc?.reload ? `${attack.misc.reload}` : reload ? `${reload}` : undefined,
+        reload: attack.misc?.reload != null ? `${attack.misc.reload}` : reload != null ? `${reload}` : undefined,
         foundry: {},
       },
       operations: [],
@@ -789,10 +789,10 @@ async function addAttacks(
     // Add adjustments to the attack and damage to properly calculate
     const weaponStats = getWeaponStats(id, item);
 
-    const attackDiff = attack.attackBonus.attack1st
+    const attackDiff = attack.attackBonus.attack1st != null
       ? attack.attackBonus.attack1st - weaponStats.attack_bonus.total[0]
       : undefined;
-    const damageDiff = attack.damage.damageBonus
+    const damageDiff = attack.damage.damageBonus != null
       ? attack.damage.damageBonus - weaponStats.damage.bonus.total
       : undefined;
 
@@ -999,7 +999,7 @@ export function convertFoundryCreatureToGranularCreature(json: Record<string, an
     const abilities: GranularCreatureAbility[] = [];
     for (const ability of findJsonItems(json, 'action')) {
       const descValues = extractFromDescription(
-        stripFoundryLinking(ability.system?.description?.value, json.system?.details?.level?.value)
+        stripFoundryLinking(ability.system?.description?.value ?? '', json.system?.details?.level?.value)
       );
       const description = toMarkdown(descValues.description) ?? '';
       const name = toText(ability.name) ?? '';
@@ -1065,6 +1065,7 @@ export function convertFoundryCreatureToGranularCreature(json: Record<string, an
         return toLabel(effect);
       };
       const attackEffects = (attack.system?.attackEffects?.value ?? []).map(processAttackEffect) as string[];
+      const secondaryDamage = allDamageData.slice(1).map(damage => [damage.damage, damage.category, damage.damageType].filter(Boolean).join(' ')).filter(Boolean);
 
       const granAttack: GranularCreatureAttack = {
         attackType: range === null ? 'melee' : 'ranged',
@@ -1080,8 +1081,8 @@ export function convertFoundryCreatureToGranularCreature(json: Record<string, an
           amountOfDice: parsedDamage.length > 0 ? parsedDamage[0].dice : 1,
           dieType: parsedDamage.length > 0 ? (parsedDamage[0].die as 'd4' | 'd6' | 'd8' | 'd10' | 'd12') : 'd6',
           damageType: damageData?.damageType ?? '',
-          damageBonus: damageData?.bonus ? parseInt(damageData.bonus) : undefined,
-          extraEffects: attackEffects,
+          damageBonus: damageData?.bonus != null ? parseInt(damageData.bonus) : parsedDamage[0]?.bonus ?? 0,
+          extraEffects: [...secondaryDamage, ...attackEffects],
         },
         misc: {
           range: range ?? undefined,
@@ -1157,7 +1158,8 @@ export function convertFoundryCreatureToGranularCreature(json: Record<string, an
         for (const slot of Object.keys(slots)) {
           if (slot.startsWith('slot')) {
             const rank = parseInt(slot.replace('slot', ''));
-            const prepared = slots[slot].prepared ?? [];
+            const rawPrepared = slots[slot].prepared ?? [];
+            const prepared = Array.isArray(rawPrepared) ? rawPrepared : Object.values(rawPrepared);
             spellsAsPreparedSlots.push(
               ...prepared.map((p) => ({
                 id: p.id,
@@ -1173,14 +1175,15 @@ export function convertFoundryCreatureToGranularCreature(json: Record<string, an
           tradition: tradition as 'ARCANE' | 'DIVINE' | 'PRIMAL' | 'OCCULT',
           dc: spellDC,
           attackBonus: spellAttack,
-          spells: spellsAsPreparedSlots.map((slot) => {
-            const spell = spells.find((s) => s._id === slot.id)!;
-            return {
+          spells: spellsAsPreparedSlots.flatMap((slot) => {
+            const spell = spells.find((s) => s._id === slot.id);
+            if (!spell) return [];
+            return [{
               name: toLabel(spell.system.slug.replace(/-/g, ' ')),
               rank: slot.rank,
               amount: 1,
               notes: undefined,
-            };
+            }];
           }),
           cantripsHeighteningRank: cantripsHeighteningRank,
         };
@@ -1244,7 +1247,10 @@ export function convertFoundryCreatureToGranularCreature(json: Record<string, an
     traits: json.system?.traits?.value,
     perception: {
       value: json.system?.perception?.mod ?? 0,
-      senses: json.system.perception.senses,
+      senses: (json.system.perception.senses ?? []).flatMap((sense: any) => {
+        const name = sense.name ?? sense.type;
+        return typeof name === 'string' && name ? [{ name, range: sense.range, acuity: sense.acuity }] : [];
+      }),
       notes: json.system.perception.details?.trim() || undefined,
     },
     languages: {
@@ -1322,7 +1328,7 @@ export function convertFoundryCreatureToGranularCreature(json: Record<string, an
         value: json.system.saves.will.value,
         notes: json.system.saves.will.saveDetail?.trim() || undefined,
       },
-      generalNotes: json.system.attributes.allSaves.value?.trim() || undefined,
+      generalNotes: json.system.attributes.allSaves?.value?.trim() || undefined,
     },
     hp: {
       value: json.system.attributes.hp.max,
