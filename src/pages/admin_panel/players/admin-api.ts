@@ -70,15 +70,34 @@ export function clearAdminUnlock() {
   window.dispatchEvent(new Event(ADMIN_LOCKED_EVENT));
 }
 
-async function errorInfo(error: unknown): Promise<{ status?: number; code?: string; message?: string }> {
-  const response = (error as any)?.context as Response | undefined;
-  const status = response?.status;
+async function errorInfo(error: unknown, response?: Response): Promise<{ status?: number; code?: string; message?: string }> {
+  const fromError = (error as { context?: Response })?.context;
+  const res = response ?? fromError;
+  const status = res?.status;
   try {
-    const json = await response?.clone().json();
+    const json = await res?.clone().json();
     return { status, code: json?.data?.code ?? json?.code, message: json?.data?.message ?? json?.message };
   } catch {
-    return { status };
+    return { status, message: error instanceof Error ? error.message : undefined };
   }
+}
+
+function unlockFailureMessage(
+  info: { status?: number; code?: string; message?: string },
+  data: unknown
+): string {
+  if (info.code === 'BAD_ADMIN_PASSWORD') return 'Incorrect password.';
+  if (info.code === 'ADMIN_NOT_CONFIGURED') {
+    return 'Admin password is not set on the server. Set ADMIN_PANEL_PASSWORD in the stack .env and recreate the functions container (npm run stack:restart).';
+  }
+  if (info.message) return info.message;
+  const body = data as { status?: string; message?: string; code?: string } | null;
+  if (body?.message) return body.message;
+  if (body?.status === 'error') {
+    return 'Admin unlock failed on the server (often admin_audit_log or service role). See docs/local-stack-rest-and-export-boot.md.';
+  }
+  const hint = [info.code, info.status].filter((v) => v != null).join(', ');
+  return hint ? `Unlock failed (${hint}).` : 'Unlock failed. Check the Network tab for POST /functions/v1/admin-unlock.';
 }
 
 /** Admin endpoints are not part of the player RequestType union, so call them directly. */
@@ -100,12 +119,20 @@ async function adminRequest<T>(fn: string, body: Record<string, any>): Promise<T
 /** Exchanges the admin password for an unlock token. The password is never stored. */
 export async function unlockAdmin(password: string): Promise<void> {
   const headers = await supabaseInvokeHeaders();
-  const { data, error } = await supabase.functions.invoke('admin-unlock', { body: { password }, headers });
-  if (error) {
-    const info = await errorInfo(error);
-    throw new Error(info.code === 'BAD_ADMIN_PASSWORD' ? 'Incorrect password.' : info.message ?? 'Unlock failed.');
+  if (!headers?.Authorization) {
+    throw new Error('Sign in again, then retry the admin password.');
   }
-  if (!data || data.status !== 'success') throw new Error('Unlock failed.');
+  const { data, error, response } = await supabase.functions.invoke('admin-unlock', { body: { password }, headers });
+  if (error) {
+    const info = await errorInfo(error, response);
+    throw new Error(unlockFailureMessage(info, data));
+  }
+  if (!data || data.status !== 'success') {
+    throw new Error(unlockFailureMessage({}, data));
+  }
+  if (!data.data?.token || !data.data?.expires_at) {
+    throw new Error('Unlock succeeded but the server response was incomplete. Try again.');
+  }
   sessionStorage.setItem(UNLOCK_KEY, JSON.stringify(data.data));
 }
 
