@@ -104,6 +104,7 @@ export default function UploadContent() {
               label: source.name,
             }))}
             searchable
+            disabled={uploading || downloading}
             onChange={async (value) => {
               if (!value) return;
               setSourceId(parseInt(value));
@@ -124,6 +125,7 @@ export default function UploadContent() {
               ] satisfies { value: ContentType | AbilityBlockType; label: string }[]
             }
             value={contentType}
+            disabled={uploading || downloading}
             onChange={(value) => {
               setContentType(value as ContentType | AbilityBlockType);
               setShowUploadStats(false);
@@ -157,6 +159,22 @@ export default function UploadContent() {
             <Progress.Label>Uploaded - {totalUploaded}</Progress.Label>
           </Progress.Section>
         </Progress.Root>
+      )}
+
+      {showUploadStats && (uploadStats?.failedFiles?.length ?? 0) > 0 && (
+        <div style={{ maxHeight: 260, overflowY: 'auto', padding: 12 }}>
+          <Text fw={600} size='sm'>Files requiring review ({uploadStats!.failedFiles.length})</Text>
+          {uploadStats!.failedFiles.map((failure, index) => (
+            <Text size='xs' key={index}>{failure.file}: {failure.reason}</Text>
+          ))}
+          <Button size='xs' variant='light' onClick={() => {
+            const blob = new Blob([JSON.stringify(uploadStats!.failedFiles, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url; anchor.download = 'creature-import-failures.json'; anchor.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+          }}>Export failure report</Button>
+        </div>
       )}
 
       {contentType ? (
