@@ -1,7 +1,7 @@
 import { describe,it,expect } from 'vitest';
 import type { Encounter } from '@schemas/content';
 import { encounterRevision,encounterSaveBody,verifyEncounterSave } from './phase1-encounter-revision';
-const row = {id:7,name:'Old',icon:'combat',color:'blue',campaign_id:1,combatants:{list:[]},meta_data:{encounter_revision:3}} as Encounter;
+const row: Encounter = {id:7,created_at:'2026-11-24T00:00:00Z',user_id:'fixture-owner',name:'Old',icon:'combat',color:'blue',campaign_id:1,combatants:{list:[]},meta_data:{encounter_revision:3}};
 describe('revision checked encounter saves',()=>{
   it('uses original revision and limits rename to name',()=>expect(encounterSaveBody(row,{name:'New'})).toEqual({encounter_id:7,encounter_revision:3,patch:{name:'New'}}));
   it('accepts legacy missing revision but rejects malformed revision',()=>{

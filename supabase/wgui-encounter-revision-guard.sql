@@ -47,7 +47,7 @@ for each row execute function public.wgui_guard_encounter_revision();
 -- Lock campaign ownership before the encounter, in the same order as the archive RPC.
 create or replace function public.wgui_save_encounter_revision(
   p_user_id uuid,p_encounter_id bigint,p_revision bigint,p_patch jsonb
-) returns jsonb language plpgsql security definer set search_path = pg_catalog,public as $
+) returns jsonb language plpgsql security definer set search_path = pg_catalog,public as $save_encounter$
 declare e public.encounter%rowtype; source_campaign bigint; destination_campaign bigint;
   actual_revision bigint; next_meta jsonb; locked_campaign bigint;
 begin
@@ -59,8 +59,7 @@ begin
     (p_patch ? 'icon' and jsonb_typeof(p_patch->'icon') is distinct from 'string') or
     (p_patch ? 'color' and jsonb_typeof(p_patch->'color') is distinct from 'string') or
     (p_patch ? 'campaign_id' and jsonb_typeof(p_patch->'campaign_id') not in ('number','null')) or
-    (p_patch ? 'campaign_id' and jsonb_typeof(p_patch->'campaign_id')='number' and (p_patch->>'campaign_id') !~ '^[1-9][0-9]{0,15}
-) or
+    (p_patch ? 'campaign_id' and jsonb_typeof(p_patch->'campaign_id')='number' and (p_patch->>'campaign_id') !~ '^[1-9][0-9]{0,15}$') or
     (p_patch ? 'combatants' and (jsonb_typeof(p_patch->'combatants') is distinct from 'object' or jsonb_typeof(p_patch->'combatants'->'list') is distinct from 'array')) or
     (p_patch ? 'meta_data' and jsonb_typeof(p_patch->'meta_data') is distinct from 'object') then
     raise exception 'Invalid encounter update' using errcode='22023';
@@ -96,7 +95,7 @@ begin
   end if;
   return to_jsonb(e);
 end;
-$;
+$save_encounter$;
 revoke all on function public.wgui_save_encounter_revision(uuid,bigint,bigint,jsonb) from public,anon,authenticated;
 grant execute on function public.wgui_save_encounter_revision(uuid,bigint,bigint,jsonb) to service_role;
 notify pgrst, 'reload schema';
