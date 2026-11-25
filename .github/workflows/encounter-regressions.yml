@@ -1,0 +1,30 @@
+name: WGUI encounter regressions
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  encounter-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CYPRESS_INSTALL_BINARY: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tactics-mcp/package-lock.json
+      - run: npm ci
+      - run: npm ci --prefix tactics-mcp
+      - name: Run regression tests for issues 53–59
+        working-directory: tactics-mcp
+        run: npx --no-install tsx --test test/encounter-writes.test.ts test/campaign-note-payload.test.ts test/stat-block.test.ts test/creature-remaster.test.ts
