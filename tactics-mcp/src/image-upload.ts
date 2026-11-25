@@ -160,6 +160,40 @@ export async function fetchImageUrl(sourceUrl: string): Promise<{ ok: true; byte
   return { ok: false, message: "Image URL redirected too many times." };
 }
 
+/** Download a ChatGPT-authorized attachment, never a server filesystem path.
+ * Only HTTPS on OpenAI's file-serving domain is accepted; redirects are refused.
+ * Do not propagate signed URLs or upstream exceptions in tool errors.
+ */
+export async function fetchImageAttachment(downloadUrl: string): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; message: string }> {
+  let url: URL;
+  try {
+    url = new URL(downloadUrl);
+  } catch {
+    return { ok: false, message: "Attachment download URL is invalid." };
+  }
+  const host = url.hostname.toLowerCase();
+  if (url.protocol !== "https:" || url.username || url.password || url.port ||
+      !(host === "files.oaiusercontent.com" || host.endsWith(".oaiusercontent.com"))) {
+    return { ok: false, message: "Attachment must use an authorized HTTPS file download URL." };
+  }
+  try {
+    const response = await characterFetch(url, { method: "GET", redirect: "error", signal: AbortSignal.timeout(30_000) });
+    if (!response.ok || response.redirected) {
+      await response.body?.cancel();
+      return { ok: false, message: "Attachment could not be downloaded. Select or attach the image again." };
+    }
+    const bytes = await readCapped(response);
+    if (!bytes) {
+      await response.body?.cancel().catch(() => {});
+      return { ok: false, message: "Image is larger than 2 MB." };
+    }
+    if (!bytes.byteLength) return { ok: false, message: "Image data is empty." };
+    return { ok: true, bytes };
+  } catch {
+    return { ok: false, message: "Attachment download failed. Select or attach the image again." };
+  }
+}
+
 export async function uploadImageBytes(userId: string, bytes: Uint8Array, category: ImageCategory) {
   const kind = rejectedType(bytes);
   if (!kind.ok) return { ok: false as const, code: "VALIDATION_ERROR", message: kind.message };
