@@ -101,6 +101,36 @@ export function requireGm(isGm: boolean): void {
   }
 }
 
+/** All participating encounter writers use the same revision counter. Never
+ * replace a whole database row or accept a revision supplied as part of metadata. */
+export async function saveEncounterFields(
+  admin: SupabaseClient<any, 'public', any>,
+  encounterId: number,
+  encounter: Encounter,
+  fields: Record<string, unknown>,
+  nextMeta: Record<string, unknown>,
+  revision: number
+): Promise<number> {
+  const conflict = () => new HttpError(409,
+    'The encounter changed in another browser. Reload it and retry.',
+    'ENCOUNTER_REVISION_CONFLICT');
+  if (revision !== encounterRevision(encounter) || revision >= Number.MAX_SAFE_INTEGER) throw conflict();
+  const meta_data = { ...nextMeta, encounter_revision: revision + 1 };
+  // Scope the atomic update to the authorized row. No owner/campaign reassignment.
+  let update = admin.from('encounter').update({ ...fields, meta_data }).eq('id', encounterId);
+  if (encounter.campaign_id == null) update = update.is('campaign_id', null).eq('user_id', encounter.user_id);
+  else update = update.eq('campaign_id', encounter.campaign_id);
+  if (Object.prototype.hasOwnProperty.call(encounter.meta_data ?? {}, 'encounter_revision')) {
+    update = update.eq('meta_data->>encounter_revision', String(revision));
+  } else {
+    update = update.is('meta_data->>encounter_revision', null);
+  }
+  const { data, error } = await update.select('id');
+  if (error) throw error;
+  if (!data || data.length !== 1) throw conflict();
+  return revision + 1;
+}
+
 export async function saveCombatants(
   admin: SupabaseClient<any, 'public', any>,
   encounterId: number,
@@ -109,45 +139,10 @@ export async function saveCombatants(
   revision: number,
   extraMeta?: Record<string, unknown>
 ): Promise<{ list: CombatantCommand[]; revision: number }> {
-  const currentRevision = encounterRevision(encounter);
-  if (revision !== currentRevision) {
-    throw new HttpError(
-      409,
-      'The encounter changed in another browser. Reload it and retry.',
-      'ENCOUNTER_REVISION_CONFLICT'
-    );
-  }
-
-  const combatants = {
-    ...(encounter.combatants ?? {}),
-    list,
-  };
-  const metaData = {
-    ...((encounter.meta_data ?? {}) as Record<string, unknown>),
-    ...(extraMeta ?? {}),
-    encounter_revision: revision + 1,
-  };
-  let update = admin
-    .from('encounter')
-    .update({ combatants, meta_data: metaData })
-    .eq('id', encounterId);
-
-  if (Object.prototype.hasOwnProperty.call(encounter.meta_data ?? {}, 'encounter_revision')) {
-    update = update.eq('meta_data->>encounter_revision', String(revision));
-  } else {
-    update = update.is('meta_data->>encounter_revision', null);
-  }
-
-  const { data, error } = await update.select('id');
-  if (error) throw error;
-  if (!data || data.length !== 1) {
-    throw new HttpError(
-      409,
-      'The encounter changed in another browser. Reload it and retry.',
-      'ENCOUNTER_REVISION_CONFLICT'
-    );
-  }
-  return { list, revision: revision + 1 };
+  const combatants = { ...(encounter.combatants ?? {}), list };
+  const nextMeta = { ...((encounter.meta_data ?? {}) as Record<string, unknown>), ...(extraMeta ?? {}) };
+  const nextRevision = await saveEncounterFields(admin, encounterId, encounter, { combatants }, nextMeta, revision);
+  return { list, revision: nextRevision };
 }
 
 export function characterIdOf(combatant: CombatantCommand): number | null {
