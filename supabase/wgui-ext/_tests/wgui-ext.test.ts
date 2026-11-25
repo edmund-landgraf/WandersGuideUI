@@ -296,33 +296,98 @@ Deno.test({
 });
 
 Deno.test({
-  name: 'wgui-ext: for_campaign_copy returns every encounter the GM sees',
+  name: 'wgui-ext: copy authorization is independent of play access and revocable',
   ignore: skip,
   async fn() {
     const gm = await createSignedInUser();
-    const { userId: playerId, jwt: playerJwt } = await ensureTestUser();
+    const player = await createSignedInUser();
+    const visitor = await createSignedInUser();
     const campaign = await seedCampaign(gm.userId);
-    const playerCharacter = await seedCharacter(playerId, campaign.id);
-    const onFight = await seedEncounter(gm.userId, campaign.id, [playerCharacter.id]);
+    const character = await seedCharacter(player.userId, campaign.id);
+    const onFight = await seedEncounter(gm.userId, campaign.id, [character.id]);
     const prepFight = await seedEncounter(gm.userId, campaign.id, []);
-
+    const find = (jwt?: string) => callFunction('wgui-ext-find-encounter',
+      { campaign_id: campaign.id, for_campaign_copy: true }, { token: jwt });
+    const copy = (jwt?: string, prepare = true) => callFunction('wgui-ext-copy-campaign',
+      { campaign_id: campaign.id, operation_id: crypto.randomUUID(), prepare }, { token: jwt });
+    const permission = (jwt: string, enabled: boolean) => callFunction('wgui-ext-campaign-copy-permission',
+      { campaign_id: campaign.id, enabled }, { token: jwt });
+    let copiedId: number | undefined;
     try {
-      const playerResult = await callFunction(
-        'wgui-ext-find-encounter',
-        { campaign_id: campaign.id, for_campaign_copy: true },
-        { token: playerJwt }
-      );
-      assertEquals(playerResult.body?.status, 'success');
-      assertEquals(
-        (playerResult.body.data as { id: number }[]).map((e) => e.id).sort((a, b) => a - b),
-        [onFight.id, prepFight.id].sort((a, b) => a - b),
-        'copying a campaign must include every encounter, not only the fights visible in play'
-      );
+      const normal = await callFunction('wgui-ext-find-encounter', { campaign_id: campaign.id }, { token: player.jwt });
+      assertEquals(normal.body?.status, 'success');
+      assertEquals(normal.body.data.map((e: {id: number}) => e.id), [onFight.id]);
+      for (const jwt of [player.jwt, visitor.jwt, undefined]) {
+        for (const result of [await find(jwt), await copy(jwt), await copy(jwt, false)]) {
+          assert(result.status >= 400, 'unauthorized copy should fail');
+          assert(result.body?.status !== 'success', 'must not disclose copy data');
+        }
+      }
+      assert((await permission(player.jwt, true)).status >= 400);
+      const ownerRead = await find(gm.jwt);
+      assertEquals(ownerRead.body?.status, 'success');
+      assertEquals(ownerRead.body.data.map((e: {id: number}) => e.id).sort((x:number,y:number)=>x-y),
+        [onFight.id,prepFight.id].sort((x,y)=>x-y));
+      assertEquals((await copy(gm.jwt)).body?.status, 'success');
+      const counted = await callFunction('wgui-ext-find-encounter',
+        { campaign_id: campaign.id, for_campaign_copy: true, copy_manifest: true }, { token: gm.jwt });
+      assertEquals(counted.body?.data?.encounterCount, 2);
+      assertEquals(counted.body?.data?.encounters?.length, 2);
+
+      assertEquals((await permission(gm.jwt, true)).body?.status, 'success');
+      const memberRead = await find(player.jwt);
+      assertEquals(memberRead.body?.status, 'success');
+      assertEquals(memberRead.body.data.length, 2);
+      assertEquals((await copy(player.jwt)).body?.status, 'success');
+      const operationId = crypto.randomUUID();
+      const prepared = await callFunction('wgui-ext-copy-campaign',
+        { campaign_id: campaign.id, operation_id: operationId, prepare: true }, { token: player.jwt });
+      assertEquals(prepared.body?.status, 'success');
+      const committed = await callFunction('wgui-ext-copy-campaign',
+        { campaign_id: campaign.id, operation_id: operationId, art_map: {}, expected_encounter_ids: prepared.body.data.encounterIds }, { token: player.jwt });
+      copiedId = committed.body?.data?.created?.id;
+      assertEquals(committed.body?.status, 'success');
+      assert(copiedId != null);
+      assertEquals(committed.body.data.encounterNames.length, 2);
+      const copiedPermission = await callFunction('wgui-ext-campaign-copy-permission',
+        { campaign_id: copiedId }, { token: player.jwt });
+      assertEquals(copiedPermission.body?.data, { enabled: false, canCopy: true });
+      const revokeOperation = crypto.randomUUID();
+      assertEquals((await callFunction('wgui-ext-copy-campaign',
+        { campaign_id: campaign.id, operation_id: revokeOperation, prepare: true }, { token: player.jwt })).body?.status, 'success');
+      // A non-member can copy only if the normal caller-scoped campaign read permits it.
+      const visitorClient = createClient(SUPABASE_URL, ANON_KEY, {
+        ...NO_BG_REFRESH, global: { headers: { Authorization: 'Bearer ' + visitor.jwt } },
+      });
+      const readable = await visitorClient.from('campaign').select('id').eq('id', campaign.id).maybeSingle();
+      const visitorResult = await find(visitor.jwt);
+      if (readable.data && !readable.error) {
+        assertEquals(visitorResult.body?.status, 'success');
+        assertEquals(visitorResult.body.data.length, 2);
+        assertEquals((await copy(visitor.jwt)).body?.status, 'success');
+      } else {
+        assert(visitorResult.status >= 400);
+        assert((await copy(visitor.jwt)).status >= 400);
+      }
+      assertEquals((await permission(gm.jwt, false)).body?.status, 'success');
+      // A successful prepare is not a capability token: commit must recheck consent.
+      const revokedCommit = await callFunction('wgui-ext-copy-campaign',
+        { campaign_id: campaign.id, operation_id: revokeOperation, art_map: {}, expected_encounter_ids: [onFight.id,prepFight.id].sort((a,b)=>a-b) }, { token: player.jwt });
+      assert(revokedCommit.status >= 400);
+      assert(revokedCommit.body?.status !== 'success');
+      assert((await find(player.jwt)).status >= 400);
+      assert((await copy(player.jwt, false)).status >= 400);
+      const stillNormal = await callFunction('wgui-ext-find-encounter', { campaign_id: campaign.id }, { token: player.jwt });
+      assertEquals(stillNormal.body.data.map((e: {id: number}) => e.id), [onFight.id]);
     } finally {
       await admin.from('encounter').delete().in('id', [onFight.id, prepFight.id]);
-      await admin.from('character').delete().eq('id', playerCharacter.id);
+      await admin.from('character').delete().eq('id', character.id);
       await admin.from('campaign').delete().eq('id', campaign.id);
-      await admin.auth.admin.deleteUser(gm.userId);
+      if (copiedId != null) {
+        await admin.from('encounter').delete().eq('campaign_id', copiedId);
+        await admin.from('campaign').delete().eq('id', copiedId);
+      }
+      for (const user of [gm, player, visitor]) await admin.auth.admin.deleteUser(user.userId);
     }
   },
 });

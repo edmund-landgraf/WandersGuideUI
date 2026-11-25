@@ -1123,7 +1123,6 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
       }
       const spellRows = await contentRows("find-spell", [...spellIds]);
       applyCatalog(record, entities, blocks, spellRows, classFeatures);
-      await labelTraitIds(record);
       console.error(`[wgui-mcp] encounter ${record.encounterId} combatants=${record.combatants.length} abilityIds=${blockIds.size} resolved=${blocks.length} custom=${customAbilities} focus=${focusSpells} spellIds=${spellIds.size} spells=${spellRows.length}`);
       if (includeStats) {
         for (const [id, entity] of Object.entries(entities)) {
@@ -1135,6 +1134,7 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
           Object.assign(row, stats.row);
         }
       }
+      await labelTraitIds(record);
       return record;
     },
     async ensurePublicUser(userId) {

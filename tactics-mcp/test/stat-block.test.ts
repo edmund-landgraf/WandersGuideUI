@@ -14,7 +14,7 @@ process.env.SUPABASE_ANON_KEY = "fixture";
 
 // Read the actual UI variable engine, expression compiler, sense collector and
 // status calculator. No remote data or mocked defense calculator is involved.
-async function prepared(kind: "CHARACTER" | "CREATURE", empty = false) {
+async function prepared(kind: "CHARACTER" | "CREATURE", empty = false, swimOnly = false) {
   const { sheetEnv } = await import("../src/live-sheet.js");
   sheetEnv();
   const { resetVariables, setVariable } = await import("../../src/process/variables/variable-manager.ts");
@@ -27,9 +27,9 @@ async function prepared(kind: "CHARACTER" | "CREATURE", empty = false) {
   setVariable(storeId, "RESISTANCES", empty ? [] : ["fire, 3", "fire, 5", "cold, -1"]);
   setVariable(storeId, "WEAKNESSES", empty ? [] : ["holy, {{floor(LEVEL / 2)}}"]);
   setVariable(storeId, "IMMUNITIES", empty ? [] : ["poison", "disease"]);
-  setVariable(storeId, "SPEED", 25);
-  setVariable(storeId, "SPEED_SWIM", 15);
-  setVariable(storeId, "SPEED_FLY", 40);
+  setVariable(storeId, "SPEED", swimOnly ? 0 : 25);
+  setVariable(storeId, "SPEED_SWIM", swimOnly ? 30 : 15);
+  setVariable(storeId, "SPEED_FLY", swimOnly ? 0 : 40);
   const entity = { name: "Fixture", level: 10, hp_current: 7, hp_temp: 4, details: { conditions: [] }, inventory: { items: [] }, operations: [], meta_data: {} };
   return { entity, content: { abilityBlocks: [], traits: [] }, storeId, kind } as unknown as import("../../src/pages/phase1/phase1-entity.ts").PreparedPhase1Entity;
 }
@@ -61,6 +61,51 @@ test("empty defenses stay empty; exported creature operation fallbacks survive",
   assert.deepEqual(stats.sheet.weaknesses, ["cold iron, 10"]);
   assert.deepEqual(stats.sheet.resistances, ["physical, 5"]);
   assert.deepEqual(stats.sheet.immunities, ["sleep"]);
+});
+
+test("creature stat projection tolerates amountless defenses and does not invent movement modes", async () => {
+  const p = await prepared("CREATURE", true, true);
+  const { setVariable } = await import("../../src/process/variables/variable-manager.ts");
+  setVariable(p.storeId, "RESISTANCES", ["electricity, 7", "fire"]);
+  setVariable(p.storeId, "WEAKNESSES", ["cold", "water, 5"]);
+  const result = await readPreparedStatBlock(p);
+  assert.deepEqual(result.sheet.resistances, ["Electricity 7", "Fire"]);
+  assert.deepEqual(result.sheet.weaknesses, ["Cold", "Water 5"]);
+  assert.equal(result.sheet.speeds?.land, 0);
+  assert.equal(result.sheet.speeds?.swim, 30);
+  assert.equal(result.sheet.speeds?.fly, undefined);
+  assert.equal(result.sheet.speeds?.burrow, undefined);
+  assert.equal(result.sheet.speeds?.climb, undefined);
+});
+
+test("creature projection keeps reactions separate from strikes, even when their text mentions a Strike", async () => {
+  const p = await prepared("CREATURE");
+  const creature = p.entity as import("../../src/schemas/content.ts").Creature;
+  creature.abilities_base = [
+    { id: -1, name: "Jaws", actions: "ONE-ACTION", type: "action", description: "**Melee** +10, Damage 1d4+3 piercing plus 1d4 persistent fire", traits: [] },
+    { id: -2, name: "Cloak in Embers", actions: "REACTION", type: "action", trigger: "An ally is targeted by fire", description: "Protect an ally from a Strike.", traits: [] },
+  ] as never;
+  const result = await readPreparedStatBlock(p);
+  assert.equal(result.sheet.strikes?.length, 1);
+  assert.match(result.sheet.strikes?.[0].description ?? "", /persistent fire/);
+  const reaction = result.sheet.groups?.find(g => g.id === "special-actions")?.actions[0];
+  assert.equal(reaction?.name, "Cloak in Embers");
+  assert.equal(reaction?.actionCost, "REACTION");
+  assert.equal(reaction?.trigger, "An ally is targeted by fire");
+});
+
+test("trained creature skills retain evaluated modifiers and rank", async () => {
+  const p = await prepared("CREATURE");
+  const { setVariable } = await import("../../src/process/variables/variable-manager.ts");
+  const { getFinalProfValue } = await import("../../src/process/variables/variable-helpers.ts");
+  setVariable(p.storeId, "SKILL_ATHLETICS", { value: "T", increases: 0, attribute: "ATTRIBUTE_STR" });
+  const result = await readPreparedStatBlock(p);
+  const athletics = result.sheet.skills?.find(skill => skill.name.toLowerCase() === "athletics");
+  assert.ok(athletics);
+  assert.equal(athletics.proficiency, "T");
+  assert.equal(athletics.modifier, Number.parseInt(getFinalProfValue(p.storeId, "SKILL_ATHLETICS"), 10));
+  assert.ok(Number.isFinite(athletics.modifier));
+  assert.ok(!result.sheet.skills?.some(skill => skill.name.toLowerCase() === "stealth"));
 });
 
 test("invalid PC data fails explicitly rather than returning empty defense arrays", async () => {
