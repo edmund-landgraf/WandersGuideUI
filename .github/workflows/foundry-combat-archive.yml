@@ -1,0 +1,48 @@
+name: Foundry combat archive contract
+on:
+  pull_request:
+    paths:
+      - 'supabase/wgui-foundry-combat-archive.sql'
+      - 'supabase/wgui-ext/**'
+      - 'supabase/tests/wgui-foundry-combat-archive*.sql'
+      - '.github/workflows/foundry-combat-archive.yml'
+permissions:
+  contents: read
+jobs:
+  archive-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: archive_test_only
+          POSTGRES_DB: archive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: archive_test_only
+      PGDATABASE: archive_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate archive payload contract
+        run: node --test supabase/wgui-ext/_tests/foundry-combat-archive.test.ts
+      - name: Test migration against a disposable Postgres schema
+        run: |
+          command -v psql >/dev/null || (sudo apt-get update && sudo apt-get install -y postgresql-client)
+          psql -v ON_ERROR_STOP=1 -f supabase/tests/wgui-foundry-combat-archive-fixture.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/wgui-foundry-combat-archive.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/wgui-foundry-combat-archive.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/tests/wgui-foundry-combat-archive.sql

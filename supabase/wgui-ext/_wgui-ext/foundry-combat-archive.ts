@@ -1,6 +1,5 @@
-import { HttpError } from '../_shared/http-errors.ts';
-
-const invalid = () => new HttpError(400, 'Invalid or oversized public combat archive.', 'INVALID_COMBAT_ARCHIVE');
+export class FoundryArchiveValidationError extends Error {}
+const invalid = () => new FoundryArchiveValidationError('Invalid or oversized public combat archive.');
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid();
   return value as Record<string, unknown>;

@@ -37,12 +37,17 @@ begin
       into canonical_logs from public.wgui_foundry_combat_archive a where a.encounter_id = old.id;
   end if;
   -- On INSERT (including campaign copies) never inherit historical combat logs.
-  select coalesce(jsonb_agg(v order by ord), '[]'::jsonb) into logs
-  from (
-    select distinct on (v->>'worldId', v->>'exportId') v, ord
-    from jsonb_array_elements(previous_logs || canonical_logs) with ordinality as l(v,ord)
-    order by v->>'worldId', v->>'exportId', ord
-  ) dedup;
+  -- Preserve all historical records verbatim, including records that predate
+  -- the current world/export identity format. Append only new canonical keys.
+  logs := previous_logs || coalesce((
+    select jsonb_agg(c.value order by c.ord)
+    from jsonb_array_elements(canonical_logs) with ordinality c(value,ord)
+    where not exists (
+      select 1 from jsonb_array_elements(previous_logs) p(value)
+      where p.value->>'worldId' = c.value->>'worldId'
+        and p.value->>'exportId' = c.value->>'exportId'
+    )
+  ), '[]'::jsonb);
   if jsonb_array_length(logs) > 0 then
     new.meta_data := jsonb_set(meta, '{foundry}', foundry || jsonb_build_object('combat_logs',logs), true);
   elsif foundry ? 'combat_logs' then

@@ -2,7 +2,7 @@
 import { serve } from 'std/server';
 import { serveKeyScoped } from '../_wgui-ext/key-auth.ts';
 import { requireCampaignId, requireEncounterId } from '../_wgui-ext/encounter-command.ts';
-import { validateFoundryArchive } from '../_wgui-ext/foundry-combat-archive.ts';
+import { FoundryArchiveValidationError, validateFoundryArchive } from '../_wgui-ext/foundry-combat-archive.ts';
 import { HttpError } from '../_shared/http-errors.ts';
 
 type ArchiveBody = { campaign_id?: unknown; encounter_id?: unknown; archive?: unknown };
@@ -11,7 +11,12 @@ serve(async (req: Request) => {
   return serveKeyScoped<ArchiveBody>(req, 'wgui-ext-append-foundry-combat-archive', async (caller, body, admin) => {
     const campaignId = requireCampaignId(body ?? {});
     const encounterId = requireEncounterId(body ?? {});
-    const archive = validateFoundryArchive(body?.archive);
+    let archive: ReturnType<typeof validateFoundryArchive>;
+    try { archive = validateFoundryArchive(body?.archive); }
+    catch (error) {
+      if (error instanceof FoundryArchiveValidationError) throw new HttpError(400, error.message, 'INVALID_COMBAT_ARCHIVE');
+      throw error;
+    }
     // The service-role-only RPC independently verifies current GM ownership and
     // encounter membership under row locks, not merely an edge-side precheck.
     const { data, error } = await admin.rpc('wgui_append_foundry_combat_archive', {
