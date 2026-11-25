@@ -66,6 +66,35 @@ test("a second creature is numbered and an empty catalog HP starts at the health
   assert.equal(first.creature?.name, "Goblin");
 });
 
+test("fresh catalog creatures use full HP including Constitution, not the stored remainder", () => {
+  for (const [name, level, bonus, con, max] of [
+    ["Electric Eel", 1, 16, 2, 18],
+    ["Ember Fox", 2, 31, 2, 35],
+  ] as const) {
+    const row = { name, level, hp_current: bonus, hp_temp: 4,
+      operations: [
+        { type: "setValue", data: { variable: "ATTRIBUTE_CON", value: { value: con, partial: false } } },
+        { type: "adjValue", data: { variable: "MAX_HEALTH_BONUS", value: bonus } },
+      ], meta_data: { calculated_stats: { hp_max: bonus }, source: { book: "Bestiary" } } };
+    const copy = creatureForEncounter(row);
+    assert.equal(copy.hp_current, max);
+    assert.equal(copy.hp_temp, 0);
+    assert.equal((copy.meta_data as typeof row.meta_data).calculated_stats.hp_max, max);
+    assert.equal(row.hp_current, bonus);
+    assert.equal(row.meta_data.calculated_stats.hp_max, bonus);
+    assert.equal((copy.meta_data as typeof row.meta_data).source.book, "Bestiary");
+  }
+});
+
+test("catalog spawn preserves an independent calculated maximum and handles negative Constitution", () => {
+  const operations = [
+    { type: "setValue", data: { variable: "ATTRIBUTE_CON", value: { value: -1 } } },
+    { type: "adjValue", data: { variable: "MAX_HEALTH_BONUS", value: 12 } },
+  ];
+  assert.equal(creatureForEncounter({ level: 2, operations }).hp_current, 10);
+  assert.equal(creatureForEncounter({ level: 2, operations, meta_data: { calculated_stats: { hp_max: 20 } } }).hp_current, 20);
+});
+
 test("encounter writes post the edge-function body and do not patch the encounter row", async () => {
   process.env.SUPABASE_URL = "http://supabase.test";
   process.env.SUPABASE_ANON_KEY = "anon";
