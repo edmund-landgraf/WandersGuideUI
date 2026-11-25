@@ -48,3 +48,23 @@ test("Monster Core 2 conversion retains printed Ember Fox damage, defenses, skil
   assert.equal(result.abilities?.[0].action,"REACTION");
   assert.match(result.abilities?.[0].trigger ?? "", /targeted by fire/);
 });
+
+
+test("pack loader includes Unicode filenames, excludes paths and rejects foreign publications", async (t) => {
+  const { downloadMonsterCore2Files } = await import("../../src/process/upload/monster-core-2-pack.ts");
+  const fetched: string[] = [];
+  let foreign = false;
+  t.mock.method(globalThis, "fetch", async (input: string) => {
+    fetched.push(String(input));
+    if (String(input).includes("api.github.com")) return Response.json([
+      {name:"hārakasura.json",type:"file"}, {name:"../unsafe.json",type:"file"}, {name:"folder",type:"dir"},
+    ]);
+    return Response.json(foreign ? {...actor,system:{details:{publication:{title:"Other book",remaster:true}}}} : actor);
+  });
+  const files = await downloadMonsterCore2Files();
+  assert.deepEqual(files.map(f=>f.name),["hārakasura.json"]);
+  assert.ok(fetched[1].includes(encodeURIComponent("hārakasura.json")));
+  assert.equal(fetched.length,2);
+  foreign = true;
+  await assert.rejects(downloadMonsterCore2Files(), /Unexpected publication/);
+});
