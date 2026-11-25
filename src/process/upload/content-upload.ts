@@ -27,11 +27,6 @@ import { performAutoContentLinking } from './auto-content-linking';
 import { convertCastToActionCost } from '@utils/actions';
 import { convertFoundryCreatureToGranularCreature, convertGranularCreature } from './creature-import';
 import { cloneDeep } from 'lodash-es';
-import { resetContentStore } from '@content/content-store';
-import { makeRequest } from '@requests/request-manager';
-import { requireCreatureCatalog, importFailureMessage } from './creature-import-audit';
-import { Creature } from '@schemas/content';
-import { matchesFoundryPublication, foundryPublicationTitle } from './foundry-publication';
 import { displayThrowingError } from '@utils/notifications';
 
 // https://raw.githubusercontent.com/foundryvtt/pf2e/master/static/icons/equipment/adventuring-gear/alchemists-lab.webp
@@ -42,8 +37,6 @@ const REQUIRE_REMASTER = false;
 
 let uploadStats: {
   total: number;
-  skipped: number;
-  failedFiles: { file: string; reason: string }[];
   missingSources: Map<string, number>;
   uploads: Map<string, Map<string, number>>;
   failedUploads: Map<string, Map<string, number>>;
@@ -51,8 +44,6 @@ let uploadStats: {
 function emptyUploadStats() {
   return {
     total: 0,
-    skipped: 0,
-    failedFiles: [] as { file: string; reason: string }[],
     missingSources: new Map<string, number>(),
     uploads: new Map<string, Map<string, number>>(),
     failedUploads: new Map<string, Map<string, number>>(),
@@ -71,7 +62,7 @@ export async function uploadContentList(sourceId: number, type: ContentType | Ab
   uploadStats.total = files.length;
 
   const source = await findContentSource(sourceId);
-  if (!source || (!source.foundry_id && !(type === 'creature' && source.user_id === null))) {
+  if (!source || !source.foundry_id) {
     showNotification({
       id: 'unsupported-source',
       title: `Unsupported Source`,
@@ -79,33 +70,18 @@ export async function uploadContentList(sourceId: number, type: ContentType | Ab
       autoClose: false,
       color: 'red',
     });
-    throw new Error('Selected content source is unavailable or unsupported.');
+    return;
   }
 
   const addedIds = new Set<number>();
-  // Read fresh source-scoped rows once; never overwrite or duplicate an existing creature.
-  const existing = type === 'creature' ? requireCreatureCatalog(
-    await makeRequest<Creature[]>('find-creature', { content_sources: [source.id] }),
-    source.id, source.meta_data?.counts?.creature,
-  ) : undefined;
-  for (const file of files) {
-    try {
-      const result = await uploadContent(source, type, file, existing);
-      if (result.success && typeof result.id === 'number' && result.id > 0) addedIds.add(result.id);
-    } catch (error) {
-      console.error('Import failed:', file.name, error);
-      uploadStats.failedFiles.push({ file: file.name, reason: importFailureMessage(error) });
-      if (!uploadStats.failedUploads.has(type)) uploadStats.failedUploads.set(type, new Map());
-      const key = source.foundry_id ?? source.name;
-      const counts = uploadStats.failedUploads.get(type)!;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+  for (let file of files) {
+    const result = await uploadContent(source, type, file);
+    if (result.success && result.id) {
+      addedIds.add(result.id);
     }
   }
 
-  // Writes may succeed without returning an ID; invalidate the content cache whenever rows were imported.
-  if (uploadStats.uploads.size) resetContentStore(false, true);
-  // Generate embeddings only for confirmed positive IDs.
-  if (addedIds.size) {
+  // Generate embeddings for the added content
   showNotification({
     id: 'generate-embeddings',
     title: `Generating embeddings...`,
@@ -120,8 +96,6 @@ export async function uploadContentList(sourceId: number, type: ContentType | Ab
     message: `Generated ${result.total} embeddings for ${pluralize(toLabel(type))}.`,
     autoClose: 6000,
   });
-
-  }
 
   console.log('-------- UPLOAD STATS --------');
   console.group('Successful Uploads:');
@@ -145,19 +119,22 @@ export async function uploadContentList(sourceId: number, type: ContentType | Ab
   console.groupEnd();
 }
 
-async function uploadContent(source: ContentSource, type: string, file: FileWithPath, existing?: Set<string>): Promise<UploadResult> {
-  const json = JSON.parse(await file.text()) as Record<string, any>;
-  const foundryId = source.foundry_id ?? source.name;
-  if (!matchesFoundryPublication(source, json, type === 'creature')) {
-    uploadStats.missingSources.set(foundryId, (uploadStats.missingSources.get(foundryId) ?? 0) + 1);
-    uploadStats.failedFiles.push({ file: file.name, reason: 'Publication does not match selected source.' });
-    return { success: false };
-  }
-  const nameKey = typeof json.name === 'string' ? json.name.trim().toLowerCase() : '';
-  if (type === 'creature' && json.type === 'npc' && nameKey && existing?.has(nameKey)) {
-    // Count skipped rows separately from actual writes.
-    uploadStats.skipped++;
-    return { success: true };
+async function uploadContent(source: ContentSource, type: string, file: FileWithPath): Promise<UploadResult> {
+  const jsonUrl = URL.createObjectURL(file);
+
+  const res = await fetch(jsonUrl);
+  const json = (await res.json()) as Record<string, any>;
+
+  const foundryId = source.foundry_id;
+  const foundFoundryId = (json.system?.publication?.title ||
+    json.system?.details?.publication?.title ||
+    json.system?.source?.value ||
+    json.system?.details?.source?.value) as string;
+
+  if (foundFoundryId !== foundryId) {
+    return {
+      success: false,
+    };
   }
 
   if (REQUIRE_REMASTER) {
@@ -196,7 +173,6 @@ async function uploadContent(source: ContentSource, type: string, file: FileWith
   }
 
   if (result?.success) {
-    if (type === 'creature' && nameKey) existing?.add(nameKey);
     // Increase upload count
     if (!uploadStats.uploads.has(type)) {
       uploadStats.uploads.set(type, new Map<string, number>());
@@ -206,7 +182,6 @@ async function uploadContent(source: ContentSource, type: string, file: FileWith
     if (DEBUG) {
       console.error(`Failed to upload ${type} from ${foundryId}`);
     }
-    uploadStats.failedFiles.push({ file: file.name, reason: 'Conversion or catalog write did not return success. Reload the catalog before retrying.' });
     // Increase failed upload count
     if (!uploadStats.failedUploads.has(type)) {
       uploadStats.failedUploads.set(type, new Map<string, number>());
@@ -567,8 +542,6 @@ async function uploadCreature(source: ContentSource, json: Record<string, any>):
   try {
     const granularCreature = convertFoundryCreatureToGranularCreature(json);
     const creature = await convertGranularCreature(source, granularCreature);
-    creature.meta_data = { ...creature.meta_data, source: { book: source.name, url: source.url ?? undefined } };
-    console.log('Imported publication:', foundryPublicationTitle(json));
     console.log('Conversion Pipeline: ', json, 'vvv', granularCreature, 'vvv', creature);
 
     const createdCreature = await upsertCreature(creature);
@@ -589,7 +562,9 @@ async function uploadCreature(source: ContentSource, json: Record<string, any>):
     } else if (e instanceof Error) {
       displayThrowingError(e.message);
     }
-    throw e;
+    return {
+      success: false,
+    };
   }
 }
 
