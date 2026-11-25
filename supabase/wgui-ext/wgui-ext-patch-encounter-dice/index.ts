@@ -98,7 +98,7 @@ serve(async (req: Request) => {
     // Legacy clients omit the revision; even then the read/write pair must be atomic.
     if (body?.encounter_revision !== undefined && requireRevision(body) !== revision)
       throw new HttpError(409,'Encounter changed in another browser. Reload it and retry.','ENCOUNTER_REVISION_CONFLICT');
-    const nextMeta = { ...currentMeta, encounter_revision: revision + 1 };
+    const nextMeta: Record<string, unknown> = { ...currentMeta, encounter_revision: revision + 1 };
     if (hasState) {
       const incoming = body!.dice_roll_state == null ? {} : (body!.dice_roll_state as Record<string, unknown>);
       nextMeta.dice_roll_state = access.isGm

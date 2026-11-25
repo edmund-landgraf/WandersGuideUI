@@ -144,10 +144,11 @@ async function saveCampaign(userId: string, row: CharacterRow) {
 
 async function saveEncounter(userId: string, row: CharacterRow, patch: Record<string, unknown>) {
   const revision = asRecord(row.meta_data)?.encounter_revision ?? 0;
+  if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) throw new Error('Invalid encounter revision. Reload before saving.');
   const saved = await invokeFunction(userId, "wgui-ext-save-encounter", { encounter_id:row.id, encounter_revision:revision, patch });
   if (!saved.ok) return saved;
   const next = firstRow(saved.data);
-  if (!next) throw new Error("Encounter save could not be confirmed. Reload before retrying.");
+  if (!next || next.id !== row.id || asRecord(next.meta_data)?.encounter_revision !== revision + 1) throw new Error("Encounter save could not be confirmed. Reload before retrying.");
   const owned = ownedEncounter(next, userId);
   if (!owned.ok) return owned;
   return { ok: true as const, data: next };

@@ -28,6 +28,6 @@ begin
   result:=public.wgui_save_encounter_revision(owner_id,1,rev+1,'{"campaign_id":null}');
   if result->'campaign_id'<>'null'::jsonb then raise exception 'Detach failed'; end if;
   result:=public.wgui_save_encounter_revision(owner_id,1,rev+2,'{"campaign_id":1}');
-  if result->'campaign_id'<>'1'::jsonb or result->'combatants'<>roster or result->'meta_data'-'encounter_revision'<>meta-'encounter_revision' then raise exception 'Attach lost state'; end if;
+  if result->'campaign_id'<>'1'::jsonb or result->'combatants'<>roster or (result->'meta_data'-'encounter_revision')<>(meta-'encounter_revision') then raise exception 'Attach lost state'; end if;
 end $$;
 rollback;
