@@ -190,16 +190,18 @@ async function hydrateCreatureRecord(creature: Creature): Promise<{ creature: Cr
 }
 
 /** A stored max that is only a health remainder must not hide a catalog row that has AC and saves. */
-function calculatedStatsForHydration(creature: Creature, catalog: Creature) {
+export function calculatedStatsForHydration(creature: Creature, catalog: Creature) {
   const encounter = creature.meta_data?.calculated_stats;
   const fromCatalog = catalog.meta_data?.calculated_stats;
-  const encounterDefenses = readStoredDefenses(creature);
-  const catalogDefenses = readStoredDefenses(catalog);
-  const encounterComplete = (encounterDefenses.ac ?? 0) > 10 && encounterDefenses.fort != null && encounterDefenses.reflex != null && encounterDefenses.will != null;
-  if (encounterComplete) return encounter;
-  const catalogComplete = (catalogDefenses.ac ?? 0) > 10 && catalogDefenses.fort != null && catalogDefenses.reflex != null && catalogDefenses.will != null;
-  if (catalogComplete) return fromCatalog ?? encounter;
-  return hasUsefulCalculatedStats(encounter) ? encounter : fromCatalog;
+  // Judge the actual stored statistics; operations can supply AC/saves while
+  // the stored hp_max is still only the raw health remainder.
+  const complete = (stats: typeof encounter) =>
+    typeof stats?.ac === 'number' && stats.ac > 10 &&
+    ['SAVE_FORT', 'SAVE_REFLEX', 'SAVE_WILL'].every(key =>
+      typeof stats.profs?.[key]?.total === 'number');
+  if (complete(encounter)) return encounter;
+  if (complete(fromCatalog)) return fromCatalog;
+  return hasUsefulCalculatedStats(encounter) ? encounter : fromCatalog ?? encounter;
 }
 
 export function fillCurrentHp(creature: Creature, computedMax?: number, initialize = false) {

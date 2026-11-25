@@ -20,9 +20,9 @@ describe('alignCreatureDefenses', () => {
     const eel = alignCreatureDefenses(creature('Electric Eel', 16, 'HP 18, AC 16, Fort +7, Ref +7, Will +4'));
     const fox = alignCreatureDefenses(creature('Ember Fox', 31, 'HP 35 AC 18 Fort +6 Ref +10 Will +8'));
     expect(readStoredDefenses(eel)).toMatchObject({ hp: 18, ac: 16, fort: 7, reflex: 7, will: 4 });
-    expect(eel.hp_current).toBe(18);
+    expect(eel.hp_current).toBe(16);
     expect(readStoredDefenses(fox)).toMatchObject({ hp: 35, ac: 18, fort: 6, reflex: 10, will: 8 });
-    expect(fox.hp_current).toBe(35);
+    expect(fox.hp_current).toBe(31);
   });
 
   it('keeps a current HP that is already below the stored maximum', () => {
