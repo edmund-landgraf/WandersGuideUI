@@ -123,6 +123,7 @@ test("MCP stat block returns calculated arrays for PCs and creatures and retains
   const characterQueries: string[] = [];
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
+    if (url.pathname.endsWith("/find-trait")) return Response.json({ status: "success", data: [{ id: 1437, name: "General" }] });
     if (url.pathname.endsWith("/campaign")) return Response.json([{ id: 1, user_id: "gm" }]);
     if (url.pathname.endsWith("/character")) {
       characterQueries.push(url.search);
@@ -143,7 +144,7 @@ test("MCP stat block returns calculated arrays for PCs and creatures and retains
     for (const id of ["pc", "monster"]) {
       const args = { campaignId: 1, encounterId: 2, combatantId: id, view: "gm" };
       const response = await client.callTool({ name: "get_stat_block", arguments: args });
-      assert.ok(!response.isError);
+      assert.ok(!response.isError, JSON.stringify(response.content));
       const text = response.content?.find((item) => item.type === "text")?.text ?? "";
       assert.match(text, /"hpCurrent"/);
       assert.match(text, /"conditions"/);
@@ -158,6 +159,7 @@ test("MCP stat block returns calculated arrays for PCs and creatures and retains
       // Catalog hydration must not erase embedded creature/PC feats when no ids are available.
       assert.equal(sheet.feats[0]?.name, "Feat");
       assert.equal(sheet.feats[0]?.section, "general");
+      assert.deepEqual(sheet.groups.find(group => group.id === "feats")?.actions[0]?.traits, ["General"]);
     }
     assert.deepEqual(calls, ["character:pc", "creature:monster"]);
     assert.ok(characterQueries.some((query) => query.includes("id=in.(7)")));
