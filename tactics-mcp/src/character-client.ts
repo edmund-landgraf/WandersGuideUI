@@ -59,6 +59,7 @@ export async function invokeFunction(userId: string, name: string, body: Record<
   }
   const anon = env("SUPABASE_ANON_KEY") || token;
   let response: Response;
+  let text: string;
   try {
     response = await fetchImpl(`${functionsBaseUrl()}/functions/v1/${name}`, {
       method: "POST",
@@ -69,13 +70,16 @@ export async function invokeFunction(userId: string, name: string, body: Record<
       },
       body: JSON.stringify(body),
     });
+    // Headers can arrive successfully even if the response stream is reset.
+    // Treat a lost response exactly like a transport failure; never replay a write.
+    text = await response.text();
   } catch (error) {
     const message = error instanceof Error ? error.message : "Character function request failed.";
     const cause = error instanceof Error ? error.cause : undefined;
     const causeCode = cause && typeof cause === "object" && "code" in cause ? String((cause as { code: unknown }).code) : "";
     const causeMessage = cause instanceof Error ? cause.message : "";
     const diagnostic = [causeCode, causeMessage].filter(Boolean).join(": ");
-    const retryable = /fetch failed|timeout|ECONNRESET|EAI_AGAIN|ENOTFOUND|UND_ERR/i.test(`${message} ${causeCode} ${causeMessage}`);
+    const retryable = /fetch failed|timeout|terminated|abort|ECONNRESET|EAI_AGAIN|ENOTFOUND|UND_ERR/i.test(`${message} ${causeCode} ${causeMessage}`);
     // Function name and the socket error code only. The body and the bearer token stay out of the log.
     console.error(`[wgui-mcp] ${name} transport error${diagnostic ? ` ${diagnostic}` : ""}`);
     return {
@@ -85,7 +89,6 @@ export async function invokeFunction(userId: string, name: string, body: Record<
       retryable,
     };
   }
-  const text = await response.text();
   let payload: unknown = null;
   if (text) {
     try {
