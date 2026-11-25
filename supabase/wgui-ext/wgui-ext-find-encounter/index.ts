@@ -3,12 +3,12 @@ import { serve } from 'std/server';
 import type { Encounter } from '../_shared/content';
 import { connect, createServiceClient, fetchData } from '../_shared/helpers.ts';
 import { HttpError } from '../_shared/http-errors.ts';
-import { authorizeCampaign, authorizeCampaignRead, encounterListedForPlayer, sameNumericId } from '../_wgui-ext/shared.ts';
+import { authorizeCampaign, authorizeCampaignCopy, encounterListedForPlayer, sameNumericId } from '../_wgui-ext/shared.ts';
 
 interface FindCampaignEncountersBody {
   campaign_id?: number;
   id?: number | number[];
-  /** Duplicate a campaign to your account: full encounter list, same read gate as find-campaign. */
+  /** Duplicate a campaign to your account: full encounter list, explicit owner-approved copy permission. */
   for_campaign_copy?: boolean;
 }
 
@@ -91,7 +91,7 @@ serve(async (req: Request) => {
     const admin = createServiceClient();
     const forCopy = body?.for_campaign_copy === true;
     const access = forCopy
-      ? await authorizeCampaignRead(client, admin, token, campaign_id)
+      ? await authorizeCampaignCopy(client, admin, token, campaign_id)
       : await authorizeCampaign(client, admin, token, campaign_id);
 
     const results = await fetchData<Encounter>(admin, 'encounter', [

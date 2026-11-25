@@ -1,7 +1,9 @@
 import { getPublicUser } from '@auth/user-manager';
 import { fetchContentSources, findRequiredContentSources } from '@content/content-store';
 import type { Campaign, Character, ContentSource } from '@schemas/content';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useAuthSession } from '@auth/useAuthSession';
+import { loadCampaignCopyPermission, setCampaignCopyPermission, sameUserId } from './phase1-api';
 import {
   Archive,
   BookOpen,
@@ -109,6 +111,21 @@ export function SettingsSurface({
   saving?: boolean;
   error?: Error | null;
 }) {
+  const session = useAuthSession();
+  const queryClient = useQueryClient();
+  const copyPermissionKey = ['phase1-campaign-copy-permission', campaign.id, session?.user.id];
+  const isOwner = sameUserId(campaign.user_id, session?.user.id);
+  const copyPermission = useQuery({
+    queryKey: copyPermissionKey,
+    enabled: isOwner,
+    queryFn: () => loadCampaignCopyPermission(campaign.id, session?.access_token),
+    retry: false,
+  });
+  const saveCopyPermission = useMutation({
+    mutationFn: (enabled: boolean) => setCampaignCopyPermission(campaign.id, enabled, session?.access_token),
+    onSuccess: (result) => { queryClient.setQueryData(copyPermissionKey, result); },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: copyPermissionKey }),
+  });
   const [tab, setTab] = useState<SettingsTab>('books');
   const [name, setName] = useState(campaign.name);
   const [description, setDescription] = useState(campaign.description ?? '');
@@ -392,6 +409,20 @@ export function SettingsSurface({
                   <option value='DETAILED'>Detailed</option>
                 </select>
               </Field>
+              {isOwner && (
+                <Field label='Campaign copying'>
+                  <label className='flex items-center gap-2 text-sm text-p1-text'>
+                    <input type='checkbox' checked={copyPermission.data?.enabled === true}
+                      disabled={!copyPermission.data || copyPermission.isError || saveCopyPermission.isPending}
+                      onChange={(event) => saveCopyPermission.mutate(event.target.checked)} />
+                    Allow readable visitors and players to copy this campaign
+                  </label>
+                  <p className='mt-1 text-xs text-p1-faint'>Off by default. Enabling shares the full campaign, including GM-only notes and hidden encounters, with signed-in users who can read it. Turning this off prevents future copies; it cannot recall existing copies.</p>
+                  {(copyPermission.isError || saveCopyPermission.isError) && (
+                    <p className='mt-1 text-xs text-p1-danger-soft'>Could not read or save copy permission. Copy access is not assumed.</p>
+                  )}
+                </Field>
+              )}
               <Field label='Join Key'>
                 <div className='flex flex-wrap gap-2'>
                   <button type='button' className='toolbar-button' disabled={!campaign.join_key} onClick={revealAndCopyJoinKey}>

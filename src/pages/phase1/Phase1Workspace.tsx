@@ -8,7 +8,7 @@ import { CampaignSignIn } from '@auth/CampaignSignIn';
 import { signOut } from '@auth/campaign-auth';
 import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
-import { phase1Request, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, encounterMasksCombatants, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
+import { phase1Request, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, encounterMasksCombatants, loadCampaignCopyPermission, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
 import { executeCampaignCopy } from './phase1-campaign-copy';
 import { isEnemyCreature, playerAllyRoundLog, playerEnemyLabel, playerVisibleCombatants } from './phase1-player-combat';
 import { clearCombatantDrag, hasCombatantDrag, readCombatantDrag, writeCombatantDrag } from './combatant-drag';
@@ -2451,14 +2451,25 @@ export function Phase1CampaignPage() {
   const [copyPrompt, setCopyPrompt] = useState<'ask' | 'overwrite' | null>(null);
   const [copyBusy, setCopyBusy] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
-  const copyAsked = useRef(false);
+  const copyAsked = useRef<string | null>(null);
+  const copyPermission = useQuery({
+    queryKey: ['phase1-campaign-copy-permission', campaignId, session?.user.id],
+    enabled: enabled && !!campaign.data && !sameUserId(campaign.data.user_id, session?.user.id),
+    queryFn: () => loadCampaignCopyPermission(campaignId, session!.access_token),
+    retry: false,
+  });
   useEffect(() => {
     const row = campaign.data;
-    if (!session || !row || copyAsked.current) return;
-    if (sameUserId(row.user_id, session.user.id)) return;
-    copyAsked.current = true;
+    if (!session || !row || sameUserId(row.user_id, session.user.id)) return;
+    if (copyPermission.data?.canCopy !== true || copyPermission.isError) {
+      setCopyPrompt(null);
+      return;
+    }
+    const key = session.user.id + ':' + campaignId;
+    if (copyAsked.current === key) return;
+    copyAsked.current = key;
     setCopyPrompt('ask');
-  }, [campaign.data, session]);
+  }, [campaign.data, campaignId, session, copyPermission.data, copyPermission.isError]);
   if (session === undefined) return <LoadingScreen label='Loading session' />;
   if (!session) return <CampaignSignIn variant='phase1' />;
   if (campaign.isLoading || players.isLoading || encounters.isLoading) return <LoadingScreen label='Loading campaign workspace' />;
@@ -2522,6 +2533,9 @@ export function Phase1CampaignPage() {
     setCopyBusy(true);
     setCopyError(null);
     try {
+      // Do not delete an existing campaign on a stale or unauthorized copy prompt.
+      const permission = await loadCampaignCopyPermission(campaignId, session!.access_token);
+      if (!permission.canCopy) throw new Error('The game master has not enabled campaign copying.');
       const owned = await ownedCampaignsForCopy();
       for (const existing of owned) {
         await phase1Request('delete-content', { id: existing.id, type: 'campaign' });
