@@ -1115,9 +1115,7 @@ export function convertFoundryCreatureToGranularCreature(json: Record<string, an
         {
           max: number;
           value?: number;
-          prepared?: {
-            id: string;
-          }[];
+          prepared?: ({ id?: string | null } | null)[] | Record<string, { id?: string | null } | null>;
         }
       >;
 
@@ -1161,10 +1159,9 @@ export function convertFoundryCreatureToGranularCreature(json: Record<string, an
             const rawPrepared = slots[slot].prepared ?? [];
             const prepared = Array.isArray(rawPrepared) ? rawPrepared : Object.values(rawPrepared);
             spellsAsPreparedSlots.push(
-              ...prepared.map((p) => ({
-                id: p.id,
-                rank: rank,
-              }))
+              ...prepared.flatMap((p) =>
+                typeof p?.id === 'string' && p.id.length > 0 ? [{ id: p.id, rank }] : []
+              )
             );
           } else {
             console.error(`> Unknown slot type: ${slot}`);
