@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { isEncounterStrike } from "./encounter-actions.js";
 
 import { invokeFunction, type InvokeResult } from "./character-client.js";
 import { mergePlayerDiceRollLog, mergePlayerDiceRollState } from "./dice-merge.js";
@@ -560,30 +561,23 @@ function traitIdsOf(value: unknown): number[] {
 }
 
 async function labelTraitIds(record: EncounterRecord) {
-  const ids: number[] = [];
-  for (const sheet of Object.values(record.sheets)) {
-    for (const group of sheet.groups) {
-      for (const action of group.actions) ids.push(...(action.traitIds ?? []));
-    }
-  }
+  const allActions = Object.values(record.sheets).flatMap((sheet) => [
+    ...sheet.groups.flatMap((group) => group.actions), ...(sheet.strikes ?? []),
+  ]);
+  const ids = allActions.flatMap((action) => action.traitIds ?? []);
   const rows = await contentRows("find-trait", ids);
   const names = new Map(rows.flatMap((row) => {
     const id = num(row.id);
     const name = typeof row.name === "string" ? row.name.trim() : "";
     return id && name ? [[id, name] as const] : [];
   }));
-  for (const sheet of Object.values(record.sheets)) {
-    for (const group of sheet.groups) {
-      for (const action of group.actions) {
-        const named = (action.traitIds ?? []).flatMap((id) => {
-          const name = names.get(id);
-          return name ? [name] : [];
-        });
-        const existing = action.traits ?? [];
-        action.traits = [...existing, ...named.filter((name) => !existing.includes(name))];
-        delete action.traitIds;
-      }
-    }
+  for (const action of allActions) {
+    const named = (action.traitIds ?? []).flatMap((id) => {
+      const name = names.get(id);
+      return name ? [name] : [];
+    });
+    action.traits = [...new Set([...(action.traits ?? []), ...named])];
+    delete action.traitIds;
   }
 }
 
@@ -640,10 +634,11 @@ function abilityRows(entity: Json) {
 
 function sheetFor(entity: Json): CombatantSheet {
   const abilities = abilityRows(entity);
-  const attacks = abilities.filter((ability) => ability.type === "action");
+  const attacks = abilities.filter(isEncounterStrike);
+  const specials = abilities.filter((ability) => ability.type === "action" && !isEncounterStrike(ability));
   const feats = abilities.filter((ability) => ability.type === "feat");
   const features = abilities.filter((ability) => ability.type === "class-feature" || ability.type === "physical-feature");
-  const groups = [];
+  const groups: CombatantSheet["groups"] = [];
   if (attacks.length) {
     groups.push({
       id: "weapon-attacks",
@@ -651,12 +646,16 @@ function sheetFor(entity: Json): CombatantSheet {
       actions: attacks.map(({ name, actions, actionCost, trigger, traitNames, traitIds, description }) => ({ name, actions, actionCost, trigger, traits: traitNames, traitIds, description })),
     });
   }
-  const featActions = feats.filter((ability) => ability.actions !== null);
+  if (specials.length) groups.push({
+    id: "special-actions", label: "Special Actions",
+    actions: specials.map(({ name, actions, actionCost, trigger, traitNames, traitIds, description }) => ({ name, actions, actionCost, trigger, traits: traitNames, traitIds, description })),
+  });
+  const featActions = feats.filter((ability) => ability.actionCost !== undefined || ability.actions !== null);
   if (featActions.length) {
     groups.push({
       id: "feats",
       label: "Feats (with Actions)",
-      actions: featActions.map(({ name, actions, description }) => ({ name, actions, description })),
+      actions: featActions.map(({ name, actions, actionCost, trigger, traitNames, traitIds, description }) => ({ name, actions, actionCost, trigger, traits: traitNames, traitIds, description })),
     });
   }
   const profs = profsOf(entity);
@@ -822,7 +821,8 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
         traitNames: traitLabels(row.traits),
       }];
     });
-    const attacks = resolved.filter((ability) => ability.type === "action");
+    const attacks = resolved.filter(isEncounterStrike);
+    const specials = resolved.filter((ability) => ability.type === "action" && !isEncounterStrike(ability));
     const feats = resolved.filter((ability) => ability.type === "feat");
     const features = resolved.filter((ability) => ability.type === "class-feature" || ability.type === "physical-feature");
     if (attacks.length) {
@@ -834,6 +834,12 @@ function applyCatalog(record: EncounterRecord, entities: Record<string, Json>, b
         label: "Weapon Attacks",
         actions,
       });
+    }
+    if (specials.length) {
+      const existing = sheet.groups.find((group) => group.id === "special-actions");
+      const actions = specials.map(({ name, actions, actionCost, trigger, traitNames, traitIds, description }) => ({ name, actions, actionCost, trigger, traits: traitNames, traitIds, description }));
+      if (existing) existing.actions.push(...actions.filter((action) => !existing.actions.some((item) => item.name === action.name)));
+      else sheet.groups.push({ id: "special-actions", label: "Special Actions", actions });
     }
     const featActions = feats.filter((ability) => ability.actionCost !== undefined || ability.actions !== null).map(({ name, actions, actionCost, trigger, traitNames, traitIds, description }) => ({ name, actions, actionCost, trigger, traits: traitNames, traitIds, description }));
     if (featActions.length) {
@@ -1123,7 +1129,6 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
       }
       const spellRows = await contentRows("find-spell", [...spellIds]);
       applyCatalog(record, entities, blocks, spellRows, classFeatures);
-      await labelTraitIds(record);
       console.error(`[wgui-mcp] encounter ${record.encounterId} combatants=${record.combatants.length} abilityIds=${blockIds.size} resolved=${blocks.length} custom=${customAbilities} focus=${focusSpells} spellIds=${spellIds.size} spells=${spellRows.length}`);
       if (includeStats) {
         for (const [id, entity] of Object.entries(entities)) {
@@ -1135,6 +1140,8 @@ export function createSupabaseReader(readStats = readLiveStatBlock): EncounterRe
           Object.assign(row, stats.row);
         }
       }
+      // Resolve trait IDs after computed projections have been merged too.
+      await labelTraitIds(record);
       return record;
     },
     async ensurePublicUser(userId) {
