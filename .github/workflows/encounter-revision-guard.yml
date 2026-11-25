@@ -3,7 +3,7 @@ on:
   pull_request:
     paths:
       - 'supabase/wgui-encounter-revision-guard.sql'
-      - 'supabase/tests/wgui-encounter-revision-guard.sql'
+      - 'supabase/tests/wgui-encounter-revision-guard*'
       - 'supabase/wgui-foundry-combat-archive.sql'
       - '.github/workflows/encounter-revision-guard.yml'
 permissions:
@@ -38,3 +38,4 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f supabase/wgui-encounter-revision-guard.sql
           psql -v ON_ERROR_STOP=1 -f supabase/wgui-encounter-revision-guard.sql
           psql -v ON_ERROR_STOP=1 -f supabase/tests/wgui-encounter-revision-guard.sql
+          bash supabase/tests/wgui-encounter-revision-guard-concurrency.sh
