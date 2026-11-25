@@ -39,3 +39,7 @@ docker exec -i wanderers-guide-db-1 psql -U postgres -d postgres -v ON_ERROR_STO
 npm run stack:restart
 npm run test:wgui-ext
 ```
+
+## Strict artwork verification (#74)
+
+The copy path no longer has a best-effort source-URL fallback. It uses the copy caller's access token for uploads and verifies the returned object is a distinct path in configured public storage, anonymously readable, with matching supported image bytes. An HTTP, CORS, format, upload, or destination verification failure stops the copy before the commit call and surfaces a retryable error. Shared external/catalog links and embedded image data are intentionally retained and reported separately from a confirmed banner re-host. A recovered receipt without a matching locally staged URL is reported as unverified, not re-hosted. Ordinary portrait/banner picker fallback behavior is unchanged. Configure VITE_PUBLIC_STORAGE_ORIGIN to match the destination stack. No additional database migration is needed. The actual storage owner metadata and source-deletion independence should still be checked on a disposable test campaign in the deployed stack.

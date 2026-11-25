@@ -1,9 +1,9 @@
 import type { Campaign, Character, Encounter } from '@schemas/content';
-import { needsRehostForCopy } from '@upload/image-upload';
-import { stageCampaignCopyAssets, type CampaignCopyArtMap } from './phase1-campaign-copy-art';
+import { campaignCopyAssetAction, migrateCampaignCopyAsset, stageCampaignCopyAssets, type CampaignCopyArtMap } from './phase1-campaign-copy-art';
 import { asRecordList, loadEncountersForCampaignCopy, phase1Request } from './phase1-api';
 
-export type CampaignArtCopyAction = 'none' | 'keep' | 'rehost';
+export type CampaignArtCopyAction = 'none' | 'keep' | 'rehost' | 'blocked';
+export type CampaignArtCopyOutcome = 'none' | 'kept' | 'rehosted' | 'unverified';
 
 export type CampaignCopyPlan = {
   sourceCampaignId: number;
@@ -18,7 +18,8 @@ export type CampaignCopyPlan = {
 export function campaignArtCopyAction(imageUrl: string | null | undefined): CampaignArtCopyAction {
   const source = imageUrl?.trim() ?? '';
   if (!source) return 'none';
-  return needsRehostForCopy(source) ? 'rehost' : 'keep';
+  try { return campaignCopyAssetAction(source).kind === 'upload' ? 'rehost' : 'keep'; }
+  catch { return 'blocked'; }
 }
 
 export function buildCampaignCopyPlan(source: Campaign, encounters: Encounter[]): CampaignCopyPlan {
@@ -65,6 +66,7 @@ export type ExecuteCampaignCopyResult = {
   plan: CampaignCopyPlan;
   created?: Campaign;
   copiedArtUrl?: string;
+  artOutcome?: CampaignArtCopyOutcome;
 };
 
 // A pending operation survives a failed response and a reload in the same tab.
@@ -125,7 +127,8 @@ export async function executeCampaignCopy(options: ExecuteCampaignCopyOptions): 
       throw new Error('Campaign artwork manifest could not be confirmed.');
     }
     operation.artMap ??= {};
-    await stageCampaignCopyAssets(prepared.assets, operation.artMap, () => rememberCopy(key, operation));
+    await stageCampaignCopyAssets(prepared.assets, operation.artMap, () => rememberCopy(key, operation),
+      (ref) => migrateCampaignCopyAsset(ref, { accessToken }));
     // Send only references in the latest manifest. SQL checks all artwork on the
     // actual rows being inserted and aborts if a source edit introduced a new URL.
     const artMap = Object.fromEntries(prepared.assets.map((ref) => [ref, operation.artMap![ref]]));
@@ -141,8 +144,23 @@ export async function executeCampaignCopy(options: ExecuteCampaignCopyOptions): 
     encounterCount: result.encounterNames.length,
     encounterNames: result.encounterNames,
   };
+  const copiedArtUrl = result.created.meta_data?.image_url || undefined;
+  const sourceArt = source.meta_data?.image_url ?? '';
+  const artOutcome = campaignArtCopyOutcome(sourceArt, copiedArtUrl, operation.artMap);
   finishCopy(key);
-  return { plan, created: result.created, copiedArtUrl: result.created.meta_data?.image_url || undefined };
+  return { plan, created: result.created, copiedArtUrl, artOutcome };
+}
+
+/** Report a verified staging outcome, not a planned action or an assumed receipt. */
+export function campaignArtCopyOutcome(source: string, destination?: string, staged?: CampaignCopyArtMap): CampaignArtCopyOutcome {
+  if (!source.trim() && !destination) return 'none';
+  if (!destination || !source.trim()) return 'unverified';
+  try {
+    const action = campaignCopyAssetAction(source);
+    if (action.kind === 'keep') return destination === action.url ? 'kept' : 'unverified';
+    return staged && Object.prototype.hasOwnProperty.call(staged, source) && staged[source] === destination &&
+      destination !== action.url ? 'rehosted' : 'unverified';
+  } catch { return 'unverified'; }
 }
 
 /** Stock find-campaign({ id }) for scripts and dry runs. */
