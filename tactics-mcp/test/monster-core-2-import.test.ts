@@ -45,6 +45,17 @@ test("Monster Core 2 conversion retains printed Ember Fox damage, defenses, skil
     dom.window.close();
   });
   const { convertFoundryCreatureToGranularCreature } = await import("../../src/process/upload/creature-import.ts");
+  const preparedActor = structuredClone(actor);
+  const casting = {
+    _id: "casting", name: "Arcane Spells", type: "spellcastingEntry",
+    system: {tradition:{value:"arcane"},spelldc:{dc:18,value:10},prepared:{value:"prepared"},slots:{
+      slot1:{max:4,prepared:{0:{id:"spell"},1:{id:null},2:null,3:{id:"missing"}}},
+      slot2:{max:2,prepared:[{id:"spell"},{}]},
+    }},
+  };
+  const spell = {_id:"spell",name:"Force Barrage",type:"spell",system:{slug:"force-barrage",level:{value:1},location:{value:"casting"}}};
+  const prepared = convertFoundryCreatureToGranularCreature({...preparedActor,items:[...preparedActor.items,casting,spell]});
+  assert.deepEqual(prepared.spellcasting?.prepared?.spells?.map(s=>[s.name,s.rank,s.amount]), [["Force Barrage",1,1],["Force Barrage",2,1]]);
   const result = convertFoundryCreatureToGranularCreature(actor);
   assert.equal(result.ac.value,17);
   assert.equal(result.hp.value,35);
