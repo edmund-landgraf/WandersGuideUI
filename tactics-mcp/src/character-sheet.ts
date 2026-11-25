@@ -3,11 +3,21 @@ import { z } from "zod";
 
 import { asRow, invokeFunction } from "./character-client.js";
 import { fail, loadRow, ownerGuard, saveRow, textResult } from "./character-catalog.js";
-import { decodeImageData, durableImageUrl, fetchImageUrl, isBlobUrl, readImageFile, uploadImageBytes, type ImageCategory } from "./image-upload.js";
+import { decodeImageData, durableImageUrl, fetchImageAttachment, fetchImageUrl, isBlobUrl, readImageFile, uploadImageBytes, type ImageCategory } from "./image-upload.js";
 import { isSiteRelativeArtPath, publicArtSrc } from "./public-art-url.js";
 
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const writes = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
+
+// ChatGPT file-parameter contract: only download_url and file_id are required.
+// The connector resolves the user's generated/attached file into a temporary URL.
+const attachmentSchema = z.strictObject({
+  download_url: z.string(),
+  file_id: z.string(),
+  mime_type: z.string().optional(),
+  file_name: z.string().optional(),
+});
+type ImageAttachment = z.infer<typeof attachmentSchema>;
 
 // Phase 1's default note page (src/pages/phase1/Phase1SheetPage.tsx, GUIDE_BLUE).
 const NOTE_ICON = "notebook";
@@ -157,17 +167,21 @@ function clampFocus(value: number) {
   return Math.min(100, Math.max(0, value));
 }
 
-async function bytesFromInput(data: string | undefined, sourceUrl: string | undefined, file: string | undefined) {
-  const given = [data, sourceUrl, file].filter((value) => value !== undefined).length;
-  if (given > 1) return { ok: false as const, message: "Pass image data, a source URL, or a file path, not more than one." };
+async function bytesFromInput(data: string | undefined, sourceUrl: string | undefined, file: string | undefined, attachment: ImageAttachment | undefined, allowLocalFiles: boolean) {
+  const given = [data, sourceUrl, file, attachment].filter((value) => value !== undefined).length;
+  if (given > 1) return { ok: false as const, message: "Pass exactly one of image data, a source URL, a file path, or an attachment." };
   if (data !== undefined) return decodeImageData(data);
   if (sourceUrl !== undefined) return fetchImageUrl(sourceUrl);
-  if (file !== undefined) return readImageFile(file);
-  return { ok: false as const, message: "Pass image data, a source URL, or a file path." };
+  if (attachment !== undefined) return fetchImageAttachment(attachment.download_url);
+  if (file !== undefined) {
+    if (!allowLocalFiles) return { ok: false as const, message: "Server filesystem paths are not accepted over remote MCP. Pass the image as an attachment instead." };
+    return readImageFile(file);
+  }
+  return { ok: false as const, message: "Pass image data, a source URL, or an attachment." };
 }
 
-async function uploadInput(userId: string, data: string | undefined, sourceUrl: string | undefined, category: ImageCategory, file?: string) {
-  const bytes = await bytesFromInput(data, sourceUrl, file);
+async function uploadInput(userId: string, data: string | undefined, sourceUrl: string | undefined, category: ImageCategory, file?: string, attachment?: ImageAttachment, allowLocalFiles = false) {
+  const bytes = await bytesFromInput(data, sourceUrl, file, attachment, allowLocalFiles);
   if (!bytes.ok) return { ok: false as const, code: "VALIDATION_ERROR", message: bytes.message };
   return uploadImageBytes(userId, bytes.bytes, category);
 }
@@ -193,22 +207,24 @@ function campaignArt(row: Record<string, unknown>, userId: string) {
   };
 }
 
-export function registerCharacterSheet(server: McpServer, userId: () => string) {
+export function registerCharacterSheet(server: McpServer, userId: () => string, allowLocalFiles = false) {
   server.registerTool(
     "upload_image",
     {
       title: "Upload a public image",
-      description: "Uploads a PNG, JPEG, or WebP through upload-public-file, the same call as src/process/upload/image-upload.ts. data is base64 with no data: prefix (a data: URL prefix is stripped). sourceUrl is a public http(s) URL and is fetched first. file is a local path or file:// URL to a generated PNG, JPEG, or WebP. category is portraits or backgrounds, the only buckets that function accepts. The file is stored at <user id>/<id>.<type> in that bucket and the public URL is returned. Images must be 2 MB or smaller. SVG and other types are rejected from the file bytes. The function also requires Patreon tier 1 and returns \"User does not have access\" otherwise.",
+      description: "Uploads a PNG, JPEG, or WebP through upload-public-file, the same call as src/process/upload/image-upload.ts. data is base64 with no data: prefix (a data: URL prefix is stripped). sourceUrl is a public http(s) URL and is fetched first. attachment accepts one generated or attached PNG, JPEG, or WebP file from ChatGPT. file is a local path or file:// URL, accepted only in trusted local stdio. category is portraits or backgrounds, the only buckets that function accepts. The file is stored at <user id>/<id>.<type> in that bucket and the public URL is returned. Images must be 2 MB or smaller. SVG and other types are rejected from the file bytes. The function also requires Patreon tier 1 and returns \"User does not have access\" otherwise.",
       annotations: writes,
+      _meta: { "openai/fileParams": ["attachment"] },
       inputSchema: {
         data: z.string().optional(),
         sourceUrl: z.string().optional(),
         file: z.string().optional(),
+        attachment: attachmentSchema.optional().describe("One generated or attached PNG, JPEG, or WebP file, at most 2 MB."),
         category: z.enum(["portraits", "backgrounds"]),
       },
     },
     async (args) => {
-      const uploaded = await uploadInput(userId(), args.data, args.sourceUrl, args.category, args.file);
+      const uploaded = await uploadInput(userId(), args.data, args.sourceUrl, args.category, args.file, args.attachment, allowLocalFiles);
       if (!uploaded.ok) return fail(uploaded);
       return textResult("Image uploaded", { url: uploaded.url, category: uploaded.category, type: uploaded.type });
     },
@@ -218,8 +234,9 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
     "set_character_art",
     {
       title: "Character portrait and background",
-      description: "Sets the portrait and sheet background the character art pickers store. portraitUrl writes details.image_url. backgroundUrl writes details.background_image_url. Pass an http(s) URL, a site-relative path such as /portraits/file.jpg, or null or \"\" to clear that field the way the sheet drops it. A site-relative path is fetched from PUBLIC_ASSET_ORIGIN (default https://wgui.wandersguide.site) and re-uploaded with upload-public-file; if that fails the absolute public URL is stored. portraitData or backgroundData is base64 (no data: prefix). portraitFile or backgroundFile is a local path or file:// URL to a generated PNG, JPEG, or WebP. Either is uploaded with upload-public-file, portraits or backgrounds, then the returned URL is stored. Other details keys are kept. Only the character owner can write. Saves with expected_updated_at.",
+      description: "Sets the portrait and sheet background the character art pickers store. portraitUrl writes details.image_url. backgroundUrl writes details.background_image_url. Pass an http(s) URL, a site-relative path such as /portraits/file.jpg, or null or \"\" to clear that field the way the sheet drops it. A site-relative path is fetched from PUBLIC_ASSET_ORIGIN (default https://wgui.wandersguide.site) and re-uploaded with upload-public-file; if that fails the absolute public URL is stored. portraitData or backgroundData is base64 (no data: prefix). Use portraitAttachment or backgroundAttachment for a generated or attached PNG, JPEG, or WebP file from ChatGPT (2 MB maximum each). portraitFile or backgroundFile is a path accepted only in trusted local stdio. File inputs are uploaded with upload-public-file, portraits or backgrounds, then the returned URL is stored. Other details keys are kept. Only the character owner can write. Saves with expected_updated_at.",
       annotations: writes,
+      _meta: { "openai/fileParams": ["portraitAttachment", "backgroundAttachment"] },
       inputSchema: {
         characterId: z.number().int(),
         portraitUrl: z.string().nullable().optional(),
@@ -228,17 +245,22 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
         backgroundData: z.string().optional(),
         portraitFile: z.string().optional(),
         backgroundFile: z.string().optional(),
+        portraitAttachment: attachmentSchema.optional().describe("One generated or attached PNG, JPEG, or WebP character portrait, at most 2 MB."),
+        backgroundAttachment: attachmentSchema.optional().describe("One generated or attached PNG, JPEG, or WebP sheet background, at most 2 MB."),
       },
     },
     async (args) => {
-      if (args.portraitUrl === undefined && args.backgroundUrl === undefined && args.portraitData === undefined && args.backgroundData === undefined && args.portraitFile === undefined && args.backgroundFile === undefined) {
-        return textResult("Pass portraitUrl, backgroundUrl, portraitData, portraitFile, backgroundData, and/or backgroundFile.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      if (args.portraitUrl === undefined && args.backgroundUrl === undefined && args.portraitData === undefined && args.backgroundData === undefined && args.portraitFile === undefined && args.backgroundFile === undefined && args.portraitAttachment === undefined && args.backgroundAttachment === undefined) {
+        return textResult("Pass a portrait or background URL, data, or attachment.", { code: "VALIDATION_ERROR", retryable: false }, true);
       }
-      if ([args.portraitUrl, args.portraitData, args.portraitFile].filter((value) => value !== undefined).length > 1) {
-        return textResult("Pass one of portraitUrl, portraitData, or portraitFile.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      if ([args.portraitUrl, args.portraitData, args.portraitFile, args.portraitAttachment].filter((value) => value !== undefined).length > 1) {
+        return textResult("Pass one of portraitUrl, portraitData, portraitFile, or portraitAttachment.", { code: "VALIDATION_ERROR", retryable: false }, true);
       }
-      if ([args.backgroundUrl, args.backgroundData, args.backgroundFile].filter((value) => value !== undefined).length > 1) {
-        return textResult("Pass one of backgroundUrl, backgroundData, or backgroundFile.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      if ([args.backgroundUrl, args.backgroundData, args.backgroundFile, args.backgroundAttachment].filter((value) => value !== undefined).length > 1) {
+        return textResult("Pass one of backgroundUrl, backgroundData, backgroundFile, or backgroundAttachment.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      }
+      if (!allowLocalFiles && (args.portraitFile !== undefined || args.backgroundFile !== undefined)) {
+        return textResult("Server filesystem paths are not accepted over remote MCP. Pass the image as an attachment instead.", { code: "VALIDATION_ERROR", retryable: false }, true);
       }
       const portrait = args.portraitUrl === undefined ? null : imageUrl(args.portraitUrl);
       const background = args.backgroundUrl === undefined ? null : imageUrl(args.backgroundUrl);
@@ -263,19 +285,19 @@ export function registerCharacterSheet(server: McpServer, userId: () => string) 
         if (!durable.ok) return fail(durable);
         backgroundUrl = durable.url;
       }
-      if (args.portraitData !== undefined || args.portraitFile !== undefined) {
-        const uploaded = await uploadInput(userId(), args.portraitData, undefined, "portraits", args.portraitFile);
+      if (args.portraitData !== undefined || args.portraitFile !== undefined || args.portraitAttachment !== undefined) {
+        const uploaded = await uploadInput(userId(), args.portraitData, undefined, "portraits", args.portraitFile, args.portraitAttachment, allowLocalFiles);
         if (!uploaded.ok) return fail(uploaded);
         portraitUrl = uploaded.url;
       }
-      if (args.backgroundData !== undefined || args.backgroundFile !== undefined) {
-        const uploaded = await uploadInput(userId(), args.backgroundData, undefined, "backgrounds", args.backgroundFile);
+      if (args.backgroundData !== undefined || args.backgroundFile !== undefined || args.backgroundAttachment !== undefined) {
+        const uploaded = await uploadInput(userId(), args.backgroundData, undefined, "backgrounds", args.backgroundFile, args.backgroundAttachment, allowLocalFiles);
         if (!uploaded.ok) return fail(uploaded);
         backgroundUrl = uploaded.url;
       }
       const details = detailsOf(loaded.data);
-      if (args.portraitUrl !== undefined || args.portraitData !== undefined || args.portraitFile !== undefined) assignUrl(details, "image_url", portraitUrl);
-      if (args.backgroundUrl !== undefined || args.backgroundData !== undefined || args.backgroundFile !== undefined) assignUrl(details, "background_image_url", backgroundUrl);
+      if (args.portraitUrl !== undefined || args.portraitData !== undefined || args.portraitFile !== undefined || args.portraitAttachment !== undefined) assignUrl(details, "image_url", portraitUrl);
+      if (args.backgroundUrl !== undefined || args.backgroundData !== undefined || args.backgroundFile !== undefined || args.backgroundAttachment !== undefined) assignUrl(details, "background_image_url", backgroundUrl);
       const saved = await saveRow(userId(), loaded.data, { details });
       if (!saved.ok) return fail(saved);
       const next = detailsOf(saved.data);
