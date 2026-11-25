@@ -33,6 +33,12 @@ describe('alignCreatureDefenses', () => {
     expect(readStoredDefenses(aligned).hp).toBe(18);
   });
 
+  it.each([0, 1])('does not restore a wounded creature at %i HP while filling missing defenses', (hp) => {
+    const wounded = creature('Animated Coal', 30, 'HP 30 AC 18 Fort +8 Ref +7 Will +4');
+    wounded.hp_current = hp;
+    expect(alignCreatureDefenses(wounded).hp_current).toBe(hp);
+  });
+
   it('does not treat a health remainder as useful defenses', () => {
     const remainder = creature('Electric Eel', 16, '');
     const catalog = creature('Electric Eel', 18, '');
