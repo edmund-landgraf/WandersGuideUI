@@ -76,7 +76,7 @@ export async function computePhase1BuilderChoiceCounts(character: Character): Pr
   });
 }
 
-async function preparePhase1EntityNow(combatant: Phase1EntityCombatant): Promise<PreparedPhase1Entity> {
+async function preparePhase1EntityNow(combatant: Phase1EntityCombatant, initializeCreature = false, adjustment?: 'ELITE' | 'WEAK'): Promise<PreparedPhase1Entity> {
   const previousPage = getDefaultSources('PAGE');
   const previousInfo = getDefaultSources('INFO');
   try {
@@ -97,7 +97,7 @@ async function preparePhase1EntityNow(combatant: Phase1EntityCombatant): Promise
       return { entity: character, content, storeId, kind: 'CHARACTER' };
     }
 
-    let creature = await hydrateCreatureForCombat(cloneDeep(combatant.data as Creature));
+    let creature = await hydrateCreatureForCombat(cloneDeep(combatant.data as Creature), adjustment);
     const storeId = `CREATURE_${combatant._id}`;
     const content = await fetchContentPackage(getDefaultSources('PAGE'), {
       fetchSources: false,
@@ -109,7 +109,7 @@ async function preparePhase1EntityNow(combatant: Phase1EntityCombatant): Promise
     }, { directExecution: true });
     creature = applyGivenItems(storeId, content.items, creature);
     applyConditions(storeId, creature.details?.conditions ?? []);
-    creature = fillCurrentHp(creature, getFinalHealthValue(storeId));
+    creature = fillCurrentHp(creature, getFinalHealthValue(storeId), initializeCreature);
     return { entity: creature, content, storeId, kind: 'CREATURE' };
   } finally {
     defineDefaultSources('PAGE', previousPage);
@@ -123,6 +123,13 @@ async function preparePhase1EntityNow(combatant: Phase1EntityCombatant): Promise
  * `meta_data.calculated_stats` is often null on official monsters. Skip the in-memory
  * content cache so we do not reuse a truncated list record.
  */
+export async function initializeCreatureForCombat(creature: Creature, adjustment?: 'ELITE' | 'WEAK'): Promise<Creature> {
+  const prepared = await enqueuePrepare(() => preparePhase1EntityNow({
+    _id: `new-${crypto.randomUUID()}`, type: 'CREATURE', ally: false, data: creature,
+  }, true, adjustment));
+  return prepared.entity as Creature;
+}
+
 export async function hydrateCreatureForCombat(creature: Creature, adjustment?: 'ELITE' | 'WEAK'): Promise<Creature> {
   const { creature: base, replacedFromCatalog } = await hydrateCreatureRecord(creature);
   const applyAdjustment = adjustment ?? (replacedFromCatalog ? creature.details.adjustment : undefined);
@@ -146,7 +153,7 @@ async function hydrateCreatureRecord(creature: Creature): Promise<{ creature: Cr
     replacedFromCatalog: !preferEncounter,
     creature: fillCurrentHp(await fillMissingDefenses({
       ...primary,
-      hp_current: creature.hp_current || catalog.hp_current,
+      hp_current: creature.hp_current ?? catalog.hp_current,
       hp_temp: creature.hp_temp,
       details: {
         ...primary.details,
@@ -184,7 +191,7 @@ function calculatedStatsForHydration(creature: Creature, catalog: Creature) {
   return hasUsefulCalculatedStats(encounter) ? encounter : fromCatalog;
 }
 
-function fillCurrentHp(creature: Creature, computedMax?: number) {
+export function fillCurrentHp(creature: Creature, computedMax?: number, initialize = false) {
   const stored = creature.meta_data?.calculated_stats?.hp_max;
   const maxHp = typeof computedMax === 'number' && computedMax > 0
     ? computedMax
@@ -193,8 +200,7 @@ function fillCurrentHp(creature: Creature, computedMax?: number) {
       : 0;
   if (maxHp <= 0) return creature;
   const current = creature.hp_current;
-  if (typeof current === 'number' && current > 1 && current <= maxHp) return creature;
-  if (typeof current === 'number' && current > 1) return creature;
+  if (!initialize && typeof current === 'number' && Number.isFinite(current) && current >= 0) return creature;
   return { ...creature, hp_current: maxHp };
 }
 
