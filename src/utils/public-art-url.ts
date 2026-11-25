@@ -15,14 +15,14 @@ const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif)$/i;
 const STORAGE_OBJECT = /\/storage\/v1\/object\//i;
 
 export function publicAssetOrigin(): string {
-  const configured = String(import.meta.env.VITE_PUBLIC_ASSET_ORIGIN ?? '')
+  const configured = String(import.meta.env?.VITE_PUBLIC_ASSET_ORIGIN ?? (typeof process !== 'undefined' ? process.env.VITE_PUBLIC_ASSET_ORIGIN : undefined) ?? '')
     .trim()
     .replace(/\/$/, '');
   return configured || DEFAULT_PUBLIC_ASSET_ORIGIN;
 }
 
 export function publicStorageOrigin(): string {
-  const configured = String(import.meta.env.VITE_PUBLIC_STORAGE_ORIGIN ?? '')
+  const configured = String(import.meta.env?.VITE_PUBLIC_STORAGE_ORIGIN ?? (typeof process !== 'undefined' ? process.env.VITE_PUBLIC_STORAGE_ORIGIN : undefined) ?? '')
     .trim()
     .replace(/\/$/, '');
   return configured || DEFAULT_PUBLIC_STORAGE_ORIGIN;

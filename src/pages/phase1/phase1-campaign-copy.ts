@@ -2,38 +2,11 @@ import type { Campaign, Character, Encounter } from '@schemas/content';
 import { campaignCopyAssetAction, migrateCampaignCopyAsset, stageCampaignCopyAssets, type CampaignCopyArtMap } from './phase1-campaign-copy-art';
 import { asRecordList, loadEncountersForCampaignCopy, phase1Request } from './phase1-api';
 
-export type CampaignArtCopyAction = 'none' | 'keep' | 'rehost' | 'blocked';
+import { buildCampaignCopyPlan, type CampaignCopyPlan } from './phase1-campaign-copy-plan';
+export { buildCampaignCopyPlan, campaignArtCopyAction } from './phase1-campaign-copy-plan';
+export type { CampaignCopyPlan, CampaignArtCopyAction } from './phase1-campaign-copy-plan';
+
 export type CampaignArtCopyOutcome = 'none' | 'kept' | 'rehosted' | 'unverified';
-
-export type CampaignCopyPlan = {
-  sourceCampaignId: number;
-  encounterCount: number;
-  notePageCount: number;
-  folderCount: number;
-  sourceArtUrl: string;
-  artAction: CampaignArtCopyAction;
-  encounterNames: string[];
-};
-
-export function campaignArtCopyAction(imageUrl: string | null | undefined): CampaignArtCopyAction {
-  const source = imageUrl?.trim() ?? '';
-  if (!source) return 'none';
-  try { return campaignCopyAssetAction(source).kind === 'upload' ? 'rehost' : 'keep'; }
-  catch { return 'blocked'; }
-}
-
-export function buildCampaignCopyPlan(source: Campaign, encounters: Encounter[]): CampaignCopyPlan {
-  const sourceArtUrl = source.meta_data?.image_url?.trim() ?? '';
-  return {
-    sourceCampaignId: source.id,
-    encounterCount: encounters.length,
-    notePageCount: source.notes?.pages?.length ?? 0,
-    folderCount: source.meta_data?.encounter_folders?.length ?? 0,
-    sourceArtUrl,
-    artAction: campaignArtCopyAction(sourceArtUrl),
-    encounterNames: encounters.map((row) => row.name),
-  };
-}
 
 export function encounterCreatePayloadForCopy(encounter: Encounter, targetCampaignId: number): Record<string, unknown> {
   const meta = encounter.meta_data ?? {};
