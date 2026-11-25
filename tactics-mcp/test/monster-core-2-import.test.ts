@@ -30,11 +30,20 @@ test("official book title fallback admits only matching creature publications", 
   assert.equal(matchesFoundryPublication(source,{},true),false);
 });
 
-test("Monster Core 2 conversion retains printed Ember Fox damage, defenses, skills and reaction", async () => {
+test("Monster Core 2 conversion retains printed Ember Fox damage, defenses, skills and reaction", async (t) => {
   process.env.SUPABASE_URL = 'https://fixture.invalid';
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'fixture';
   process.env.SUPABASE_ANON_KEY = 'fixture';
   sheetEnv();
+  const { JSDOM } = await import("jsdom");
+  const dom = new JSDOM("");
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "document");
+  Object.defineProperty(globalThis, "document", { configurable: true, value: dom.window.document });
+  t.after(() => {
+    if (previous) Object.defineProperty(globalThis, "document", previous);
+    else Reflect.deleteProperty(globalThis, "document");
+    dom.window.close();
+  });
   const { convertFoundryCreatureToGranularCreature } = await import("../../src/process/upload/creature-import.ts");
   const result = convertFoundryCreatureToGranularCreature(actor);
   assert.equal(result.ac.value,17);
