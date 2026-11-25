@@ -7,13 +7,13 @@ export async function downloadMonsterCore2Files(): Promise<File[]> {
   if (!index.ok) throw new Error('Monster Core 2 pack listing failed: ' + index.status);
   const rows = await index.json() as { name: string; type: string }[];
   if (!Array.isArray(rows)) throw new Error('Invalid Monster Core 2 pack listing');
-  const entries = rows.filter(row => row.type === 'file' && /^[a-z0-9][a-z0-9._-]*\.json$/i.test(row.name));
+  const entries = rows.filter(row => row.type === 'file' && /^[\p{L}\p{N}][\p{L}\p{N}\p{M}._-]*\.json$/iu.test(row.name));
   if (!entries.length) throw new Error('Monster Core 2 pack is empty');
   const files: File[] = [];
   // Bound concurrency, and download all files before making any catalog writes.
   for (let offset = 0; offset < entries.length; offset += 8) {
     const batch = await Promise.all(entries.slice(offset, offset + 8).map(async ({ name }) => {
-      const response = await fetch('https://raw.githubusercontent.com/foundryvtt/pf2e/' + MONSTER_CORE_2_REF + '/' + MONSTER_CORE_2_PACK + '/' + name);
+      const response = await fetch('https://raw.githubusercontent.com/foundryvtt/pf2e/' + MONSTER_CORE_2_REF + '/' + MONSTER_CORE_2_PACK + '/' + encodeURIComponent(name));
       if (!response.ok) throw new Error('Download failed: ' + name + ' (' + response.status + ')');
       const actor = await response.json();
       if (actor.type !== 'npc') return null;
