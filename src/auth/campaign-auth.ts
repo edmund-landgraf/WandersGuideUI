@@ -7,6 +7,15 @@ export const ENABLED_OAUTH_PROVIDERS: OAuthProvider[] = ['google', 'github', 'di
 
 const OAUTH_NEXT_KEY = 'wg_oauth_next';
 
+const OAUTH_RETURN_KEYS = ['code', 'access_token', 'error', 'error_description', 'token_hash'] as const;
+
+/** True while the browser is on the post-provider redirect (hash or query). */
+export function isOAuthReturnUrl() {
+  const search = new URLSearchParams(window.location.search);
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  return OAUTH_RETURN_KEYS.some((key) => search.has(key) || hash.has(key));
+}
+
 export function campaignRedirectTo() {
   const next = `${window.location.pathname}${window.location.search}`;
   if (next && next !== '/' && next !== '/login' && !next.startsWith('/login?')) {
