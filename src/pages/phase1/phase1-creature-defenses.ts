@@ -155,7 +155,7 @@ export function applyDefenses(creature: Creature, parsed: ParsedMonsterDefenses)
   return {
     ...creature,
     operations: ops,
-    hp_current: creature.hp_current && creature.hp_current > 1 ? creature.hp_current : parsed.hp ?? creature.hp_current,
+    hp_current: creature.hp_current ?? parsed.hp ?? creature.hp_current,
     meta_data: {
       ...creature.meta_data,
       calculated_stats: {
