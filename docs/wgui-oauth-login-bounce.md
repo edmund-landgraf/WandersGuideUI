@@ -43,7 +43,13 @@ The session atom stays empty. Guarded routes (`AuthRouteWrapper`) send the brows
 
 ## Fix
 
-Use `processLock` from `@supabase/auth-js` as the client lock. It queues auth work inside this tab and does not take the Web Locks that were sticking in incognito.
+1. **`processLock`** (`src/supabase-client.ts`) — queues auth-js work in one tab so two `getSession` calls cannot fight over the OAuth redirect.
+
+2. **`flowType: 'pkce'`** — social login returns `?code=` instead of `#access_token=`, which survives reloads and is easier to parse reliably.
+
+3. **`useAuthSession`** — on an OAuth return URL, do not treat a transient empty `getSession()` as “signed out”; wait for `INITIAL_SESSION` / `SIGNED_IN`.
+
+Email/password still works when OAuth fails because `signInWithPassword` never leaves the page and never depends on the URL hash.
 
 ```ts
 import { processLock } from '@supabase/auth-js';

@@ -302,6 +302,30 @@ export async function loadPhase1SheetCharacter(characterId: number, userId: stri
   return null;
 }
 
+/**
+ * Every encounter in a campaign you are about to duplicate. Uses the copy carve-out on
+ * wgui-ext-find-encounter so the list matches find-campaign (not the player combat filter
+ * and not an empty owner-only stock read).
+ */
+export async function loadEncountersForCampaignCopy(
+  campaignId: number,
+  accessToken?: string,
+  userId?: string,
+  isGm = false,
+  ownIds: Set<number> = new Set()
+): Promise<Encounter[]> {
+  try {
+    return asRecordList(
+      await phase1Request<Encounter | Encounter[]>('wgui-ext-find-encounter', { campaign_id: campaignId, for_campaign_copy: true }, accessToken)
+    ).filter((encounter) => encounterBelongsToCampaign(encounter, campaignId));
+  } catch {
+    const loaded = await loadPhase1CampaignEncounters(campaignId, accessToken, userId);
+    return isGm
+      ? loaded.filter((encounter) => encounterBelongsToCampaign(encounter, campaignId))
+      : visibleCampaignEncounters(loaded, campaignId, false, ownIds);
+  }
+}
+
 export async function loadPhase1CampaignEncounters(campaignId: number, accessToken?: string, userId?: string): Promise<Encounter[]> {
   let fromCampaign: Encounter[] = [];
   try {

@@ -54,6 +54,9 @@ if (!supabaseUrl || !supabaseKey || isUnsetEnv(supabaseUrl) || isUnsetEnv(supaba
 
 export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
+    // PKCE puts ?code= on the redirect URL. Implicit grant used #access_token=,
+    // which is easy to lose to a race, a reload, or the PWA serving a fresh page.
+    flowType: 'pkce',
     // Chrome incognito can leave navigator.locks stuck. auth-js then treats a live
     // session as signed-out inside later requests, and find-campaign returns [].
     // A no-op lock is worse: getSession and the OAuth hash parser run at once,

@@ -3,11 +3,13 @@ import { serve } from 'std/server';
 import type { Encounter } from '../_shared/content';
 import { connect, createServiceClient, fetchData } from '../_shared/helpers.ts';
 import { HttpError } from '../_shared/http-errors.ts';
-import { authorizeCampaign, encounterListedForPlayer, sameNumericId } from '../_wgui-ext/shared.ts';
+import { authorizeCampaign, authorizeCampaignRead, encounterListedForPlayer, sameNumericId } from '../_wgui-ext/shared.ts';
 
 interface FindCampaignEncountersBody {
   campaign_id?: number;
   id?: number | number[];
+  /** Duplicate a campaign to your account: full encounter list, same read gate as find-campaign. */
+  for_campaign_copy?: boolean;
 }
 
 type StatEntity = {
@@ -87,7 +89,10 @@ serve(async (req: Request) => {
     }
 
     const admin = createServiceClient();
-    const access = await authorizeCampaign(client, admin, token, campaign_id);
+    const forCopy = body?.for_campaign_copy === true;
+    const access = forCopy
+      ? await authorizeCampaignRead(client, admin, token, campaign_id)
+      : await authorizeCampaign(client, admin, token, campaign_id);
 
     const results = await fetchData<Encounter>(admin, 'encounter', [
       { column: 'campaign_id', value: campaign_id },
@@ -98,9 +103,10 @@ serve(async (req: Request) => {
     // caller was actually authorized for.
     const scoped = results.filter((encounter) => sameNumericId(encounter.campaign_id, campaign_id));
 
-    const visible = access.isGm
-      ? scoped
-      : scoped.filter((encounter) => encounterListedForPlayer(encounter, access.characterIds));
+    const visible =
+      access.isGm || forCopy
+        ? scoped
+        : scoped.filter((encounter) => encounterListedForPlayer(encounter, access.characterIds));
 
     return {
       status: 'success',

@@ -69,6 +69,7 @@ export function storedMonsterArtId(value?: string): number | null {
   if (!value) return null;
   try {
     const url = new URL(value, 'https://pf2.unwhelm.online');
+    if (/^https?:\/\//i.test(value) && url.origin !== 'https://pf2.unwhelm.online' && url.origin !== pathfinderApiOrigin()) return null;
     const match = /\/api\/(user-monsters|monsters)\/(-?\d+)\/image(?:\/thumb)?\/?$/.exec(url.pathname);
     if (!match) return null;
     const id = Number(match[2]);
@@ -129,6 +130,7 @@ export function unlockMonsterArt(password: string) {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password: trimmed }),
+    redirect: 'error',
   })
     .then((response) => {
       if (!response.ok) {
