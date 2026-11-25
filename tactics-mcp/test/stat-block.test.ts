@@ -94,6 +94,20 @@ test("creature projection keeps reactions separate from strikes, even when their
   assert.equal(reaction?.trigger, "An ally is targeted by fire");
 });
 
+test("trained creature skills retain evaluated modifiers and rank", async () => {
+  const p = await prepared("CREATURE");
+  const { setVariable } = await import("../../src/process/variables/variable-manager.ts");
+  const { getFinalProfValue } = await import("../../src/process/variables/variable-helpers.ts");
+  setVariable(p.storeId, "SKILL_ATHLETICS", { value: "T", increases: 0, attribute: "ATTRIBUTE_STR" });
+  const result = await readPreparedStatBlock(p);
+  const athletics = result.sheet.skills?.find(skill => skill.name.toLowerCase() === "athletics");
+  assert.ok(athletics);
+  assert.equal(athletics.proficiency, "T");
+  assert.equal(athletics.modifier, Number.parseInt(getFinalProfValue(p.storeId, "SKILL_ATHLETICS"), 10));
+  assert.ok(Number.isFinite(athletics.modifier));
+  assert.ok(!result.sheet.skills?.some(skill => skill.name.toLowerCase() === "stealth"));
+});
+
 test("invalid PC data fails explicitly rather than returning empty defense arrays", async () => {
   await assert.rejects(readLiveStatBlock({}, "character", "invalid"), /Full character details are unavailable/);
 });
