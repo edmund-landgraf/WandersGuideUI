@@ -61,6 +61,7 @@ export default function UploadContent() {
   let totalUploaded = 0;
   let totalErrors = 0;
   let totalMissing = 0;
+  let totalSkipped = 0;
   if (uploadStats) {
     for (const sourceMap of uploadStats.uploads.values()) {
       totalUploaded = [...sourceMap.values()].reduce((acc, cur) => acc + cur, totalUploaded);
@@ -70,7 +71,8 @@ export default function UploadContent() {
     }
     totalMissing = [...uploadStats.missingSources.values()].reduce((acc, cur) => acc + cur, totalMissing);
     total = uploadStats.total;
-    totalFound = totalUploaded + totalErrors + totalMissing;
+    totalSkipped = uploadStats.skipped;
+    totalFound = totalUploaded + totalErrors + totalMissing + totalSkipped;
   }
 
   return (
@@ -124,6 +126,9 @@ export default function UploadContent() {
             color='yellow'
           >
             <Progress.Label>Missing Source - {totalMissing}</Progress.Label>
+          </Progress.Section>
+          <Progress.Section animated={totalFound !== total} value={Math.ceil((totalSkipped / total) * 100)} color='gray'>
+            <Progress.Label>Existing - {totalSkipped}</Progress.Label>
           </Progress.Section>
           <Progress.Section animated={totalFound !== total} value={Math.ceil((totalUploaded / total) * 100)}>
             <Progress.Label>Uploaded - {totalUploaded}</Progress.Label>
