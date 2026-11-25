@@ -12,6 +12,9 @@ const MIN_CODE = 16;
 const MAX_DEPTH = 32;
 
 const ID_TEXT = /^[A-Za-z0-9]{1,32}$/;
+// World IDs are package slugs, not actor/folder document IDs.
+// Keep in sync with foundry-wanderersguide-import/scripts/foundry-read-relay.js.
+const WORLD_ID_TEXT = /^[A-Za-z0-9](?:[A-Za-z0-9_-]{0,62}[A-Za-z0-9])?$/;
 
 export function createFoundryRelay({ allowOrigins = [] } = {}) {
   const sessions = new Map();
@@ -203,7 +206,7 @@ export function createFoundryRelay({ allowOrigins = [] } = {}) {
   async function connect(req, res) {
     const body = await readBody(req, 4_096);
     const origin = worldOrigin(body.origin);
-    const worldId = typeof body.worldId === 'string' && ID_TEXT.test(body.worldId) ? body.worldId : null;
+    const worldId = typeof body.worldId === 'string' && WORLD_ID_TEXT.test(body.worldId) ? body.worldId : null;
     const code = typeof body.code === 'string' ? body.code.trim() : '';
     if (!origin || !worldId || code.length < MIN_CODE || code.length > 128) {
       send(res, 400, { message: 'The Foundry world did not answer.' }, req);

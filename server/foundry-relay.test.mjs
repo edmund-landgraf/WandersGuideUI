@@ -6,7 +6,7 @@ import { createFoundryRelay } from './foundry-relay-core.mjs';
 
 const ORIGIN = 'http://localhost:30000';
 const CODE = 'test-code-value-ok';
-const WORLD = 'worldA';
+const WORLD = 'price-of-prophecy-test';
 
 async function listen(relay) {
   const server = createServer((req, res) => {
@@ -51,6 +51,36 @@ function serveOne(base, token, answer) {
 }
 
 describe('foundry relay', () => {
+  it('accepts bounded world slugs verbatim and rejects malformed world IDs', async () => {
+    const { server, base } = await listen(createFoundryRelay());
+    try {
+      const valid = ['price-of-prophecy-test','the-price-of-prophecy','World_A-2','a','a'.repeat(64)];
+      const invalid = ['../x','a/b','a\\b','','a b','a'.repeat(65),'-world','world-','_world','world_','a.b','a\n',null,123];
+      for (const [index,worldId] of valid.entries()) {
+        const result = await connect(base,{worldId,code:CODE+'-valid-'+index});
+        assert.equal(result.status,200,String(worldId));
+        assert.equal(result.json.worldId,worldId);
+      }
+      for (const worldId of invalid) {
+        assert.equal((await connect(base,{worldId,code:CODE+'-invalid'})).status,400,String(worldId));
+      }
+    } finally { server.close(); }
+  });
+  it('still rejects a hyphenated actor row ID and ignores a malformed folder ID', async () => {
+    const {server,base} = await listen(createFoundryRelay());
+    try {
+      const joined=await connect(base);
+      const token=joined.json.session;
+      const bad=serveOne(base,token,job=>({requestId:job.requestId,ok:true,worldId:WORLD,characters:[{id:'actor-1',worldId:WORLD}]}));
+      assert.equal((await post(base,'/foundry-relay/v1/characters',{code:CODE,origin:ORIGIN})).status,502);
+      await bad;
+      const good=serveOne(base,token,job=>({requestId:job.requestId,ok:true,worldId:WORLD,characters:[{id:'actor1',folderId:'folder-1',worldId:WORLD}]}));
+      const listed=await post(base,'/foundry-relay/v1/characters',{code:CODE,origin:ORIGIN});
+      await good;
+      assert.equal(listed.status,200);
+      assert.equal(listed.json.characters[0].folderId,undefined);
+    } finally { server.close(); }
+  });
   it('lists and reads one actor for the connected world, and strips biography', async () => {
     const { server, base } = await listen(createFoundryRelay({ allowOrigins: ['http://localhost:5194'] }));
     try {
@@ -135,6 +165,7 @@ describe('foundry relay', () => {
       assert.equal(joined.status, 200);
       const weird = await post(base, '/foundry-relay/v1/actor', { code: CODE, origin: ORIGIN, actorId: '../etc' });
       assert.equal(weird.status, 400);
+      assert.equal((await post(base, '/foundry-relay/v1/actor', { code: CODE, origin: ORIGIN, actorId: 'actor-1' })).status, 400);
       const creds = await post(base, '/foundry-relay/v1/connect', {
         code: CODE + '2',
         worldId: WORLD,
@@ -169,7 +200,7 @@ describe('foundry relay', () => {
     const { server, base } = await listen(createFoundryRelay({ allowOrigins: ['http://localhost:30000', 'http://localhost:5194'] }));
     try {
       const first = await connect(base);
-      const stolen = await connect(base, { worldId: 'worldB' });
+      const stolen = await connect(base, { worldId: 'the-price-of-prophecy' });
       assert.equal(stolen.status, 409);
       const again = await connect(base);
       assert.equal(again.status, 200);
