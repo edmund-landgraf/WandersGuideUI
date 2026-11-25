@@ -41,6 +41,7 @@ import { isContentStackOpen, useContentLinks } from './phase1-content-links';
 import { getBestShield, getItemHealth } from '@items/inv-utils';
 import { toGmNotes } from '@pages/character_sheet/panels/gm-notes';
 import { lookupMonsterArt, type Phase1MonsterArt } from './phase1-monster-image';
+import { encounterStatusSignature } from './phase1-encounter-status-key';
 import { Icon } from '@common/Icon';
 import { parseIconValue } from '@common/IconDisplay';
 import { addConditionWithSpawns, compiledConditions, removeConditionWithSpawns } from '@conditions/condition-handler';
@@ -4072,13 +4073,9 @@ function stampCreatureDefenses<T extends LivingEntity>(entity: T, status: Phase1
 }
 
 function useCombatantStatuses(encounterId: number | null, combatants: PopulatedCombatant[]) {
-  const signature = combatants.map((combatant) => (
-    isHazardCombatant(combatant)
-      ? `${combatant._id}:hazard:${combatant.hazard_state?.hp_current ?? ''}:${combatant.hazard_state?.disabled ?? false}`
-      : `${combatant._id}:${combatant.data?.hp_current}:${combatant.data?.hp_temp}:${JSON.stringify(combatant.data?.details?.conditions ?? [])}`
-  )).join('|');
+  const signature = encounterStatusSignature(combatants);
   return useQuery({
-    queryKey: ['phase1-encounter-statuses', 'isolated-store', 'keep-encounter-ops', encounterId, signature],
+    queryKey: ['phase1-encounter-statuses', 'isolated-store', 'entity-content-v2', encounterId, signature],
     enabled: encounterId !== null && combatants.length > 0,
     queryFn: async () => {
       const result: CombatantStatusMap = {};
@@ -4093,7 +4090,7 @@ function useCombatantStatuses(encounterId: number | null, combatants: PopulatedC
       }
       return result;
     },
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: 30_000,
   });
 }
 export function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, viewingSettings, isGm = false, railOpen, onToggleRail }: { label?: string; section?: 'campaigns' | 'characters' | 'encounters' | 'homebrew'; campaignId?: number | null; encounterId?: number | null; noteIndex?: number | null; viewingSettings?: boolean; isGm?: boolean; railOpen?: boolean; onToggleRail?: () => void }) {

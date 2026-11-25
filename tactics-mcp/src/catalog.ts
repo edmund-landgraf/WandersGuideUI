@@ -486,9 +486,9 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     if (!found) return notFound("Encounter not found.");
     if ("missing" in found) return notFound("Combatant not found.");
     const group = found.sheet.groups.find((item) => item.id === args.group || item.label === args.group);
-    const strikes = found.sheet.strikes ?? [];
+    const strikes = found.sheet.strikes;
     const weaponGroup = args.group === "weapon-attacks" || group?.id === "weapon-attacks";
-    if (weaponGroup && strikes.length) return textResult(group?.label ?? "Weapon Attacks", { actions: group?.actions ?? strikes, catalogId: found.sheet.catalogId ?? null, contentSourceId: found.sheet.contentSourceId ?? null, sourceNotice: "Computed from stored creature mechanics; absent catalog damage terms cannot be reconstructed from this projection." });
+    if (weaponGroup && strikes !== undefined) return textResult(group?.label ?? "Weapon Attacks", { actions: group?.actions ?? strikes, catalogId: found.sheet.catalogId ?? null, contentSourceId: found.sheet.contentSourceId ?? null, sourceNotice: "Computed from stored creature mechanics; absent catalog damage terms cannot be reconstructed from this projection." });
     if (!group) return notFound("Ability group not found.");
     return textResult(group.label, { actions: group.actions });
   }, userId);
