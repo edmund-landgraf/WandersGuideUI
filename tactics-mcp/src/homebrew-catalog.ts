@@ -86,9 +86,9 @@ function sourceTitle(row: Record<string, unknown>, titles: Map<number, string>) 
 
 function bookRank(title: string) {
   const text = title.toLowerCase();
-  if (/monster core 2\\b/.test(text)) return 4;
+  if (/monster core 2\b/.test(text)) return 4;
   if (/monster core|npc core|player core|remaster/.test(text)) return 3;
-  if (/\\bbestiary\\b/.test(text)) return 0;
+  if (/\bbestiary\b/.test(text)) return 0;
   return 1;
 }
 
