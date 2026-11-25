@@ -150,7 +150,7 @@ export function scopeForTool(name: string) {
   return READ_TOOLS.has(name) ? "read" : null;
 }
 
-export function createTacticsMcpServer(userId: () => string, scopes: () => string[], origin: string) {
+export function createTacticsMcpServer(userId: () => string, scopes: () => string[], origin: string, allowLocalFiles = false) {
   const server = new McpServer({
     name: TACTICS_MCP_NAME,
     title: "Wanderer's Guide",
@@ -176,7 +176,7 @@ export function createTacticsMcpServer(userId: () => string, scopes: () => strin
   }) as typeof server.registerTool;
 
   registerShops(server, userId);
-  registerCatalog(server, userId);
+  registerCatalog(server, userId, allowLocalFiles);
   registerHomebrew(server, userId);
   return server;
 }
