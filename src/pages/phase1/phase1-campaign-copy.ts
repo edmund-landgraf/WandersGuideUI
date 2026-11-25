@@ -66,43 +66,76 @@ export type ExecuteCampaignCopyResult = {
   copiedArtUrl?: string;
 };
 
+// A pending operation survives a failed response and a reload in the same tab.
+type PendingCopy = { id: string; artUrl?: string };
+const pendingCopies = new Map<string, PendingCopy>();
+
+function pendingCopy(key: string): PendingCopy {
+  const cached = pendingCopies.get(key);
+  if (cached) return cached;
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(key) ?? 'null') as PendingCopy | null;
+    if (stored && typeof stored.id === 'string') {
+      pendingCopies.set(key, stored);
+      return stored;
+    }
+  } catch { /* Storage may be disabled; retain the key in memory. */ }
+  const operation = { id: crypto.randomUUID() };
+  rememberCopy(key, operation);
+  return operation;
+}
+
+function rememberCopy(key: string, operation: PendingCopy) {
+  pendingCopies.set(key, operation);
+  try { sessionStorage.setItem(key, JSON.stringify(operation)); } catch { /* In-memory fallback. */ }
+}
+
+function finishCopy(key: string) {
+  pendingCopies.delete(key);
+  try { sessionStorage.removeItem(key); } catch { /* Storage may be disabled. */ }
+}
+
+type AtomicCopyResponse = {
+  created: Campaign;
+  encounterNames: string[];
+};
+
 export async function executeCampaignCopy(options: ExecuteCampaignCopyOptions): Promise<ExecuteCampaignCopyResult> {
   const { source, campaignId, accessToken, userId, players, dryRun = false } = options;
-  const isGm = sameUserId(source.user_id, userId);
-  const encounters = await loadEncountersForCampaignCopy(
-    campaignId,
-    accessToken,
-    userId,
-    isGm,
-    ownCharacterIds(players, userId)
-  );
-  const plan = buildCampaignCopyPlan(source, encounters);
-
   if (dryRun) {
-    return { plan };
+    const encounters = await loadEncountersForCampaignCopy(
+      campaignId, accessToken, userId, sameUserId(source.user_id, userId), ownCharacterIds(players, userId)
+    );
+    return { plan: buildCampaignCopyPlan(source, encounters) };
   }
 
+  const key = `wgui:campaign-copy:${userId}:${campaignId}`;
+  const operation = pendingCopy(key);
   const sourceArtUrl = source.meta_data?.image_url?.trim() ?? '';
-  const copiedArtUrl = sourceArtUrl ? await rehostCampaignArtUrl(sourceArtUrl) : '';
-  const created = await phase1Request<Campaign>('create-campaign', {
-    name: source.name,
-    description: source.description ?? 'A new adventure begins...',
-    notes: source.notes,
-    recommended_options: source.recommended_options,
-    recommended_variants: source.recommended_variants,
-    recommended_content_sources: source.recommended_content_sources,
-    meta_data: {
-      ...source.meta_data,
-      party_ids: [],
-      ...(copiedArtUrl ? { image_url: copiedArtUrl } : sourceArtUrl ? { image_url: sourceArtUrl } : {}),
-    },
-  });
-
-  for (const encounter of encounters) {
-    await phase1Request('create-encounter', encounterCreatePayloadForCopy(encounter, created.id));
+  // Storage is outside Postgres. Keep the staged URL with this operation so a
+  // retry after a failed/ambiguous database response does not upload it again.
+  if (operation.artUrl === undefined) {
+    operation.artUrl = sourceArtUrl ? await rehostCampaignArtUrl(sourceArtUrl) : '';
+    rememberCopy(key, operation);
   }
 
-  return { plan, created, copiedArtUrl: copiedArtUrl || sourceArtUrl || undefined };
+  // No fallback to the old sequence of independent writes. The server reads
+  // the source and creates the complete target in a single SQL transaction.
+  const result = await phase1Request<AtomicCopyResponse>('wgui-ext-copy-campaign', {
+    campaign_id: campaignId,
+    operation_id: operation.id,
+    art_url: operation.artUrl,
+  }, accessToken);
+  if (!result?.created?.id || !Array.isArray(result.encounterNames)) {
+    throw new Error('Campaign copy result could not be confirmed. Retry to recover the same operation.');
+  }
+  const plan = {
+    ...buildCampaignCopyPlan(source, []),
+    encounterCount: result.encounterNames.length,
+    encounterNames: result.encounterNames,
+  };
+  finishCopy(key);
+  return { plan, created: result.created, copiedArtUrl: result.created.meta_data?.image_url || undefined };
 }
 
 /** Stock find-campaign({ id }) for scripts and dry runs. */
