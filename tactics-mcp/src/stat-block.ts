@@ -47,19 +47,31 @@ export async function readPreparedStatBlock(prepared: import("../../src/pages/ph
   const reflex = status.reflex !== 0 ? status.reflex : stored?.reflex ?? status.reflex;
   const will = status.will !== 0 ? status.will : stored?.will ?? status.will;
   let strikes: CombatantSheet["strikes"];
+  let creatureActions: CombatantSheet["groups"] | undefined;
   if (prepared.kind === "CREATURE") {
     const { collectCreatureAbilities } = await import("../../src/pages/phase1/phase1-abilities.ts");
     const traits = new Map((prepared.content.traits ?? []).map((trait) => [trait.id, trait.name]));
-    strikes = collectCreatureAbilities(prepared.entity as never, prepared.content.abilityBlocks ?? [], prepared.storeId, traits)
-      .filter((ability) => ability.source === "Weapon" || /\bstrike\b/i.test(`${ability.name} ${ability.description ?? ""}`))
-      .map((ability) => ({
-        name: ability.name,
-        actions: ability.actions === "ONE-ACTION" ? 1 : ability.actions === "TWO-ACTIONS" ? 2 : ability.actions === "THREE-ACTIONS" ? 3 : ability.actions === "FREE-ACTION" ? 0 : null,
-        actionCost: typeof ability.actions === "string" ? ability.actions : undefined,
-        trigger: typeof ability.trigger === "string" && ability.trigger.trim() ? ability.trigger.trim() : undefined,
-        traits: ability.traitNames,
-        description: ability.description ?? undefined,
-      }));
+    const abilities = collectCreatureAbilities(prepared.entity as never, prepared.content.abilityBlocks ?? [], prepared.storeId, traits);
+    const isStrike = (ability: typeof abilities[number]) => ability.source === "Weapon" ||
+      /^(?:\*\*)?(?:melee|ranged)(?:\*\*)?\s+(?:strike\s+|[+−-]|\()/i.test(ability.description?.trim() ?? "") ||
+      /^strike$/i.test(ability.name);
+    const project = (ability: typeof abilities[number]) => ({
+      name: ability.name,
+      actions: ability.actions === "ONE-ACTION" ? 1 : ability.actions === "TWO-ACTIONS" ? 2 : ability.actions === "THREE-ACTIONS" ? 3 : ability.actions === "FREE-ACTION" ? 0 : null,
+      actionCost: typeof ability.actions === "string" ? ability.actions : undefined,
+      trigger: typeof ability.trigger === "string" && ability.trigger.trim() ? ability.trigger.trim() : undefined,
+      traits: ability.traitNames,
+      traitIds: (ability.traits ?? []).filter((id): id is number => typeof id === "number"),
+      description: ability.description ?? undefined,
+      requirements: ability.requirements ?? undefined,
+      frequency: ability.frequency ?? undefined,
+    });
+    strikes = abilities.filter(isStrike).map(project);
+    const specials = abilities.filter((ability) => !isStrike(ability)).map(project);
+    creatureActions = [
+      ...(strikes.length ? [{ id: "weapon-attacks", label: "Weapon Attacks", actions: strikes }] : []),
+      ...(specials.length ? [{ id: "special-actions", label: "Special Actions", actions: specials }] : []),
+    ];
   }
   const speeds: NonNullable<CombatantSheet["speeds"]> = { land: status.speed };
   for (const speed of status.otherSpeeds) {
@@ -67,7 +79,7 @@ export async function readPreparedStatBlock(prepared: import("../../src/pages/ph
     if (match) speeds[match[1].toLowerCase()] = Number(match[2]);
   }
   const currentHp = prepared.kind === "CREATURE" && typeof prepared.entity.hp_current === "number" ? prepared.entity.hp_current : undefined;
-  const hpCurrent = currentHp != null && stored?.hp != null && currentHp === status.maxHp && stored.hp > status.maxHp ? stored.hp : currentHp;
+  const hpCurrent = currentHp; // Never reinterpret existing damage as fresh-spawn HP.
   return {
     row: {
       hpMax,
@@ -83,7 +95,8 @@ export async function readPreparedStatBlock(prepared: import("../../src/pages/ph
         return label ? [label] : [];
       }),
       skills,
-      ...(strikes?.length ? { strikes } : {}),
+      ...(strikes ? { strikes } : {}),
+      ...(creatureActions ? { groups: creatureActions } : {}),
       ...(typeof prepared.entity.id === "number" ? { catalogId: prepared.entity.id } : {}),
       ...(typeof (prepared.entity as { content_source_id?: unknown }).content_source_id === "number"
         ? { contentSourceId: (prepared.entity as { content_source_id: number }).content_source_id }

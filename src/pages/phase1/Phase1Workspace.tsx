@@ -1,4 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { showNotification } from '@mantine/notifications';
 import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Crown, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, Image as ImageIcon, KeyRound, ListChecks, LogOut, Maximize2, Menu, Minimize2, Package, PanelLeft, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -8,7 +9,7 @@ import { CampaignSignIn } from '@auth/CampaignSignIn';
 import { signOut } from '@auth/campaign-auth';
 import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
-import { phase1Request, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, encounterMasksCombatants, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
+import { phase1Request, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, encounterMasksCombatants, loadCampaignCopyPermission, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
 import { executeCampaignCopy } from './phase1-campaign-copy';
 import { isEnemyCreature, playerAllyRoundLog, playerEnemyLabel, playerVisibleCombatants } from './phase1-player-combat';
 import { clearCombatantDrag, hasCombatantDrag, readCombatantDrag, writeCombatantDrag } from './combatant-drag';
@@ -2451,14 +2452,25 @@ export function Phase1CampaignPage() {
   const [copyPrompt, setCopyPrompt] = useState<'ask' | 'overwrite' | null>(null);
   const [copyBusy, setCopyBusy] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
-  const copyAsked = useRef(false);
+  const copyAsked = useRef<string | null>(null);
+  const copyPermission = useQuery({
+    queryKey: ['phase1-campaign-copy-permission', campaignId, session?.user.id],
+    enabled: enabled && !!campaign.data && !sameUserId(campaign.data.user_id, session?.user.id),
+    queryFn: () => loadCampaignCopyPermission(campaignId, session!.access_token),
+    retry: false,
+  });
   useEffect(() => {
     const row = campaign.data;
-    if (!session || !row || copyAsked.current) return;
-    if (sameUserId(row.user_id, session.user.id)) return;
-    copyAsked.current = true;
+    if (!session || !row || sameUserId(row.user_id, session.user.id)) return;
+    if (copyPermission.data?.canCopy !== true || copyPermission.isError) {
+      setCopyPrompt(null);
+      return;
+    }
+    const key = session.user.id + ':' + campaignId;
+    if (copyAsked.current === key) return;
+    copyAsked.current = key;
     setCopyPrompt('ask');
-  }, [campaign.data, session]);
+  }, [campaign.data, campaignId, session, copyPermission.data, copyPermission.isError]);
   if (session === undefined) return <LoadingScreen label='Loading session' />;
   if (!session) return <CampaignSignIn variant='phase1' />;
   if (campaign.isLoading || players.isLoading || encounters.isLoading) return <LoadingScreen label='Loading campaign workspace' />;
@@ -2476,7 +2488,7 @@ export function Phase1CampaignPage() {
     setCopyBusy(true);
     setCopyError(null);
     try {
-      const { created } = await executeCampaignCopy({
+      const { created, artOutcome } = await executeCampaignCopy({
         source: campaignData,
         campaignId,
         accessToken: session!.access_token,
@@ -2484,6 +2496,11 @@ export function Phase1CampaignPage() {
         players: players.data ?? [],
       });
       if (!created) throw new Error('Could not copy campaign.');
+      const artMessage = artOutcome === 'rehosted' ? 'Campaign banner uploaded to a new verified storage object.'
+        : artOutcome === 'kept' ? 'Shared or embedded banner retained; no re-hosting was required.'
+        : artOutcome === 'none' ? 'No campaign banner to copy.'
+        : 'Campaign copied, but the banner re-host outcome could not be confirmed. Check the new campaign artwork.';
+      showNotification({ title: 'Campaign copied', message: artMessage, color: artOutcome === 'unverified' ? 'yellow' : 'green' });
       setCopyPrompt(null);
       await queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] });
       navigate(`/phase1/campaign/${created.id}`);
@@ -2522,6 +2539,9 @@ export function Phase1CampaignPage() {
     setCopyBusy(true);
     setCopyError(null);
     try {
+      // Do not delete an existing campaign on a stale or unauthorized copy prompt.
+      const permission = await loadCampaignCopyPermission(campaignId, session!.access_token);
+      if (!permission.canCopy) throw new Error('The game master has not enabled campaign copying.');
       const owned = await ownedCampaignsForCopy();
       for (const existing of owned) {
         await phase1Request('delete-content', { id: existing.id, type: 'campaign' });
@@ -6586,7 +6606,7 @@ function EntityIcon({ type, name, imageUrl, expandable }: { type: Combatant['typ
     enabled: preview && type === 'CREATURE' && Boolean(name?.trim() || portrait),
     staleTime: Number.POSITIVE_INFINITY,
   });
-  const src = type === 'CREATURE' ? (art.data?.thumbSrc || portrait || undefined) : portrait || undefined;
+  const src = type === 'CREATURE' ? (art.data?.thumbSrc || (!art.isFetched ? portrait : undefined)) : portrait || undefined;
   const fullSrc = type === 'CREATURE' ? (full.data?.fullSrc || art.data?.fullSrc || src) : portrait || undefined;
   const [failed, setFailed] = useState(false);
   useEffect(() => { setFailed(false); }, [src]);

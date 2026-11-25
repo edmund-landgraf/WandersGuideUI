@@ -1,61 +1,13 @@
 import type { Campaign, Character, Encounter } from '@schemas/content';
-import { needsRehostForCopy, rehostCampaignArtUrl } from '@upload/image-upload';
-import { asRecordList, isMissingEdgeFunction, loadEncountersForCampaignCopy, ownCharacterIds, phase1Request, sameUserId } from './phase1-api';
+import { campaignCopyAssetAction, migrateCampaignCopyAsset, stageCampaignCopyAssets, type CampaignCopyArtMap } from './phase1-campaign-copy-art';
+import { asRecordList, loadEncountersForCampaignCopy, phase1Request } from './phase1-api';
 
-const COPY_ENCOUNTER_ZERO =
-  'No encounters could be loaded from this campaign. If you are copying someone else\'s campaign, the wgui-ext edge functions may need a restart (npm run stack:restart on the API host), then try again.';
+import { buildCampaignCopyPlan, type CampaignCopyPlan } from './phase1-campaign-copy-plan';
+import { parseCopyPreparation, validCopyReceipt } from './phase1-campaign-copy-manifest';
+export { buildCampaignCopyPlan, campaignArtCopyAction } from './phase1-campaign-copy-plan';
+export type { CampaignCopyPlan, CampaignArtCopyAction } from './phase1-campaign-copy-plan';
 
-async function copyCampaignArt(campaignId: number, sourceArtUrl: string, accessToken?: string): Promise<string> {
-  if (!sourceArtUrl) return '';
-  if (!needsRehostForCopy(sourceArtUrl)) return sourceArtUrl;
-  try {
-    const result = await phase1Request<{ image_url?: string }>(
-      'wgui-ext-copy-campaign-art',
-      { campaign_id: campaignId },
-      accessToken
-    );
-    const hosted = result?.image_url?.trim();
-    if (hosted) return hosted;
-  } catch (error) {
-    if (!isMissingEdgeFunction(error, 'wgui-ext-copy-campaign-art')) {
-      const fallback = await rehostCampaignArtUrl(sourceArtUrl);
-      if (fallback) return fallback;
-      throw error;
-    }
-  }
-  return rehostCampaignArtUrl(sourceArtUrl);
-}
-
-export type CampaignArtCopyAction = 'none' | 'keep' | 'rehost';
-
-export type CampaignCopyPlan = {
-  sourceCampaignId: number;
-  encounterCount: number;
-  notePageCount: number;
-  folderCount: number;
-  sourceArtUrl: string;
-  artAction: CampaignArtCopyAction;
-  encounterNames: string[];
-};
-
-export function campaignArtCopyAction(imageUrl: string | null | undefined): CampaignArtCopyAction {
-  const source = imageUrl?.trim() ?? '';
-  if (!source) return 'none';
-  return needsRehostForCopy(source) ? 'rehost' : 'keep';
-}
-
-export function buildCampaignCopyPlan(source: Campaign, encounters: Encounter[]): CampaignCopyPlan {
-  const sourceArtUrl = source.meta_data?.image_url?.trim() ?? '';
-  return {
-    sourceCampaignId: source.id,
-    encounterCount: encounters.length,
-    notePageCount: source.notes?.pages?.length ?? 0,
-    folderCount: source.meta_data?.encounter_folders?.length ?? 0,
-    sourceArtUrl,
-    artAction: campaignArtCopyAction(sourceArtUrl),
-    encounterNames: encounters.map((row) => row.name),
-  };
-}
+export type CampaignArtCopyOutcome = 'none' | 'kept' | 'rehosted' | 'unverified';
 
 export function encounterCreatePayloadForCopy(encounter: Encounter, targetCampaignId: number): Record<string, unknown> {
   const meta = encounter.meta_data ?? {};
@@ -88,49 +40,103 @@ export type ExecuteCampaignCopyResult = {
   plan: CampaignCopyPlan;
   created?: Campaign;
   copiedArtUrl?: string;
+  artOutcome?: CampaignArtCopyOutcome;
+};
+
+// A pending operation survives a failed response and a reload in the same tab.
+type PendingCopy = { id: string; artMap?: CampaignCopyArtMap };
+const pendingCopies = new Map<string, PendingCopy>();
+
+function pendingCopy(key: string): PendingCopy {
+  const cached = pendingCopies.get(key);
+  if (cached) return cached;
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(key) ?? 'null') as PendingCopy | null;
+    if (stored && typeof stored.id === 'string') {
+      pendingCopies.set(key, stored);
+      return stored;
+    }
+  } catch { /* Storage may be disabled; retain the key in memory. */ }
+  const operation = { id: crypto.randomUUID() };
+  rememberCopy(key, operation);
+  return operation;
+}
+
+function rememberCopy(key: string, operation: PendingCopy) {
+  pendingCopies.set(key, operation);
+  try { sessionStorage.setItem(key, JSON.stringify(operation)); } catch { /* In-memory fallback. */ }
+}
+
+function finishCopy(key: string) {
+  pendingCopies.delete(key);
+  try { sessionStorage.removeItem(key); } catch { /* Storage may be disabled. */ }
+}
+
+type AtomicCopyResponse = {
+  created: Campaign;
+  encounterNames: string[];
+  encounterCount: number;
 };
 
 export async function executeCampaignCopy(options: ExecuteCampaignCopyOptions): Promise<ExecuteCampaignCopyResult> {
-  const { source, campaignId, accessToken, userId, players, dryRun = false } = options;
-  const isGm = sameUserId(source.user_id, userId);
-  const encounters = await loadEncountersForCampaignCopy(
-    campaignId,
-    accessToken,
-    userId,
-    isGm,
-    ownCharacterIds(players, userId)
-  );
-  const plan = buildCampaignCopyPlan(source, encounters);
-
+  const { source, campaignId, accessToken, userId, dryRun = false } = options;
   if (dryRun) {
-    return { plan };
+    const encounters = await loadEncountersForCampaignCopy(
+      campaignId, accessToken
+    );
+    return { plan: buildCampaignCopyPlan(source, encounters) };
   }
 
-  if (encounters.length === 0 && !isGm) {
-    throw new Error(COPY_ENCOUNTER_ZERO);
+  const key = `wgui:campaign-copy:${userId}:${campaignId}`;
+  const operation = pendingCopy(key);
+  // Prepare from the authoritative database, not the player-filtered encounter
+  // API. A committed operation returns its receipt before any further staging.
+  const prepared = await phase1Request<unknown>('wgui-ext-copy-campaign', {
+    campaign_id: campaignId, operation_id: operation.id, prepare: true,
+  }, accessToken);
+  let result: AtomicCopyResponse;
+  let expectedCount: number | undefined;
+  if (prepared && typeof prepared === 'object' && 'created' in prepared) {
+    result = prepared as AtomicCopyResponse;
+  } else {
+    const manifest = parseCopyPreparation(prepared,campaignId);
+    expectedCount = manifest.encounterIds.length;
+    operation.artMap ??= {};
+    await stageCampaignCopyAssets(manifest.assets, operation.artMap, () => rememberCopy(key, operation),
+      (ref) => migrateCampaignCopyAsset(ref, { accessToken }));
+    // Send only references in the latest manifest. SQL checks all artwork on the
+    // actual rows being inserted and aborts if a source edit introduced a new URL.
+    const artMap = Object.fromEntries(manifest.assets.map((ref) => [ref, operation.artMap![ref]]));
+    result = await phase1Request<AtomicCopyResponse>('wgui-ext-copy-campaign', {
+      campaign_id: campaignId, operation_id: operation.id, art_map: artMap,
+      expected_encounter_ids: manifest.encounterIds,
+    }, accessToken);
   }
-
-  const sourceArtUrl = source.meta_data?.image_url?.trim() ?? '';
-  const copiedArtUrl = sourceArtUrl ? await copyCampaignArt(campaignId, sourceArtUrl, accessToken) : '';
-  const created = await phase1Request<Campaign>('create-campaign', {
-    name: source.name,
-    description: source.description ?? 'A new adventure begins...',
-    notes: source.notes,
-    recommended_options: source.recommended_options,
-    recommended_variants: source.recommended_variants,
-    recommended_content_sources: source.recommended_content_sources,
-    meta_data: {
-      ...source.meta_data,
-      party_ids: [],
-      ...(copiedArtUrl ? { image_url: copiedArtUrl } : sourceArtUrl ? { image_url: sourceArtUrl } : {}),
-    },
-  });
-
-  for (const encounter of encounters) {
-    await phase1Request('create-encounter', encounterCreatePayloadForCopy(encounter, created.id));
+  if (!validCopyReceipt(result,expectedCount)) {
+    throw new Error('Campaign copy result could not be confirmed. Retry to recover the same operation.');
   }
+  const plan = {
+    ...buildCampaignCopyPlan(source, []),
+    encounterCount: result.encounterNames.length,
+    encounterNames: result.encounterNames,
+  };
+  const copiedArtUrl = result.created.meta_data?.image_url || undefined;
+  const sourceArt = source.meta_data?.image_url ?? '';
+  const artOutcome = campaignArtCopyOutcome(sourceArt, copiedArtUrl, operation.artMap);
+  finishCopy(key);
+  return { plan, created: result.created, copiedArtUrl, artOutcome };
+}
 
-  return { plan, created, copiedArtUrl: copiedArtUrl || sourceArtUrl || undefined };
+/** Report a verified staging outcome, not a planned action or an assumed receipt. */
+export function campaignArtCopyOutcome(source: string, destination?: string, staged?: CampaignCopyArtMap): CampaignArtCopyOutcome {
+  if (!source.trim() && !destination) return 'none';
+  if (!destination || !source.trim()) return 'unverified';
+  try {
+    const action = campaignCopyAssetAction(source);
+    if (action.kind === 'keep') return destination === action.url ? 'kept' : 'unverified';
+    return staged && Object.prototype.hasOwnProperty.call(staged, source) && staged[source] === destination &&
+      destination !== source && destination !== action.url ? 'rehosted' : 'unverified';
+  } catch { return 'unverified'; }
 }
 
 /** Stock find-campaign({ id }) for scripts and dry runs. */

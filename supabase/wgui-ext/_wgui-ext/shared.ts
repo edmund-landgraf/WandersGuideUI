@@ -161,45 +161,7 @@ export async function authorizeCampaign(
   return { userId, campaign, isGm, characterIds };
 }
 
-type StockEnvelope<T> = { status?: string; data?: T };
-
-/**
- * Whether stock find-campaign({ id }) would return this row for the caller. PostgREST
- * campaign RLS is not the same gate — copying must mirror the edge function the UI uses.
- */
-export async function stockFindCampaignRow(token: string, campaignId: number): Promise<Campaign | null> {
-  const base = (typeof Deno !== 'undefined' ? Deno.env.get('SUPABASE_URL') : undefined)?.replace(/\/$/, '');
-  if (!base) return null;
-
-  const response = await fetch(`${base}/functions/v1/find-campaign`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ id: campaignId }),
-  });
-  if (!response.ok) return null;
-
-  let envelope: StockEnvelope<Campaign | Campaign[]> | null = null;
-  try {
-    envelope = (await response.json()) as StockEnvelope<Campaign | Campaign[]>;
-  } catch {
-    return null;
-  }
-  if (envelope?.status !== 'success' || envelope.data == null) return null;
-
-  const row = Array.isArray(envelope.data) ? envelope.data[0] : envelope.data;
-  if (!row || !sameNumericId(row.id, campaignId)) return null;
-  return row;
-}
-
-/**
- * Membership for normal play, or the same campaign row the stock `find-campaign` call the
- * UI already made. Copying a campaign to your account reuses that read: notes and folders
- * come straight off the campaign row, and encounters need the same gate rather than
- * requiring a PC on the roster.
- */
+/** Ordinary readable campaign access. This is NOT permission to duplicate its private content. */
 export async function authorizeCampaignRead(
   client: SupabaseClient<any, 'public', any>,
   admin: SupabaseClient<any, 'public', any>,
@@ -215,8 +177,8 @@ export async function authorizeCampaignRead(
   }
 
   const userId = await requireCallerId(client, token);
-  const visible = await stockFindCampaignRow(token, campaignId);
-  if (!visible) {
+  const { data, error } = await client.from('campaign').select('id').eq('id', campaignId).maybeSingle();
+  if (error || !data) {
     throw new HttpError(403, 'You do not have access to this campaign.', 'CAMPAIGN_FORBIDDEN');
   }
 
@@ -228,6 +190,33 @@ export async function authorizeCampaignRead(
 
   const isGm = sameUserId(campaign.user_id, userId);
   return { userId, campaign, isGm, characterIds: new Set<number>() };
+}
+
+/** Explicit owner opt-in is kept outside campaign metadata (which player endpoints can patch). */
+export async function campaignCopyEnabled(
+  admin: SupabaseClient<any, 'public', any>,
+  access: CampaignAccess
+): Promise<boolean> {
+  const { data, error } = await admin.from('wgui_campaign_copy_permission')
+    .select('owner_id').eq('campaign_id', access.campaign.id).maybeSingle();
+  if (error) throw new HttpError(503, 'Campaign copy permission could not be checked.', 'COPY_PERMISSION_UNAVAILABLE');
+  return !!data && sameUserId(data.owner_id, access.campaign.user_id);
+}
+
+export async function authorizeCampaignCopy(
+  client: SupabaseClient<any, 'public', any>,
+  admin: SupabaseClient<any, 'public', any>,
+  token: string,
+  campaignId: number
+): Promise<CampaignAccess> {
+  if (!Number.isSafeInteger(campaignId) || campaignId <= 0) {
+    throw new HttpError(400, 'A valid campaign_id is required.', 'CAMPAIGN_ID_REQUIRED');
+  }
+  const access = await authorizeCampaignRead(client, admin, token, campaignId);
+  if (!access.isGm && !(await campaignCopyEnabled(admin, access))) {
+    throw new HttpError(403, 'The game master has not enabled campaign copying.', 'CAMPAIGN_COPY_FORBIDDEN');
+  }
+  return access;
 }
 
 /** The character id a combatant refers to, from either the id field or the sheet snapshot. */

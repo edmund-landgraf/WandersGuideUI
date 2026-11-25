@@ -79,7 +79,7 @@ export function Phase1StatBlockCardsPacked({ entity, data }: { entity: LivingEnt
     enabled: isCreature(entity) && Boolean(entity.name?.trim() || storedImageUrl),
     staleTime: Number.POSITIVE_INFINITY,
   });
-  const imageUrl = isCreature(entity) ? (creatureArt.data?.thumbSrc || storedImageUrl) : storedImageUrl;
+  const imageUrl = isCreature(entity) ? (creatureArt.data?.thumbSrc || (!creatureArt.isFetched ? storedImageUrl : '')) : storedImageUrl;
   const sizeLabel = toLabel(convertToSize(data.size));
   const speeds = data.speeds.filter((s) => s.value.total !== 0 && s.value.value !== 0);
   const speedText = speeds
