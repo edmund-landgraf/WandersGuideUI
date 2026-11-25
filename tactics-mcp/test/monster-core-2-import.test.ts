@@ -31,6 +31,9 @@ test("official book title fallback admits only matching creature publications", 
 });
 
 test("Monster Core 2 conversion retains printed Ember Fox damage, defenses, skills and reaction", async () => {
+  process.env.SUPABASE_URL = 'https://fixture.invalid';
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'fixture';
+  process.env.SUPABASE_ANON_KEY = 'fixture';
   sheetEnv();
   const { convertFoundryCreatureToGranularCreature } = await import("../../src/process/upload/creature-import.ts");
   const result = convertFoundryCreatureToGranularCreature(actor);
