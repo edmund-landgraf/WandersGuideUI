@@ -8,12 +8,21 @@ import {
   findImportedCharacter,
   foundryRelayRead,
   foundryRelayUrl,
+  generateFoundryConnectionCode,
   partyFolders,
   planImportWrite,
   planSinglePc,
 } from '@import/foundry/single-pc';
 
 type Step = 'connect' | 'pick' | 'review';
+
+const FOUNDRY_ORIGIN_PRESETS = [
+  { label: 'localhost:30000', value: 'http://localhost:30000' },
+  { label: '127.0.0.1:30000', value: 'http://127.0.0.1:30000' },
+  { label: 'foundry.unwhelm.net', value: 'https://foundry.unwhelm.net' },
+] as const;
+
+const FOUNDRY_ORIGIN_CUSTOM = '__custom__';
 
 type Props = {
   accessToken: string | undefined;
@@ -34,7 +43,10 @@ function linkedCharacter(characters: Character[], worldId: string, actorId: stri
 
 export function FoundryImportDialog({ accessToken, characters, onClose, onImported }: Props) {
   const [step, setStep] = useState<Step>('connect');
-  const [origin, setOrigin] = useState('http://localhost:30000');
+  const [originPreset, setOriginPreset] = useState(FOUNDRY_ORIGIN_PRESETS[0].value);
+  const [customOrigin, setCustomOrigin] = useState('');
+  const [codeVisible, setCodeVisible] = useState(false);
+  const origin = originPreset === FOUNDRY_ORIGIN_CUSTOM ? customOrigin : originPreset;
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -165,19 +177,74 @@ export function FoundryImportDialog({ accessToken, characters, onClose, onImport
     <div className='fixed inset-0 z-[100] grid place-items-center bg-black/75 p-5' onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
       <section className='max-h-[85vh] w-full max-w-lg overflow-auto border border-p1-border bg-p1-surface p-5'>
         <h2 className='text-lg font-semibold'>Import from Foundry</h2>
-        <p className='mt-2 text-sm text-p1-muted'>One character, or every character in a party folder. The connection code stays in this browser. Cancel writes nothing.</p>
+        <p className='mt-2 text-sm text-p1-muted'>
+          In Foundry, open this world as GM and set the same connection code under Configure Settings → Wanderer's Guide Import
+          (Generate random number there, or here). Connect lists every player character in that world; pick one or a party folder.
+          The code stays in your browser only. Cancel writes nothing.
+        </p>
         {error ? <p className='mt-3 text-sm text-p1-danger-soft'>{error}</p> : null}
 
         {step === 'connect' && (
           <>
             <label className='mt-4 block text-sm'>
               Foundry world address
-              <input className='settings-input mt-1 h-9 w-full' value={origin} onChange={(event) => setOrigin(event.target.value)} />
+              <select
+                className='settings-input mt-1 h-9 w-full'
+                value={originPreset}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setOriginPreset(next);
+                  if (next !== FOUNDRY_ORIGIN_CUSTOM) setCustomOrigin('');
+                }}
+              >
+                {FOUNDRY_ORIGIN_PRESETS.map((preset) => (
+                  <option key={preset.value} value={preset.value}>{preset.label}</option>
+                ))}
+                <option value={FOUNDRY_ORIGIN_CUSTOM}>Other…</option>
+              </select>
             </label>
+            {originPreset === FOUNDRY_ORIGIN_CUSTOM ? (
+              <label className='mt-2 block text-sm'>
+                Custom world address
+                <input
+                  className='settings-input mt-1 h-9 w-full'
+                  value={customOrigin}
+                  placeholder='https://your-foundry.example'
+                  onChange={(event) => setCustomOrigin(event.target.value)}
+                />
+              </label>
+            ) : null}
             <label className='mt-3 block text-sm'>
               Connection code
-              <input className='settings-input mt-1 h-9 w-full' type='password' value={code} onChange={(event) => setCode(event.target.value)} />
+              <span className='mt-1 flex gap-2'>
+                <input
+                  className='settings-input h-9 min-w-0 flex-1'
+                  type={codeVisible ? 'text' : 'password'}
+                  value={code}
+                  autoComplete='off'
+                  onChange={(event) => setCode(event.target.value)}
+                />
+                <button
+                  type='button'
+                  className='toolbar-button h-9 w-9 shrink-0 px-0 text-sm font-semibold italic'
+                  title={codeVisible ? 'Hide connection code' : 'Show connection code'}
+                  aria-pressed={codeVisible}
+                  onClick={() => setCodeVisible((visible) => !visible)}
+                >
+                  i
+                </button>
+              </span>
             </label>
+            <button
+              type='button'
+              className='toolbar-button mt-2'
+              onClick={() => {
+                setCode(generateFoundryConnectionCode());
+                setCodeVisible(true);
+              }}
+            >
+              Generate random number
+            </button>
           </>
         )}
 

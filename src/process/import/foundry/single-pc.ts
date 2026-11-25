@@ -4,6 +4,24 @@
 export const RELAY_CHARACTERS = '/foundry-relay/v1/characters';
 export const RELAY_ACTOR = '/foundry-relay/v1/actor';
 
+export const FOUNDRY_CONNECTION_CODE_LENGTH = 16;
+
+/** Same decimal code shape the Foundry module generates for the read relay. */
+export function generateFoundryConnectionCode(length = FOUNDRY_CONNECTION_CODE_LENGTH): string {
+  const want = Math.min(Math.max(length, FOUNDRY_CONNECTION_CODE_LENGTH), 128);
+  let out = '';
+  while (out.length < want) {
+    if (globalThis.crypto?.getRandomValues) {
+      const bytes = new Uint8Array(want - out.length);
+      globalThis.crypto.getRandomValues(bytes);
+      for (const byte of bytes) out += String(byte % 10);
+    } else {
+      out += String(Math.floor(Math.random() * 10));
+    }
+  }
+  return out.slice(0, want);
+}
+
 export type FoundryListRow = {
   id: string;
   name: string;

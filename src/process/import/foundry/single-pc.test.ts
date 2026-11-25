@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { findImportedCharacter, foundryRelayRead, partyFolders, planImportWrite, planSinglePc } from './single-pc';
+import { findImportedCharacter, foundryRelayRead, generateFoundryConnectionCode, partyFolders, planImportWrite, planSinglePc } from './single-pc';
 
 describe('planSinglePc', () => {
   it('maps name and level and keeps the rest', () => {
@@ -48,6 +48,12 @@ describe('planSinglePc', () => {
       'world1',
     );
     expect(plan.leftovers['items[0].system.rules[0].key']).toBe('FlatModifier');
+  });
+});
+
+describe('generateFoundryConnectionCode', () => {
+  it('returns sixteen decimal digits', () => {
+    expect(generateFoundryConnectionCode()).toMatch(/^\d{16}$/);
   });
 });
 

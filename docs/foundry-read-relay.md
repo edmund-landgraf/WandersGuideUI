@@ -12,7 +12,7 @@ From this repo:
 npm run foundry-relay
 ```
 
-The default listen address is `127.0.0.1:8787`. A host other than `127.0.0.1` or `::1` exits unless `FOUNDRY_RELAY_ALLOW_REMOTE=1`. Browser origins that may call it are `FOUNDRY_RELAY_ORIGINS` (default `http://localhost:5194`, `http://127.0.0.1:5194`, `http://localhost:30000`, and `http://127.0.0.1:30000`). The Foundry page origin has to be on that list, because the module’s `fetch` is cross-origin. A preflight from an allowlisted origin may include `Access-Control-Allow-Private-Network: true`. Other origins get no CORS headers. The WGUI dev server uses `http://127.0.0.1:8787` unless `VITE_FOUNDRY_RELAY_URL` is set.
+The default listen address is `127.0.0.1:8787`. A host other than `127.0.0.1` or `::1` exits unless `FOUNDRY_RELAY_ALLOW_REMOTE=1`. Browser origins that may call it are `FOUNDRY_RELAY_ORIGINS` (default `http://localhost:5194`, `http://127.0.0.1:5194`, `http://localhost:30000`, `http://127.0.0.1:30000`, and `https://foundry.unwhelm.net`). The Foundry page origin has to be on that list, because the module’s `fetch` is cross-origin. A preflight from an allowlisted origin may include `Access-Control-Allow-Private-Network: true`. Other origins get no CORS headers. The WGUI dev server uses `http://127.0.0.1:8787` unless `VITE_FOUNDRY_RELAY_URL` is set.
 
 A page loaded over HTTPS cannot be assumed to reach this HTTP loopback listener. Chromium’s private-network preflight is answered for allowlisted origins. That path was not run in a browser. An HTTP Foundry page on port 30000 calling this HTTP listener is the arrangement the contract is written for. A hosted HTTPS world needs an HTTPS relay URL on `VITE_FOUNDRY_RELAY_URL`, which is not provided here.
 
