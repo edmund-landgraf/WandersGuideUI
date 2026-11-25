@@ -101,7 +101,7 @@ const ids = {
   encounterId: z.number().int(),
 };
 
-export function registerCatalog(server: McpServer, userId: () => string) {
+export function registerCatalog(server: McpServer, userId: () => string, allowLocalFiles = false) {
   server.registerTool(
     "get_profile",
     {
@@ -575,7 +575,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
   registerCharacterCatalog(server, userId);
   registerCharacterSpells(server, userId);
   registerCharacterInventory(server, userId);
-  registerCharacterSheet(server, userId);
+  registerCharacterSheet(server, userId, allowLocalFiles);
   registerCharacterCompanions(server, userId);
   registerCharacterCoins(server, userId);
 }

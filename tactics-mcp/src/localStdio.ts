@@ -53,5 +53,5 @@ const session = await signIn(email, password);
 process.env.WG_ACCESS_TOKEN = session.token;
 if (!installSupabaseReader()) throw new Error("Supabase reader requires SUPABASE_URL, SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY");
 
-const server = createTacticsMcpServer(() => session.userId, () => ["read", "write"], "http://127.0.0.1:0");
+const server = createTacticsMcpServer(() => session.userId, () => ["read", "write"], "http://127.0.0.1:0", true);
 await server.connect(new StdioServerTransport());

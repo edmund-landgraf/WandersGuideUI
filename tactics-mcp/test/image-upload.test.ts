@@ -26,9 +26,9 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-async function connect() {
+async function connect(allowLocalFiles = false) {
   const server = new McpServer({ name: "test", version: "0.0.0" });
-  registerCatalog(server, () => "user-1");
+  registerCatalog(server, () => "user-1", allowLocalFiles);
   const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "0.0.0" });
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -55,6 +55,15 @@ test("upload_image posts upload-public-file and the art tools store the returned
   };
   setCharacterFetch(async (input, init) => {
     const url = String(input);
+    if (url.startsWith("https://files.oaiusercontent.com/")) {
+      assert.equal(init?.redirect, "error");
+      assert.equal(new Headers(init?.headers).has("authorization"), false);
+      if (url.includes("/expired")) return new Response("", { status: 403 });
+      if (url.includes("/oversized")) return new Response(PNG, { headers: { "content-length": String(MAX_IMAGE_BYTES + 1) } });
+      if (url.includes("/redirect")) return new Response(null, { status: 302, headers: { location: "http://127.0.0.1/private" } });
+      if (url.includes("/fake")) return new Response(SVG, { headers: { "content-type": "image/jpeg" } });
+      return new Response(JPEG, { headers: { "content-type": "image/jpeg" } });
+    }
     if (url === "https://images.example/pip.png") return new Response(PNG, { status: 200, headers: { "content-type": "image/png" } });
     if (url === "https://wgui.wandersguide.site/portraits/thalanis-reed.jpg") {
       return new Response(JPEG, { status: 200, headers: { "content-type": "image/jpeg" } });
@@ -91,7 +100,7 @@ test("upload_image posts upload-public-file and the art tools store the returned
     return jsonResponse({ status: "error", message: `unexpected ${url}` }, 404);
   });
 
-  const client = await connect();
+  const client = await connect(true);
   const png = await client.callTool({ name: "upload_image", arguments: { category: "portraits", data: PNG.toString("base64") } });
   assert.equal(png.isError, undefined);
   assert.equal((png.structuredContent as { url: string }).url, "https://cdn.example/portraits/png");
@@ -135,6 +144,52 @@ test("upload_image posts upload-public-file and the art tools store the returned
   const onCharacter = await client.callTool({ name: "set_character_art", arguments: { characterId: 95, portraitFile: generated } });
   assert.equal(onCharacter.isError, undefined);
   assert.equal((character.details as { image_url?: string }).image_url, "https://cdn.example/portraits/jpeg");
+
+  // Exercise the remote configuration, not the local stdio file reader.
+  const remote = await connect();
+  const listed = await remote.listTools();
+  const artTool = listed.tools.find(t => t.name === "set_character_art");
+  const uploadTool = listed.tools.find(t => t.name === "upload_image");
+  assert.deepEqual(artTool?._meta?.["openai/fileParams"], ["portraitAttachment", "backgroundAttachment"]);
+  assert.deepEqual(uploadTool?._meta?.["openai/fileParams"], ["attachment"]);
+  const schema = artTool?.inputSchema.properties?.portraitAttachment as { required?: string[]; properties?: Record<string, unknown>; additionalProperties?: boolean };
+  assert.deepEqual(new Set(schema.required), new Set(["download_url", "file_id"]));
+  assert.deepEqual(Object.keys(schema.properties ?? {}).sort(), ["download_url", "file_id", "file_name", "mime_type"]);
+  assert.equal(schema.additionalProperties, false);
+  const attachment = { download_url: "https://files.oaiusercontent.com/generated?sig=temporary-secret", file_id: "file-test", file_name: "generated.jpg", mime_type: "image/jpeg" };
+  const attached = await remote.callTool({ name: "set_character_art", arguments: { characterId: 95, portraitAttachment: attachment } });
+  assert.equal(attached.isError, undefined);
+  assert.equal(uploads.at(-1)?.data, JPEG.toString("base64"));
+  assert.equal(uploads.at(-1)?.category, "portraits");
+  assert.equal((character.details as { image_url?: string }).image_url, "https://cdn.example/portraits/jpeg");
+  assert.equal((character.details as { ancestry?: { name?: string } }).ancestry?.name, "Human");
+  assert.equal(JSON.stringify(attached).includes("temporary-secret"), false);
+  const uploadedAttachment = await remote.callTool({ name: "upload_image", arguments: { category: "portraits", attachment } });
+  assert.equal(uploadedAttachment.isError, undefined);
+  const backgroundAttachment = await remote.callTool({ name: "set_character_art", arguments: { characterId: 95, backgroundAttachment: attachment } });
+  assert.equal(backgroundAttachment.isError, undefined);
+  assert.equal(uploads.at(-1)?.category, "backgrounds");
+  const beforeBad = uploads.length;
+  const beforeDetails = structuredClone(character.details);
+  for (const download_url of ["http://files.oaiusercontent.com/generated", "https://files.oaiusercontent.com.evil.example/generated", "file:///etc/passwd", "https://files.oaiusercontent.com/expired?sig=temporary-secret", "https://files.oaiusercontent.com/oversized", "https://files.oaiusercontent.com/fake", "https://files.oaiusercontent.com/redirect"]) {
+    const rejected = await remote.callTool({ name: "set_character_art", arguments: { characterId: 95, portraitAttachment: { ...attachment, download_url } } });
+    assert.equal(rejected.isError, true, download_url.split("?")[0]);
+    assert.equal(JSON.stringify(rejected).includes("temporary-secret"), false);
+  }
+  const ambiguous = await remote.callTool({ name: "set_character_art", arguments: { characterId: 95, portraitAttachment: attachment, portraitData: PNG.toString("base64") } });
+  assert.equal(ambiguous.isError, true);
+  const remotePath = await remote.callTool({ name: "set_character_art", arguments: { characterId: 95, portraitFile: generated } });
+  assert.equal(remotePath.isError, true);
+  const remoteUploadPath = await remote.callTool({ name: "upload_image", arguments: { category: "portraits", file: generated } });
+  assert.equal(remoteUploadPath.isError, true);
+  const owner = character.user_id;
+  character.user_id = "another-user";
+  const forbidden = await remote.callTool({ name: "set_character_art", arguments: { characterId: 95, portraitAttachment: attachment } });
+  assert.equal(forbidden.isError, true);
+  character.user_id = owner;
+  assert.equal(uploads.length, beforeBad);
+  assert.deepEqual(character.details, beforeDetails);
+  await remote.close();
 
   const fetched = await client.callTool({ name: "upload_image", arguments: { category: "portraits", sourceUrl: "https://images.example/pip.png" } });
   assert.equal(fetched.isError, undefined);
