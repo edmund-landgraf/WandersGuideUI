@@ -181,11 +181,11 @@ describe('hyphenated Foundry world linkage', () => {
     const write = planImportWrite(plan,undefined);
     expect(write.action).toBe('create');
     if (write.action !== 'create') throw Error('expected create');
-    expect(write.body.meta_data.foundry?.worldId).toBe(worldId);
+    expect(write.body.meta_data).toMatchObject({foundry:{worldId,actorId:'actor1'}});
     const stored = [{id:12,name:'Reed',meta_data:write.body.meta_data}];
     expect(findImportedCharacter(stored,worldId,'actor1')?.id).toBe(12);
     expect(findImportedCharacter(stored,'the-price-of-prophecy','actor1')).toBeUndefined();
     const row = {id:'actor1',name:'Reed',level:3,ancestry:null,className:null,worldId,folderId:'party1',folderName:'Party'};
-    expect(JSON.stringify(partyFolders([row]))).toContain(worldId);
+    expect(partyFolders([row])).toEqual([{folderId:'party1',folderName:'Party',actorIds:['actor1']}]);
   });
 });
