@@ -63,6 +63,40 @@ test("empty defenses stay empty; exported creature operation fallbacks survive",
   assert.deepEqual(stats.sheet.immunities, ["sleep"]);
 });
 
+test("creature stat projection tolerates amountless defenses and does not invent movement modes", async () => {
+  const p = await prepared("CREATURE", true);
+  const { setVariable } = await import("../../src/process/variables/variable-manager.ts");
+  setVariable(p.storeId, "RESISTANCES", ["electricity, 7", "fire"]);
+  setVariable(p.storeId, "WEAKNESSES", ["cold", "water, 5"]);
+  setVariable(p.storeId, "SPEED", 0);
+  setVariable(p.storeId, "SPEED_FLY", 0);
+  setVariable(p.storeId, "SPEED_SWIM", 30);
+  const result = await readPreparedStatBlock(p);
+  assert.deepEqual(result.sheet.resistances, ["Electricity 7", "Fire"]);
+  assert.deepEqual(result.sheet.weaknesses, ["Cold", "Water 5"]);
+  assert.equal(result.sheet.speeds?.land, 0);
+  assert.equal(result.sheet.speeds?.swim, 30);
+  assert.equal(result.sheet.speeds?.fly, undefined);
+  assert.equal(result.sheet.speeds?.burrow, undefined);
+  assert.equal(result.sheet.speeds?.climb, undefined);
+});
+
+test("creature projection keeps reactions separate from strikes, even when their text mentions a Strike", async () => {
+  const p = await prepared("CREATURE");
+  const creature = p.entity as import("../../src/schemas/content.ts").Creature;
+  creature.abilities_base = [
+    { id: -1, name: "Jaws", actions: "ONE-ACTION", type: "action", description: "**Melee** +10, Damage 1d4+3 piercing plus 1d4 persistent fire", traits: [] },
+    { id: -2, name: "Cloak in Embers", actions: "REACTION", type: "action", trigger: "An ally is targeted by fire", description: "Protect an ally from a Strike.", traits: [] },
+  ] as never;
+  const result = await readPreparedStatBlock(p);
+  assert.equal(result.sheet.strikes?.length, 1);
+  assert.match(result.sheet.strikes?.[0].description ?? "", /persistent fire/);
+  const reaction = result.sheet.groups?.find(g => g.id === "special-actions")?.actions[0];
+  assert.equal(reaction?.name, "Cloak in Embers");
+  assert.equal(reaction?.actionCost, "REACTION");
+  assert.equal(reaction?.trigger, "An ally is targeted by fire");
+});
+
 test("invalid PC data fails explicitly rather than returning empty defense arrays", async () => {
   await assert.rejects(readLiveStatBlock({}, "character", "invalid"), /Full character details are unavailable/);
 });
