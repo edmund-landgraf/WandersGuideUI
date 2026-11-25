@@ -1,4 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { showNotification } from '@mantine/notifications';
 import { Activity, AlignLeft, ArrowLeft, ArrowUpDown, BookOpen, Calculator, Check, ChevronDown, ChevronRight, ChevronUp, Copy, Crosshair, Crown, Download, Eraser, Eye, EyeOff, ExternalLink, Folder, FolderDown, FolderOpen, Footprints, GripVertical, HeartPulse, History, Image as ImageIcon, KeyRound, ListChecks, LogOut, Maximize2, Menu, Minimize2, Package, PanelLeft, PanelRight, Pencil, Plus, RotateCcw, Settings, Shield, Skull, Sparkles, Swords, Trash2, TriangleAlert, Upload, User, UserMinus, UserPlus, UserRound, UsersRound, WandSparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -2487,7 +2488,7 @@ export function Phase1CampaignPage() {
     setCopyBusy(true);
     setCopyError(null);
     try {
-      const { created } = await executeCampaignCopy({
+      const { created, artOutcome } = await executeCampaignCopy({
         source: campaignData,
         campaignId,
         accessToken: session!.access_token,
@@ -2495,6 +2496,11 @@ export function Phase1CampaignPage() {
         players: players.data ?? [],
       });
       if (!created) throw new Error('Could not copy campaign.');
+      const artMessage = artOutcome === 'rehosted' ? 'Campaign banner uploaded to a new verified storage object.'
+        : artOutcome === 'kept' ? 'Shared or embedded banner retained; no re-hosting was required.'
+        : artOutcome === 'none' ? 'No campaign banner to copy.'
+        : 'Campaign copied, but the banner re-host outcome could not be confirmed. Check the new campaign artwork.';
+      showNotification({ title: 'Campaign copied', message: artMessage, color: artOutcome === 'unverified' ? 'yellow' : 'green' });
       setCopyPrompt(null);
       await queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] });
       navigate(`/phase1/campaign/${created.id}`);
