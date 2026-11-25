@@ -488,7 +488,7 @@ export function registerCatalog(server: McpServer, userId: () => string) {
     const group = found.sheet.groups.find((item) => item.id === args.group || item.label === args.group);
     const strikes = found.sheet.strikes;
     const weaponGroup = args.group === "weapon-attacks" || group?.id === "weapon-attacks";
-    if (weaponGroup && strikes !== undefined) return textResult(group?.label ?? "Weapon Attacks", { actions: strikes, catalogId: found.sheet.catalogId ?? null, contentSourceId: found.sheet.contentSourceId ?? null });
+    if (weaponGroup && strikes?.length) return textResult(group?.label ?? "Weapon Attacks", { actions: strikes, catalogId: found.sheet.catalogId ?? null, contentSourceId: found.sheet.contentSourceId ?? null });
     if (!group) return notFound("Ability group not found.");
     return textResult(group.label, { actions: group.actions });
   }, userId);

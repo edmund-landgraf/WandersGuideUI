@@ -9,6 +9,7 @@ import { signOut } from '@auth/campaign-auth';
 import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
 import { phase1Request, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, encounterMasksCombatants, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
+import { executeCampaignCopy } from './phase1-campaign-copy';
 import { isEnemyCreature, playerAllyRoundLog, playerEnemyLabel, playerVisibleCombatants } from './phase1-player-combat';
 import { clearCombatantDrag, hasCombatantDrag, readCombatantDrag, writeCombatantDrag } from './combatant-drag';
 import { TacticsPublisher } from './tactics/TacticsPublisher';
@@ -2476,32 +2477,14 @@ export function Phase1CampaignPage() {
     setCopyBusy(true);
     setCopyError(null);
     try {
-      const created = await phase1Request<Campaign>('create-campaign', {
-        name: campaignData.name,
-        description: campaignData.description ?? 'A new adventure begins...',
-        notes: campaignData.notes,
-        recommended_options: campaignData.recommended_options,
-        recommended_variants: campaignData.recommended_variants,
-        recommended_content_sources: campaignData.recommended_content_sources,
-        meta_data: { ...campaignData.meta_data, party_ids: [] },
+      const { created } = await executeCampaignCopy({
+        source: campaignData,
+        campaignId,
+        accessToken: session!.access_token,
+        userId: session!.user.id,
+        players: players.data ?? [],
       });
-      const sourceEncounters = encounters.data ?? [];
-      for (const encounter of sourceEncounters) {
-        const { initiative_log: _initiative, dice_roll_log: _diceLog, dice_roll_state: _diceState, ...meta } = encounter.meta_data;
-        await phase1Request('create-encounter', {
-          id: -1,
-          created_at: '',
-          user_id: '',
-          name: encounter.name,
-          icon: encounter.icon,
-          color: encounter.color,
-          campaign_id: created.id,
-          combatants: {
-            list: encounter.combatants.list.filter((combatant) => combatant.type !== 'CHARACTER'),
-          },
-          meta_data: meta,
-        });
-      }
+      if (!created) throw new Error('Could not copy campaign.');
       setCopyPrompt(null);
       await queryClient.invalidateQueries({ queryKey: ['phase1-campaigns'] });
       navigate(`/phase1/campaign/${created.id}`);

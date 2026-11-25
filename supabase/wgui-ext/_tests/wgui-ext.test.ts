@@ -296,6 +296,38 @@ Deno.test({
 });
 
 Deno.test({
+  name: 'wgui-ext: for_campaign_copy returns every encounter the GM sees',
+  ignore: skip,
+  async fn() {
+    const gm = await createSignedInUser();
+    const { userId: playerId, jwt: playerJwt } = await ensureTestUser();
+    const campaign = await seedCampaign(gm.userId);
+    const playerCharacter = await seedCharacter(playerId, campaign.id);
+    const onFight = await seedEncounter(gm.userId, campaign.id, [playerCharacter.id]);
+    const prepFight = await seedEncounter(gm.userId, campaign.id, []);
+
+    try {
+      const playerResult = await callFunction(
+        'wgui-ext-find-encounter',
+        { campaign_id: campaign.id, for_campaign_copy: true },
+        { token: playerJwt }
+      );
+      assertEquals(playerResult.body?.status, 'success');
+      assertEquals(
+        (playerResult.body.data as { id: number }[]).map((e) => e.id).sort((a, b) => a - b),
+        [onFight.id, prepFight.id].sort((a, b) => a - b),
+        'copying a campaign must include every encounter, not only the fights visible in play'
+      );
+    } finally {
+      await admin.from('encounter').delete().in('id', [onFight.id, prepFight.id]);
+      await admin.from('character').delete().eq('id', playerCharacter.id);
+      await admin.from('campaign').delete().eq('id', campaign.id);
+      await admin.auth.admin.deleteUser(gm.userId);
+    }
+  },
+});
+
+Deno.test({
   name: 'wgui-ext: non-members and unauthenticated callers are refused',
   ignore: skip,
   async fn() {
