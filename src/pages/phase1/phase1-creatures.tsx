@@ -6,7 +6,7 @@ import { findCreatureTraits } from '@utils/creature';
 import { getEntityLevel } from '@utils/entity-utils';
 import { ChevronDown, Swords } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { hydrateCreatureForCombat } from './phase1-entity';
+import { initializeCreatureForEncounter } from './phase1-entity';
 import { clearArtPassword, lookupMonsterArt, readArtPassword, unlockMonsterArt } from './phase1-monster-image';
 import { ProseMarkdown } from './phase1-markdown';
 import { Phase1PickerModal } from './phase1-picker-modal';
@@ -613,5 +613,5 @@ function labelize(value: string) {
 }
 
 async function hydrateCreature(creature: Creature, adjustment?: 'ELITE' | 'WEAK') {
-  return hydrateCreatureForCombat(creature, adjustment);
+  return initializeCreatureForEncounter(creature, adjustment);
 }

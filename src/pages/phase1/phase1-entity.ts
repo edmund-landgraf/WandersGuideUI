@@ -76,7 +76,17 @@ export async function computePhase1BuilderChoiceCounts(character: Character): Pr
   });
 }
 
-async function preparePhase1EntityNow(combatant: Phase1EntityCombatant): Promise<PreparedPhase1Entity> {
+/** Fresh catalog additions use the same operation engine as the encounter sheet. */
+export async function initializeCreatureForEncounter(creature: Creature, adjustment?: 'ELITE' | 'WEAK'): Promise<Creature> {
+  return enqueuePrepare(async () => {
+    const prepared = await preparePhase1EntityNow({
+      _id: 'new-catalog-creature', type: 'CREATURE', ally: false, data: creature,
+    } as Phase1EntityCombatant, true, adjustment);
+    return prepared.entity as Creature;
+  });
+}
+
+async function preparePhase1EntityNow(combatant: Phase1EntityCombatant, freshCreature = false, adjustment?: 'ELITE' | 'WEAK'): Promise<PreparedPhase1Entity> {
   const previousPage = getDefaultSources('PAGE');
   const previousInfo = getDefaultSources('INFO');
   try {
@@ -97,7 +107,8 @@ async function preparePhase1EntityNow(combatant: Phase1EntityCombatant): Promise
       return { entity: character, content, storeId, kind: 'CHARACTER' };
     }
 
-    let creature = await hydrateCreatureForCombat(cloneDeep(combatant.data as Creature));
+    const existingHp = combatant.data.hp_current;
+    let creature = await hydrateCreatureForCombat(cloneDeep(combatant.data as Creature), adjustment);
     const storeId = `CREATURE_${combatant._id}`;
     const content = await fetchContentPackage(getDefaultSources('PAGE'), {
       fetchSources: false,
@@ -109,7 +120,14 @@ async function preparePhase1EntityNow(combatant: Phase1EntityCombatant): Promise
     }, { directExecution: true });
     creature = applyGivenItems(storeId, content.items, creature);
     applyConditions(storeId, creature.details?.conditions ?? []);
-    creature = fillCurrentHp(creature, getFinalHealthValue(storeId));
+    const computedMax = getFinalHealthValue(storeId);
+    const storedMax = readStoredDefenses(creature).hp;
+    const maxHp = Math.max(computedMax || 0, storedMax || 0);
+    creature = freshCreature && maxHp > 0
+      ? { ...creature, hp_current: maxHp, hp_temp: 0 }
+      : typeof existingHp === 'number' && Number.isFinite(existingHp)
+        ? { ...creature, hp_current: existingHp }
+        : fillCurrentHp(creature, computedMax);
     return { entity: creature, content, storeId, kind: 'CREATURE' };
   } finally {
     defineDefaultSources('PAGE', previousPage);
@@ -146,7 +164,7 @@ async function hydrateCreatureRecord(creature: Creature): Promise<{ creature: Cr
     replacedFromCatalog: !preferEncounter,
     creature: fillCurrentHp(await fillMissingDefenses({
       ...primary,
-      hp_current: creature.hp_current || catalog.hp_current,
+      hp_current: creature.hp_current ?? catalog.hp_current,
       hp_temp: creature.hp_temp,
       details: {
         ...primary.details,

@@ -65,33 +65,60 @@ export function placeCreature(list: RosterCombatant[], incoming: RosterCombatant
   return [...list, incoming];
 }
 
-function healthBonus(creature: Record<string, unknown>): number | null {
-  const operations = Array.isArray(creature.operations) ? creature.operations : [];
-  for (const operation of operations) {
-    if (!operation || typeof operation !== 'object') continue;
-    const data = (operation as { data?: { variable?: unknown; value?: unknown } }).data;
-    if (data?.variable !== 'MAX_HEALTH_BONUS') continue;
-    const raw = data.value;
-    const value = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number.parseInt(raw, 10) : NaN;
-    if (Number.isFinite(value) && value > 0) return value;
-  }
-  return null;
+function numericValue(raw: unknown): number | null {
+  if (raw && typeof raw === 'object') raw = (raw as { value?: unknown }).value;
+  if (typeof raw === 'string' && /^[+-]?\d+(?:\.\d+)?$/.test(raw.trim())) raw = Number(raw);
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : null;
 }
 
-/** Catalog rows often store hp_current 0 and the real max on MAX_HEALTH_BONUS. Start those at full HP. */
+/** Mirror the static HP formula used by getFinalHealthValue for catalog creatures.
+ * MAX_HEALTH_BONUS is a remainder, not the published maximum. Do not evaluate
+ * arbitrary operation expressions here; a trusted calculated max is the fallback.
+ */
+export function catalogCreatureMaxHp(creature: Record<string, unknown>): number | null {
+  const stats = (creature.meta_data as { calculated_stats?: { hp_max?: unknown } } | null)?.calculated_stats;
+  const stored = numericValue(stats?.hp_max);
+  const keys = new Set(['MAX_HEALTH_ANCESTRY', 'MAX_HEALTH_CLASS_PER_LEVEL', 'MAX_HEALTH_BONUS', 'ATTRIBUTE_CON']);
+  const values = new Map<string, number>();
+  let unknown = false;
+  for (const operation of Array.isArray(creature.operations) ? creature.operations : []) {
+    if (!operation || typeof operation !== 'object') continue;
+    const { type, data } = operation as { type?: string; data?: { variable?: string; value?: unknown } };
+    if (!data?.variable || !keys.has(data.variable)) continue;
+    // Some old catalog fixtures omit the operation type for an adjustment.
+    if (type !== undefined && type !== 'setValue' && type !== 'adjValue' && type !== 'addBonusToValue') continue;
+    const value = numericValue(data.value);
+    if (value === null) {
+      if (data.value != null) unknown = true;
+      continue;
+    }
+    values.set(data.variable, type === 'setValue' ? value : (values.get(data.variable) ?? 0) + value);
+  }
+  const bonus = values.get('MAX_HEALTH_BONUS');
+  const level = numericValue(creature.level) ?? 0;
+  if (!unknown && level !== -100 && (bonus !== undefined || values.has('MAX_HEALTH_CLASS_PER_LEVEL') || values.has('MAX_HEALTH_ANCESTRY'))) {
+    const computed = (values.get('MAX_HEALTH_ANCESTRY') ?? 0) + (bonus ?? 0)
+      + ((values.get('MAX_HEALTH_CLASS_PER_LEVEL') ?? 0) + (values.get('ATTRIBUTE_CON') ?? 0)) * level;
+    // Preserve an independently stored maximum; replace only a missing or
+    // identifiable raw-remainder cache.
+    if (computed > 0 && (stored == null || stored <= 0 || stored === bonus)) return computed;
+  }
+  return stored != null && stored > 0 ? stored : null;
+}
+
+/** Only call when copying a catalog row into a NEW encounter combatant.
+ * Existing encounter HP (including zero) must never be reinitialized here.
+ */
 export function creatureForEncounter(row: Record<string, unknown>): Record<string, unknown> {
   const copy = structuredClone(row);
-  const current = copy.hp_current;
-  if (typeof current === 'number' && Number.isFinite(current) && current > 0) return copy;
+  const max = catalogCreatureMaxHp(copy);
+  if (max == null) return copy;
   const meta = copy.meta_data && typeof copy.meta_data === 'object' ? { ...(copy.meta_data as Record<string, unknown>) } : {};
   const stats = meta.calculated_stats && typeof meta.calculated_stats === 'object'
     ? { ...(meta.calculated_stats as Record<string, unknown>) }
     : {};
-  const storedMax = typeof stats.hp_max === 'number' && stats.hp_max > 0 ? stats.hp_max : null;
-  const max = storedMax ?? healthBonus(copy);
-  if (max == null) return copy;
   copy.hp_current = max;
-  if (typeof copy.hp_temp !== 'number') copy.hp_temp = 0;
+  copy.hp_temp = 0;
   stats.hp_max = max;
   meta.calculated_stats = stats;
   copy.meta_data = meta;

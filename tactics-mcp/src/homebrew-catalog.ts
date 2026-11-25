@@ -80,33 +80,52 @@ function sourceTitle(row: Record<string, unknown>, titles: Map<number, string>) 
     return (nested as { name: string }).name;
   }
   const id = typeof row.content_source_id === "number" ? row.content_source_id : 0;
-  return titles.get(id) ?? "";
+  const metadata = row.meta_data as { source?: { book?: unknown } } | undefined;
+  return titles.get(id) || (typeof metadata?.source?.book === "string" ? metadata.source.book : "");
 }
 
 function bookRank(title: string) {
   const text = title.toLowerCase();
-  if (/monster core|player core|remaster/.test(text)) return 2;
-  if (/bestiary/.test(text)) return 0;
+  if (/monster core 2\b/.test(text)) return 4;
+  if (/monster core|npc core|player core|remaster/.test(text)) return 3;
+  if (/\bbestiary\b/.test(text)) return 0;
   return 1;
 }
 
-/** Exact name matches: remaster books before legacy bestiaries, then newer ids. */
-export function preferLatestCreatures(rows: Record<string, unknown>[], titles: Map<number, string>) {
-  const ranked = rows.map((row, index) => ({ row, index }));
-  ranked.sort((left, right) => {
-    const leftName = String(left.row.name ?? "").trim().toLowerCase();
-    const rightName = String(right.row.name ?? "").trim().toLowerCase();
-    if (leftName !== rightName) return left.index - right.index;
-    const leftDeprecated = left.row.deprecated === true ? 1 : 0;
-    const rightDeprecated = right.row.deprecated === true ? 1 : 0;
-    if (leftDeprecated !== rightDeprecated) return leftDeprecated - rightDeprecated;
-    const byBook = bookRank(sourceTitle(right.row, titles)) - bookRank(sourceTitle(left.row, titles));
-    if (byBook !== 0) return byBook;
-    const leftId = typeof left.row.id === "number" ? left.row.id : 0;
-    const rightId = typeof right.row.id === "number" ? right.row.id : 0;
-    return rightId - leftId;
-  });
-  return ranked.map((item) => item.row);
+const normalizedName = (value: unknown) => String(value ?? "").trim().toLowerCase();
+
+/** Rank within each name group without mixing unrelated names or relying on a
+ * non-transitive comparator. Explicit id/source queries bypass this ranking. */
+export function preferLatestCreatures(rows: Record<string, unknown>[], titles: Map<number, string>, requestedName?: string) {
+  const groups = new Map<string, Record<string, unknown>[]>();
+  for (const row of rows) {
+    const key = normalizedName(row.name);
+    const group = groups.get(key) ?? [];
+    group.push(row);
+    groups.set(key, group);
+  }
+  for (const group of groups.values()) {
+    group.sort((left, right) => {
+      const deprecated = Number(left.deprecated === true) - Number(right.deprecated === true);
+      if (deprecated) return deprecated;
+      const byBook = bookRank(sourceTitle(right, titles)) - bookRank(sourceTitle(left, titles));
+      if (byBook) return byBook;
+      return Number(right.id ?? 0) - Number(left.id ?? 0);
+    });
+  }
+  const exact = normalizedName(requestedName);
+  const first = groups.get(exact);
+  if (first) groups.delete(exact);
+  return [...(first ?? []), ...Array.from(groups.values()).flat()];
+}
+
+export function creatureLookupWarning(rows: Record<string, unknown>[], titles: Map<number, string>, requestedName: string) {
+  const exact = rows.find((row) => normalizedName(row.name) === normalizedName(requestedName) && row.deprecated !== true);
+  if (!exact) return "No active exact-name catalog match; do not substitute a partial match automatically.";
+  const title = sourceTitle(exact, titles);
+  if (bookRank(title) === 0) return `Legacy catalog fallback: ${title}. A newer published version may be missing; confirm before use.`;
+  if (!title) return "Catalog source is unknown; newest published version cannot be verified.";
+  return undefined;
 }
 
 async function sourceTitles(userId: string, rows: Record<string, unknown>[]) {
@@ -124,11 +143,12 @@ async function sourceTitles(userId: string, rows: Record<string, unknown>[]) {
 async function call(userId: () => string, fn: string, body: Record<string, unknown>) {
   try {
     const result = await invokeFunction(userId(), fn, body);
-    if (result.ok && fn === "find-creature" && typeof body.name === "string" && body.name.trim() && Array.isArray(result.data)) {
+    if (result.ok && fn === "find-creature" && body.id == null && body.content_sources == null && typeof body.name === "string" && body.name.trim() && Array.isArray(result.data)) {
       const rows = result.data.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object");
       const titles = await sourceTitles(userId(), rows);
-      const ordered = preferLatestCreatures(rows, titles);
-      return respond(fn, { ok: true, data: ordered });
+      const ordered = preferLatestCreatures(rows, titles, body.name);
+      const warning = creatureLookupWarning(ordered, titles, body.name);
+      return textResult(`${fn}: ${ordered.length} row(s)${warning ? ` — ${warning}` : ""}`, { data: ordered, ...(warning ? { warning } : {}) });
     }
     return respond(fn, result);
   } catch (error) {
@@ -144,7 +164,7 @@ export function registerHomebrew(server: McpServer, userId: () => string) {
       toolName(findFn),
       {
         title: `Find ${slug}`,
-        description: `Raw ${slug} rows from ${findFn}. Only the filters ${findFn} reads are accepted.${slug === "content-source" ? "" : " Returns official rows too when filters match."}${slug === "creature" ? " Exact name matches are ordered newest source first: a Monster Core or other remaster book comes before a legacy Bestiary, and a deprecated row comes last." : ""}`,
+        description: `Raw ${slug} rows from ${findFn}. Only the filters ${findFn} reads are accepted.${slug === "content-source" ? "" : " Returns official rows too when filters match."}${slug === "creature" ? " Exact name matches are ordered newest source first: a Monster Core or other remaster book comes before a legacy Bestiary, and a deprecated row comes last. Explicit id/source filters are respected. Legacy-only and unresolved exact-name lookups include a warning." : ""}`,
         annotations: readOnly,
         inputSchema: { query: z.object(FIND_FILTERS[slug]).strict().optional() },
       },
