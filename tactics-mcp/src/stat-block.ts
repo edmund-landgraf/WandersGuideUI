@@ -1,4 +1,5 @@
 import type { CombatantKind, CombatantRow, CombatantSheet } from "./reader.js";
+import { isEncounterStrike } from "./encounter-actions.js";
 
 export type StatBlock = {
   row: Partial<CombatantRow>;
@@ -51,13 +52,14 @@ export async function readPreparedStatBlock(prepared: import("../../src/pages/ph
     const { collectCreatureAbilities } = await import("../../src/pages/phase1/phase1-abilities.ts");
     const traits = new Map((prepared.content.traits ?? []).map((trait) => [trait.id, trait.name]));
     strikes = collectCreatureAbilities(prepared.entity as never, prepared.content.abilityBlocks ?? [], prepared.storeId, traits)
-      .filter((ability) => ability.source === "Weapon" || /\bstrike\b/i.test(`${ability.name} ${ability.description ?? ""}`))
+      .filter(isEncounterStrike)
       .map((ability) => ({
         name: ability.name,
         actions: ability.actions === "ONE-ACTION" ? 1 : ability.actions === "TWO-ACTIONS" ? 2 : ability.actions === "THREE-ACTIONS" ? 3 : ability.actions === "FREE-ACTION" ? 0 : null,
         actionCost: typeof ability.actions === "string" ? ability.actions : undefined,
         trigger: typeof ability.trigger === "string" && ability.trigger.trim() ? ability.trigger.trim() : undefined,
         traits: ability.traitNames,
+        traitIds: (ability.traits ?? []).filter((id) => typeof id === "number" && Number.isFinite(id)),
         description: ability.description ?? undefined,
       }));
   }
@@ -83,7 +85,7 @@ export async function readPreparedStatBlock(prepared: import("../../src/pages/ph
         return label ? [label] : [];
       }),
       skills,
-      ...(strikes?.length ? { strikes } : {}),
+      ...(strikes !== undefined ? { strikes } : {}),
       ...(typeof prepared.entity.id === "number" ? { catalogId: prepared.entity.id } : {}),
       ...(typeof (prepared.entity as { content_source_id?: unknown }).content_source_id === "number"
         ? { contentSourceId: (prepared.entity as { content_source_id: number }).content_source_id }
