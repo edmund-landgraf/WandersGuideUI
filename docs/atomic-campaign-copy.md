@@ -17,3 +17,15 @@ The current copy authorization policy is unchanged (#71); dry-run enumeration re
 ```sh
 psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -v test_user_id=YOUR_TEST_USER_UUID -f supabase/tests/wgui-campaign-copy.sql
 ```
+
+## Encounter and combatant artwork (#75)
+
+After the original #73 SQL, apply `supabase/wgui-campaign-copy-art.sql` before deploying the #75 worker and frontend. For subsequent deployments, apply both SQL files in order, then restart the stack. Do not deploy an older frontend against the new RPC contract.
+
+The prepare call returns a deduplicated manifest from the source campaign metadata and sanitized encounter/combatant JSON. Supported explicit URL fields include image, background, portrait, map, token and art URL variants (snake_case and camelCase), including `creature.details` and `data.details`. The final transaction rewrites only these fields and refuses an incomplete map. It does not migrate URLs embedded in free-form descriptions, notes, rich text or unknown attachment formats. Inline image data stays embedded; external links and shared PF2 catalog routes stay referenced. PF2 catalog availability remains governed by that service. Public WG storage and site-hosted images are re-uploaded through the signed-in user's existing public-file upload endpoint. Private/signed objects, unsupported image formats, unknown storage hosts and images exceeding the current 2 MB upload cap cause explicit failure rather than source URL fallback. No source objects are deleted. Repeated exact URLs upload once per pending operation, and a committed receipt is returned before staging on retries. Abandoned staged uploads still need ownership-aware cleanup.
+
+Regression coverage: `npx vitest run src/pages/phase1/phase1-campaign-copy-art.test.ts` and, on an isolated test database after both migrations:
+
+```sh
+psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -v test_user_id=YOUR_TEST_USER_UUID -f supabase/tests/wgui-campaign-copy-art.sql
+```
