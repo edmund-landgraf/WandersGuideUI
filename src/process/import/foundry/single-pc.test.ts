@@ -172,3 +172,20 @@ describe('partyFolders', () => {
     expect(parties).toEqual([{ folderId: 'party', folderName: 'Heroes', actorIds: ['a', 'b'] }]);
   });
 });
+
+describe('hyphenated Foundry world linkage', () => {
+  it('preserves the exact world slug during creation, party grouping and re-import', () => {
+    const worldId = 'price-of-prophecy-test';
+    const actor = {name:'Reed',_id:'actor1',system:{details:{level:{value:3}}}};
+    const plan = planSinglePc(actor,worldId);
+    const write = planImportWrite(plan,undefined);
+    expect(write.action).toBe('create');
+    if (write.action !== 'create') throw Error('expected create');
+    expect(write.body.meta_data).toMatchObject({foundry:{worldId,actorId:'actor1'}});
+    const stored = [{id:12,name:'Reed',meta_data:write.body.meta_data}];
+    expect(findImportedCharacter(stored,worldId,'actor1')?.id).toBe(12);
+    expect(findImportedCharacter(stored,'the-price-of-prophecy','actor1')).toBeUndefined();
+    const row = {id:'actor1',name:'Reed',level:3,ancestry:null,className:null,worldId,folderId:'party1',folderName:'Party'};
+    expect(partyFolders([row])).toEqual([{folderId:'party1',folderName:'Party',actorIds:['actor1']}]);
+  });
+});

@@ -7,7 +7,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { setCharacterFetch } from "../src/character-client.js";
 import { startTacticsHttp } from "../src/http.js";
 import { createTacticsMcpServer } from "../src/server.js";
-import { resetShopCatalogCache } from "../src/shops.js";
+import { fetchPf2eCatalog, resetShopCatalogCache } from "../src/shops.js";
 import { mintToken, resetTokens } from "../src/tokens.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -335,4 +335,38 @@ test("HTTP POST /api/shops matches create_shop draft shape", async () => {
     if (previousPort === undefined) delete process.env.TACTICS_MCP_PORT;
     else process.env.TACTICS_MCP_PORT = previousPort;
   }
+});
+
+
+test("PF2E full-catalog deadline also aborts stalled subsequent pages", async (t) => {
+  const originalTimeout = AbortSignal.timeout.bind(AbortSignal);
+  t.mock.method(AbortSignal, "timeout", (ms: number) => {
+    assert.equal(ms, 8000);
+    return originalTimeout(25);
+  });
+  const signals: AbortSignal[] = [];
+  setCharacterFetch(async (input, init) => {
+    const signal = init?.signal;
+    assert.ok(signal);
+    signals.push(signal);
+    const offset = new URL(String(input)).searchParams.get("offset");
+    if (offset === "0") return jsonResponse({ rows: [{}], total: 2, limit: 1, offset: 0 });
+    return new Promise<Response>((_resolve, reject) => {
+      if (signal.aborted) reject(signal.reason);
+      else signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+  });
+  // AbortSignal.timeout uses an unref'ed timer. Keep this short fixture alive.
+  const keepAlive = setTimeout(() => {}, 1000);
+  try {
+    const result = await fetchPf2eCatalog();
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.code, "UPSTREAM_UNAVAILABLE");
+      assert.equal(result.retryable, true);
+      assert.match(result.message, /timed out after 8s/);
+    }
+    assert.equal(signals.length, 2);
+    assert.equal(signals[0], signals[1], "the entire catalog shares a single deadline");
+  } finally { clearTimeout(keepAlive); installFetch(); }
 });
