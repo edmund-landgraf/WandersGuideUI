@@ -14,7 +14,7 @@ process.env.SUPABASE_ANON_KEY = "fixture";
 
 // Read the actual UI variable engine, expression compiler, sense collector and
 // status calculator. No remote data or mocked defense calculator is involved.
-async function prepared(kind: "CHARACTER" | "CREATURE", empty = false) {
+async function prepared(kind: "CHARACTER" | "CREATURE", empty = false, swimOnly = false) {
   const { sheetEnv } = await import("../src/live-sheet.js");
   sheetEnv();
   const { resetVariables, setVariable } = await import("../../src/process/variables/variable-manager.ts");
@@ -27,9 +27,9 @@ async function prepared(kind: "CHARACTER" | "CREATURE", empty = false) {
   setVariable(storeId, "RESISTANCES", empty ? [] : ["fire, 3", "fire, 5", "cold, -1"]);
   setVariable(storeId, "WEAKNESSES", empty ? [] : ["holy, {{floor(LEVEL / 2)}}"]);
   setVariable(storeId, "IMMUNITIES", empty ? [] : ["poison", "disease"]);
-  setVariable(storeId, "SPEED", 25);
-  setVariable(storeId, "SPEED_SWIM", 15);
-  setVariable(storeId, "SPEED_FLY", 40);
+  setVariable(storeId, "SPEED", swimOnly ? 0 : 25);
+  setVariable(storeId, "SPEED_SWIM", swimOnly ? 30 : 15);
+  setVariable(storeId, "SPEED_FLY", swimOnly ? 0 : 40);
   const entity = { name: "Fixture", level: 10, hp_current: 7, hp_temp: 4, details: { conditions: [] }, inventory: { items: [] }, operations: [], meta_data: {} };
   return { entity, content: { abilityBlocks: [], traits: [] }, storeId, kind } as unknown as import("../../src/pages/phase1/phase1-entity.ts").PreparedPhase1Entity;
 }
@@ -64,13 +64,10 @@ test("empty defenses stay empty; exported creature operation fallbacks survive",
 });
 
 test("creature stat projection tolerates amountless defenses and does not invent movement modes", async () => {
-  const p = await prepared("CREATURE", true);
+  const p = await prepared("CREATURE", true, true);
   const { setVariable } = await import("../../src/process/variables/variable-manager.ts");
   setVariable(p.storeId, "RESISTANCES", ["electricity, 7", "fire"]);
   setVariable(p.storeId, "WEAKNESSES", ["cold", "water, 5"]);
-  setVariable(p.storeId, "SPEED", 0);
-  setVariable(p.storeId, "SPEED_FLY", 0);
-  setVariable(p.storeId, "SPEED_SWIM", 30);
   const result = await readPreparedStatBlock(p);
   assert.deepEqual(result.sheet.resistances, ["Electricity 7", "Fire"]);
   assert.deepEqual(result.sheet.weaknesses, ["Cold", "Water 5"]);
