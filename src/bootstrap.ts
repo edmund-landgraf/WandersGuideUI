@@ -1,3 +1,57 @@
+// auth-js clears the hash before it writes the session. A reload in that gap
+// (the PWA serves a fresh document) drops a login GoTrue already accepted.
+// Store the session first so that reload still finds it. The client still
+// reads the hash and replaces this with the full user.
+function keepImplicitSessionAcrossReload() {
+  const params = new URLSearchParams(location.hash.replace(/^#/, ''));
+  const access_token = params.get('access_token');
+  const refresh_token = params.get('refresh_token');
+  const expires_at = Number(params.get('expires_at'));
+  if (!access_token || !refresh_token || !Number.isFinite(expires_at) || expires_at <= 0) return;
+  const body = (access_token.split('.')[1] ?? '').replace(/-/g, '+').replace(/_/g, '/');
+  let sub = '';
+  let email = '';
+  try {
+    const payload = JSON.parse(atob(body + '='.repeat((4 - (body.length % 4)) % 4))) as { sub?: string; email?: string };
+    sub = payload.sub ?? '';
+    email = payload.email ?? '';
+  } catch {
+    return;
+  }
+  if (!sub) return;
+  const configured = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_SUPABASE_URL;
+  let projectRef = 'amba';
+  try {
+    if (configured) projectRef = new URL(configured).hostname.split('.')[0] || projectRef;
+  } catch {
+    /* production ref */
+  }
+  const expires_in = Number(params.get('expires_in'));
+  const session = {
+    access_token,
+    refresh_token,
+    token_type: params.get('token_type') || 'bearer',
+    expires_in: Number.isFinite(expires_in) ? expires_in : expires_at - Math.round(Date.now() / 1000),
+    expires_at,
+    user: {
+      id: sub,
+      aud: 'authenticated',
+      role: 'authenticated',
+      email,
+      app_metadata: {},
+      user_metadata: {},
+      created_at: new Date(0).toISOString(),
+    },
+  };
+  try {
+    localStorage.setItem(`sb-${projectRef}-auth-token`, JSON.stringify(session));
+  } catch {
+    /* the auth client still parses the hash */
+  }
+}
+
+keepImplicitSessionAcrossReload();
+
 const search = new URLSearchParams(location.search);
 const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
 const isAuthCallback = ['code', 'access_token', 'error', 'error_description', 'token_hash'].some(

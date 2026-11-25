@@ -6,7 +6,8 @@ import { useAuthSession } from './useAuthSession';
 
 export function Phase1AuthCallback() {
   const session = useAuthSession();
-  const next = peekOAuthReturnPath() || '/phase1';
+  const stored = peekOAuthReturnPath() || '/phase1';
+  const next = stored === '/login' || stored.startsWith('/login?') ? '/phase1' : stored;
 
   useEffect(() => {
     if (session) consumeOAuthReturnPath();

@@ -9,7 +9,7 @@ const OAUTH_NEXT_KEY = 'wg_oauth_next';
 
 export function campaignRedirectTo() {
   const next = `${window.location.pathname}${window.location.search}`;
-  if (next && next !== '/') {
+  if (next && next !== '/' && next !== '/login' && !next.startsWith('/login?')) {
     sessionStorage.setItem(OAUTH_NEXT_KEY, next);
   }
   // Origin only: GoTrue often allow-lists `http://localhost:5194` exactly and
