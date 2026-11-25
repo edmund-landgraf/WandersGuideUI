@@ -97,6 +97,7 @@ async function preparePhase1EntityNow(combatant: Phase1EntityCombatant): Promise
       return { entity: character, content, storeId, kind: 'CHARACTER' };
     }
 
+    const existingHp = combatant.data.hp_current;
     let creature = await hydrateCreatureForCombat(cloneDeep(combatant.data as Creature));
     const storeId = `CREATURE_${combatant._id}`;
     const content = await fetchContentPackage(getDefaultSources('PAGE'), {
@@ -109,7 +110,9 @@ async function preparePhase1EntityNow(combatant: Phase1EntityCombatant): Promise
     }, { directExecution: true });
     creature = applyGivenItems(storeId, content.items, creature);
     applyConditions(storeId, creature.details?.conditions ?? []);
-    creature = fillCurrentHp(creature, getFinalHealthValue(storeId));
+    creature = typeof existingHp === 'number' && Number.isFinite(existingHp)
+      ? { ...creature, hp_current: existingHp }
+      : fillCurrentHp(creature, getFinalHealthValue(storeId));
     return { entity: creature, content, storeId, kind: 'CREATURE' };
   } finally {
     defineDefaultSources('PAGE', previousPage);
@@ -146,7 +149,7 @@ async function hydrateCreatureRecord(creature: Creature): Promise<{ creature: Cr
     replacedFromCatalog: !preferEncounter,
     creature: fillCurrentHp(await fillMissingDefenses({
       ...primary,
-      hp_current: creature.hp_current || catalog.hp_current,
+      hp_current: creature.hp_current ?? catalog.hp_current,
       hp_temp: creature.hp_temp,
       details: {
         ...primary.details,
