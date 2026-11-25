@@ -41,3 +41,10 @@ npm run build
 ln -sfn ../videos dist/videos
 pm2 restart wgui --update-env
 pm2 save
+
+# wgui-ext handlers are bind-mounted into the functions container; a frontend-only
+# rebuild leaves find-encounter copy mode and art rehost stale on the API host.
+wg_dir="${WG_DIR:-/home/administrator/node-sites/wanderers-guide}"
+if [ -f "$wg_dir/docker-compose.yml" ]; then
+  WG_DIR="$wg_dir" node scripts/wgui-ext.mjs restart
+fi

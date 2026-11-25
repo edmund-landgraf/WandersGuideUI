@@ -161,6 +161,39 @@ export async function authorizeCampaign(
   return { userId, campaign, isGm, characterIds };
 }
 
+type StockEnvelope<T> = { status?: string; data?: T };
+
+/**
+ * Whether stock find-campaign({ id }) would return this row for the caller. PostgREST
+ * campaign RLS is not the same gate — copying must mirror the edge function the UI uses.
+ */
+export async function stockFindCampaignRow(token: string, campaignId: number): Promise<Campaign | null> {
+  const base = (typeof Deno !== 'undefined' ? Deno.env.get('SUPABASE_URL') : undefined)?.replace(/\/$/, '');
+  if (!base) return null;
+
+  const response = await fetch(`${base}/functions/v1/find-campaign`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ id: campaignId }),
+  });
+  if (!response.ok) return null;
+
+  let envelope: StockEnvelope<Campaign | Campaign[]> | null = null;
+  try {
+    envelope = (await response.json()) as StockEnvelope<Campaign | Campaign[]>;
+  } catch {
+    return null;
+  }
+  if (envelope?.status !== 'success' || envelope.data == null) return null;
+
+  const row = Array.isArray(envelope.data) ? envelope.data[0] : envelope.data;
+  if (!row || !sameNumericId(row.id, campaignId)) return null;
+  return row;
+}
+
 /**
  * Membership for normal play, or the same campaign row the stock `find-campaign` call the
  * UI already made. Copying a campaign to your account reuses that read: notes and folders
@@ -182,8 +215,8 @@ export async function authorizeCampaignRead(
   }
 
   const userId = await requireCallerId(client, token);
-  const { data, error } = await client.from('campaign').select('id').eq('id', campaignId).maybeSingle();
-  if (error || !data) {
+  const visible = await stockFindCampaignRow(token, campaignId);
+  if (!visible) {
     throw new HttpError(403, 'You do not have access to this campaign.', 'CAMPAIGN_FORBIDDEN');
   }
 

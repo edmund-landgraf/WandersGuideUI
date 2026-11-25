@@ -50,7 +50,7 @@ export async function phase1Request<T>(functionName: string, body: Record<string
   return envelope.data as T;
 }
 
-function isMissingEdgeFunction(error: unknown, functionName: string): boolean {
+export function isMissingEdgeFunction(error: unknown, functionName: string): boolean {
   const message = error instanceof Error ? error.message : String(error);
   if (!message.startsWith(functionName + ':')) return false;
   const detail = message.slice(functionName.length + 2);
@@ -318,7 +318,10 @@ export async function loadEncountersForCampaignCopy(
     return asRecordList(
       await phase1Request<Encounter | Encounter[]>('wgui-ext-find-encounter', { campaign_id: campaignId, for_campaign_copy: true }, accessToken)
     ).filter((encounter) => encounterBelongsToCampaign(encounter, campaignId));
-  } catch {
+  } catch (error) {
+    if (!isMissingEdgeFunction(error, 'wgui-ext-find-encounter')) {
+      throw error;
+    }
     const loaded = await loadPhase1CampaignEncounters(campaignId, accessToken, userId);
     return isGm
       ? loaded.filter((encounter) => encounterBelongsToCampaign(encounter, campaignId))

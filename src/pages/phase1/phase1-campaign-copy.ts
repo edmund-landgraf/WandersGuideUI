@@ -1,6 +1,30 @@
 import type { Campaign, Character, Encounter } from '@schemas/content';
 import { needsRehostForCopy, rehostCampaignArtUrl } from '@upload/image-upload';
-import { asRecordList, loadEncountersForCampaignCopy, ownCharacterIds, phase1Request, sameUserId } from './phase1-api';
+import { asRecordList, isMissingEdgeFunction, loadEncountersForCampaignCopy, ownCharacterIds, phase1Request, sameUserId } from './phase1-api';
+
+const COPY_ENCOUNTER_ZERO =
+  'No encounters could be loaded from this campaign. If you are copying someone else\'s campaign, the wgui-ext edge functions may need a restart (npm run stack:restart on the API host), then try again.';
+
+async function copyCampaignArt(campaignId: number, sourceArtUrl: string, accessToken?: string): Promise<string> {
+  if (!sourceArtUrl) return '';
+  if (!needsRehostForCopy(sourceArtUrl)) return sourceArtUrl;
+  try {
+    const result = await phase1Request<{ image_url?: string }>(
+      'wgui-ext-copy-campaign-art',
+      { campaign_id: campaignId },
+      accessToken
+    );
+    const hosted = result?.image_url?.trim();
+    if (hosted) return hosted;
+  } catch (error) {
+    if (!isMissingEdgeFunction(error, 'wgui-ext-copy-campaign-art')) {
+      const fallback = await rehostCampaignArtUrl(sourceArtUrl);
+      if (fallback) return fallback;
+      throw error;
+    }
+  }
+  return rehostCampaignArtUrl(sourceArtUrl);
+}
 
 export type CampaignArtCopyAction = 'none' | 'keep' | 'rehost';
 
@@ -82,8 +106,12 @@ export async function executeCampaignCopy(options: ExecuteCampaignCopyOptions): 
     return { plan };
   }
 
+  if (encounters.length === 0 && !isGm) {
+    throw new Error(COPY_ENCOUNTER_ZERO);
+  }
+
   const sourceArtUrl = source.meta_data?.image_url?.trim() ?? '';
-  const copiedArtUrl = sourceArtUrl ? await rehostCampaignArtUrl(sourceArtUrl) : '';
+  const copiedArtUrl = sourceArtUrl ? await copyCampaignArt(campaignId, sourceArtUrl, accessToken) : '';
   const created = await phase1Request<Campaign>('create-campaign', {
     name: source.name,
     description: source.description ?? 'A new adventure begins...',
