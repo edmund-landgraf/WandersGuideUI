@@ -1,4 +1,4 @@
-import { Center, Group, Progress, Select, Text, Title, rem } from '@mantine/core';
+import { Button, Center, Group, Progress, Select, Text, Title, rem } from '@mantine/core';
 import { IconUpload, IconPhoto, IconX } from '@tabler/icons-react';
 import { Dropzone, FileWithPath } from '@mantine/dropzone';
 import BlurBox from '@common/BlurBox';
@@ -9,10 +9,12 @@ import { showNotification } from '@mantine/notifications';
 import { AbilityBlockType, ContentType } from '@schemas/content';
 import { fetchContentSources, defineDefaultSources } from '@content/content-store';
 import { getSpellByName } from '@upload/foundry-utils';
+import { downloadMonsterCore2Files } from '@upload/monster-core-2-pack';
 
 export default function UploadContent() {
   const [contentType, setContentType] = useState<ContentType | AbilityBlockType | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [showUploadStats, setShowUploadStats] = useState(false);
 
   const [sourceId, setSourceId] = useState<number | undefined>(undefined);
@@ -30,18 +32,33 @@ export default function UploadContent() {
     if (!contentType) return;
     if (uploading) return;
     resetUploadStats();
-    setTimeout(async () => {
-      setUploading(true);
-      setShowUploadStats(true);
+    setUploading(true);
+    setShowUploadStats(true);
+    try {
       await uploadContentList(sourceId, contentType, files);
+      showNotification({ title: 'Upload finished', message: 'Review the counts for imported, existing, and failed files.', autoClose: 6000 });
+    } catch (error) {
+      showNotification({ title: 'Upload interrupted', message: String(error), color: 'red', autoClose: false });
+    } finally {
       setUploading(false);
-      showNotification({
-        title: 'Upload Complete',
-        message: 'Files have been uploaded.',
-        autoClose: 3000,
-      });
-    }, 1000);
+    }
   };
+
+  const selectedSource = data?.find(source => source.id === sourceId);
+  const canImportMonsterCore2 = contentType === 'creature' && selectedSource?.name === 'Monster Core 2' && selectedSource.user_id === null;
+
+  async function importMonsterCore2() {
+    if (!canImportMonsterCore2 || uploading || downloading) return;
+    setDownloading(true);
+    try {
+      const files = await downloadMonsterCore2Files();
+      await startUpload(files);
+    } catch (error) {
+      showNotification({ title: 'Monster Core 2 download failed', message: String(error), color: 'red', autoClose: false });
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   // Passively poll upload stats
   const { data: uploadStats } = useQuery({
@@ -115,6 +132,12 @@ export default function UploadContent() {
         </Group>
       </Center>
 
+      {canImportMonsterCore2 && (
+        <Center p='sm'>
+          <Button onClick={importMonsterCore2} loading={downloading || uploading}>Import missing Monster Core 2 creatures (PF2e 8.7.1)</Button>
+        </Center>
+      )}
+
       {showUploadStats && totalFound > 0 && (
         <Progress.Root size='xl'>
           <Progress.Section animated={totalFound !== total} value={Math.ceil((totalErrors / total) * 100)} color='red'>
@@ -138,6 +161,7 @@ export default function UploadContent() {
 
       {contentType ? (
         <Dropzone
+          disabled={uploading || downloading}
           onDrop={(files) => startUpload(files)}
           onReject={(files) => console.log('rejected files', files)}
           maxSize={3 * 1024 ** 2}
