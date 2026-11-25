@@ -1,5 +1,6 @@
 import type { Campaign, Character, Encounter } from '@schemas/content';
-import { needsRehostForCopy, rehostCampaignArtUrl } from '@upload/image-upload';
+import { needsRehostForCopy } from '@upload/image-upload';
+import { stageCampaignCopyAssets, type CampaignCopyArtMap } from './phase1-campaign-copy-art';
 import { asRecordList, loadEncountersForCampaignCopy, ownCharacterIds, phase1Request, sameUserId } from './phase1-api';
 
 export type CampaignArtCopyAction = 'none' | 'keep' | 'rehost';
@@ -67,7 +68,7 @@ export type ExecuteCampaignCopyResult = {
 };
 
 // A pending operation survives a failed response and a reload in the same tab.
-type PendingCopy = { id: string; artUrl?: string };
+type PendingCopy = { id: string; artMap?: CampaignCopyArtMap };
 const pendingCopies = new Map<string, PendingCopy>();
 
 function pendingCopy(key: string): PendingCopy {
@@ -111,21 +112,27 @@ export async function executeCampaignCopy(options: ExecuteCampaignCopyOptions): 
 
   const key = `wgui:campaign-copy:${userId}:${campaignId}`;
   const operation = pendingCopy(key);
-  const sourceArtUrl = source.meta_data?.image_url?.trim() ?? '';
-  // Storage is outside Postgres. Keep the staged URL with this operation so a
-  // retry after a failed/ambiguous database response does not upload it again.
-  if (operation.artUrl === undefined) {
-    operation.artUrl = sourceArtUrl ? await rehostCampaignArtUrl(sourceArtUrl) : '';
-    rememberCopy(key, operation);
-  }
-
-  // No fallback to the old sequence of independent writes. The server reads
-  // the source and creates the complete target in a single SQL transaction.
-  const result = await phase1Request<AtomicCopyResponse>('wgui-ext-copy-campaign', {
-    campaign_id: campaignId,
-    operation_id: operation.id,
-    art_url: operation.artUrl,
+  // Prepare from the authoritative database, not the player-filtered encounter
+  // API. A committed operation returns its receipt before any further staging.
+  const prepared = await phase1Request<AtomicCopyResponse | { assets: string[] }>('wgui-ext-copy-campaign', {
+    campaign_id: campaignId, operation_id: operation.id, prepare: true,
   }, accessToken);
+  let result: AtomicCopyResponse;
+  if ('created' in prepared) {
+    result = prepared;
+  } else {
+    if (!Array.isArray(prepared.assets) || prepared.assets.some((ref) => typeof ref !== 'string')) {
+      throw new Error('Campaign artwork manifest could not be confirmed.');
+    }
+    operation.artMap ??= {};
+    await stageCampaignCopyAssets(prepared.assets, operation.artMap, () => rememberCopy(key, operation));
+    // Send only references in the latest manifest. SQL checks all artwork on the
+    // actual rows being inserted and aborts if a source edit introduced a new URL.
+    const artMap = Object.fromEntries(prepared.assets.map((ref) => [ref, operation.artMap![ref]]));
+    result = await phase1Request<AtomicCopyResponse>('wgui-ext-copy-campaign', {
+      campaign_id: campaignId, operation_id: operation.id, art_map: artMap,
+    }, accessToken);
+  }
   if (!result?.created?.id || !Array.isArray(result.encounterNames)) {
     throw new Error('Campaign copy result could not be confirmed. Retry to recover the same operation.');
   }
