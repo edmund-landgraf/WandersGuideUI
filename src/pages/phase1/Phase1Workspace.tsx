@@ -2715,6 +2715,20 @@ function partyMemberId(value: unknown): number | null {
   return Number.isInteger(id) ? id : null;
 }
 
+function combatantCharacterId(item: Combatant): number | null {
+  if (item.type && item.type !== 'CHARACTER') return null;
+  const nested = item.data && typeof item.data === 'object' && 'id' in item.data ? item.data.id : undefined;
+  return numericId(item.character) ?? numericId(nested);
+}
+
+function encounterPresentCharacterIds(list: Combatant[]): Set<number> {
+  return new Set(
+    list
+      .map((item) => combatantCharacterId(item))
+      .filter((id): id is number => id != null),
+  );
+}
+
 function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, notePages, selectedNote, viewingNotes, viewingSettings, isGm, sessionUserId, onUpdateEncounter, onAddAllPcsToEncounters, onPatchEncounterDice, onUpdateCharacter, onUpdateCampaign, onPatchParty, onResetJoinKey, onKickPlayer, onDeleteCampaign, onDeleteNote, onDeleteAllNotes, onDeleteEncounter, onDeleteAllEncounters, onCreateNote, onAddEncounterNote, onCreateEncounter, rosterSaving, campaignSaving, rosterError, diceError, campaignError, partyError }: {
   campaign: Campaign | null; encounters: Encounter[]; players: Character[]; selectedEncounter: Encounter | null; notePages: IndexedNotePage[]; selectedNote: IndexedNotePage | null; viewingNotes: boolean; viewingSettings: boolean; isGm: boolean; sessionUserId: string; onUpdateEncounter: (encounter: Encounter) => void; onAddAllPcsToEncounters?: () => Promise<void> | void; onPatchEncounterDice?: (patch: { encounterId: number; campaignId: number; encounterRevision: number; dice_roll_state?: DiceRollState; dice_roll_log?: DiceRollLog[] }) => void; onUpdateCharacter: (id: number, fields: { spells?: Character['spells']; details?: Character['details']; inventory?: Character['inventory']; hp_current?: number; hp_temp?: number; stamina_current?: number; resolve_current?: number }) => void; onUpdateCampaign: (campaign: Campaign) => void; onPatchParty?: (partyIds: number[]) => void; onResetJoinKey: () => Promise<unknown>; onKickPlayer: (characterId: number) => Promise<unknown>; onDeleteCampaign: () => Promise<unknown>; onDeleteNote: (index: number) => void; onDeleteAllNotes?: () => void; onDeleteEncounter: (id: number) => void; onDeleteAllEncounters?: () => Promise<void> | void; onCreateNote: (name: string) => void; onAddEncounterNote?: (encounter: Encounter) => void; onCreateEncounter: (name: string) => void; rosterSaving: boolean; campaignSaving: boolean; rosterError: Error | null; diceError?: Error | null; campaignError: Error | null; partyError?: Error | null;
 }) {
@@ -2811,12 +2825,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   }, [statuses.data, isGm, rosterSaving]);
   const encounterNote = notePages.find((item) => encounterNamesMatch(item.page.name, selectedEncounter?.name));
   const noteEncounter = encounters.find((item) => encounterNamesMatch(item.name, selectedNote?.page.name));
-  const activeCharacterIds = new Set(
-    (selectedEncounter?.combatants.list ?? [])
-      .filter((combatant) => combatant.type === 'CHARACTER')
-      .map((combatant) => numericId(combatant.character))
-      .filter((id): id is number => id != null),
-  );
+  const activeCharacterIds = encounterPresentCharacterIds(selectedEncounter?.combatants.list ?? []);
   const storedPartyIds = campaign?.meta_data?.party_ids;
   const partyIds = storedPartyIds
     ? new Set(storedPartyIds.map(partyMemberId).filter((id): id is number => id != null))
@@ -2950,19 +2959,38 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     writeParty(source.filter((value) => value !== id));
   }
 
+  const partyAutoSyncRef = useRef<{ encounterId: number; pending: Set<number> } | null>(null);
+  useEffect(() => {
+    if (rosterError && partyAutoSyncRef.current) partyAutoSyncRef.current.pending.clear();
+  }, [rosterError]);
+  const inPartyPlayerKey = useMemo(
+    () => players
+      .map((player) => numericId(player.id))
+      .filter((id): id is number => id != null && inParty(id))
+      .sort((a, b) => a - b)
+      .join(','),
+    [players, storedPartyIds],
+  );
   useEffect(() => {
     if (!isGm || rosterSaving || !campaign || !selectedEncounter) return;
-    const present = new Set(
-      selectedEncounter.combatants.list
-        .filter((item) => item.type === 'CHARACTER')
-        .map((item) => numericId(item.character))
-        .filter((id): id is number => id != null),
-    );
+    const present = encounterPresentCharacterIds(selectedEncounter.combatants.list);
+    const encounterId = selectedEncounter.id;
+    if (partyAutoSyncRef.current?.encounterId !== encounterId) {
+      partyAutoSyncRef.current = { encounterId, pending: new Set() };
+    }
+    const pending = partyAutoSyncRef.current.pending;
+    for (const id of [...pending]) {
+      if (present.has(id)) pending.delete(id);
+    }
     const missing = players.filter((player) => {
       const id = numericId(player.id);
-      return id != null && inParty(id) && !present.has(id);
+      return id != null && inParty(id) && !present.has(id) && !pending.has(id);
     });
     if (missing.length === 0) return;
+    for (const player of missing) {
+      const id = numericId(player.id);
+      if (id != null) pending.add(id);
+    }
     updateRoster([
       ...selectedEncounter.combatants.list,
       ...missing.map((player) => ({
@@ -2974,7 +3002,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
         data: undefined,
       })),
     ]);
-  }, [isGm, rosterSaving, campaign, selectedEncounter, players, storedPartyIds]);
+  }, [isGm, rosterSaving, campaign?.id, selectedEncounter?.id, selectedEncounter?.combatants.list, inPartyPlayerKey]);
 
   function addAllPlayers() {
     const waiting = players.filter((player) => {
@@ -3001,11 +3029,6 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     if (combatant?.type !== 'CHARACTER') return;
     updateRoster(selectedEncounter.combatants.list.filter((item) => item._id !== combatantId));
     if (selectedId === combatantId) setSelectedId(null);
-  }
-
-  function combatantCharacterId(item: Combatant): number | null {
-    const nested = item.data && typeof item.data === 'object' && 'id' in item.data ? item.data.id : undefined;
-    return numericId(item.character) ?? numericId(nested);
   }
 
   async function removeCharacterFromCampaign(characterId: number) {
@@ -4194,12 +4217,7 @@ function CampaignRail({ campaign, encounters, players, campaignPlayers, outComba
     setBenchMenu({ x: event.clientX, y: event.clientY, characterId, name });
   }
 
-  const encounterCharacterIds = new Set(
-    (selectedEncounter?.combatants.list ?? [])
-      .filter((combatant) => combatant.type === 'CHARACTER')
-      .map((combatant) => numericId(combatant.character))
-      .filter((id): id is number => id != null),
-  );
+  const encounterCharacterIds = encounterPresentCharacterIds(selectedEncounter?.combatants.list ?? []);
   const waitingForEncounter = players.filter((player) => {
     const id = numericId(player.id);
     return id != null && !encounterCharacterIds.has(id);
@@ -6737,13 +6755,11 @@ function hazardLivingStub(hazard: Hazard): LivingEntity {
 }
 
 function encounterWithAllPlayers(encounter: Encounter, players: Character[]): Encounter | null {
-  const present = new Set(
-    encounter.combatants.list
-      .filter((item) => item.type === 'CHARACTER')
-      .map((item) => numericId(item.character))
-      .filter((id): id is number => id != null),
-  );
-  const missing = players.filter((player) => !present.has(numericId(player.id) ?? player.id));
+  const present = encounterPresentCharacterIds(encounter.combatants.list);
+  const missing = players.filter((player) => {
+    const id = numericId(player.id);
+    return id != null && !present.has(id);
+  });
   if (missing.length === 0) return null;
   const list: Combatant[] = [
     ...encounter.combatants.list,

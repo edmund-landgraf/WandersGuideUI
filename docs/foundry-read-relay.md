@@ -6,11 +6,17 @@ Nothing here writes an actor, a character, or a combat. Content matching is unch
 
 ## Run
 
-From this repo:
+From this repo (on the **same machine** as the Foundry browser tab — not a remote VPS):
+
+In one terminal, `npm run dev` (WGUI on 5194). In a second terminal:
 
 ```bash
-npm run foundry-relay
+npm run dev:foundry
 ```
+
+That is the same relay as `npm run foundry-relay` (`127.0.0.1:8787`). It does not start Vite so it never fights an existing dev server.
+
+The relay listens on loopback. Foundry at `localhost:30000` and WGUI in your browser both call **your PC’s** `127.0.0.1:8787`. Running the relay on a server only helps if Foundry and WGUI both run in browsers on that server.
 
 The default listen address is `127.0.0.1:8787`. A host other than `127.0.0.1` or `::1` exits unless `FOUNDRY_RELAY_ALLOW_REMOTE=1`. Browser origins that may call it are `FOUNDRY_RELAY_ORIGINS` (default `http://localhost:5194`, `http://127.0.0.1:5194`, `http://localhost:30000`, `http://127.0.0.1:30000`, and `https://foundry.unwhelm.net`). The Foundry page origin has to be on that list, because the module’s `fetch` is cross-origin. A preflight from an allowlisted origin may include `Access-Control-Allow-Private-Network: true`. Other origins get no CORS headers. The WGUI dev server uses `http://127.0.0.1:8787` unless `VITE_FOUNDRY_RELAY_URL` is set.
 
