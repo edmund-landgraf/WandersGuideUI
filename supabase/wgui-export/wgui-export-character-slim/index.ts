@@ -10,13 +10,13 @@ import { fetchData } from '../_shared/helpers.ts';
 import { connect } from '../_wgui-export/connect-raw.ts';
 import { loadContentPackage } from '../_wgui-export/content-package.ts';
 import { createExportQueue } from '../_wgui-export/export-queue.ts';
-import { slimExport } from '../_wgui-export/slim.ts';
+import { serializeSlimExport } from '../_wgui-export/slim.ts';
 import { HttpError } from '../_shared/http-errors.ts';
 // @ts-ignore compiled by scripts/bundle-wgui-export.mjs into wgui-export-character
-import { setExportContentPackage, buildJsonV4Object } from '../wgui-export-character/compile.bundle.js';
+import { setExportContentPackage, clearExportState, buildSlimJsonV4Object } from '../wgui-export-character/compile.bundle.js';
 
 const enqueueExport = createExportQueue<Awaited<ReturnType<typeof loadContentPackage>>>(
-  setExportContentPackage, () => setExportContentPackage({})
+  setExportContentPackage, clearExportState
 );
 
 function failJson(status: number, message: string, code: string): Response {
@@ -42,10 +42,10 @@ serve(async (req: Request) => {
       }
 
       return await enqueueExport(
-        () => loadContentPackage(client, character.content_sources?.enabled ?? []),
+        () => loadContentPackage(client, character.content_sources?.enabled ?? [], 'slim'),
         async () => {
-          const object = slimExport(await buildJsonV4Object(character));
-          return new Response(JSON.stringify(object), {
+          const json = serializeSlimExport(await buildSlimJsonV4Object(character));
+          return new Response(json, {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           });

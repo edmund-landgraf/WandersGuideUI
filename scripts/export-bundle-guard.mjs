@@ -18,6 +18,9 @@ export function invalidBundleReason(text) {
   if (!text.includes('buildJsonV4Object')) {
     return 'compile.bundle.js has no buildJsonV4Object binding. Both export workers import it.';
   }
+  if (!text.includes('buildSlimJsonV4Object') || !text.includes('clearExportState')) {
+    return 'compile.bundle.js predates the slim compiler/state cleanup contract. Run npm run export:bundle before recreating functions.';
+  }
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].length > GRAPH_LINE_LIMIT && lines[i].includes(MATHJS_GRAPH_NEEDLE)) {
