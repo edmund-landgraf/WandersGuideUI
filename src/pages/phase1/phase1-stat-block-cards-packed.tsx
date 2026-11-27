@@ -12,11 +12,10 @@ import { toLabel } from '@utils/strings';
 import { isCharacter, isCreature, isTruthy } from '@utils/type-fixing';
 import { compactLabels } from '@variables/variable-utils';
 import { flatten, groupBy } from 'lodash-es';
-import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Eyebrow } from './phase1-entity-panels';
 import { useContentLinks } from './phase1-content-links';
-import { lookupMonsterArt, monsterArtStaleTime } from './phase1-monster-image';
+import { useCreaturePortrait } from './phase1-creature-portrait';
 import { recallKnowledgeText, TraitRow } from './phase1-stat-block';
 
 type StatBlockContent = Awaited<ReturnType<typeof getJsonV4Content>>;
@@ -73,13 +72,8 @@ export function Phase1StatBlockCardsPacked({ entity, data }: { entity: LivingEnt
   const passives = abilities.filter((ab) => !ab.actions);
   const icon = parseIconValue(entity.details?.image_url ?? '');
   const storedImageUrl = icon.type === 'image' && icon.value ? icon.value : '';
-  const creatureArt = useQuery({
-    queryKey: ['phase1-creature-picker-art', entity.name, storedImageUrl],
-    queryFn: () => lookupMonsterArt(entity.name, storedImageUrl || undefined, 'thumb'),
-    enabled: isCreature(entity) && Boolean(entity.name?.trim() || storedImageUrl),
-    staleTime: monsterArtStaleTime,
-  });
-  const imageUrl = isCreature(entity) ? (creatureArt.data?.thumbSrc || (!creatureArt.isFetched ? storedImageUrl : '')) : storedImageUrl;
+  const creatureArt = useCreaturePortrait(entity.name, storedImageUrl, isCreature(entity));
+  const imageUrl = isCreature(entity) ? creatureArt.src : storedImageUrl;
   const sizeLabel = toLabel(convertToSize(data.size));
   const speeds = data.speeds.filter((s) => s.value.total !== 0 && s.value.value !== 0);
   const speedText = speeds
@@ -159,7 +153,7 @@ export function Phase1StatBlockCardsPacked({ entity, data }: { entity: LivingEnt
             </span>
           </div>
         </div>
-        {imageUrl ? <img src={imageUrl} alt='' className='m-1 h-16 w-16 shrink-0 object-contain' /> : null}
+        {imageUrl ? <img src={imageUrl} alt='' referrerPolicy='no-referrer' onError={isCreature(entity) ? creatureArt.onError : undefined} className='m-1 h-16 w-16 shrink-0 object-contain' /> : null}
       </header>
 
       <div className='grid grid-cols-3 items-start gap-1'>

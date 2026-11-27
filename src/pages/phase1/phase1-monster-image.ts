@@ -1,3 +1,5 @@
+import { publicArtSrc } from '@utils/public-art-url';
+
 const LOCAL_PATHFINDER_PREFIX = '/local-pf';
 
 function pathfinderApiOrigin() {
@@ -45,12 +47,6 @@ export function pickMonsterRow(rows: MonsterRow[], name: string) {
   if (ids.size !== 1) return null;
   return exact.find((row) => row.MonsterId === [...ids][0] && row.ImageUrl)
     ?? exact.find((row) => row.MonsterId === [...ids][0]) ?? null;
-}
-
-function resolveImageUrl(imageUrl: string) {
-  if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
-  if (imageUrl.startsWith('/')) return `${pathfinderApiOrigin()}${imageUrl}`;
-  return imageUrl;
 }
 
 export function monsterArtPath(monsterId: number, size: 'thumb' | 'full' = 'full') {
@@ -213,7 +209,19 @@ async function fetchArtObjectUrl(url: string, password: string) {
 function ownCreatureArt(fallbackUrl?: string) {
   const trimmed = fallbackUrl?.trim();
   if (!trimmed || /aonprd\.com/i.test(trimmed) || storedMonsterArtId(trimmed) != null) return null;
-  const src = resolveImageUrl(trimmed);
+  const src = publicArtSrc(trimmed);
+  // Public storage and site portraits belong to the public asset host, not PF2.
+  // Vite proxies local development storage on its own origin.
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
+    try {
+      const url = new URL(src, window.location.origin);
+      if (url.pathname.startsWith('/storage/') && url.protocol === 'http:' &&
+          (['localhost', '127.0.0.1', '[::1]', 'kong'].includes(url.hostname) || url.port === '8000')) {
+        const local = `${window.location.origin}${url.pathname}${url.search}`;
+        return { monsterId: null, fullSrc: local, thumbSrc: local };
+      }
+    } catch { /* use the original public URL */ }
+  }
   return { monsterId: null, fullSrc: src, thumbSrc: src };
 }
 
@@ -253,13 +261,13 @@ export async function loadMonsterArtVariant(
   return null;
 }
 
-export async function lookupMonsterArt(name: string, fallbackUrl?: string, size: 'thumb' | 'full' = 'thumb'): Promise<Phase1MonsterArt | null> {
+export async function lookupMonsterArt(name: string, fallbackUrl?: string, size: 'thumb' | 'full' = 'thumb', rejectedSrc?: string): Promise<Phase1MonsterArt | null> {
   const trimmedFallback = fallbackUrl?.trim() || undefined;
   const lookupName = normalizeName(name) || name.trim();
   const password = readArtPassword();
   const explicitId = storedMonsterArtId(trimmedFallback);
   const own = ownCreatureArt(trimmedFallback);
-  if (own && await portraitLoads(own.thumbSrc)) return own;
+  if (own && own.thumbSrc !== rejectedSrc && await portraitLoads(own.thumbSrc)) return own;
 
   if (!password) return null;
 
@@ -288,7 +296,7 @@ export async function lookupMonsterArt(name: string, fallbackUrl?: string, size:
       const verifiedId = monsterId;
       const variant = await loadMonsterArtVariant(size, async (candidate) => {
         const src = await fetchArtObjectUrl(hostedMonsterImage(verifiedId, candidate), password);
-        return src && await portraitLoads(src) ? src : null;
+        return src && src !== rejectedSrc && await portraitLoads(src) ? src : null;
       });
       if (variant) {
         const { src } = variant;
@@ -297,8 +305,8 @@ export async function lookupMonsterArt(name: string, fallbackUrl?: string, size:
         const thumbCached = readCachedArt(cacheKey, 'thumb');
         return {
           monsterId,
-          fullSrc: size === 'full' ? src : fullCached?.monsterId === monsterId ? fullCached.src : src,
-          thumbSrc: size === 'thumb' ? src : thumbCached?.monsterId === monsterId ? thumbCached.src : src,
+          fullSrc: size === 'full' ? src : fullCached?.monsterId === monsterId && fullCached.src !== rejectedSrc ? fullCached.src : src,
+          thumbSrc: size === 'thumb' ? src : thumbCached?.monsterId === monsterId && thumbCached.src !== rejectedSrc ? thumbCached.src : src,
         };
       }
     }
@@ -308,15 +316,15 @@ export async function lookupMonsterArt(name: string, fallbackUrl?: string, size:
 
   const cached = cacheKey && monsterId != null
     ? [readCachedArt(cacheKey, size), readCachedArt(cacheKey, size === 'thumb' ? 'full' : 'thumb')]
-      .find((entry) => entry?.monsterId === monsterId)
+      .find((entry) => entry?.monsterId === monsterId && entry.src !== rejectedSrc)
     : null;
-  if (cached && monsterId != null && cached.monsterId === monsterId) {
+  if (cached && monsterId != null && cached.monsterId === monsterId && await portraitLoads(cached.src)) {
     const fullCached = readCachedArt(cacheKey, 'full');
     const thumbCached = readCachedArt(cacheKey, 'thumb');
     return {
       monsterId,
-      fullSrc: size === 'full' ? cached.src : fullCached?.monsterId === monsterId ? fullCached.src : cached.src,
-      thumbSrc: size === 'thumb' ? cached.src : thumbCached?.monsterId === monsterId ? thumbCached.src : cached.src,
+      fullSrc: size === 'full' ? cached.src : fullCached?.monsterId === monsterId && fullCached.src !== rejectedSrc ? fullCached.src : cached.src,
+      thumbSrc: size === 'thumb' ? cached.src : thumbCached?.monsterId === monsterId && thumbCached.src !== rejectedSrc ? thumbCached.src : cached.src,
     };
   }
   return null;

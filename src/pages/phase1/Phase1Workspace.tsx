@@ -43,6 +43,7 @@ import { isContentStackOpen, useContentLinks } from './phase1-content-links';
 import { getBestShield, getItemHealth } from '@items/inv-utils';
 import { toGmNotes } from '@pages/character_sheet/panels/gm-notes';
 import { lookupMonsterArt, type Phase1MonsterArt, monsterArtStaleTime } from './phase1-monster-image';
+import { useCreaturePortrait } from './phase1-creature-portrait';
 import { encounterStatusQueryKey } from './phase1-encounter-status-key';
 import { Icon } from '@common/Icon';
 import { parseIconValue } from '@common/IconDisplay';
@@ -6602,20 +6603,15 @@ function EntityIcon({ type, name, imageUrl, expandable }: { type: Combatant['typ
   const stored = parseIconValue(imageUrl?.trim() ?? '');
   const portrait = stored.type === 'image' ? stored.value.trim() : '';
   const [preview, setPreview] = useState(false);
-  const art = useQuery({
-    queryKey: ['phase1-creature-picker-art', name, portrait],
-    queryFn: () => lookupMonsterArt(name ?? '', portrait || undefined, 'thumb'),
-    enabled: type === 'CREATURE' && Boolean(name?.trim() || portrait),
-    staleTime: monsterArtStaleTime,
-  });
+  const art = useCreaturePortrait(name ?? '', portrait, type === 'CREATURE');
   const full = useQuery({
-    queryKey: ['phase1-creature-picker-art', name, portrait, 'full'],
-    queryFn: () => lookupMonsterArt(name ?? '', portrait || undefined, 'full'),
+    queryKey: ['phase1-creature-picker-art', name, portrait, 'full', art.rejectedSrc],
+    queryFn: () => lookupMonsterArt(name ?? '', art.lookupSource || undefined, 'full', art.rejectedSrc),
     enabled: preview && type === 'CREATURE' && Boolean(name?.trim() || portrait),
     staleTime: monsterArtStaleTime,
   });
-  const src = type === 'CREATURE' ? (art.data?.thumbSrc || (!art.isFetched ? portrait : undefined)) : portrait || undefined;
-  const fullSrc = type === 'CREATURE' ? (full.data?.fullSrc || art.data?.fullSrc || src) : portrait || undefined;
+  const src = type === 'CREATURE' ? art.src : portrait || undefined;
+  const fullSrc = type === 'CREATURE' ? (full.data?.fullSrc || art.fullSrc || src) : portrait || undefined;
   const [failed, setFailed] = useState(false);
   useEffect(() => { setFailed(false); }, [src]);
   if (type !== 'CREATURE' && stored.type === 'icon' && stored.value) {
@@ -6625,14 +6621,15 @@ function EntityIcon({ type, name, imageUrl, expandable }: { type: Combatant['typ
       </span>
     );
   }
-  if (src && !failed) {
+  if (src && (type === 'CREATURE' || !failed)) {
     const image = (
       <img
         key={src}
         src={src}
         alt=''
         className={`h-9 w-9 shrink-0 border border-p1-border bg-p1-inset ${type === 'CHARACTER' ? 'object-cover' : 'object-contain'}`}
-        onError={() => setFailed(true)}
+        referrerPolicy='no-referrer'
+        onError={type === 'CREATURE' ? art.onError : () => setFailed(true)}
       />
     );
     if (!expandable || !fullSrc) return image;
