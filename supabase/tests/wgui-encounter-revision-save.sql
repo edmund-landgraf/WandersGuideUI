@@ -32,7 +32,7 @@ begin
 end $$;
 
 -- Exercise the production save RPC and archive RPC together, under both triggers.
-do $
+do $archive_revision_interleaving$
 declare gm uuid:='00000000-0000-0000-0000-000000000001';
   rev bigint; roster jsonb; meta jsonb; first_receipt jsonb; retry_receipt jsonb; saved jsonb;
   log jsonb:='{"worldId":"test","exportId":"save-archive-race","transcript":[{"messageId":"new"}]}';
@@ -57,5 +57,6 @@ begin
     or not coalesce(saved#>'{meta_data,foundry,combat_logs}' @> jsonb_build_array(log),false) then
     raise exception 'Current CAS save lost archive or roster';
   end if;
-end $;
+end;
+$archive_revision_interleaving$;
 rollback;
