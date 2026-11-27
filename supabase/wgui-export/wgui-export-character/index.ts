@@ -4,12 +4,15 @@ import type { Character } from '../_shared/content';
 import { fetchData } from '../_shared/helpers.ts';
 import { connect } from '../_wgui-export/connect-raw.ts';
 import { loadContentPackage } from '../_wgui-export/content-package.ts';
+import { createExportQueue } from '../_wgui-export/export-queue.ts';
 import { HttpError } from '../_shared/http-errors.ts';
 // @ts-ignore compiled by scripts/bundle-wgui-export.mjs
 import { setExportContentPackage, buildJsonV4Object, buildPdfV2Bytes } from './compile.bundle.js';
 
 let templateBytes: Uint8Array | null = null;
-let compileQueue: Promise<unknown> = Promise.resolve();
+const enqueueExport = createExportQueue<Awaited<ReturnType<typeof loadContentPackage>>>(
+  setExportContentPackage, () => setExportContentPackage({})
+);
 
 function failJson(status: number, message: string, code: string): Response {
   return new Response(JSON.stringify({ status: 'fail', data: { message, code } }), {
@@ -47,28 +50,23 @@ serve(async (req: Request) => {
         throw new HttpError(403, 'You do not have access to this character', 'CHARACTER_FORBIDDEN');
       }
 
-      const pkg = await loadContentPackage(client, character.content_sources?.enabled ?? []);
-
-      const run = compileQueue.then(async () => {
-        setExportContentPackage(pkg);
-        if (format === 'json') {
-          const object = await buildJsonV4Object(character);
-          return new Response(JSON.stringify(object), {
+      return await enqueueExport(
+        () => loadContentPackage(client, character.content_sources?.enabled ?? []),
+        async () => {
+          if (format === 'json') {
+            const object = await buildJsonV4Object(character);
+            return new Response(JSON.stringify(object), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+          const bytes = await buildPdfV2Bytes(character, await loadTemplate());
+          return new Response(bytes, {
             status: 200,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/pdf' },
           });
         }
-        const bytes = await buildPdfV2Bytes(character, await loadTemplate());
-        return new Response(bytes, {
-          status: 200,
-          headers: { 'Content-Type': 'application/pdf' },
-        });
-      });
-      compileQueue = run.then(
-        () => undefined,
-        () => undefined
       );
-      return await run;
     },
     { supportsCharacterAPI: true }
   );

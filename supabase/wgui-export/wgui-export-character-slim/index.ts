@@ -9,12 +9,15 @@ import type { Character } from '../_shared/content';
 import { fetchData } from '../_shared/helpers.ts';
 import { connect } from '../_wgui-export/connect-raw.ts';
 import { loadContentPackage } from '../_wgui-export/content-package.ts';
+import { createExportQueue } from '../_wgui-export/export-queue.ts';
 import { slimExport } from '../_wgui-export/slim.ts';
 import { HttpError } from '../_shared/http-errors.ts';
 // @ts-ignore compiled by scripts/bundle-wgui-export.mjs into wgui-export-character
 import { setExportContentPackage, buildJsonV4Object } from '../wgui-export-character/compile.bundle.js';
 
-let compileQueue: Promise<unknown> = Promise.resolve();
+const enqueueExport = createExportQueue<Awaited<ReturnType<typeof loadContentPackage>>>(
+  setExportContentPackage, () => setExportContentPackage({})
+);
 
 function failJson(status: number, message: string, code: string): Response {
   return new Response(JSON.stringify({ status: 'fail', data: { message, code } }), {
@@ -38,20 +41,16 @@ serve(async (req: Request) => {
         throw new HttpError(403, 'You do not have access to this character', 'CHARACTER_FORBIDDEN');
       }
 
-      const pkg = await loadContentPackage(client, character.content_sources?.enabled ?? []);
-      const run = compileQueue.then(async () => {
-        setExportContentPackage(pkg);
-        const object = slimExport(await buildJsonV4Object(character));
-        return new Response(JSON.stringify(object), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      });
-      compileQueue = run.then(
-        () => undefined,
-        () => undefined
+      return await enqueueExport(
+        () => loadContentPackage(client, character.content_sources?.enabled ?? []),
+        async () => {
+          const object = slimExport(await buildJsonV4Object(character));
+          return new Response(JSON.stringify(object), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
       );
-      return await run;
     },
     { supportsCharacterAPI: true }
   );
