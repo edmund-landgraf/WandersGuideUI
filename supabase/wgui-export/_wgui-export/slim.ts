@@ -44,7 +44,8 @@ export function homebrewSourceIds(content: Json | undefined): Set<number> {
   return ids;
 }
 
-export function slimExport(full: unknown): unknown {
+/** Shallow projection: keep references to retained data, never copy the catalog. */
+function projectSlimExport(full: unknown): unknown {
   if (!isObject(full) || !isObject(full.content)) return full;
   const content = full.content;
   const homebrew = homebrewSourceIds(content);
@@ -65,5 +66,16 @@ export function slimExport(full: unknown): unknown {
     }
     out[key] = value;
   }
-  return stripSearchTsv({ ...full, content: out, slim: { version: SLIM_VERSION, dropped } });
+  return { ...full, content: out, slim: { version: SLIM_VERSION, dropped } };
+}
+
+/** Compatibility helper for callers that need an object. */
+export function slimExport(full: unknown): unknown {
+  if (!isObject(full) || !isObject(full.content)) return full;
+  return stripSearchTsv(projectSlimExport(full));
+}
+
+/** HTTP response path: omit search vectors during serialization, without a deep clone. */
+export function serializeSlimExport(full: unknown): string {
+  return JSON.stringify(projectSlimExport(full), (key, value) => key === 'search_tsv' ? undefined : value);
 }
