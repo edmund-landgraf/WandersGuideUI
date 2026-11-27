@@ -118,10 +118,19 @@ export async function invokeFunction(userId: string, name: string, body: Record<
         ? nested.message
         : `${name} failed (${response.status}).`;
     const rawCode = typeof record.code === "string" ? record.code : typeof nested.code === "string" ? nested.code : "";
-    return { ok: false, code: rawCode || "FUNCTION_ERROR", message, data: record.data, ...(isSave && response.status >= 500 ? { requestId, retryable: true, saveOutcome: "unknown" as const } : {}) };
+    // Some gateways/edge functions report a transport failure in a JSON envelope.
+    // A write may have committed before that response was generated.
+    const upstreamTransport = /fetch failed|timeout|terminated|ECONNRESET|EAI_AGAIN|ENOTFOUND|UND_ERR/i.test(message);
+    if (upstreamTransport || (isSave && response.status >= 500)) {
+      console.error(`[wgui-mcp] ${name} request=${requestId} stage=upstream-response status=${response.status}`);
+      return { ok: false, code: rawCode || "INTERNAL_ERROR", message: `${name} upstream failure (${response.status}); request ${requestId}.`, requestId, retryable: true, ...(isSave ? { saveOutcome: "unknown" as const } : {}) };
+    }
+    return { ok: false, code: rawCode || "FUNCTION_ERROR", message, data: record.data };
   }
   const data = record.data ?? payload;
-  if (isSave && !asRow(Array.isArray(data) ? data[0] : data) && !guardOf(data)) {
+  const receipt = Array.isArray(data) ? data[0] : data;
+  const row = asRow(receipt);
+  if (isSave && (!row || String(row.id) !== String(body.id)) && !guardOf(data)) {
     console.error(`[wgui-mcp] ${name} request=${requestId} stage=save-receipt status=${response.status}`);
     return { ok: false, code: "INTERNAL_ERROR", message: `${name} returned no confirmed saved row; request ${requestId}.`, retryable: true, requestId, saveOutcome: "unknown" };
   }
