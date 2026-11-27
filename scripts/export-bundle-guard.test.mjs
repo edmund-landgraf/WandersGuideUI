@@ -31,7 +31,7 @@ function writeBundle(exportDir, text) {
 describe('export overlay guard', () => {
   it('accepts a short bundle that still exports buildJsonV4Object', () => {
     const dirs = tree();
-    writeBundle(dirs.exportDir, 'export function buildJsonV4Object() { return {}; }\n');
+    writeBundle(dirs.exportDir, 'export function buildJsonV4Object() { return {}; } export function buildSlimJsonV4Object() {} export function clearExportState() {}\n');
     assert.deepEqual(overlayProblems(dirs), []);
     assert.doesNotThrow(() => assertOverlaysReady(dirs));
     rmSync(dirs.root, { recursive: true, force: true });
@@ -39,7 +39,7 @@ describe('export overlay guard', () => {
 
   it('reports a missing mount before any compose recreate', () => {
     const dirs = tree();
-    writeBundle(dirs.exportDir, 'export function buildJsonV4Object() {}\n');
+    writeBundle(dirs.exportDir, 'export function buildJsonV4Object() {} export function buildSlimJsonV4Object() {} export function clearExportState() {}\n');
     const gone = path.join(dirs.root, 'deleted-checkout', 'supabase', 'wgui-export');
     const problems = overlayProblems({ ...dirs, exportDir: gone });
     assert.equal(problems.length, 1);
@@ -61,19 +61,23 @@ describe('export overlay guard', () => {
   it('rejects the known mathjs regexp and accepts the documented rewrite', () => {
     const bad = `${' '.repeat(20)}${MATHJS_GRAPH_NEEDLE}${'\\u0041'.repeat(GRAPH_LINE_LIMIT)}`;
     assert.ok(bad.length > GRAPH_LINE_LIMIT);
-    const reason = invalidBundleReason(`export function buildJsonV4Object() {}\n${bad}\n`);
+    const reason = invalidBundleReason(`export function buildJsonV4Object() {} export function buildSlimJsonV4Object() {} export function clearExportState() {}\n${bad}\n`);
     assert.match(reason, /mathjs regexp/);
     assert.equal(
       invalidBundleReason(
-        'export function buildJsonV4Object() {}\n      test: (s) => isString2 && /^[A-Za-z_][A-Za-z0-9_]*$/.test(s)\n'
+        'export function buildJsonV4Object() {} export function buildSlimJsonV4Object() {} export function clearExportState() {}\n      test: (s) => isString2 && /^[A-Za-z_][A-Za-z0-9_]*$/.test(s)\n'
       ),
       null
     );
 
     const dirs = tree();
-    writeBundle(dirs.exportDir, `export function buildJsonV4Object() {}\n${bad}\n`);
+    writeBundle(dirs.exportDir, `export function buildJsonV4Object() {} export function buildSlimJsonV4Object() {} export function clearExportState() {}\n${bad}\n`);
     assert.match(overlayProblems(dirs)[0], /Do not recreate functions/);
     rmSync(dirs.root, { recursive: true, force: true });
+  });
+
+  it('rejects a stale bundle without the new slim and cleanup bindings', () => {
+    assert.match(invalidBundleReason('export function buildJsonV4Object() {}'), /predates the slim compiler/);
   });
 
   it('rejects a bundle that does not export the compile entry the workers import', () => {
