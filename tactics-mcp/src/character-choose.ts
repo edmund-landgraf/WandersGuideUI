@@ -126,8 +126,9 @@ export async function planPicks(character: Character, picks: ChoicePick[], list:
     const viewed = wasAnswered ? stripped : selections;
     let failure = await load(viewed);
     let choice = cached?.choices.find((item) => item.id === pick.choiceId);
-    // A choice opened by an earlier pick in this batch is absent until the builder runs again.
-    if (!failure && !choice && !wasAnswered) {
+    // The projected list can omit a newly opened choice or a legal option shared by
+    // independent selects of the same source. Recheck the actual engine before rejecting.
+    if (!failure && !wasAnswered && (!choice || !choice.options.some((option) => option.id === pick.optionId))) {
       cached = null;
       failure = await load(viewed);
       choice = cached?.choices.find((item) => item.id === pick.choiceId);
