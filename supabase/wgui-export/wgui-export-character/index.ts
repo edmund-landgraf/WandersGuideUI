@@ -7,11 +7,11 @@ import { loadContentPackage } from '../_wgui-export/content-package.ts';
 import { createExportQueue } from '../_wgui-export/export-queue.ts';
 import { HttpError } from '../_shared/http-errors.ts';
 // @ts-ignore compiled by scripts/bundle-wgui-export.mjs
-import { setExportContentPackage, buildJsonV4Object, buildPdfV2Bytes } from './compile.bundle.js';
+import { setExportContentPackage, clearExportState, buildJsonV4Object, buildPdfV2Bytes } from './compile.bundle.js';
 
 let templateBytes: Uint8Array | null = null;
 const enqueueExport = createExportQueue<Awaited<ReturnType<typeof loadContentPackage>>>(
-  setExportContentPackage, () => setExportContentPackage({})
+  setExportContentPackage, clearExportState
 );
 
 function failJson(status: number, message: string, code: string): Response {
