@@ -362,15 +362,15 @@ function asCatalogTraits(data: unknown): CatalogTrait[] {
   return rows.filter((row): row is CatalogTrait => !!row && typeof row === "object" && typeof (row as CatalogTrait).id === "number");
 }
 
-function isFetchFailed(message: string) {
-  return /fetch failed/i.test(message);
+function isRetryableRead(result: { retryable?: boolean; message: string }) {
+  return result.retryable === true || /fetch failed/i.test(result.message);
 }
 
 async function invokeBook(userId: string, name: string, bookId: number, id?: number | number[]) {
   const body = { content_sources: [bookId], ...(id === undefined ? {} : { id }) };
   let result = await invokeFunction(userId, name, body);
-  if (!result.ok && isFetchFailed(result.message)) result = await invokeFunction(userId, name, body);
-  if (!result.ok) return err(result.code, `${name} failed for book ${bookId}: ${result.message}`);
+  if (!result.ok && isRetryableRead(result)) result = await invokeFunction(userId, name, body);
+  if (!result.ok) return err(result.code, `${name} failed for book ${bookId}: ${result.message}`, isRetryableRead(result));
   return result;
 }
 
@@ -475,12 +475,12 @@ async function searchWg(userId: string, query: string): Promise<ShopResult<Retur
   const body: Record<string, unknown> = {};
   if (query.trim()) body.name = query.trim();
   const result = await invokeFunction(userId, "find-item", body);
-  if (!result.ok && isFetchFailed(result.message)) {
+  if (!result.ok && isRetryableRead(result)) {
     const again = await invokeFunction(userId, "find-item", body);
-    if (!again.ok) return err(again.code, `find-item failed: ${again.message}`, isFetchFailed(again.message));
+    if (!again.ok) return err(again.code, `find-item failed: ${again.message}`, isRetryableRead(again));
     return ok(asCatalogItems(again.data).map(catalogHit));
   }
-  if (!result.ok) return err(result.code, `find-item failed: ${result.message}`, isFetchFailed(result.message));
+  if (!result.ok) return err(result.code, `find-item failed: ${result.message}`, isRetryableRead(result));
   return ok(asCatalogItems(result.data).map(catalogHit));
 }
 
