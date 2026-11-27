@@ -10,6 +10,7 @@ import { signOut } from '@auth/campaign-auth';
 import { useAuthSession } from '@auth/useAuthSession';
 import { confirmHealth } from '@pages/character_sheet/entity-handler';
 import { phase1Request, savePhase1Encounter, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, encounterMasksCombatants, loadCampaignCopyPermission, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
+import { missingPartyCharacterIds, reconcilePartyAutoSync } from './phase1-party-auto-sync';
 import { executeCampaignCopy } from './phase1-campaign-copy';
 import { encounterRevision } from './phase1-encounter-revision';
 import { isEnemyCreature, playerAllyRoundLog, playerEnemyLabel, playerVisibleCombatants } from './phase1-player-combat';
@@ -2942,9 +2943,13 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
     onPatchParty?.(ids);
   }
 
+  const partyAutoSyncRef = useRef<{ encounterId: number; pending: Set<number> } | null>(null);
+  const partyRemovalPendingRef = useRef<Set<number>>(new Set());
+
   function addToParty(characterId: number) {
     const id = partyMemberId(characterId);
     if (id == null || (inParty(id) && partyIds != null)) return;
+    partyRemovalPendingRef.current.delete(id);
     const next = new Set(partyIds ?? players.map((player) => partyMemberId(player.id)).filter((value): value is number => value != null));
     next.add(id);
     writeParty([...next]);
@@ -2953,16 +2958,19 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   function leaveParty(characterId: number) {
     const id = partyMemberId(characterId);
     if (id == null) return;
+    partyRemovalPendingRef.current.add(id);
     const source = partyIds
       ? [...partyIds]
       : players.map((player) => partyMemberId(player.id)).filter((value): value is number => value != null);
     writeParty(source.filter((value) => value !== id));
   }
 
-  const partyAutoSyncRef = useRef<{ encounterId: number; pending: Set<number> } | null>(null);
   useEffect(() => {
     if (rosterError && partyAutoSyncRef.current) partyAutoSyncRef.current.pending.clear();
   }, [rosterError]);
+  useEffect(() => {
+    if (partyError) partyRemovalPendingRef.current.clear();
+  }, [partyError]);
   const inPartyPlayerKey = useMemo(
     () => players
       .map((player) => numericId(player.id))
@@ -2979,12 +2987,22 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
       partyAutoSyncRef.current = { encounterId, pending: new Set() };
     }
     const pending = partyAutoSyncRef.current.pending;
-    for (const id of [...pending]) {
-      if (present.has(id)) pending.delete(id);
-    }
+    const inPartyIds = new Set(
+      players
+        .map((player) => numericId(player.id))
+        .filter((id): id is number => id != null && inParty(id)),
+    );
+    reconcilePartyAutoSync(present, inPartyIds, pending, partyRemovalPendingRef.current);
+    const missingIds = new Set(missingPartyCharacterIds(
+      players.map((player) => numericId(player.id)).filter((id): id is number => id != null),
+      present,
+      inPartyIds,
+      pending,
+      partyRemovalPendingRef.current,
+    ));
     const missing = players.filter((player) => {
       const id = numericId(player.id);
-      return id != null && inParty(id) && !present.has(id) && !pending.has(id);
+      return id != null && missingIds.has(id);
     });
     if (missing.length === 0) return;
     for (const player of missing) {
