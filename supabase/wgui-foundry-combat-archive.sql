@@ -108,8 +108,19 @@ begin
   insert into public.wgui_foundry_combat_archive(encounter_id, world_id, export_id, archive)
     values (p_encounter_id, world, export, p_archive) returning receipt into receipt_id;
   -- The trigger merges the new canonical row into the current metadata. Do not
-  -- touch combatants, dice state, encounter revision or unrelated metadata.
-  update public.encounter set meta_data = meta_data where id = p_encounter_id;
+  -- touch combatants, dice state or unrelated metadata. The revision guard,
+  -- when installed, advances the encounter revision once for this update.
+  update public.encounter set meta_data = meta_data where id = p_encounter_id returning * into e;
+  -- Do not acknowledge a new receipt if a partial deployment left the mirror
+  -- trigger missing or broken. Raising here rolls back the canonical insert.
+  if not exists (
+    select 1 from jsonb_array_elements(case
+      when jsonb_typeof(e.meta_data::jsonb #> '{foundry,combat_logs}') = 'array'
+      then e.meta_data::jsonb #> '{foundry,combat_logs}' else '[]'::jsonb end) as m(value)
+    where m.value = p_archive
+  ) then
+    raise exception 'Archive mirror is unavailable' using errcode = '55000';
+  end if;
   return jsonb_build_object('receipt', receipt_id, 'worldId', world, 'exportId', export, 'campaignId', p_campaign_id, 'encounterId', p_encounter_id, 'idempotent', false);
 end;
 $$;
