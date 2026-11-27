@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { monsterArtPath, storedMonsterArtId } from './phase1-monster-image';
+import { loadMonsterArtVariant, monsterArtPath, monsterArtStaleTime, pickMonsterRow, storedMonsterArtId } from './phase1-monster-image';
 
 describe('PF2 creature art identity', () => {
   it('routes custom signed IDs to user-monsters for both image sizes', () => {
@@ -19,5 +19,39 @@ describe('PF2 creature art identity', () => {
   });
   it.each([0, NaN, 1.5, Infinity])('rejects invalid ID %s', (id) => {
     expect(() => monsterArtPath(id)).toThrow();
+  });
+});
+
+describe('verified creature portrait recovery', () => {
+  it('never chooses a partial name or a same-name different identity', () => {
+    expect(pickMonsterRow([{ MonsterId: 42, Name: 'Greater Wolf' }], 'Wolf')).toBeNull();
+    expect(pickMonsterRow([{ MonsterId: 42, Name: 'Wolf' }, { MonsterId: -42, Name: 'Wolf' }], 'Wolf')).toBeNull();
+    expect(pickMonsterRow([{ MonsterId: 42, Name: 'Wolf' }, { MonsterId: 42, Name: 'Wolf', ImageUrl: '/wolf' }], 'Wolf')?.ImageUrl).toBe('/wolf');
+  });
+  it('uses a valid requested variant without fetching a second image', async () => {
+    const calls: string[] = [];
+    const result = await loadMonsterArtVariant('thumb', async size => { calls.push(size); return 'thumb-bytes'; });
+    expect(result).toEqual({ size: 'thumb', src: 'thumb-bytes' });
+    expect(calls).toEqual(['thumb']);
+  });
+  it('tries the same creature full image after a missing thumbnail', async () => {
+    const calls: string[] = [];
+    const result = await loadMonsterArtVariant('thumb', async size => { calls.push(size); return size === 'full' ? 'full-bytes' : null; });
+    expect(result).toEqual({ size: 'full', src: 'full-bytes' });
+    expect(calls).toEqual(['thumb', 'full']);
+  });
+  it('falls back to the same creature thumbnail after a full image request rejects', async () => {
+    const result = await loadMonsterArtVariant('full', async size => {
+      if (size === 'full') throw Error('network unavailable');
+      return 'thumb-bytes';
+    });
+    expect(result).toEqual({ size: 'thumb', src: 'thumb-bytes' });
+  });
+  it('returns no image when both variants fail', async () => {
+    expect(await loadMonsterArtVariant('thumb', async () => null)).toBeNull();
+  });
+  it('expires missing artwork sooner than verified artwork', () => {
+    expect(monsterArtStaleTime({ state: { data: null } })).toBe(30_000);
+    expect(monsterArtStaleTime({ state: { data: { monsterId: 42 } } })).toBe(300_000);
   });
 });
