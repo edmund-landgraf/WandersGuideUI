@@ -43,7 +43,7 @@ import { isContentStackOpen, useContentLinks } from './phase1-content-links';
 import { getBestShield, getItemHealth } from '@items/inv-utils';
 import { toGmNotes } from '@pages/character_sheet/panels/gm-notes';
 import { lookupMonsterArt, type Phase1MonsterArt, monsterArtStaleTime } from './phase1-monster-image';
-import { encounterStatusSignature } from './phase1-encounter-status-key';
+import { encounterStatusQueryKey } from './phase1-encounter-status-key';
 import { Icon } from '@common/Icon';
 import { parseIconValue } from '@common/IconDisplay';
 import { addConditionWithSpawns, compiledConditions, removeConditionWithSpawns } from '@conditions/condition-handler';
@@ -4090,9 +4090,8 @@ function stampCreatureDefenses<T extends LivingEntity>(entity: T, status: Phase1
 }
 
 function useCombatantStatuses(encounterId: number | null, combatants: PopulatedCombatant[]) {
-  const signature = encounterStatusSignature(combatants);
   return useQuery({
-    queryKey: ['phase1-encounter-statuses', 'isolated-store', 'entity-content-v2', encounterId, signature],
+    queryKey: encounterStatusQueryKey(encounterId, combatants),
     enabled: encounterId !== null && combatants.length > 0,
     queryFn: async () => {
       const result: CombatantStatusMap = {};
