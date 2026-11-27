@@ -4,10 +4,11 @@
  * Reads the WG frontend; does not modify that checkout.
  */
 import { createRequire } from 'node:module';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GRAPH_LINE_LIMIT, MATHJS_GRAPH_NEEDLE, invalidBundleReason } from './export-bundle-guard.mjs';
+import { patchSlimCompiler } from './export-slim-compiler.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const wgDir = resolve(process.env.WG_DIR ?? join(repoRoot, '..', 'wanderers-guide'));
@@ -72,12 +73,23 @@ const result = await build({
   nodePaths: [join(repoRoot, 'node_modules')],
   stdin: {
     contents: `
-      export { setExportContentPackage } from '@content/content-store';
-      import { getJsonV4Content } from '@export/json/json-v4';
+      import { setExportContentPackage } from '@content/content-store';
+      export { setExportContentPackage };
+      import { resetVariables } from '@variables/variable-manager';
+      import { getJsonV4Content, getWguiSlimJsonV4Content } from '@export/json/json-v4';
       import { pdfV2 } from '@export/pdf/pdf-v2';
 
       export async function buildJsonV4Object(entity) {
         return { version: 4, character: entity, content: await getJsonV4Content(entity) };
+      }
+
+      export async function buildSlimJsonV4Object(entity) {
+        return { version: 4, character: entity, content: await getWguiSlimJsonV4Content(entity) };
+      }
+
+      export function clearExportState() {
+        setExportContentPackage({});
+        resetVariables();
       }
 
       export async function buildPdfV2Bytes(character, templateBytes) {
@@ -136,6 +148,14 @@ if (typeof URL !== 'undefined') {
     {
       name: 'export-stubs',
       setup(pluginBuild) {
+        pluginBuild.onLoad({ filter: /json-v4\.ts$/ }, (args) => {
+          if (resolve(args.path) !== join(frontend, 'src', 'process', 'export', 'json', 'json-v4.ts')) return;
+          return {
+            contents: patchSlimCompiler(readFileSync(args.path, 'utf8')),
+            loader: 'ts',
+            resolveDir: dirname(args.path),
+          };
+        });
         pluginBuild.onResolve({ filter: /^@utils\/notifications$/ }, () => ({
           path: 'notifications',
           namespace: 'stub',
