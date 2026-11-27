@@ -16,7 +16,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Eyebrow } from './phase1-entity-panels';
 import { useContentLinks } from './phase1-content-links';
-import { lookupMonsterArt } from './phase1-monster-image';
+import { lookupMonsterArt, monsterArtStaleTime } from './phase1-monster-image';
 import { recallKnowledgeText, TraitRow } from './phase1-stat-block';
 
 type StatBlockContent = Awaited<ReturnType<typeof getJsonV4Content>>;
@@ -77,7 +77,7 @@ export function Phase1StatBlockCardsPacked({ entity, data }: { entity: LivingEnt
     queryKey: ['phase1-creature-picker-art', entity.name, storedImageUrl],
     queryFn: () => lookupMonsterArt(entity.name, storedImageUrl || undefined, 'thumb'),
     enabled: isCreature(entity) && Boolean(entity.name?.trim() || storedImageUrl),
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: monsterArtStaleTime,
   });
   const imageUrl = isCreature(entity) ? (creatureArt.data?.thumbSrc || (!creatureArt.isFetched ? storedImageUrl : '')) : storedImageUrl;
   const sizeLabel = toLabel(convertToSize(data.size));

@@ -42,7 +42,7 @@ import { PlateNotesEditor } from './phase1-plate-notes';
 import { isContentStackOpen, useContentLinks } from './phase1-content-links';
 import { getBestShield, getItemHealth } from '@items/inv-utils';
 import { toGmNotes } from '@pages/character_sheet/panels/gm-notes';
-import { lookupMonsterArt, type Phase1MonsterArt } from './phase1-monster-image';
+import { lookupMonsterArt, type Phase1MonsterArt, monsterArtStaleTime } from './phase1-monster-image';
 import { encounterStatusSignature } from './phase1-encounter-status-key';
 import { Icon } from '@common/Icon';
 import { parseIconValue } from '@common/IconDisplay';
@@ -6607,13 +6607,13 @@ function EntityIcon({ type, name, imageUrl, expandable }: { type: Combatant['typ
     queryKey: ['phase1-creature-picker-art', name, portrait],
     queryFn: () => lookupMonsterArt(name ?? '', portrait || undefined, 'thumb'),
     enabled: type === 'CREATURE' && Boolean(name?.trim() || portrait),
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: monsterArtStaleTime,
   });
   const full = useQuery({
     queryKey: ['phase1-creature-picker-art', name, portrait, 'full'],
     queryFn: () => lookupMonsterArt(name ?? '', portrait || undefined, 'full'),
     enabled: preview && type === 'CREATURE' && Boolean(name?.trim() || portrait),
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: monsterArtStaleTime,
   });
   const src = type === 'CREATURE' ? (art.data?.thumbSrc || (!art.isFetched ? portrait : undefined)) : portrait || undefined;
   const fullSrc = type === 'CREATURE' ? (full.data?.fullSrc || art.data?.fullSrc || src) : portrait || undefined;

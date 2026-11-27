@@ -38,7 +38,7 @@ async function searchCreatures(path: '/api/monsters' | '/api/npcs', name: string
   return payload.rows ?? [];
 }
 
-function pickMonsterRow(rows: MonsterRow[], name: string) {
+export function pickMonsterRow(rows: MonsterRow[], name: string) {
   const needle = normalizeName(name);
   const exact = rows.filter((row) => normalizeName(row.Name ?? '') === needle);
   const ids = new Set(exact.map((row) => row.MonsterId).filter((id) => Number.isSafeInteger(id) && id !== 0));
@@ -231,6 +231,28 @@ async function portraitLoads(src: string): Promise<boolean> {
   });
 }
 
+/** Missing art must become eligible for retry after a transient outage. */
+export function monsterArtStaleTime(query: { state: { data: unknown } }): number {
+  return query.state.data ? 5 * 60_000 : 30_000;
+}
+
+/** Try both variants of the SAME verified identity; never substitute another creature. */
+export async function loadMonsterArtVariant(
+  preferred: 'thumb' | 'full',
+  load: (size: 'thumb' | 'full') => Promise<string | null>,
+): Promise<{ size: 'thumb' | 'full'; src: string } | null> {
+  const alternate = preferred === 'thumb' ? 'full' : 'thumb';
+  for (const size of [preferred, alternate] as const) {
+    try {
+      const src = await load(size);
+      if (src) return { size, src };
+    } catch {
+      // A failed thumbnail (or full image) is not proof that the other variant is absent.
+    }
+  }
+  return null;
+}
+
 export async function lookupMonsterArt(name: string, fallbackUrl?: string, size: 'thumb' | 'full' = 'thumb'): Promise<Phase1MonsterArt | null> {
   const trimmedFallback = fallbackUrl?.trim() || undefined;
   const lookupName = normalizeName(name) || name.trim();
@@ -247,10 +269,11 @@ export async function lookupMonsterArt(name: string, fallbackUrl?: string, size:
   const cacheKey = explicitId != null ? `id:${explicitId}` : lookupName;
   try {
     if (monsterId == null && lookupName) {
-      const monsters = await searchCreatures('/api/monsters', lookupName);
-      const npcs = monsters.some((row) => normalizeName(row.Name ?? '') === lookupName)
-        ? []
-        : await searchCreatures('/api/npcs', lookupName);
+      // Verify uniqueness across both catalogs, not only the first matching catalog.
+      const [monsters, npcs] = await Promise.all([
+        searchCreatures('/api/monsters', lookupName),
+        searchCreatures('/api/npcs', lookupName),
+      ]);
       const pick = pickMonsterRow([...monsters, ...npcs], lookupName);
       monsterId = pick?.MonsterId ?? null;
       // Do not guess from partial or ambiguous names, including stale name-only cache entries.
@@ -262,9 +285,14 @@ export async function lookupMonsterArt(name: string, fallbackUrl?: string, size:
         clearArtPassword();
         return null;
       }
-      const src = await fetchArtObjectUrl(hostedMonsterImage(monsterId, size), password);
-      if (src) {
-        writeCachedArt(cacheKey, size, { monsterId, src });
+      const verifiedId = monsterId;
+      const variant = await loadMonsterArtVariant(size, async (candidate) => {
+        const src = await fetchArtObjectUrl(hostedMonsterImage(verifiedId, candidate), password);
+        return src && await portraitLoads(src) ? src : null;
+      });
+      if (variant) {
+        const { src } = variant;
+        writeCachedArt(cacheKey, variant.size, { monsterId, src });
         const fullCached = readCachedArt(cacheKey, 'full');
         const thumbCached = readCachedArt(cacheKey, 'thumb');
         return {
@@ -278,7 +306,10 @@ export async function lookupMonsterArt(name: string, fallbackUrl?: string, size:
     // A verified cached image may still be available during an API outage.
   }
 
-  const cached = cacheKey ? readCachedArt(cacheKey, size) : null;
+  const cached = cacheKey && monsterId != null
+    ? [readCachedArt(cacheKey, size), readCachedArt(cacheKey, size === 'thumb' ? 'full' : 'thumb')]
+      .find((entry) => entry?.monsterId === monsterId)
+    : null;
   if (cached && monsterId != null && cached.monsterId === monsterId) {
     const fullCached = readCachedArt(cacheKey, 'full');
     const thumbCached = readCachedArt(cacheKey, 'thumb');
