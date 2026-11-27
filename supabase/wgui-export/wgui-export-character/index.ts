@@ -47,22 +47,27 @@ serve(async (req: Request) => {
         throw new HttpError(403, 'You do not have access to this character', 'CHARACTER_FORBIDDEN');
       }
 
-      const pkg = await loadContentPackage(client, character.content_sources?.enabled ?? []);
-
       const run = compileQueue.then(async () => {
+        // Queue catalog loading as well as compilation to avoid overlapping large packages.
+        const pkg = await loadContentPackage(client, character.content_sources?.enabled ?? []);
         setExportContentPackage(pkg);
-        if (format === 'json') {
-          const object = await buildJsonV4Object(character);
-          return new Response(JSON.stringify(object), {
+        try {
+          if (format === 'json') {
+            const object = await buildJsonV4Object(character);
+            return new Response(JSON.stringify(object), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+          const bytes = await buildPdfV2Bytes(character, await loadTemplate());
+          return new Response(bytes, {
             status: 200,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/pdf' },
           });
+        } finally {
+          // The bundled content store is module-global; release the request's catalog.
+          setExportContentPackage({});
         }
-        const bytes = await buildPdfV2Bytes(character, await loadTemplate());
-        return new Response(bytes, {
-          status: 200,
-          headers: { 'Content-Type': 'application/pdf' },
-        });
       });
       compileQueue = run.then(
         () => undefined,
