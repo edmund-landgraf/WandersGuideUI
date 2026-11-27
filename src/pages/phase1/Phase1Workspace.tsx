@@ -18,7 +18,7 @@ import { clearCombatantDrag, hasCombatantDrag, readCombatantDrag, writeCombatant
 import { TacticsPublisher } from './tactics/TacticsPublisher';
 import { loadEntityAbilities, type Phase1Ability } from './phase1-abilities';
 import { readStoredDefenses } from './phase1-creature-defenses';
-import { calculateEntityStatus, type Phase1CreatureStatus } from './phase1-stats';
+import type { Phase1CreatureStatus } from './phase1-stats';
 import type { Phase1EntityCombatant } from './phase1-entity';
 import { StatDetailModal, type Phase1StatKey, type Phase1StatTarget } from './phase1-stat-modal';
 import { loadEntityDetails, type Phase1ProfRow } from './phase1-details';
@@ -43,7 +43,7 @@ import { isContentStackOpen, useContentLinks } from './phase1-content-links';
 import { getBestShield, getItemHealth } from '@items/inv-utils';
 import { toGmNotes } from '@pages/character_sheet/panels/gm-notes';
 import { lookupMonsterArt, type Phase1MonsterArt, monsterArtStaleTime } from './phase1-monster-image';
-import { encounterStatusQueryKey } from './phase1-encounter-status-key';
+import { encounterStatusQueryOptions } from './phase1-encounter-status-query';
 import { Icon } from '@common/Icon';
 import { parseIconValue } from '@common/IconDisplay';
 import { addConditionWithSpawns, compiledConditions, removeConditionWithSpawns } from '@conditions/condition-handler';
@@ -4090,24 +4090,7 @@ function stampCreatureDefenses<T extends LivingEntity>(entity: T, status: Phase1
 }
 
 function useCombatantStatuses(encounterId: number | null, combatants: PopulatedCombatant[]) {
-  return useQuery({
-    queryKey: encounterStatusQueryKey(encounterId, combatants),
-    enabled: encounterId !== null && combatants.length > 0,
-    queryFn: async () => {
-      const result: CombatantStatusMap = {};
-      for (const combatant of combatants) {
-        if (isHazardCombatant(combatant) || combatant.access?.details_revealed === false || !hasFullEntityDetails(combatant) || !combatant.data) continue;
-        try {
-          result[combatant._id] = await calculateEntityStatus(combatant as Phase1EntityCombatant);
-        } catch {
-          const stored = statsFor(combatant.data);
-          result[combatant._id] = stored.defensesKnown ? fallbackStatus(combatant.data) : null;
-        }
-      }
-      return result;
-    },
-    staleTime: 30_000,
-  });
+  return useQuery(encounterStatusQueryOptions(encounterId, combatants));
 }
 export function WorkspaceHeader({ label, section, campaignId, encounterId, noteIndex, viewingSettings, isGm = false, railOpen, onToggleRail }: { label?: string; section?: 'campaigns' | 'characters' | 'encounters' | 'homebrew'; campaignId?: number | null; encounterId?: number | null; noteIndex?: number | null; viewingSettings?: boolean; isGm?: boolean; railOpen?: boolean; onToggleRail?: () => void }) {
   const navClass = (active: boolean) => `text-sm ${active ? 'text-p1-text' : 'text-p1-muted hover:text-p1-text'}`;
