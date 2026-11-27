@@ -37,10 +37,12 @@ export function textResult(text: string, structuredContent: Record<string, unkno
 }
 
 export function fail(result: Extract<InvokeResult, { ok: false }>) {
-  return textResult(result.message, {
+  return textResult(result.saveOutcome === "unknown" ? `${result.message} Save outcome unknown; reload the character and open choices before retrying.` : result.message, {
     code: result.code,
     retryable: result.retryable === true || result.code === "CONFLICT",
     ...(result.data ? { data: result.data } : {}),
+    ...(result.requestId ? { requestId: result.requestId } : {}),
+    ...(result.saveOutcome ? { saveOutcome: result.saveOutcome, requiresReload: true } : {}),
   }, true);
 }
 
@@ -383,6 +385,7 @@ export function registerCharacterCatalog(server: McpServer, userId: () => string
         "Picks run in order against the character as updated by the earlier picks, so a later pick may answer a dependent choice an earlier pick opened. Each pick is validated exactly like choose.",
         "Default (atomic false): legal picks are saved and illegal ones are reported per pick with a code and reason; a failed pick changes nothing. atomic true saves nothing unless every pick is legal; use it only when the picks must succeed together.",
         "Returns per-pick results, applied/failed counts, the saved row summary, and the remaining open choices (same shape as list_open_choices).",
+        "If a save returns saveOutcome=unknown, reload the character and list_open_choices before retrying; do not assume the write failed or replay the batch blindly.",
       ].join(" "),
       annotations: writes,
       inputSchema: {

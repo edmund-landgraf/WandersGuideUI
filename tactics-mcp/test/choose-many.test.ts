@@ -366,6 +366,9 @@ test("choose_many reports a dropped character save as a retryable transport erro
     const out = result.structuredContent as Json;
     assert.equal(out.code, "INTERNAL_ERROR");
     assert.equal(out.retryable, true);
+    assert.equal(out.saveOutcome, "unknown");
+    assert.equal(out.requiresReload, true);
+    assert.match(String(out.requestId), /^[0-9a-f-]{36}$/);
     assert.match(String(out && (result.content as { text: string }[])[0].text), /UND_ERR_CONNECT_TIMEOUT/);
     assert.equal(JSON.stringify(result).includes(String(token)), false);
     assert.deepEqual(selectionsOf(h.rows.get(31)!), {});
@@ -470,8 +473,112 @@ test("choose_many reports a dropped response body without replaying the characte
     const result = await h.client.callTool({ name: "choose_many", arguments: { characterId: 34, picks: [{ choiceId: "class_skill-1", optionId: "nature" }] } });
     assert.equal(result.isError, true);
     assert.equal((result.structuredContent as Json).retryable, true);
+    assert.equal((result.structuredContent as Json).saveOutcome, "unknown");
+    assert.equal((result.structuredContent as Json).requiresReload, true);
     assert.match(JSON.stringify(result), /ECONNRESET/);
     assert.equal(count(h.calls, "update-character"), 1, "an ambiguous write must not be replayed");
     assert.equal(selectionsOf(h.rows.get(34)!)["class_skill-1"], "nature");
+  } finally { await h.close(); }
+});
+
+test("choose_many correlates a failed save without exposing arbitrary exception text", async (t) => {
+  const h = await harness([ranger(35)]);
+  const sensitive = "fixture-secret-in-error-url";
+  const logs: string[] = [];
+  let requestId: string | null = null;
+  const log = t.mock.method(console, "error", (...args: unknown[]) => { logs.push(args.map(String).join(" ")); });
+  try {
+    setCharacterFetch(async (input, init) => {
+      const name = String(input).split("/").pop()!;
+      h.calls.push(name);
+      if (name === "update-character") {
+        requestId = new Headers(init?.headers).get("x-request-id");
+        throw new TypeError("fetch failed " + sensitive, { cause: Object.assign(new Error(sensitive), { code: "ECONNRESET" }) });
+      }
+      return jsonResponse({ status: "success", data: h.rows.get(35) });
+    });
+    const result = await h.client.callTool({ name: "choose_many", arguments: { characterId: 35, picks: [{ choiceId: "class_skill-1", optionId: "nature" }] } });
+    const out = result.structuredContent as Json;
+    assert.equal(result.isError, true);
+    assert.equal(out.requestId, requestId);
+    assert.match(String(requestId), /^[0-9a-f-]{36}$/);
+    assert.ok(logs.some(line => line.includes(String(requestId)) && line.includes("ECONNRESET")));
+    assert.ok(!JSON.stringify(result).includes(sensitive));
+    assert.ok(!logs.join(" ").includes(sensitive));
+    assert.equal(count(h.calls, "update-character"), 1);
+  } finally { log.mock.restore(); await h.close(); }
+});
+
+test("choose_many treats an empty successful save response as unconfirmed, not saved", async () => {
+  const h = await harness([ranger(36)]);
+  try {
+    setCharacterFetch(async (input, init) => {
+      const name = String(input).split("/").pop()!;
+      h.calls.push(name);
+      if (name === "update-character") return jsonResponse({ status: "success", data: null });
+      return jsonResponse({ status: "success", data: h.rows.get(36) });
+    });
+    const result = await h.client.callTool({ name: "choose_many", arguments: { characterId: 36, picks: [{ choiceId: "class_skill-1", optionId: "nature" }] } });
+    const out = result.structuredContent as Json;
+    assert.equal(result.isError, true);
+    assert.equal(out.saveOutcome, "unknown");
+    assert.equal(out.requiresReload, true);
+    assert.notEqual(out.saved, true);
+    assert.equal(count(h.calls, "update-character"), 1);
+  } finally { await h.close(); }
+});
+
+test("choose_many requires a reload after a non-JSON upstream gateway failure", async () => {
+  const h = await harness([ranger(37)]);
+  try {
+    setCharacterFetch(async input => {
+      const name = String(input).split("/").pop()!;
+      h.calls.push(name);
+      if (name === "update-character") return new Response("Gateway unavailable", { status: 502 });
+      return jsonResponse({ status: "success", data: h.rows.get(37) });
+    });
+    const result = await h.client.callTool({ name: "choose_many", arguments: { characterId: 37, picks: [{ choiceId: "class_skill-1", optionId: "nature" }] } });
+    const out = result.structuredContent as Json;
+    assert.equal(result.isError, true);
+    assert.equal(out.retryable, true);
+    assert.equal(out.saveOutcome, "unknown");
+    assert.equal(out.requiresReload, true);
+    assert.equal(count(h.calls, "update-character"), 1);
+  } finally { await h.close(); }
+});
+
+test("choose_many recognizes an upstream JSON fetch failure even with HTTP 200", async () => {
+  const h = await harness([ranger(38)]);
+  try {
+    setCharacterFetch(async input => {
+      const name = String(input).split("/").pop()!;
+      h.calls.push(name);
+      if (name === "update-character") return jsonResponse({ status: "error", code: "INTERNAL_ERROR", message: "fetch failed" });
+      return jsonResponse({ status: "success", data: h.rows.get(38) });
+    });
+    const result = await h.client.callTool({ name: "choose_many", arguments: { characterId: 38, picks: [{ choiceId: "class_skill-1", optionId: "nature" }] } });
+    const out = result.structuredContent as Json;
+    assert.equal(result.isError, true);
+    assert.equal(out.code, "INTERNAL_ERROR");
+    assert.equal(out.retryable, true);
+    assert.equal(out.saveOutcome, "unknown");
+    assert.equal(out.requiresReload, true);
+    assert.equal(count(h.calls, "update-character"), 1);
+  } finally { await h.close(); }
+});
+
+test("choose_many refuses to confirm an unrelated saved row", async () => {
+  const h = await harness([ranger(39)]);
+  try {
+    setCharacterFetch(async input => {
+      const name = String(input).split("/").pop()!;
+      h.calls.push(name);
+      if (name === "update-character") return jsonResponse({ status: "success", data: ranger(999) });
+      return jsonResponse({ status: "success", data: h.rows.get(39) });
+    });
+    const result = await h.client.callTool({ name: "choose_many", arguments: { characterId: 39, picks: [{ choiceId: "class_skill-1", optionId: "nature" }] } });
+    assert.equal(result.isError, true);
+    assert.equal((result.structuredContent as Json).saveOutcome, "unknown");
+    assert.equal(count(h.calls, "update-character"), 1);
   } finally { await h.close(); }
 });
