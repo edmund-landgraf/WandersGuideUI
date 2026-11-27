@@ -3,6 +3,10 @@ on:
   pull_request:
     paths:
       - 'supabase/wgui-export/**'
+      - 'scripts/bundle-wgui-export.mjs'
+      - 'scripts/export-slim-compiler*'
+      - 'scripts/export-bundle-guard*'
+      - 'src/process/export/json/json-v4.ts'
       - '.github/workflows/wgui-export-memory.yml'
 permissions:
   contents: read
@@ -14,4 +18,27 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: node --test supabase/wgui-export/_tests/export-queue.test.ts
+      - run: node --test supabase/wgui-export/_tests/export-queue.test.ts scripts/export-slim-compiler.test.mjs scripts/export-bundle-guard.test.mjs
+      - name: Large catalog fixture (synthetic Node RSS, not Deno edge memory)
+        run: node --max-old-space-size=192 --test supabase/wgui-export/_tests/slim-memory-fixture.test.ts
+  export-bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CYPRESS_INSTALL_BINARY: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: wanderers-guide/wanderers-guide
+          ref: d761e750c03d02880dc3ec3b8e156f5c06f528af
+          path: upstream-wg
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Build actual edge compiler against pinned upstream
+        run: WG_DIR="$PWD/upstream-wg" node scripts/bundle-wgui-export.mjs
