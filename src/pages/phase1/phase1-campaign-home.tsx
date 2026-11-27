@@ -25,7 +25,8 @@ import { encounterDisplayName, encounterNamesMatch } from './phase1-encounter-ti
 import { ProseMarkdown } from './phase1-markdown';
 import { ContentLinkHoverCard } from './phase1-content-stack';
 import { characterSheetMaxHp, withPhase1Store } from './phase1-entity';
-import { lookupMonsterArt, monsterArtStaleTime } from './phase1-monster-image';
+import { lookupMonsterArt } from './phase1-monster-image';
+import { useCreaturePortrait } from './phase1-creature-portrait';
 import { Phase1StatBlockCardsPacked } from './phase1-stat-block-cards-packed';
 import { isPlayerVisibleCombatant, playerEnemyLabel } from './phase1-player-combat';
 
@@ -1709,19 +1710,11 @@ function rosterArtSrc(url: string): string {
 }
 
 function RosterArt({ name, imageUrl, onOpen }: { name: string; imageUrl?: string; onOpen: (name: string, url: string) => void }) {
-  const [failed, setFailed] = useState(false);
   const stored = parseIconValue(imageUrl?.trim() ?? '');
   const portrait = stored.type === 'image' ? stored.value.trim() : '';
-  const art = useQuery({
-    queryKey: ['phase1-creature-picker-art', name, portrait],
-    queryFn: () => lookupMonsterArt(name, portrait || undefined, 'thumb'),
-    enabled: Boolean(name.trim() || portrait),
-    staleTime: monsterArtStaleTime,
-  });
-  // Use the validated resolver result, never retry a stored URL it rejected.
-  const src = rosterArtSrc(art.data?.thumbSrc || (!art.isFetched ? portrait : '') || '');
-  useEffect(() => { setFailed(false); }, [src]);
-  if (src && !failed) {
+  const art = useCreaturePortrait(name, portrait);
+  const src = art.src;
+  if (src) {
     return (
       <button
         type='button'
@@ -1730,15 +1723,15 @@ function RosterArt({ name, imageUrl, onOpen }: { name: string; imageUrl?: string
         aria-label={`View full image of ${name}`}
         onClick={(event) => {
           event.stopPropagation();
-          const full = rosterArtSrc(art.data?.fullSrc || src);
+          const full = art.fullSrc || src;
           onOpen(name, full);
-          void lookupMonsterArt(name, portrait || undefined, 'full').then((result) => {
+          void lookupMonsterArt(name, art.lookupSource || undefined, 'full', art.rejectedSrc).then((result) => {
             const next = rosterArtSrc(result?.fullSrc || '');
             if (next) onOpen(name, next);
           });
         }}
       >
-        <img src={src} alt='' referrerPolicy='no-referrer' className='h-8 w-8 border border-p1-border bg-p1-inset object-contain' onError={() => setFailed(true)} />
+        <img src={src} alt='' referrerPolicy='no-referrer' className='h-8 w-8 border border-p1-border bg-p1-inset object-contain' onError={art.onError} />
       </button>
     );
   }
