@@ -2,15 +2,29 @@
 // wgui-export-character and wgui-export-character-slim.
 import type { ContentSource } from '../_shared/content';
 import { fetchData } from '../_shared/helpers.ts';
+import { collectSlimCatalogPages } from './slim-catalog.ts';
 
 export const COMMON_CORE_ID = 3;
 
 // Packages are request-scoped: retaining them by book list grows worker memory
 // and can reuse rows fetched under another caller's visibility.
-export async function loadContentPackage(client: Parameters<typeof fetchData>[0], enabled: number[]) {
+export async function loadContentPackage(client: Parameters<typeof fetchData>[0], enabled: number[], mode: 'full' | 'slim' = 'full') {
   const ids = [...new Set([COMMON_CORE_ID, ...enabled])];
 
-  const bySource = { column: 'content_source_id', value: ids };
+  async function read<T = Record<string, any>>(table: Parameters<typeof fetchData>[1], column = 'content_source_id'): Promise<T[]> {
+    if (mode === 'full') return fetchData<T>(client, table, [{ column, value: ids }]);
+    // Use the same RLS-scoped client and enabled-source filter as fetchData.
+    // Small keyset pages bound transient response size; keep all rule rows.
+    const rows = await collectSlimCatalogPages(async (afterId, limit) => {
+      let query = client.from(table).select().in(column, ids);
+      if (afterId !== null) query = query.gt('id', afterId);
+      const { data, error } = await query.order('id', { ascending: true }).limit(limit);
+      if (error) throw error;
+      if (!Array.isArray(data)) throw new Error(`Invalid query result for ${table}`);
+      return data as { id: number; search_tsv?: unknown }[];
+    });
+    return rows as unknown as T[];
+  }
   const [
     ancestries,
     backgrounds,
@@ -26,19 +40,19 @@ export async function loadContentPackage(client: Parameters<typeof fetchData>[0]
     classArchetypes,
     sources,
   ] = [
-    await fetchData(client, 'ancestry', [bySource]),
-    await fetchData(client, 'background', [bySource]),
-    await fetchData(client, 'class', [bySource]),
-    await fetchData(client, 'ability_block', [bySource]),
-    await fetchData(client, 'item', [bySource]),
-    await fetchData(client, 'language', [bySource]),
-    await fetchData(client, 'spell', [bySource]),
-    await fetchData(client, 'trait', [bySource]),
-    await fetchData(client, 'creature', [bySource]),
-    await fetchData(client, 'archetype', [bySource]),
-    await fetchData(client, 'versatile_heritage', [bySource]),
-    await fetchData(client, 'class_archetype', [bySource]),
-    await fetchData<ContentSource>(client, 'content_source', [{ column: 'id', value: ids }]),
+    await read('ancestry'),
+    await read('background'),
+    await read('class'),
+    await read('ability_block'),
+    await read('item'),
+    await read('language'),
+    await read('spell'),
+    await read('trait'),
+    await read('creature'),
+    await read('archetype'),
+    await read('versatile_heritage'),
+    await read('class_archetype'),
+    await read<ContentSource>('content_source', 'id'),
   ];
 
   const pkg = {
