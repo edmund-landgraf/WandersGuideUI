@@ -25,7 +25,7 @@ import { encounterDisplayName, encounterNamesMatch } from './phase1-encounter-ti
 import { ProseMarkdown } from './phase1-markdown';
 import { ContentLinkHoverCard } from './phase1-content-stack';
 import { characterSheetMaxHp, withPhase1Store } from './phase1-entity';
-import { lookupMonsterArt } from './phase1-monster-image';
+import { lookupMonsterArt, monsterArtStaleTime } from './phase1-monster-image';
 import { Phase1StatBlockCardsPacked } from './phase1-stat-block-cards-packed';
 import { isPlayerVisibleCombatant, playerEnemyLabel } from './phase1-player-combat';
 
@@ -1716,10 +1716,10 @@ function RosterArt({ name, imageUrl, onOpen }: { name: string; imageUrl?: string
     queryKey: ['phase1-creature-picker-art', name, portrait],
     queryFn: () => lookupMonsterArt(name, portrait || undefined, 'thumb'),
     enabled: Boolean(name.trim() || portrait),
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: monsterArtStaleTime,
   });
-  // The creature's own picture is what the GM row shows. The art service only fills a gap.
-  const src = rosterArtSrc(art.data?.thumbSrc || portrait || '');
+  // Use the validated resolver result, never retry a stored URL it rejected.
+  const src = rosterArtSrc(art.data?.thumbSrc || (!art.isFetched ? portrait : '') || '');
   useEffect(() => { setFailed(false); }, [src]);
   if (src && !failed) {
     return (
