@@ -11,3 +11,7 @@ export function encounterStatusSignature(combatants: readonly {
     hazard_state: combatant.hazard_state,
   })));
 }
+
+export function encounterStatusQueryKey(encounterId: number | null, combatants: Parameters<typeof encounterStatusSignature>[0]) {
+  return ['phase1-encounter-statuses', 'isolated-store', 'entity-content-v2', encounterId, encounterStatusSignature(combatants)] as const;
+}
