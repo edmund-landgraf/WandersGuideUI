@@ -1,4 +1,4 @@
-import { publicArtSrc } from '@utils/public-art-url';
+import { publicArtSrc, publicStorageOrigin } from '@utils/public-art-url';
 
 const LOCAL_PATHFINDER_PREFIX = '/local-pf';
 
@@ -209,12 +209,14 @@ async function fetchArtObjectUrl(url: string, password: string) {
 function ownCreatureArt(fallbackUrl?: string) {
   const trimmed = fallbackUrl?.trim();
   if (!trimmed || /aonprd\.com/i.test(trimmed) || storedMonsterArtId(trimmed) != null) return null;
-  const src = publicArtSrc(trimmed);
+  const src = trimmed.startsWith('/storage/')
+    ? `${import.meta.env.DEV && typeof window !== 'undefined' ? window.location.origin : publicStorageOrigin()}${trimmed}`
+    : publicArtSrc(trimmed);
   // Public storage and site portraits belong to the public asset host, not PF2.
   // Vite proxies local development storage on its own origin.
   if (import.meta.env.DEV && typeof window !== 'undefined') {
     try {
-      const url = new URL(src, window.location.origin);
+      const url = new URL(trimmed, window.location.origin);
       if (url.pathname.startsWith('/storage/') && url.protocol === 'http:' &&
           (['localhost', '127.0.0.1', '[::1]', 'kong'].includes(url.hostname) || url.port === '8000')) {
         const local = `${window.location.origin}${url.pathname}${url.search}`;
