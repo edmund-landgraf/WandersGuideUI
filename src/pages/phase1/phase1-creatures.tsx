@@ -7,7 +7,7 @@ import { getEntityLevel } from '@utils/entity-utils';
 import { ChevronDown, Swords } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { initializeCreatureForEncounter } from './phase1-entity';
-import { clearArtPassword, lookupMonsterArt, readArtPassword, unlockMonsterArt } from './phase1-monster-image';
+import { clearArtPassword, lookupMonsterArt, readArtPassword, unlockMonsterArt, monsterArtStaleTime } from './phase1-monster-image';
 import { ProseMarkdown } from './phase1-markdown';
 import { Phase1PickerModal } from './phase1-picker-modal';
 
@@ -438,7 +438,7 @@ function CreatureArt({ name, onArtUnlocked }: { name: string; onArtUnlocked?: ()
   const art = useQuery({
     queryKey: ['phase1-creature-picker-art', name, 'full'],
     queryFn: () => lookupMonsterArt(name, undefined, 'full'),
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: monsterArtStaleTime,
   });
   const src = art.data?.fullSrc;
   if (!src && !readArtPassword()) {
@@ -502,7 +502,7 @@ function CreatureThumb({ name }: { name: string }) {
   const art = useQuery({
     queryKey: ['phase1-creature-picker-art', name],
     queryFn: () => lookupMonsterArt(name),
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: monsterArtStaleTime,
   });
   const src = art.data?.thumbSrc;
   const [failed, setFailed] = useState(false);
