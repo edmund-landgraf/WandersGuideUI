@@ -113,7 +113,7 @@ describe('mounted creature portrait recovery (#64)', () => {
     expect(calls.map(call => call.path)).toContain('/api/user-monsters/1011/image/thumb');
     expect(calls.map(call => call.path)).toContain('/api/user-monsters/1011/image');
     expect(calls.every(call => !call.path.includes('/api/monsters/-1011'))).toBe(true);
-    expect(img()?.referrerPolicy).toBe('no-referrer');
+    expect(img()?.getAttribute('referrerpolicy')).toBe('no-referrer');
     // A second error is bounded, rather than retrying forever.
     await failRenderedImage();
     await until(() => Boolean(host.querySelector('[data-missing]')));
