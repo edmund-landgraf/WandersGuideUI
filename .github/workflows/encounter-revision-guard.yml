@@ -4,6 +4,10 @@ on:
     paths:
       - 'supabase/wgui-encounter-revision-guard.sql'
       - 'supabase/tests/wgui-encounter-revision-guard*'
+      - 'supabase/tests/wgui-encounter-revision-save.sql'
+      - 'supabase/tests/wgui-foundry-combat-archive*'
+      - 'supabase/wgui-ext/wgui-ext-save-encounter/**'
+      - 'supabase/wgui-ext/wgui-ext-append-foundry-combat-archive/**'
       - 'supabase/wgui-foundry-combat-archive.sql'
       - '.github/workflows/encounter-revision-guard.yml'
 permissions:
@@ -11,6 +15,7 @@ permissions:
 jobs:
   sql-contract:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     services:
       postgres:
         image: postgres:16
@@ -40,3 +45,7 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f supabase/tests/wgui-encounter-revision-guard.sql
           bash supabase/tests/wgui-encounter-revision-guard-concurrency.sh
           psql -v ON_ERROR_STOP=1 -f supabase/tests/wgui-encounter-revision-save.sql
+      - name: Rehearse concurrent production RPCs on disposable PostgreSQL
+        env:
+          WGUI_DISPOSABLE_DB: '1'
+        run: python3 supabase/tests/wgui-encounter-revision-guard-rpc-rehearsal.py
