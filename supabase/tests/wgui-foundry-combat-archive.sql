@@ -61,3 +61,20 @@ begin
 end;
 $$;
 rollback;
+
+-- A partial deployment must not persist or acknowledge an archive without its mirror.
+begin;
+alter table public.encounter disable trigger wgui_protect_foundry_combat_archive;
+do $missing_archive_mirror$
+begin
+  begin
+    perform public.wgui_append_foundry_combat_archive('00000000-0000-0000-0000-000000000001',1,1,
+      '{"worldId":"test","exportId":"missing-mirror","transcript":[{"messageId":"one"}]}');
+    raise exception 'Missing mirror was acknowledged';
+  exception when object_not_in_prerequisite_state then null; end;
+  if exists(select 1 from public.wgui_foundry_combat_archive where export_id='missing-mirror') then
+    raise exception 'Failed mirror left a canonical receipt';
+  end if;
+end;
+$missing_archive_mirror$;
+rollback;
