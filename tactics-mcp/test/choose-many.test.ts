@@ -546,3 +546,39 @@ test("choose_many requires a reload after a non-JSON upstream gateway failure", 
     assert.equal(count(h.calls, "update-character"), 1);
   } finally { await h.close(); }
 });
+
+test("choose_many recognizes an upstream JSON fetch failure even with HTTP 200", async () => {
+  const h = await harness([ranger(38)]);
+  try {
+    setCharacterFetch(async input => {
+      const name = String(input).split("/").pop()!;
+      h.calls.push(name);
+      if (name === "update-character") return jsonResponse({ status: "error", code: "INTERNAL_ERROR", message: "fetch failed" });
+      return jsonResponse({ status: "success", data: h.rows.get(38) });
+    });
+    const result = await h.client.callTool({ name: "choose_many", arguments: { characterId: 38, picks: [{ choiceId: "class_skill-1", optionId: "nature" }] } });
+    const out = result.structuredContent as Json;
+    assert.equal(result.isError, true);
+    assert.equal(out.code, "INTERNAL_ERROR");
+    assert.equal(out.retryable, true);
+    assert.equal(out.saveOutcome, "unknown");
+    assert.equal(out.requiresReload, true);
+    assert.equal(count(h.calls, "update-character"), 1);
+  } finally { await h.close(); }
+});
+
+test("choose_many refuses to confirm an unrelated saved row", async () => {
+  const h = await harness([ranger(39)]);
+  try {
+    setCharacterFetch(async input => {
+      const name = String(input).split("/").pop()!;
+      h.calls.push(name);
+      if (name === "update-character") return jsonResponse({ status: "success", data: ranger(999) });
+      return jsonResponse({ status: "success", data: h.rows.get(39) });
+    });
+    const result = await h.client.callTool({ name: "choose_many", arguments: { characterId: 39, picks: [{ choiceId: "class_skill-1", optionId: "nature" }] } });
+    assert.equal(result.isError, true);
+    assert.equal((result.structuredContent as Json).saveOutcome, "unknown");
+    assert.equal(count(h.calls, "update-character"), 1);
+  } finally { await h.close(); }
+});
