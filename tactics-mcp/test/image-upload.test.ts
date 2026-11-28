@@ -55,7 +55,7 @@ test("upload_image posts upload-public-file and the art tools store the returned
   };
   setCharacterFetch(async (input, init) => {
     const url = String(input);
-    if (url.startsWith("https://files.oaiusercontent.com/")) {
+    if (url.startsWith("https://files.oaiusercontent.com/") || url.startsWith("https://oaisdmntprcacentral.blob.core.windows.net/")) {
       assert.equal(init?.redirect, "error");
       assert.equal(new Headers(init?.headers).has("authorization"), false);
       if (url.includes("/expired")) return new Response("", { status: 403 });
@@ -177,9 +177,13 @@ test("upload_image posts upload-public-file and the art tools store the returned
   const backgroundAttachment = await remote.callTool({ name: "set_character_art", arguments: { characterId: 95, backgroundAttachment: attachment } });
   assert.equal(backgroundAttachment.isError, undefined);
   assert.equal(uploads.at(-1)?.category, "backgrounds");
+  const sediment = await remote.callTool({ name: "set_character_art", arguments: { characterId: 95, portraitAttachment: { ...attachment, download_url: "https://oaisdmntprcacentral.blob.core.windows.net/files/generated?sig=temporary-secret" } } });
+  assert.equal(sediment.isError, undefined);
+  assert.equal(uploads.at(-1)?.data, JPEG.toString("base64"));
+  assert.equal(JSON.stringify(sediment).includes("temporary-secret"), false);
   const beforeBad = uploads.length;
   const beforeDetails = structuredClone(character.details);
-  for (const download_url of ["http://files.oaiusercontent.com/generated", "https://files.oaiusercontent.com.evil.example/generated", "file:///etc/passwd", "https://files.oaiusercontent.com/expired?sig=temporary-secret", "https://files.oaiusercontent.com/oversized", "https://files.oaiusercontent.com/fake", "https://files.oaiusercontent.com/redirect"]) {
+  for (const download_url of ["http://files.oaiusercontent.com/generated", "https://files.oaiusercontent.com.evil.example/generated", "https://evil.blob.core.windows.net/files/generated", "https://oaisdmntprcacentral.blob.core.windows.net.evil.example/generated", "file:///etc/passwd", "https://files.oaiusercontent.com/expired?sig=temporary-secret", "https://files.oaiusercontent.com/oversized", "https://files.oaiusercontent.com/fake", "https://files.oaiusercontent.com/redirect"]) {
     const rejected = await remote.callTool({ name: "set_character_art", arguments: { characterId: 95, portraitAttachment: { ...attachment, download_url } } });
     assert.equal(rejected.isError, true, download_url.split("?")[0]);
     assert.equal(JSON.stringify(rejected).includes("temporary-secret"), false);

@@ -261,8 +261,17 @@ export async function fetchImageUrl(sourceUrl: string, diagnostic?: StorageDiagn
   return { ok: false, message: "Image URL redirected too many times." };
 }
 
+/** OpenAI file-parameter hosts. Generated and library files are often served from
+ * sediment Azure hosts such as oaisdmntprcacentral.blob.core.windows.net, not only *.oaiusercontent.com.
+ * The prefix is OpenAI's; other Azure blob accounts stay refused.
+ */
+function authorizedAttachmentHost(host: string) {
+  if (host === "files.oaiusercontent.com" || host.endsWith(".oaiusercontent.com")) return true;
+  return /^oaisdmnt[a-z0-9]+\.blob\.core\.windows\.net$/.test(host);
+}
+
 /** Download a ChatGPT-authorized attachment, never a server filesystem path.
- * Only HTTPS on OpenAI's file-serving domain is accepted; redirects are refused.
+ * Only HTTPS on OpenAI's file-serving hosts is accepted; redirects are refused.
  * Do not propagate signed URLs or upstream exceptions in tool errors.
  */
 export async function fetchImageAttachment(downloadUrl: string): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; message: string }> {
@@ -273,8 +282,7 @@ export async function fetchImageAttachment(downloadUrl: string): Promise<{ ok: t
     return { ok: false, message: "Attachment download URL is invalid." };
   }
   const host = url.hostname.toLowerCase();
-  if (url.protocol !== "https:" || url.username || url.password || url.port ||
-      !(host === "files.oaiusercontent.com" || host.endsWith(".oaiusercontent.com"))) {
+  if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443") || !authorizedAttachmentHost(host)) {
     return { ok: false, message: "Attachment must use an authorized HTTPS file download URL." };
   }
   try {
