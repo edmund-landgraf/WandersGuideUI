@@ -210,8 +210,12 @@ function storageDiagnostic(original: string, rewritten: string, category?: Image
     publicStorageOrigin: diagnosticUrl(publicStorageOrigin()), category, hops: [] };
 }
 
-function logStorageFailure(diagnostic: StorageDiagnostic, reason: string) {
-  console.error("[wgui-mcp] storage-image-verification " + JSON.stringify({ ...diagnostic, reason }));
+// Return the same sanitized report that goes to stderr. fail() already exposes
+// InvokeErr.data in both structuredContent and the JSON text fallback.
+function storageFailure(diagnostic: StorageDiagnostic, reason: string, message: string) {
+  const report = { ...diagnostic, reason };
+  console.error("[wgui-mcp] storage-image-verification " + JSON.stringify(report));
+  return { ok: false as const, code: "VALIDATION_ERROR" as const, message, retryable: false, data: { storageDiagnostics: report } };
 }
 
 export async function fetchImageUrl(sourceUrl: string, diagnostic?: StorageDiagnostic): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; message: string }> {
@@ -225,7 +229,7 @@ export async function fetchImageUrl(sourceUrl: string, diagnostic?: StorageDiagn
     try {
       response = await characterFetch(url, { method: "GET", redirect: "manual" });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not fetch the image.";
+      const message = diagnostic ? "Could not fetch the public storage image." : error instanceof Error ? error.message : "Could not fetch the image.";
       return { ok: false, message };
     }
     if (diagnostic) {
@@ -238,7 +242,11 @@ export async function fetchImageUrl(sourceUrl: string, diagnostic?: StorageDiagn
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (!location) return { ok: false, message: "Image URL redirected without a location." };
-      current = new URL(location, url).toString();
+      try {
+        current = new URL(location, url).toString();
+      } catch {
+        return { ok: false, message: "Image URL redirected to an invalid location." };
+      }
       if (diagnostic) trace.redirectUrl = diagnosticUrl(current);
       continue;
     }
@@ -317,7 +325,7 @@ function isStorageObjectUrl(value: string) {
 }
 
 /** Storage object URLs must answer with PNG, JPEG, or WebP. Other http(s) URLs are left to the caller. */
-export async function durableImageUrl(url: string, diagnostic = storageDiagnostic(url, url)): Promise<{ ok: true; url: string } | { ok: false; code: "VALIDATION_ERROR"; message: string }> {
+export async function durableImageUrl(url: string, diagnostic = storageDiagnostic(url, url)): Promise<{ ok: true; url: string } | { ok: false; code: "VALIDATION_ERROR"; message: string } | ReturnType<typeof storageFailure>> {
   if (isBlobUrl(url)) return { ok: false, code: "VALIDATION_ERROR", message: "Temporary blob URLs cannot be stored." };
   let parsed: URL;
   try {
@@ -326,18 +334,19 @@ export async function durableImageUrl(url: string, diagnostic = storageDiagnosti
     return { ok: false, code: "VALIDATION_ERROR", message: "Art URL is not a public image link." };
   }
   if (internalStorageHost(parsed.hostname) && isStorageObjectUrl(url)) {
-    return { ok: false, code: "VALIDATION_ERROR", message: "Image URL is an internal storage address and has no public origin." };
+    return storageFailure(diagnostic, "storage-origin-unavailable", "Image URL is an internal storage address and has no public origin.");
   }
   if (!isStorageObjectUrl(url)) return { ok: true, url };
-  const fetched = await fetchImageUrl(url, diagnostic);
-  if (!fetched.ok) {
-    logStorageFailure(diagnostic, "storage-fetch-failed");
-    return { ok: false, code: "VALIDATION_ERROR", message: fetched.message };
+  let fetched: Awaited<ReturnType<typeof fetchImageUrl>>;
+  try {
+    fetched = await fetchImageUrl(url, diagnostic);
+  } catch {
+    return storageFailure(diagnostic, "storage-fetch-failed", "Could not read the public storage image.");
   }
+  if (!fetched.ok) return storageFailure(diagnostic, "storage-fetch-failed", fetched.message);
   const kind = rejectedType(fetched.bytes);
   if (!kind.ok) {
-    logStorageFailure(diagnostic, "storage-response-not-image");
-    return { ok: false, code: "VALIDATION_ERROR", message: `Public storage URL is not an image. ${kind.message}` };
+    return storageFailure(diagnostic, "storage-response-not-image", `Public storage URL is not an image. ${kind.message}`);
   }
   return { ok: true, url };
 }

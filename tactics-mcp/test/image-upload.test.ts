@@ -263,7 +263,8 @@ test("upload_image posts upload-public-file and the art tools store the returned
   nextUploadUrl = "http://kong:8000/storage/v1/object/public/backgrounds/user-1/broken.webp";
   const broken = await client.callTool({ name: "upload_image", arguments: { category: "backgrounds", data: WEBP.toString("base64") } });
   assert.equal(broken.isError, true);
-
+  const invalidImageDiagnostics = (broken.structuredContent?.data as { storageDiagnostics?: { reason: string } })?.storageDiagnostics;
+  assert.equal(invalidImageDiagnostics?.reason, "storage-response-not-image");
 
   // The production failure: successful upload, rewritten storage GET returns 400.
   // Capture diagnostics, verify redaction, and prove the character write never runs.
@@ -271,6 +272,7 @@ test("upload_image posts upload-public-file and the art tools store the returned
   const priorUploadCount = uploads.length;
   const diagnostics: string[] = [];
   const previousError = console.error;
+  const returnedReports: unknown[] = [];
   console.error = (...args: unknown[]) => { diagnostics.push(args.map(String).join(" ")); };
   try {
     nextUploadUrl = "http://kong:8000/storage/v1/object/public/portraits/user-1/diagnostic.webp?token=hidden-query";
@@ -279,15 +281,35 @@ test("upload_image posts upload-public-file and the art tools store the returned
     });
     assert.equal(failedStorage.isError, true);
     assert.equal(failedStorage.structuredContent?.code, "VALIDATION_ERROR");
-    assert.match(JSON.stringify(failedStorage.content), /Image URL returned 400/);
+    assert.equal(failedStorage.structuredContent?.retryable, false);
+    const returnedData = failedStorage.structuredContent?.data as { storageDiagnostics?: unknown };
+    assert.ok(returnedData?.storageDiagnostics);
+    returnedReports.push(returnedData.storageDiagnostics);
+    const content = failedStorage.content as Array<{ type: string; text?: string }>;
+    const text = content.find(part => part.type === "text")?.text ?? "";
+    assert.ok(text.startsWith("Image URL returned 400.\n"));
+    assert.deepEqual(JSON.parse(text.slice(text.indexOf("\n") + 1)), failedStorage.structuredContent);
+    assert.doesNotMatch(JSON.stringify(failedStorage), /hidden-query|hidden-redirect|hidden-body|test-token/);
     assert.equal(uploads.length, priorUploadCount + 1);
+    assert.deepEqual(character, beforeFailedStorage);
+
+    nextUploadUrl = "http://kong:8000/storage/v1/object/public/portraits/user-1/diagnostic.webp?token=hidden-query";
+    const failedUpload = await client.callTool({
+      name: "upload_image", arguments: { category: "portraits", data: WEBP.toString("base64") },
+    });
+    assert.equal(failedUpload.isError, true);
+    assert.equal(failedUpload.structuredContent?.retryable, false);
+    returnedReports.push((failedUpload.structuredContent?.data as { storageDiagnostics?: unknown })?.storageDiagnostics);
+    assert.doesNotMatch(JSON.stringify(failedUpload), /hidden-query|hidden-redirect|hidden-body|test-token/);
     assert.deepEqual(character, beforeFailedStorage);
   } finally {
     console.error = previousError;
   }
   const lines = diagnostics.filter(line => line.startsWith("[wgui-mcp] storage-image-verification "));
-  assert.equal(lines.length, 1);
+  assert.equal(lines.length, 2);
   const log = JSON.parse(lines[0].slice("[wgui-mcp] storage-image-verification ".length));
+  assert.deepEqual(returnedReports, [log, log]);
+  assert.equal(lines[1], lines[0]);
   assert.equal(log.originalUrl, "http://kong:8000/storage/v1/object/public/portraits/user-1/diagnostic.webp");
   assert.equal(log.rewrittenUrl, "https://amba.wandersguide.site/storage/v1/object/public/portraits/user-1/diagnostic.webp");
   assert.equal(log.publicStorageOrigin, "https://amba.wandersguide.site");
