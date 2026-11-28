@@ -19,13 +19,15 @@ export function verifyEncounterSave(row: Encounter, response: unknown): Encounte
   return saved;
 }
 
-export function encounterRevisionOrZero(row: { meta_data?: { encounter_revision?: unknown } | null }): number {
+type RevisionCarrier = { meta_data?: { [key: string]: unknown } | null };
+
+export function encounterRevisionOrZero(row: RevisionCarrier): number {
   const revision = row.meta_data?.encounter_revision;
   return typeof revision === 'number' && Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;
 }
 
 /** A poll that started before a save must not replace the roster the save already stored. */
-export function preferNewerEncounterRevisions<T extends { id: number; meta_data?: { encounter_revision?: unknown } | null }>(
+export function preferNewerEncounterRevisions<T extends RevisionCarrier & { id: number }>(
   previous: readonly T[] | undefined,
   fetched: readonly T[],
 ): T[] {

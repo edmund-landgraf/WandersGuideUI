@@ -9,10 +9,10 @@ describe('revision checked encounter saves',()=>{
     expect(()=>encounterRevision({...row,meta_data:{encounter_revision:-1}})).toThrow();
   });
   it('keeps a cached encounter when a poll is an older revision',()=>{
-    const saved = {...row,combatants:{list:[{_id:'pc',type:'CHARACTER' as const,character:67}]},meta_data:{encounter_revision:4}};
-    const stale = {...row,meta_data:{encounter_revision:3}};
+    const saved: Encounter = {...row,combatants:{list:[{_id:'pc',type:'CHARACTER',character:67,ally:true}]},meta_data:{encounter_revision:4}};
+    const stale: Encounter = {...row,meta_data:{encounter_revision:3}};
     expect(preferNewerEncounterRevisions([saved],[stale])).toEqual([saved]);
-    expect(preferNewerEncounterRevisions([row],[saved])[0].meta_data.encounter_revision).toBe(4);
+    expect(preferNewerEncounterRevisions([row],[saved])[0]?.meta_data.encounter_revision).toBe(4);
   });
   it('does not accept a stale or incomplete save receipt',()=>{
     expect(()=>verifyEncounterSave(row,row)).toThrow();
