@@ -212,7 +212,7 @@ export function registerCharacterSheet(server: McpServer, userId: () => string, 
     "upload_image",
     {
       title: "Upload a public image",
-      description: "Uploads a PNG, JPEG, or WebP through upload-public-file, the same call as src/process/upload/image-upload.ts. data is base64 with no data: prefix (a data: URL prefix is stripped). sourceUrl is a public http(s) URL and is fetched first. attachment accepts one generated or attached PNG, JPEG, or WebP file from ChatGPT. file is a local path or file:// URL, accepted only in trusted local stdio. category is portraits or backgrounds, the only buckets that function accepts. The file is stored at <user id>/<id>.<type> in that bucket and the public URL is returned. Images must be 2 MB or smaller. SVG and other types are rejected from the file bytes. The function also requires Patreon tier 1 and returns \"User does not have access\" otherwise.",
+      description: "Uploads a PNG, JPEG, or WebP through upload-public-file, the same call as src/process/upload/image-upload.ts. data is base64 with no data: prefix (a data: URL prefix is stripped). sourceUrl is a public http(s) URL and is fetched first. attachment accepts one generated or attached PNG, JPEG, or WebP file from ChatGPT. file is a local path or file:// URL, accepted only in trusted local stdio. category is portraits or backgrounds, the only buckets that function accepts. The file is stored at <user id>/<id>.<type> in that bucket and the public URL is returned. Images must be 2 MB or smaller. SVG and other types are rejected from the file bytes. Signed-in users can upload; the function does not require a Patreon tier.",
       annotations: writes,
       _meta: { "openai/fileParams": ["attachment"] },
       inputSchema: {
