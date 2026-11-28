@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { characterFetch, invokeFunction } from "./character-client.js";
-import { internalStorageHost, publicStorageObjectUrl } from "./public-art-url.js";
+import { internalStorageHost, publicStorageObjectUrl, publicStorageOrigin } from "./public-art-url.js";
 
 // upload-public-file rejects a base64 string longer than 3_000_000 characters
 // (supabase/functions/upload-public-file in wanderers-guide, not this repo).
@@ -134,11 +134,93 @@ export async function readImageFile(filePath: string): Promise<{ ok: true; bytes
   return { ok: true, bytes: new Uint8Array(bytes) };
 }
 
-export async function fetchImageUrl(sourceUrl: string): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; message: string }> {
+// Storage verification diagnostics go to stderr (stdout is the stdio MCP protocol).
+// Never log query strings, fragments, credentials, request headers, image data,
+// arbitrary upstream errors or non-public paths.
+function diagnosticUrl(value: string) {
+  try {
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol)) return "[non-http URL]";
+    const path = /^\/storage\/v1\/object\/public\/(?:portraits|backgrounds)\//i.test(url.pathname)
+      ? url.pathname.slice(0, 1024) : "";
+    return url.origin + path;
+  } catch {
+    return "[invalid URL]";
+  }
+}
+
+type StorageDiagnostic = {
+  originalUrl: string;
+  rewrittenUrl: string;
+  publicStorageOrigin: string;
+  category?: ImageCategory;
+  hops: Array<{ requestedUrl: string; finalUrl?: string; status?: number; contentType?: string; redirectUrl?: string }>;
+  responseBody?: unknown;
+};
+
+// Untrusted error responses can reflect credentials or contain HTML. Read at
+// most 4 KiB, for at most one second, and retain only known storage error
+// labels/status fields. Unknown text is intentionally omitted, not logged raw.
+async function storageErrorBody(response: Response): Promise<unknown> {
+  const reader = response.body?.getReader();
+  if (!reader) return { omitted: "no body" };
+  const limit = 4096;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const read = async () => {
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+      const step = await reader.read();
+      if (step.done) break;
+      total += step.value.byteLength;
+      if (total > limit) return { omitted: "body exceeds 4096 bytes" };
+      chunks.push(step.value);
+    }
+    const body = Buffer.concat(chunks).toString("utf8");
+    const safeLabels = /^(?:bad request|invalid request|invalid input|invalid key|invalid object key|invalid url|invalid jwt|jwt expired|missing authorization header|object not found|bucket not found|resource not found|not found|unauthorized|forbidden|access denied|internal server error|no such key|no such bucket|InvalidKey|InvalidRequest|NoSuchKey|NoSuchBucket|AccessDenied|NotFound|Unauthorized|InvalidJWT|InvalidSignature|InvalidBucketName|MissingAuthorization|InvalidParameter|DatabaseError|StorageError|InvalidMimeType)\.?$/i;
+    const fields: Record<string, string | number> = {};
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        for (const key of ["statusCode", "status", "code", "error", "message"]) {
+          const value = parsed[key];
+          if (typeof value === "number" && Number.isInteger(value) && value >= 100 && value <= 599) fields[key] = value;
+          else if (typeof value === "string" && (/^[1-5]\d{2}$/.test(value) || safeLabels.test(value.trim()))) fields[key] = value.trim();
+        }
+      }
+    } catch {
+      if (safeLabels.test(body.trim())) fields.message = body.trim();
+    }
+    return { bytes: total, fields, ...(Object.keys(fields).length === 0 ? { omitted: "unrecognized response body" } : {}) };
+  };
+  try {
+    return await Promise.race([read(), new Promise(resolve => {
+      timer = setTimeout(() => resolve({ omitted: "body read timed out" }), 1000);
+    })]);
+  } catch {
+    return { omitted: "body read failed" };
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    void reader.cancel().catch(() => {});
+  }
+}
+
+function storageDiagnostic(original: string, rewritten: string, category?: ImageCategory): StorageDiagnostic {
+  return { originalUrl: diagnosticUrl(original), rewrittenUrl: diagnosticUrl(rewritten),
+    publicStorageOrigin: diagnosticUrl(publicStorageOrigin()), category, hops: [] };
+}
+
+function logStorageFailure(diagnostic: StorageDiagnostic, reason: string) {
+  console.error("[wgui-mcp] storage-image-verification " + JSON.stringify({ ...diagnostic, reason }));
+}
+
+export async function fetchImageUrl(sourceUrl: string, diagnostic?: StorageDiagnostic): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; message: string }> {
   let current = sourceUrl.trim();
   for (let hop = 0; hop < 3; hop += 1) {
     const url = publicHttpUrl(current);
     if (!url) return { ok: false, message: "Image URL must be a public http(s) link." };
+    const trace: StorageDiagnostic["hops"][number] = { requestedUrl: diagnosticUrl(url.toString()) };
+    if (diagnostic) diagnostic.hops.push(trace);
     let response: Response;
     try {
       response = await characterFetch(url, { method: "GET", redirect: "manual" });
@@ -146,13 +228,24 @@ export async function fetchImageUrl(sourceUrl: string): Promise<{ ok: true; byte
       const message = error instanceof Error ? error.message : "Could not fetch the image.";
       return { ok: false, message };
     }
+    if (diagnostic) {
+      trace.status = response.status;
+      trace.finalUrl = diagnosticUrl(response.url || url.toString());
+      const mediaType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+      if (mediaType && /^(?:application\/(?:json|problem\+json|octet-stream)|text\/(?:plain|html)|image\/(?:png|jpeg|webp|svg\+xml|gif))$/.test(mediaType)) trace.contentType = mediaType;
+      else if (mediaType) trace.contentType = "[other]";
+    }
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (!location) return { ok: false, message: "Image URL redirected without a location." };
       current = new URL(location, url).toString();
+      if (diagnostic) trace.redirectUrl = diagnosticUrl(current);
       continue;
     }
-    if (!response.ok) return { ok: false, message: `Image URL returned ${response.status}.` };
+    if (!response.ok) {
+      if (diagnostic) diagnostic.responseBody = await storageErrorBody(response);
+      return { ok: false, message: `Image URL returned ${response.status}.` };
+    }
     const bytes = await readCapped(response);
     if (!bytes) return { ok: false, message: "Image is larger than 2 MB." };
     return { ok: true, bytes };
@@ -206,7 +299,7 @@ export async function uploadImageBytes(userId: string, bytes: Uint8Array, catego
     return { ok: false as const, code: "INTERNAL_ERROR", message: "upload-public-file did not return a url." };
   }
   const url = publicStorageObjectUrl(record.url);
-  const durable = await durableImageUrl(url);
+  const durable = await durableImageUrl(url, storageDiagnostic(record.url, url, category));
   if (!durable.ok) return durable;
   return { ok: true as const, url: durable.url, type: kind.type, category };
 }
@@ -224,7 +317,7 @@ function isStorageObjectUrl(value: string) {
 }
 
 /** Storage object URLs must answer with PNG, JPEG, or WebP. Other http(s) URLs are left to the caller. */
-export async function durableImageUrl(url: string): Promise<{ ok: true; url: string } | { ok: false; code: "VALIDATION_ERROR"; message: string }> {
+export async function durableImageUrl(url: string, diagnostic = storageDiagnostic(url, url)): Promise<{ ok: true; url: string } | { ok: false; code: "VALIDATION_ERROR"; message: string }> {
   if (isBlobUrl(url)) return { ok: false, code: "VALIDATION_ERROR", message: "Temporary blob URLs cannot be stored." };
   let parsed: URL;
   try {
@@ -236,9 +329,15 @@ export async function durableImageUrl(url: string): Promise<{ ok: true; url: str
     return { ok: false, code: "VALIDATION_ERROR", message: "Image URL is an internal storage address and has no public origin." };
   }
   if (!isStorageObjectUrl(url)) return { ok: true, url };
-  const fetched = await fetchImageUrl(url);
-  if (!fetched.ok) return { ok: false, code: "VALIDATION_ERROR", message: fetched.message };
+  const fetched = await fetchImageUrl(url, diagnostic);
+  if (!fetched.ok) {
+    logStorageFailure(diagnostic, "storage-fetch-failed");
+    return { ok: false, code: "VALIDATION_ERROR", message: fetched.message };
+  }
   const kind = rejectedType(fetched.bytes);
-  if (!kind.ok) return { ok: false, code: "VALIDATION_ERROR", message: `Public storage URL is not an image. ${kind.message}` };
+  if (!kind.ok) {
+    logStorageFailure(diagnostic, "storage-response-not-image");
+    return { ok: false, code: "VALIDATION_ERROR", message: `Public storage URL is not an image. ${kind.message}` };
+  }
   return { ok: true, url };
 }
