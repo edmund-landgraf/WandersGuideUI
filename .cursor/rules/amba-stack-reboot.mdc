@@ -1,0 +1,37 @@
+---
+description: amba/VPS stack recovery after reboot (PostgREST + functions overlay)
+alwaysApply: true
+---
+
+# amba stack after a host reboot
+
+Incident pattern (2026-11-28): VPS reboot → **`wanderers-guide-rest-1` (PostgREST) stays Exited (255)** while db/kong/auth/functions look fine → every edge call returns generic **“An unexpected error occurred”** (`find-campaign`, `find-character`, shops, catalog, etc.).
+
+## PostgREST first
+
+- `docker ps -a` — if **`wanderers-guide-rest-1` is not Up**, start it: `docker start wanderers-guide-rest-1` or bring the stack up with the launcher below.
+- Rest logs during shutdown: `PGRST000` / “database system is shutting down”. **`restart: unless-stopped` did not reliably bring rest back** on this host; always verify rest after a reboot.
+
+## Never bare `docker compose` on amba for recovery
+
+Do **not** run only `docker compose up -d` from the **wanderers-guide** checkout (`/home/administrator/wanderers-guide`). That recreates **functions** without the WGUI overlays (symptom: bind mount is only `supabase/functions:/home/deno/functions`, no `/wgui-fn/*`).
+
+Use **WandersGuideUI** (`/home/administrator/node-sites/WandersGuideUI`):
+
+```bash
+cd /home/administrator/node-sites/WandersGuideUI
+export WG_DIR=/home/administrator/wanderers-guide
+npm run export:bundle   # if stack:restart refuses (stale compile.bundle.js)
+npm run stack:up          # full start/update with overlay
+# or after a code change / botched recreate:
+npm run stack:restart     # force-recreate functions + restart kong
+```
+
+That runs `scripts/wgui-ext.mjs`, which merges **`docker/wgui-functions.compose.yml`** (with stock `docker-compose.yml` + override) and copies **wgui-ext** + **wgui-export** into the functions tmpfs. Kong is restarted on `stack:restart` so upstream connections to rest/functions refresh.
+
+## Verify
+
+- `docker inspect wanderers-guide-functions-1` binds include `WandersGuideUI/supabase/wgui-ext` and `wgui-export` as `/wgui-fn/ext` and `/wgui-fn/export`.
+- Kong can reach rest: `docker exec wanderers-guide-kong-1 wget -qO- http://rest:3000/` returns PostgREST swagger JSON.
+
+Full incident write-up (logs, timeline, bind-mount evidence): `docs/amba-reboot-postgrest-incident.md`. PostgREST password drift (dev): `docs/local-stack-rest-and-export-boot.md`.

@@ -248,9 +248,24 @@ Run that with `psql` inside `wanderers-guide-db-1` as `POSTGRES_USER`. The row t
 
 There is no automated check that re-applies this. After a volume restore, run the update again and confirm one row.
 
+## Production host (amba / `vps-ahhh`)
+
+After a **machine reboot**, two separate failures have shown up together:
+
+1. **PostgREST** (`wanderers-guide-rest-1`) may stay **Exited (255)** even though other services are Up. Kong still proxies `/rest/v1` to `rest:3000`, so stock and overlay edge functions fail with a generic **“An unexpected error occurred”** until rest is running again. Check `docker ps -a` and confirm `Successfully connected` in the rest log.
+
+2. **Functions overlay** — recovery must use WandersGuideUI’s launcher, not bare compose in wanderers-guide alone:
+   - `npm run stack:up` / `npm run stack:restart` → `scripts/wgui-ext.mjs`
+   - merges `docker/wgui-functions.compose.yml` (wgui-ext + wgui-export + custom entrypoint)
+   - On the VPS: `WG_DIR=/home/administrator/wanderers-guide` from `/home/administrator/node-sites/WandersGuideUI`
+   - If recreate is refused, run `npm run export:bundle` first (`scripts/export-bundle-guard.mjs`).
+
+Agents: see `.cursor/rules/amba-stack-reboot.mdc` for the short checklist. **Logs and timeline:** `docs/amba-reboot-postgrest-incident.md` (issue [#108](https://github.com/edmund-landgraf/WandersGuideUI/issues/108)).
+
 ## What not to do
 
 - Do not `docker compose down -v` to "reset passwords". That deletes the database volume.
+- Do not use `docker compose up -d` only in the wanderers-guide checkout on amba to “fix” prod — it drops the WGUI functions overlay.
 - Do not copy `POSTGRES_PASSWORD` onto the command line in a way that lands in shell history in clear text. The `docker exec` snippet above keeps it inside the container.
 - Do not commit `wanderers-guide\.env` or `WandersGuideUI\.env.local`.
 - Do not treat a yellow export row as a Kong or Postgres outage. Read the body. `failed to create the graph` is a missing module in the tmpfs.
