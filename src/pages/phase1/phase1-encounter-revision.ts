@@ -18,3 +18,22 @@ export function verifyEncounterSave(row: Encounter, response: unknown): Encounte
     throw new Error('Encounter save could not be confirmed. Reload before retrying.');
   return saved;
 }
+
+export function encounterRevisionOrZero(row: { meta_data?: { encounter_revision?: unknown } | null }): number {
+  const revision = row.meta_data?.encounter_revision;
+  return typeof revision === 'number' && Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;
+}
+
+/** A poll that started before a save must not replace the roster the save already stored. */
+export function preferNewerEncounterRevisions<T extends { id: number; meta_data?: { encounter_revision?: unknown } | null }>(
+  previous: readonly T[] | undefined,
+  fetched: readonly T[],
+): T[] {
+  if (!previous?.length) return [...fetched];
+  const prior = new Map(previous.map((row) => [row.id, row]));
+  return fetched.map((row) => {
+    const current = prior.get(row.id);
+    if (!current) return row;
+    return encounterRevisionOrZero(current) > encounterRevisionOrZero(row) ? current : row;
+  });
+}

@@ -12,7 +12,7 @@ import { confirmHealth } from '@pages/character_sheet/entity-handler';
 import { phase1Request, savePhase1Encounter, ensurePhase1PublicUser, joinPhase1CharacterByKey, asRecordList, encounterMasksCombatants, loadCampaignCopyPermission, loadPhase1Campaigns, loadPhase1CampaignEncounters, loadPhase1CampaignPlayers, numericId, ownCharacterIds, sameUserId, visibleCampaignEncounters } from './phase1-api';
 import { missingPartyCharacterIds, reconcilePartyAutoSync } from './phase1-party-auto-sync';
 import { executeCampaignCopy } from './phase1-campaign-copy';
-import { encounterRevision } from './phase1-encounter-revision';
+import { encounterRevision, encounterRevisionOrZero, preferNewerEncounterRevisions } from './phase1-encounter-revision';
 import { isEnemyCreature, playerAllyRoundLog, playerEnemyLabel, playerVisibleCombatants } from './phase1-player-combat';
 import { clearCombatantDrag, hasCombatantDrag, readCombatantDrag, writeCombatantDrag } from './combatant-drag';
 import { TacticsPublisher } from './tactics/TacticsPublisher';
@@ -833,7 +833,7 @@ export function Phase1CharactersPage() {
     [campaignFolders, session?.user.id]
   );
   const assignableCampaigns = useMemo(
-    () => (campaigns.data ?? []).filter((campaign) => sameUserId(campaign.user_id, session?.user.id)).slice(0, 6),
+    () => (campaigns.data ?? []).filter((campaign) => sameUserId(campaign.user_id, session?.user.id)),
     [campaigns.data, session?.user.id]
   );
 
@@ -2204,9 +2204,21 @@ export function Phase1CampaignPage() {
   const encounters = useQuery({
     queryKey: encountersKey,
     enabled,
-    refetchInterval: 4000,
+    refetchInterval: () => (
+      queryClient.isMutating({ mutationKey: ['phase1-update-encounter', campaignId] }) > 0
+      || queryClient.isMutating({ mutationKey: ['phase1-patch-encounter-dice', campaignId] }) > 0
+        ? false
+        : 4000
+    ),
     queryFn: async () => {
-      return loadPhase1CampaignEncounters(campaignId, session!.access_token, session!.user.id);
+      const previous = queryClient.getQueryData<Encounter[]>(encountersKey);
+      const saving = () => queryClient.isMutating({ mutationKey: ['phase1-update-encounter', campaignId] })
+        + queryClient.isMutating({ mutationKey: ['phase1-patch-encounter-dice', campaignId] });
+      if (saving() > 0 && previous) return previous;
+      const fetched = await loadPhase1CampaignEncounters(campaignId, session!.access_token, session!.user.id);
+      const latest = queryClient.getQueryData<Encounter[]>(encountersKey) ?? previous;
+      if (saving() > 0 && latest) return latest;
+      return preferNewerEncounterRevisions(latest, fetched);
     },
   });
   const updateEncounter = useMutation<Encounter, Error, Encounter, { previous?: Encounter[] }>({
@@ -2946,6 +2958,7 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
 
   const partyAutoSyncRef = useRef<{ encounterId: number; pending: Set<number> } | null>(null);
   const partyRemovalPendingRef = useRef<Set<number>>(new Set());
+  const partySyncHoldRevision = useRef<number | null>(null);
 
   function addToParty(characterId: number) {
     const id = partyMemberId(characterId);
@@ -2967,7 +2980,10 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   }
 
   useEffect(() => {
-    if (rosterError && partyAutoSyncRef.current) partyAutoSyncRef.current.pending.clear();
+    if (!rosterError) return;
+    if (partyAutoSyncRef.current) partyAutoSyncRef.current.pending.clear();
+    const encounter = selectedEncounterRef.current;
+    if (encounter) partySyncHoldRevision.current = encounterRevisionOrZero(encounter);
   }, [rosterError]);
   useEffect(() => {
     if (partyError) partyRemovalPendingRef.current.clear();
@@ -2982,6 +2998,11 @@ function EncounterWorkspace({ campaign, encounters, players, selectedEncounter, 
   );
   useEffect(() => {
     if (!isGm || rosterSaving || !campaign || !selectedEncounter) return;
+    const revision = encounterRevisionOrZero(selectedEncounter);
+    if (partySyncHoldRevision.current != null) {
+      if (revision === partySyncHoldRevision.current) return;
+      partySyncHoldRevision.current = null;
+    }
     const present = encounterPresentCharacterIds(selectedEncounter.combatants.list);
     const encounterId = selectedEncounter.id;
     if (partyAutoSyncRef.current?.encounterId !== encounterId) {
@@ -5277,6 +5298,8 @@ function JoinKeyModal({
   );
 }
 
+const ASSIGN_CAMPAIGN_PAGE_SIZE = 6;
+
 function CampaignAssignPickerModal({
   characterName,
   campaigns,
@@ -5288,6 +5311,10 @@ function CampaignAssignPickerModal({
   onCancel: () => void;
   onPick: (campaign: Campaign) => void;
 }) {
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(campaigns.length / ASSIGN_CAMPAIGN_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const visible = campaigns.slice(safePage * ASSIGN_CAMPAIGN_PAGE_SIZE, (safePage + 1) * ASSIGN_CAMPAIGN_PAGE_SIZE);
   useEffect(() => {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === 'Escape') onCancel();
@@ -5310,7 +5337,7 @@ function CampaignAssignPickerModal({
           <p className='mt-4 text-sm text-p1-muted'>You do not own a campaign yet. Create one from Campaigns, or use Join other's campaign with a join key.</p>
         ) : (
           <div className='mt-4 grid grid-cols-2 gap-2'>
-            {campaigns.map((campaign) => (
+            {visible.map((campaign) => (
               <button
                 key={campaign.id}
                 type='button'
@@ -5322,7 +5349,14 @@ function CampaignAssignPickerModal({
             ))}
           </div>
         )}
-        <div className='mt-5 flex justify-end'>
+        <div className='mt-5 flex items-center justify-between gap-2'>
+          {pageCount > 1 ? (
+            <div className='flex items-center gap-2'>
+              <button type='button' className='toolbar-button' disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>Previous</button>
+              <span className='text-xs text-p1-muted'>{safePage + 1} / {pageCount}</span>
+              <button type='button' className='toolbar-button' disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)}>Next</button>
+            </div>
+          ) : <span />}
           <button type='button' className='toolbar-button' onClick={onCancel}>Cancel</button>
         </div>
       </section>
