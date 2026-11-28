@@ -94,8 +94,10 @@ test("remote HTTP MCP advertises attachment fields and saves uploaded bytes only
     const listed = await client.listTools();
     const art = listed.tools.find(tool => tool.name === "set_character_art");
     const upload = listed.tools.find(tool => tool.name === "upload_image");
+    const campaign = listed.tools.find(tool => tool.name === "set_campaign_art");
     assert.deepEqual(art?._meta?.["openai/fileParams"], ["portraitAttachment", "backgroundAttachment"]);
     assert.deepEqual(upload?._meta?.["openai/fileParams"], ["attachment"]);
+    assert.deepEqual(campaign?._meta?.["openai/fileParams"], ["imageAttachment"]);
     const property = art?.inputSchema.properties?.portraitAttachment as { required?: string[] };
     assert.deepEqual(new Set(property.required), new Set(["download_url", "file_id"]));
 

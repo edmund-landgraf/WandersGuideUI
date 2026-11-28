@@ -156,8 +156,10 @@ test("upload_image posts upload-public-file and the art tools store the returned
   const listed = await remote.listTools();
   const artTool = listed.tools.find(t => t.name === "set_character_art");
   const uploadTool = listed.tools.find(t => t.name === "upload_image");
+  const campaignTool = listed.tools.find(t => t.name === "set_campaign_art");
   assert.deepEqual(artTool?._meta?.["openai/fileParams"], ["portraitAttachment", "backgroundAttachment"]);
   assert.deepEqual(uploadTool?._meta?.["openai/fileParams"], ["attachment"]);
+  assert.deepEqual(campaignTool?._meta?.["openai/fileParams"], ["imageAttachment"]);
   const schema = artTool?.inputSchema.properties?.portraitAttachment as { required?: string[]; properties?: Record<string, unknown>; additionalProperties?: boolean };
   assert.deepEqual(new Set(schema.required), new Set(["download_url", "file_id"]));
   assert.deepEqual(Object.keys(schema.properties ?? {}).sort(), ["download_url", "file_id", "file_name", "mime_type"]);
@@ -212,6 +214,20 @@ test("upload_image posts upload-public-file and the art tools store the returned
     arguments: { characterId: 95, portraitUrl: "https://example.com/a.png", portraitData: PNG.toString("base64") },
   });
   assert.equal(both.isError, true);
+
+  const campaignAttached = await client.callTool({ name: "set_campaign_art", arguments: { campaignId: 7, imageAttachment: attachment } });
+  assert.equal(campaignAttached.isError, undefined);
+  assert.equal(uploads.at(-1)?.category, "backgrounds");
+  assert.equal(uploads.at(-1)?.data, JPEG.toString("base64"));
+  assert.equal((campaign.meta_data as { image_url?: string }).image_url, "https://cdn.example/backgrounds/jpeg");
+  assert.equal(JSON.stringify(campaignAttached).includes("temporary-secret"), false);
+  assert.equal(JSON.stringify(campaignAttached).includes("secret-key"), false);
+  const campaignBefore = structuredClone(campaign.meta_data);
+  const campaignUploads = uploads.length;
+  const campaignRejected = await client.callTool({ name: "set_campaign_art", arguments: { campaignId: 7, imageAttachment: { ...attachment, download_url: "https://files.oaiusercontent.com.evil.example/generated" } } });
+  assert.equal(campaignRejected.isError, true);
+  assert.equal(uploads.length, campaignUploads);
+  assert.deepEqual(campaign.meta_data, campaignBefore);
 
   const campaignArt = await client.callTool({ name: "set_campaign_art", arguments: { campaignId: 7, imageData: WEBP.toString("base64") } });
   assert.equal(campaignArt.isError, undefined);

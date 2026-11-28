@@ -534,21 +534,27 @@ export function registerCharacterSheet(server: McpServer, userId: () => string, 
     "set_campaign_art",
     {
       title: "Campaign art",
-      description: "Sets the campaign image the campaign UI stores. imageUrl writes meta_data.image_url (http(s), a site-relative path such as /portraits/file.jpg, or null or \"\" to clear). A site-relative path is fetched from PUBLIC_ASSET_ORIGIN (default https://wgui.wandersguide.site) and re-uploaded with upload-public-file; if that fails the absolute public URL is stored. imageData is base64 and is uploaded with upload-public-file in the backgrounds bucket, the same category the campaign art picker uses, then that URL is stored. A failed public storage check returns VALIDATION_ERROR with data.storageDiagnostics. focusY writes meta_data.image_focus_y, clamped to 0–100 the way the sheet's focus slider does. There is no separate background field. Other meta_data keys are kept. Only the campaign owner (the GM, campaign.user_id) can write. Saves with create-campaign and the existing campaign id, the same call the campaign art picker uses.",
+      description: "Sets the campaign image the campaign UI stores. imageUrl writes meta_data.image_url (http(s), a site-relative path such as /portraits/file.jpg, or null or \"\" to clear). A site-relative path is fetched from PUBLIC_ASSET_ORIGIN (default https://wgui.wandersguide.site) and re-uploaded with upload-public-file; if that fails the absolute public URL is stored. imageData is base64 (no data: prefix). imageAttachment is one generated or attached PNG, JPEG, or WebP file from ChatGPT (2 MB maximum). imageFile is a path accepted only in trusted local stdio. File inputs are uploaded with upload-public-file in the backgrounds bucket, the same category the campaign art picker uses, then that URL is stored. A failed public storage check returns VALIDATION_ERROR with data.storageDiagnostics. focusY writes meta_data.image_focus_y, clamped to 0–100 the way the sheet's focus slider does. There is no separate background field. Other meta_data keys are kept. Only the campaign owner (the GM, campaign.user_id) can write. Saves with create-campaign and the existing campaign id, the same call the campaign art picker uses.",
       annotations: writes,
+      _meta: { "openai/fileParams": ["imageAttachment"] },
       inputSchema: {
         campaignId: z.number().int(),
         imageUrl: z.string().nullable().optional(),
         imageData: z.string().optional(),
+        imageFile: z.string().optional(),
+        imageAttachment: attachmentSchema.optional().describe("One generated or attached PNG, JPEG, or WebP campaign image, at most 2 MB."),
         focusY: z.number().optional(),
       },
     },
     async (args) => {
-      if (args.imageUrl === undefined && args.imageData === undefined && args.focusY === undefined) {
-        return textResult("Pass imageUrl, imageData, and/or focusY.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      if (args.imageUrl === undefined && args.imageData === undefined && args.imageFile === undefined && args.imageAttachment === undefined && args.focusY === undefined) {
+        return textResult("Pass imageUrl, imageData, imageAttachment, and/or focusY.", { code: "VALIDATION_ERROR", retryable: false }, true);
       }
-      if (args.imageUrl !== undefined && args.imageData !== undefined) {
-        return textResult("Pass imageUrl or imageData, not both.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      if ([args.imageUrl, args.imageData, args.imageFile, args.imageAttachment].filter((value) => value !== undefined).length > 1) {
+        return textResult("Pass one of imageUrl, imageData, imageFile, or imageAttachment.", { code: "VALIDATION_ERROR", retryable: false }, true);
+      }
+      if (!allowLocalFiles && args.imageFile !== undefined) {
+        return textResult("Server filesystem paths are not accepted over remote MCP. Pass the image as an attachment instead.", { code: "VALIDATION_ERROR", retryable: false }, true);
       }
       const image = args.imageUrl === undefined ? null : imageUrl(args.imageUrl);
       if (args.imageUrl !== undefined && image && !image.ok) {
@@ -561,8 +567,8 @@ export function registerCharacterSheet(server: McpServer, userId: () => string, 
       }
       const hosted = await materializeArtUrl(userId(), image, "backgrounds");
       let imageUrlValue = hosted?.ok ? hosted.url : undefined;
-      if (args.imageData !== undefined) {
-        const uploaded = await uploadInput(userId(), args.imageData, undefined, "backgrounds");
+      if (args.imageData !== undefined || args.imageFile !== undefined || args.imageAttachment !== undefined) {
+        const uploaded = await uploadInput(userId(), args.imageData, undefined, "backgrounds", args.imageFile, args.imageAttachment, allowLocalFiles);
         if (!uploaded.ok) return fail(uploaded);
         imageUrlValue = uploaded.url;
       }
@@ -574,7 +580,7 @@ export function registerCharacterSheet(server: McpServer, userId: () => string, 
       const meta = (loaded.data.meta_data && typeof loaded.data.meta_data === "object" && !Array.isArray(loaded.data.meta_data)
         ? structuredClone(loaded.data.meta_data)
         : {}) as Record<string, unknown>;
-      if (args.imageUrl !== undefined || args.imageData !== undefined) meta.image_url = imageUrlValue ?? "";
+      if (args.imageUrl !== undefined || args.imageData !== undefined || args.imageFile !== undefined || args.imageAttachment !== undefined) meta.image_url = imageUrlValue ?? "";
       if (args.focusY !== undefined) meta.image_focus_y = clampFocus(args.focusY);
       // Stock WG has no update-campaign. The campaign UI upserts by posting the row to create-campaign.
       const saved = await invokeFunction(userId(), "create-campaign", { ...loaded.data, id: args.campaignId, meta_data: meta });
