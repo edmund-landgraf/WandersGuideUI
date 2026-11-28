@@ -4,7 +4,7 @@
 //   npm run republish:shops
 //
 // Reads SUPABASE_URL / VITE_SUPABASE_URL and SERVICE_ROLE_KEY / SUPABASE_SERVICE_ROLE_KEY
-// from the environment, then .env.local, then ../wanderers-guide/.env.
+// from the environment, .env.local, ../wanderers-guide/.env, ../../wanderers-guide/.env, or $WG_DIR/.env.
 
 import { createClient } from '@supabase/supabase-js';
 import { existsSync, readFileSync } from 'node:fs';
@@ -24,6 +24,8 @@ function loadEnv(file) {
 
 loadEnv(path.join(repoRoot, '.env.local'));
 loadEnv(path.join(repoRoot, '..', 'wanderers-guide', '.env'));
+loadEnv(path.join(repoRoot, '..', '..', 'wanderers-guide', '.env'));
+if (process.env.WG_DIR) loadEnv(path.join(process.env.WG_DIR, '.env'));
 
 const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.PUBLIC_SUPABASE_URL;
 const key = process.env.SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
