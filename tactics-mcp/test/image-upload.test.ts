@@ -86,6 +86,12 @@ test("upload_image posts upload-public-file and the art tools store the returned
     if (url === "https://amba.wandersguide.site/storage/v1/object/public/backgrounds/user-1/broken.webp") {
       return new Response("not an image", { status: 200, headers: { "content-type": "text/html" } });
     }
+    if (url === "https://amba.wandersguide.site/storage/v1/object/public/portraits/user-1/diagnostic.webp?token=hidden-query") {
+      return new Response(null, { status: 302, headers: { location: "https://storage.example/storage/v1/object/public/portraits/user-1/diagnostic.webp?signature=hidden-redirect" } });
+    }
+    if (url === "https://storage.example/storage/v1/object/public/portraits/user-1/diagnostic.webp?signature=hidden-redirect") {
+      return jsonResponse({ statusCode: "400", error: "InvalidRequest", message: "Bad Request", secret: "hidden-body" }, 400);
+    }
     if (url.endsWith("/find-character")) return jsonResponse({ status: "success", data: character });
     if (url.endsWith("/update-character")) {
       assert.equal(body.expected_updated_at, character.updated_at);
@@ -257,6 +263,42 @@ test("upload_image posts upload-public-file and the art tools store the returned
   nextUploadUrl = "http://kong:8000/storage/v1/object/public/backgrounds/user-1/broken.webp";
   const broken = await client.callTool({ name: "upload_image", arguments: { category: "backgrounds", data: WEBP.toString("base64") } });
   assert.equal(broken.isError, true);
+
+
+  // The production failure: successful upload, rewritten storage GET returns 400.
+  // Capture diagnostics, verify redaction, and prove the character write never runs.
+  const beforeFailedStorage = structuredClone(character);
+  const priorUploadCount = uploads.length;
+  const diagnostics: string[] = [];
+  const previousError = console.error;
+  console.error = (...args: unknown[]) => { diagnostics.push(args.map(String).join(" ")); };
+  try {
+    nextUploadUrl = "http://kong:8000/storage/v1/object/public/portraits/user-1/diagnostic.webp?token=hidden-query";
+    const failedStorage = await client.callTool({
+      name: "set_character_art", arguments: { characterId: 95, portraitData: WEBP.toString("base64") },
+    });
+    assert.equal(failedStorage.isError, true);
+    assert.equal(failedStorage.structuredContent?.code, "VALIDATION_ERROR");
+    assert.match(JSON.stringify(failedStorage.content), /Image URL returned 400/);
+    assert.equal(uploads.length, priorUploadCount + 1);
+    assert.deepEqual(character, beforeFailedStorage);
+  } finally {
+    console.error = previousError;
+  }
+  const lines = diagnostics.filter(line => line.startsWith("[wgui-mcp] storage-image-verification "));
+  assert.equal(lines.length, 1);
+  const log = JSON.parse(lines[0].slice("[wgui-mcp] storage-image-verification ".length));
+  assert.equal(log.originalUrl, "http://kong:8000/storage/v1/object/public/portraits/user-1/diagnostic.webp");
+  assert.equal(log.rewrittenUrl, "https://amba.wandersguide.site/storage/v1/object/public/portraits/user-1/diagnostic.webp");
+  assert.equal(log.publicStorageOrigin, "https://amba.wandersguide.site");
+  assert.equal(log.category, "portraits");
+  assert.equal(log.reason, "storage-fetch-failed");
+  assert.deepEqual(log.hops.map((hop: { status: number }) => hop.status), [302, 400]);
+  assert.equal(log.hops[0].redirectUrl, "https://storage.example/storage/v1/object/public/portraits/user-1/diagnostic.webp");
+  assert.equal(log.hops[1].finalUrl, log.hops[0].redirectUrl);
+  assert.equal(log.hops[1].contentType, "application/json");
+  assert.deepEqual(log.responseBody.fields, { statusCode: "400", error: "InvalidRequest", message: "Bad Request" });
+  assert.doesNotMatch(lines[0], /hidden-query|hidden-redirect|hidden-body|test-token/);
 
   await client.close();
   setCharacterFetch(null);
