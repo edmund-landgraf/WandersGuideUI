@@ -22,6 +22,7 @@ services:
       - >
         set -e;
         cp -a /wgui-fn/base/. /home/deno/functions/;
+        cp -a /wgui-fn/ext/upload-public-file /home/deno/functions/;
         for dir in /wgui-fn/ext/_wgui-ext /wgui-fn/ext/wgui-ext-* /wgui-fn/export/_wgui-export /wgui-fn/export/wgui-export-*; do
           cp -a "$$dir" /home/deno/functions/;
         done;
