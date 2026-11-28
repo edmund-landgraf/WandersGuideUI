@@ -894,7 +894,6 @@ function StockTable({
             <th>Level</th>
             <th>Rarity</th>
             <th>Group</th>
-            <th>Source</th>
             <th>Price</th>
             <th>Cart</th>
           </tr>
@@ -907,7 +906,6 @@ function StockTable({
               <td>{row.level}</td>
               <td>{row.rarity}</td>
               <td>{shelfGroup(row)}</td>
-              <td>{sourceLabel(row)}</td>
               <td>{shownPrice(row.price, inGp)}</td>
               <td>
                 <CartButtons row={row} inCart={qty(row)} onAdd={onAdd} onRemove={() => onRemove(cartLineKey(shopId, row))} />
@@ -928,7 +926,6 @@ function StockTable({
           <th className='px-4 py-3 font-medium'>Level</th>
           <th className='px-4 py-3 font-medium'>Rarity</th>
           <th className='px-4 py-3 font-medium'>Group</th>
-          <th className='px-4 py-3 font-medium'>Source</th>
           <th className='px-4 py-3 font-medium'>Price</th>
           <th className='px-4 py-3 font-medium'>Cart</th>
         </tr>
@@ -941,7 +938,6 @@ function StockTable({
             <td className='px-4 py-3'>{row.level}</td>
             <td className='px-4 py-3'>{row.rarity}</td>
             <td className='px-4 py-3'>{shelfGroup(row)}</td>
-            <td className='px-4 py-3'>{sourceLabel(row)}</td>
             <td className='px-4 py-3'>{shownPrice(row.price, inGp)}</td>
             <td className='px-4 py-3'>
               <CartButtons row={row} inCart={qty(row)} onAdd={onAdd} onRemove={() => onRemove(cartLineKey(shopId, row))} />
