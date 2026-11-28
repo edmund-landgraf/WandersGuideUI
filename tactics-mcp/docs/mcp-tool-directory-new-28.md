@@ -10,7 +10,7 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 
 | Tool | Scope | What it does / returns | Required params |
 | --- | --- | --- | --- |
-| `set_campaign_art` | write | Sets `meta_data.image_url` and/or `meta_data.image_focus_y`. `imageData` uploads via `upload-public-file` (`backgrounds`) first. Owner/GM only | `campaignId` (+ `imageUrl`, `imageData`, or `focusY`) |
+| `set_campaign_art` | write | Sets `meta_data.image_url` and/or `meta_data.image_focus_y`. `imageData` uploads via `upload-public-file` (`backgrounds`) first. A failed public storage check returns `data.storageDiagnostics`. Owner/GM only | `campaignId` (+ `imageUrl`, `imageData`, or `focusY`) |
 | `add_encounter_combatant` | write ┬╖ GM | GM adds one joined PC (`wgui-ext-add-encounter-character`) or one catalog/homebrew creature (`wgui-ext-add-encounter-creature`). The reply includes that character or creature name. `ally` is for creatures | `view`, `campaignId`, `encounterId`, and one id |
 | `remove_encounter_combatant` | write ┬╖ GM | GM removes one PC, creature, or hazard via `wgui-ext-remove-encounter-combatant`. Does not delete the character or catalog row | `view`, `campaignId`, `encounterId`, `combatantId` |
 | `patch_encounter_combatant` | write ┬╖ GM | GM sets initiative, current HP, temp HP, and/or conditions via `wgui-ext-patch-encounter-combatant` | `view`, ids, `combatantId`, and one field |
@@ -26,8 +26,8 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `edit_character_note` | write | Replaces one page's `contents` by `pageIndex` or stored `pageId`. Owner only | `characterId`, `contents`, `pageIndex` or `pageId` |
 | `rename_character_note` | write | Changes one page's `name`. Owner only | `characterId`, `title`, `pageIndex` or `pageId` |
 | `delete_character_note` | write | Removes one page. Other pages stay. Owner only | `characterId`, `pageIndex` or `pageId` |
-| `upload_image` | write | PNG/JPEG/WebP through `upload-public-file`. Returns `{ url }`. Category `portraits` or `backgrounds` | `category` (+ `attachment`, `data` or `sourceUrl`) |
-| `set_character_art` | write | Sets `details.image_url` (portrait) and/or `details.background_image_url`. `portraitAttachment` / `backgroundAttachment` accept generated or attached ChatGPT image files; `portraitData` / `backgroundData` remain supported. Owner only | `characterId` (+ an attachment, URL or image data) |
+| `upload_image` | write | PNG/JPEG/WebP through `upload-public-file`. Returns `{ url }`. Category `portraits` or `backgrounds`. A failed public storage check returns `data.storageDiagnostics` | `category` (+ `attachment`, `data` or `sourceUrl`) |
+| `set_character_art` | write | Sets `details.image_url` (portrait) and/or `details.background_image_url`. `portraitAttachment` / `backgroundAttachment` accept generated or attached ChatGPT image files; `portraitData` / `backgroundData` remain supported. A failed public storage check returns `data.storageDiagnostics`. Owner only | `characterId` (+ an attachment, URL or image data) |
 | `set_inventory_item` | write | Sets `is_equipped` and/or `is_invested` on an existing entry. Owner only. `item.hands` is returned, not written | `characterId`, `inventoryItemId` (+ `equipped` or `invested`) |
 | `convert_coins` | read | Normalizes a coin amount at PF2e rates (1 pp = 10 gp = 100 sp = 1000 cp). Does not touch a character | `amount` |
 | `give_money` | write | Adds coins to `inventory.coins` (`cp`/`sp`/`gp`/`pp`). `normalize:true` rebalances the purse | `characterId`, `amount` |

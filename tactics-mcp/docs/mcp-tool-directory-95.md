@@ -17,7 +17,7 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `join_campaign` | write | Attaches a character the caller owns to a campaign via join key | `characterId`, `joinKey` |
 | `get_campaign_owner_contacts` | read | Email/display name of owners the caller shares a campaign with (max 24 ids) | `userIds` |
 | `list_campaign_characters` | read | Campaign PC roster: id, name, level, ancestry, class | `campaignId` |
-| `set_campaign_art` | write | Sets `meta_data.image_url` and/or `meta_data.image_focus_y`. `imageData` uploads via `upload-public-file` (`backgrounds`) first. Owner/GM only | `campaignId` (+ `imageUrl`, `imageData`, or `focusY`) |
+| `set_campaign_art` | write | Sets `meta_data.image_url` and/or `meta_data.image_focus_y`. `imageData` uploads via `upload-public-file` (`backgrounds`) first. A failed public storage check returns `data.storageDiagnostics`. Owner/GM only | `campaignId` (+ `imageUrl`, `imageData`, or `focusY`) |
 | `list_encounters` | read · GM | Encounters: id, name, combatant count | `view`, `campaignId` |
 | `get_encounter` | read · GM | Name, round, difficulty, XP, encounter revision | `view`, `campaignId`, `encounterId` |
 | `list_pcs` | read · GM | PCs fighting, benched, or down, with current HP | `view`, `campaignId`, `encounterId` |
@@ -54,8 +54,8 @@ Common encounter params: `campaignId`, `encounterId`, and for per-combatant tool
 | `edit_character_note` | write | Replaces one page's `contents` by `pageIndex` or stored `pageId`. Owner only | `characterId`, `contents`, `pageIndex` or `pageId` |
 | `rename_character_note` | write | Changes one page's `name`. Owner only | `characterId`, `title`, `pageIndex` or `pageId` |
 | `delete_character_note` | write | Removes one page. Other pages stay. Owner only | `characterId`, `pageIndex` or `pageId` |
-| `upload_image` | write | PNG/JPEG/WebP through `upload-public-file`. Returns `{ url }`. Category `portraits` or `backgrounds` | `category` (+ `attachment`, `data` or `sourceUrl`) |
-| `set_character_art` | write | Sets `details.image_url` (portrait) and/or `details.background_image_url`. `portraitAttachment` / `backgroundAttachment` accept generated or attached ChatGPT image files; `portraitData` / `backgroundData` remain supported. Owner only | `characterId` (+ an attachment, URL or image data) |
+| `upload_image` | write | PNG/JPEG/WebP through `upload-public-file`. Returns `{ url }`. Category `portraits` or `backgrounds`. A failed public storage check returns `data.storageDiagnostics` | `category` (+ `attachment`, `data` or `sourceUrl`) |
+| `set_character_art` | write | Sets `details.image_url` (portrait) and/or `details.background_image_url`. `portraitAttachment` / `backgroundAttachment` accept generated or attached ChatGPT image files; `portraitData` / `backgroundData` remain supported. A failed public storage check returns `data.storageDiagnostics`. Owner only | `characterId` (+ an attachment, URL or image data) |
 | `list_options` | read | One catalog read by `kind` (class, ancestry, spell, item, …) | `kind` |
 | `list_open_choices` | read | Unfilled builder selects with legal options | `characterId` |
 | `list_spell_options` | read | Legal spells for one casting source | `characterId` |
